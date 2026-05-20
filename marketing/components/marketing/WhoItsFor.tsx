@@ -3,7 +3,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Wrench,
-  Zap,
   Flower2,
   Home,
   Hammer,
@@ -22,7 +21,6 @@ const JOB_CATEGORIES: { icon: LucideIcon; name: string; description: string }[] 
   { icon: Flower2, name: "Garden & Lawn", description: "Mowing, clearing, trimming, and landscaping" },
   { icon: Home, name: "Handyman / Odd Jobs", description: "Shelves, fixtures, doors, tiling, and everyday repairs" },
   { icon: WashingMachine, name: "Appliances", description: "Fault-finding, inspection, and repair" },
-  { icon: Zap, name: "Electrical (minor)", description: "Light fittings, plugs, and small installations" },
   { icon: Hammer, name: "DIY Assistance", description: "Stuck on a project? Get help to finish it properly" },
   { icon: ShieldCheck, name: "General Repairs", description: "Drywall, plastering, grouting, and home upkeep" },
 ];
@@ -30,11 +28,10 @@ const JOB_CATEGORIES: { icon: LucideIcon; name: string; description: string }[] 
 const WORKER_TYPES: string[] = [
   "Gardeners and landscapers",
   "Painters",
-  "Handymen and odd-job workers",
+  "Handymen and practical service providers",
   "Plumbers (small jobs)",
-  "Appliance repairers",
-  "Electricians (minor work)",
-  "General DIY workers and installers",
+  "Appliance repair specialists",
+  "General maintenance service providers",
   "Roofing helpers",
 ];
 
@@ -53,7 +50,7 @@ export function WhoItsFor() {
               Any small home job, sorted
             </h2>
             <p className="text-muted-foreground max-w-xl">
-              Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug A Pro matches you with a nearby worker who can do the job.
+              Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug A Pro matches you with a nearby local pro who can do the job.
             </p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -82,17 +79,17 @@ export function WhoItsFor() {
         {/* Divider */}
         <div className="border-t border-border/40" />
 
-        {/* For Workers */}
+        {/* For Service Providers */}
         <div className="grid md:grid-cols-2 gap-10 items-center">
           <div>
             <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
-              For workers
+              For service providers
             </p>
             <h2 className="text-3xl md:text-4xl font-bold mb-3">
-              Get steady local work, on your terms
+              More jobs. Less waiting.
             </h2>
             <p className="text-muted-foreground mb-6">
-              If you have skills and need more paying customers, Plug A Pro brings the work to you. No registered business needed. Just your skills and a phone.
+              You have the skills. Getting steady, paying customers is the hard part. Plug A Pro matches you to nearby customers looking for your trade, and delivers job lead previews to your WhatsApp. No registered business required.
             </p>
             <ul className="space-y-2">
               {WORKER_TYPES.map((type) => (
@@ -108,7 +105,7 @@ export function WhoItsFor() {
             </ul>
           </div>
           <div className="rounded-2xl border border-border/40 p-8 space-y-4 bg-muted/30">
-            <p className="font-semibold text-lg">What you get as a worker</p>
+            <p className="font-semibold text-lg">What you get as a service provider</p>
             {[
               "Only jobs that match your skills and area",
               "Your price in writing. No verbal confusion.",

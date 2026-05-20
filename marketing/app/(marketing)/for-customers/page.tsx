@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { buildMetadata } from "@/lib/metadata";
+import { buildMetadata, getAppUrl } from "@/lib/metadata";
 import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
 import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
+import { WebCtaButton } from "@/components/marketing/WebCtaButton";
 import {
   MessageCircle,
   MapPin,
@@ -19,7 +20,7 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "For Customers",
   description:
-    "Get help with any small home job. Plumbing, painting, gardening, handyman work, and more. Message us on WhatsApp and we'll match you to a nearby worker.",
+    "Get help with any small home job. Plumbing, painting, gardening, handyman work, and more. Message us on WhatsApp and we'll match you to a nearby service provider.",
 });
 
 const HOW_IT_WORKS = [
@@ -33,16 +34,16 @@ const HOW_IT_WORKS = [
   {
     icon: MapPin,
     step: "02",
-    title: "We match you to nearby workers",
+    title: "We match you to nearby service providers",
     detail:
-      "We find available workers in your area who have the right skills. Once a worker accepts, we keep the process moving on WhatsApp so you can review the quote before work starts.",
+      "We find available local service providers in your area who have the right skills. Once they accept, we keep the process moving on WhatsApp so you can review the quote before work starts.",
   },
   {
     icon: UserCheck,
     step: "03",
     title: "Confirm and book",
     detail:
-      "If a worker needs to inspect the job first, we arrange a short visit before quoting. For straightforward jobs, the worker submits a quote directly. You approve before anything is scheduled.",
+      "If a service provider needs to inspect the job first, we arrange a short visit before quoting. For straightforward jobs, they submit a quote directly. You approve before anything is scheduled.",
   },
   {
     icon: FileText,
@@ -54,16 +55,16 @@ const HOW_IT_WORKS = [
   {
     icon: Camera,
     step: "05",
-    title: "Worker arrives and does the job",
+    title: "Provider arrives and does the job",
     detail:
-      "Your matched worker arrives at the agreed time. Before and after photos are attached to the job record. You can follow progress via WhatsApp.",
+      "Your matched service provider arrives at the agreed time. Before and after photos are attached to the job record. You can follow progress via WhatsApp.",
   },
   {
     icon: Star,
     step: "06",
     title: "Pay and leave a review",
     detail:
-      "Once the job is done, Plug A Pro confirms the close-out and you can leave a review to help other customers and reward good workers. Your review builds the community.",
+      "Once the job is done, Plug A Pro confirms the close-out and you can leave a review to help other customers and reward great service providers. Your review builds trust in the community.",
   },
 ];
 
@@ -76,7 +77,7 @@ const PROTECTIONS = [
   {
     icon: UserCheck,
     title: "Applications reviewed before activation",
-    body: "Applications are manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each worker has submitted and recorded on Plug A Pro.",
+    body: "Applications are manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each service provider has submitted and recorded on Plug A Pro.",
   },
   {
     icon: FileText,
@@ -95,8 +96,8 @@ const PROTECTIONS = [
   },
   {
     icon: Star,
-    title: "Public reviews hold workers accountable",
-    body: "Every completed job generates a review. Workers who perform badly don't get leads. Workers who do great work build a reputation that earns them more jobs.",
+    title: "Public reviews build accountability",
+    body: "Every completed job generates a review. Providers who are unreliable tend not to get repeated leads. Providers who do great work build a reputation that earns them more work.",
   },
 ];
 
@@ -112,7 +113,7 @@ export default function ForCustomersPage() {
           Home jobs sorted. On WhatsApp.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          Describe what you need. We&apos;ll match you to a nearby worker, send the quote for approval, and keep the job moving on WhatsApp.
+          Describe what you need. We&apos;ll match you to a nearby service provider, send the quote for approval, and keep the job moving on WhatsApp.
         </p>
         <p className="text-sm font-medium mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}
@@ -122,6 +123,13 @@ export default function ForCustomersPage() {
             audience="customer"
             label="Start on WhatsApp"
             source="for_customers_header"
+            size="lg"
+          />
+          <WebCtaButton
+            href={`${getAppUrl()}/sign-up`}
+            label="Book on the web →"
+            source="for_customers_header"
+            variant="outline"
             size="lg"
           />
           <Button
@@ -223,7 +231,7 @@ export default function ForCustomersPage() {
         <div className="max-w-3xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30 text-center">
           <h2 className="text-xl font-bold mb-3">What jobs can I request?</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Plumbing, painting, garden work, general handyman, appliance repair, minor electrical, DIY assistance, and roofing. If it&apos;s a small job around the home, there&apos;s likely a worker near you who can do it.
+            Plumbing, painting, garden work, general handyman, appliance repair, DIY assistance, and roofing. If it&apos;s a small job around the home, there&apos;s likely a provider near you who can do it.
           </p>
           <Button
             nativeButton={false}
