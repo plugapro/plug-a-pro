@@ -210,7 +210,7 @@ export default async function AdminQuoteQueuePage() {
           {quotes.map((quote) => {
             const assignment = assignments.get(quote.id)
             const claimedByCurrentUser = assignment?.claimedById === admin.id
-            const quotePageUrl = `/quotes/${quote.approvalToken}`
+            const quotePageUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/quotes/${quote.approvalToken}`
             const expired = quote.validUntil ? quote.validUntil < now : false
             const customerNotNotified =
               Boolean(quote.approvalWhatsappSentAt) && !quoteIdsWithCustomerNotification.has(quote.id)
