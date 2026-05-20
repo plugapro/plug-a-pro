@@ -31,6 +31,7 @@ type ResolvedCustomer = {
   phone: string
   name: string
   email: string | null
+  isBlocked: boolean
 }
 
 // ─── JSON helper ──────────────────────────────────────────────────────────────
@@ -58,8 +59,10 @@ interface CustomerActionOptions<TInput, TOutput> {
   /** Raw (unvalidated) input data. */
   input?: unknown
   /**
-   * The mutation to execute inside a transaction.
-   * The AuditLog row is written in the same transaction.
+   * The mutation to execute inside the transaction.
+   * IMPORTANT: Only return the minimal fields needed (use a narrow `select`).
+   * The return value is written verbatim to AuditLog.after — do not return
+   * fields containing PII (phone, email, name) that are not needed by the caller.
    */
   run: (input: TInput, customer: ResolvedCustomer, tx: TxClient) => Promise<TOutput>
 }
@@ -92,12 +95,9 @@ export async function customerAction<TInput = unknown, TOutput = unknown>(
   }
 
   // ── 3. Blocked guard ──────────────────────────────────────────────────────────
-  // resolveCustomerForSession does not currently include `isBlocked` in its
-  // select projection (customerSessionSelect). This is a best-effort check
-  // that will work only when the caller widens the returned shape. It will
-  // silently pass (false) for plain CustomerRecord values until the select is
-  // extended to include isBlocked.
-  if ((customer as { isBlocked?: boolean }).isBlocked) {
+  // customerSessionSelect now includes `isBlocked`, so this check is always
+  // populated from the DB — no cast required.
+  if (customer.isBlocked) {
     throw new CustomerActionError('BLOCKED', 'Account is blocked')
   }
 

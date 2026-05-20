@@ -24,7 +24,7 @@ vi.mock('@/lib/customer-session', () => ({
 
 import { customerAction, CustomerActionError } from '@/lib/customer-action'
 
-const mockCustomer = { id: 'cust-1', userId: 'user-1' }
+const mockCustomer = { id: 'cust-1', userId: 'user-1', isBlocked: false }
 // AuthUser has id at the top level (not nested under .user)
 const mockSession = { id: 'user-1', email: null, phone: null, role: 'customer' as const }
 

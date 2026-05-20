@@ -30,5 +30,5 @@ export async function setCustomerAccountTypeAction(params: {
     },
   })
 
-  revalidatePath('/')
+  revalidatePath('/account')
 }

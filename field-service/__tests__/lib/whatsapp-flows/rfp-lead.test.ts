@@ -136,4 +136,13 @@ describe('handleRfpLeadInterest', () => {
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('expired'))
     expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
+
+  it('sends already-noted message when lead is already INTERESTED', async () => {
+    const interestedRepo = createInMemoryLeadRepository([
+      { ...BASE_LEAD, status: LeadStatus.INTERESTED },
+    ])
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: interestedRepo })
+    expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('already noted'))
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
 })

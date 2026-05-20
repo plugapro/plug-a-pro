@@ -7,6 +7,7 @@ type CustomerRecord = {
   phone: string
   name: string
   email: string | null
+  isBlocked: boolean
 }
 
 type CustomerMemberClient = {
@@ -30,6 +31,7 @@ const customerSessionSelect = {
   phone: true,
   name: true,
   email: true,
+  isBlocked: true,
 } as const
 
 export async function resolveCustomerForSession(

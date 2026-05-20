@@ -6,6 +6,7 @@
 import { db } from '../db'
 import { Prisma } from '@prisma/client'
 import { sendText, sendButtons } from '../whatsapp-interactive'
+// review-first → review-first-domain only; rfp-lead → review-first is intentional one-way
 import { notifyCustomerRfpResponseSummary } from '../review-first'
 import { createPrismaLeadRepository, type LeadRepository } from '../lead-repository'
 
@@ -41,7 +42,10 @@ export async function handleRfpLeadInterest(
           after: { claimingProviderId: providerId, realOwnerId: lead.providerId } as Prisma.InputJsonValue,
           timestamp: new Date(),
         },
-      }).catch((err) => console.error('[whatsapp-bot] security audit write failed:', err))
+      }).catch((err) => {
+        console.error('[whatsapp-bot] security audit write failed:', err)
+        throw err  // surface to caller; better to fail loudly than lose a security event
+      })
     }
     await sendText(phone, '⚠️ This lead could not be found or is not assigned to your account.')
     return
