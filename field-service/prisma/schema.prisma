@@ -299,6 +299,7 @@ model Provider {
   walletLedgerEntries       WalletLedgerEntry[]
   paymentIntents            PaymentIntent[]
   promoAwards               ProviderPromoAward[]
+  redeemedVouchers          PromoVoucher[]
 
   @@index([active, verified])
   @@index([isTestUser])
@@ -1082,6 +1083,54 @@ model ProviderPromoAward {
   @@map("provider_promo_awards")
 }
 
+model VoucherBatch {
+  id           String         @id @default(cuid())
+  // Human-readable name for this print run, e.g. "Pilot Provider Flyer — May 2026"
+  name         String
+  // Short identifier used in duplicate-redemption checks, e.g. "PILOT_PROVIDER_FLYER"
+  campaignCode String
+  creditAmount Int            @default(1)
+  count        Int
+  expiresAt    DateTime?
+  createdById  String
+  createdBy    AdminUser      @relation(fields: [createdById], references: [id])
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  vouchers     PromoVoucher[]
+
+  @@index([campaignCode])
+  @@map("voucher_batches")
+}
+
+model PromoVoucher {
+  id                   String        @id @default(cuid())
+  // SHA-256 hash of the normalised (no dashes, uppercase) code.
+  // The raw code is NEVER stored here — only exposed once at CSV export time.
+  codeHash             String        @unique
+  status               VoucherStatus @default(ACTIVE)
+  creditAmount         Int           @default(1)
+  // Maximum times this code can be redeemed. Always 1 for the pilot.
+  maxRedemptions       Int           @default(1)
+  redemptionCount      Int           @default(0)
+  batchId              String
+  batch                VoucherBatch  @relation(fields: [batchId], references: [id])
+  // Set on redemption — used for audit only, not for auth
+  redeemedByProviderId String?
+  redeemedByMobile     String?
+  redeemedAt           DateTime?
+  expiresAt            DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  redeemedByProvider   Provider?     @relation(fields: [redeemedByProviderId], references: [id])
+
+  @@index([status])
+  @@index([batchId])
+  @@index([redeemedByProviderId])
+  @@map("promo_vouchers")
+}
+
 model ProviderAutoApproveSideEffectMarker {
   id            String                                @id @default(cuid())
   kind          ProviderAutoApproveSideEffectKind
@@ -1815,6 +1864,7 @@ enum WalletLedgerEntryType {
   WALLET_REACTIVATED
   PROMO_EXPIRY
   PAYMENT_REVERSAL
+  VOUCHER_REDEMPTION   // credits granted via printed voucher code redemption
 }
 
 enum WalletCreditType {
@@ -1833,6 +1883,13 @@ enum ProviderPromoAwardType {
 enum ProviderPromoAwardStatus {
   AWARDED
   REVOKED
+}
+
+enum VoucherStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  CANCELLED
 }
 
 enum ProviderAutoApproveSideEffectKind {
@@ -2016,9 +2073,10 @@ model AdminUser {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  invitedBy   AdminUser?  @relation("AdminInvitedBy", fields: [invitedById], references: [id])
-  invitees    AdminUser[] @relation("AdminInvitedBy")
-  auditEvents AdminAuditEvent[]
+  invitedBy       AdminUser?     @relation("AdminInvitedBy", fields: [invitedById], references: [id])
+  invitees        AdminUser[]    @relation("AdminInvitedBy")
+  auditEvents     AdminAuditEvent[]
+  voucherBatches  VoucherBatch[]
 
   @@map("admin_users")
 }
