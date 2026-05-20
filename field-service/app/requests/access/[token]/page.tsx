@@ -391,7 +391,14 @@ export default async function TicketAccessPage({
     view: resolvedSearchParams.view ?? null,
     intent: resolvedSearchParams.intent ?? null,
   })
-  const signInHref = `/sign-in?next=${encodeURIComponent(`/requests/access/${token}`)}`
+  const ticketQuery = new URLSearchParams()
+  if (resolvedSearchParams.view) ticketQuery.set('view', resolvedSearchParams.view)
+  if (resolvedSearchParams.intent) ticketQuery.set('intent', resolvedSearchParams.intent)
+  if (resolvedSearchParams.selection) ticketQuery.set('selection', resolvedSearchParams.selection)
+  if (resolvedSearchParams.provider) ticketQuery.set('provider', resolvedSearchParams.provider)
+  if (resolvedSearchParams.batch) ticketQuery.set('batch', resolvedSearchParams.batch)
+  const nextTicketPath = `/requests/access/${token}${ticketQuery.toString() ? `?${ticketQuery.toString()}` : ''}`
+  const signInHref = `/sign-in?next=${encodeURIComponent(nextTicketPath)}`
 
   console.info('[ticket-access] request status page opened', {
     traceId: ticketVm.traceId,
@@ -1199,7 +1206,7 @@ export default async function TicketAccessPage({
         </Card>
       )}
 
-      {!isReviewFirstFlow && (
+      {!isReviewFirstFlow && !isAuthenticated && (
         <Card>
           <CardContent className="space-y-3 px-4 py-4 text-sm">
             <p className="font-medium">Need the full account view?</p>

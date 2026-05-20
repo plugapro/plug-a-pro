@@ -110,6 +110,8 @@ describe('CLIENT-06: token request-submitted page', () => {
     expect(source).toContain('<BottomNav')
     expect(source).toContain("authState: isAuthenticated ? 'authenticated' : 'anonymous'")
     expect(source).toContain('const source = resolveRequestTicketSource')
+    expect(source).toContain('new URLSearchParams()')
+    expect(source).toContain("!isReviewFirstFlow && !isAuthenticated")
   })
 })
 
