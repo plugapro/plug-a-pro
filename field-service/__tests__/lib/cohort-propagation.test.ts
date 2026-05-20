@@ -97,6 +97,14 @@ function makeTx() {
       update: vi.fn(),
       upsert: vi.fn(),
     },
+    customerAddress: {
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({
+        id: 'cust-addr-1',
+        isDefault: true,
+      }),
+      update: vi.fn(),
+    },
     address: {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(),

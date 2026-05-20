@@ -261,4 +261,27 @@ describe('Pay@ YAPI payment request service', () => {
       }),
     ).rejects.toThrow('paymentLink')
   })
+
+  it('throws PayatApiError when RTP create fetch fails before response', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{}' })
+      .mockRejectedValueOnce(new TypeError('socket hang up'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
+    await expect(
+      createPayatPaymentRequest({
+        topupId: 'intent-fetch-throw',
+        amountCents: 10_000,
+        description: 'R100',
+        providerName: 'F',
+        providerPhone: '+27821234567',
+        providerEmail: 'f@f.com',
+      }),
+    ).rejects.toMatchObject({
+      name: 'PayatApiError',
+      stage: 'rtp_create_failed',
+    })
+  })
 })

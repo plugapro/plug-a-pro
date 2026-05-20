@@ -21,11 +21,14 @@ export class PayatTokenError extends Error {
   constructor(
     public readonly stage: 'fetch_failed' | 'invalid_response',
     public readonly status?: number,
+    detail?: string,
   ) {
     super(
-      stage === 'fetch_failed'
-        ? `Pay@ token fetch failed: HTTP ${status ?? '?'}`
-        : 'Pay@ token response did not include access_token and expires_in',
+      detail ?? (
+        stage === 'fetch_failed'
+          ? `Pay@ token fetch failed: HTTP ${status ?? '?'}`
+          : 'Pay@ token response did not include access_token and expires_in'
+      ),
     )
     this.name = 'PayatTokenError'
   }
@@ -53,16 +56,26 @@ async function fetchToken(): Promise<string> {
   const clientId = requirePayatEnv('PAYAT_CLIENT_ID')
   const clientSecret = requirePayatEnv('PAYAT_CLIENT_SECRET')
 
-  const response = await fetch(getTokenUrl(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
-    signal: AbortSignal.timeout(5_000),
-  })
+  let response: Response
+  try {
+    response = await fetch(getTokenUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+      signal: AbortSignal.timeout(5_000),
+    })
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : 'unknown_error'
+    throw new PayatTokenError(
+      'fetch_failed',
+      undefined,
+      `Pay@ token request failed before response (${errorName})`,
+    )
+  }
 
   if (!response.ok) {
     // Never log the response body — it may echo credentials or sensitive context.
@@ -75,7 +88,12 @@ async function fetchToken(): Promise<string> {
     throw new PayatTokenError('fetch_failed', response.status)
   }
 
-  const data = await response.json() as { access_token?: string; expires_in?: number }
+  let data: { access_token?: string; expires_in?: number }
+  try {
+    data = await response.json() as { access_token?: string; expires_in?: number }
+  } catch {
+    throw new PayatTokenError('invalid_response')
+  }
   if (!data.access_token || !Number.isFinite(data.expires_in)) {
     throw new PayatTokenError('invalid_response')
   }

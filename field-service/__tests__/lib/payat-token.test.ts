@@ -67,4 +67,30 @@ describe('Pay@ token service', () => {
     )
     expect(fetch).not.toHaveBeenCalled()
   })
+
+  it('throws PayatTokenError(fetch_failed) when fetch throws before an HTTP response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')))
+    const { getPayatToken } = await import('@/lib/payat/token')
+
+    await expect(getPayatToken()).rejects.toMatchObject({
+      name: 'PayatTokenError',
+      stage: 'fetch_failed',
+      status: undefined,
+    })
+  })
+
+  it('throws PayatTokenError(invalid_response) when token JSON is malformed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError('Unexpected token')
+      },
+    }))
+    const { getPayatToken } = await import('@/lib/payat/token')
+
+    await expect(getPayatToken()).rejects.toMatchObject({
+      name: 'PayatTokenError',
+      stage: 'invalid_response',
+    })
+  })
 })

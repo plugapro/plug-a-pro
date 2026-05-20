@@ -19,6 +19,9 @@ vi.mock('../../lib/db', () => ({
     provider: {
       findUnique: vi.fn(),
     },
+    providerWallet: {
+      upsert: vi.fn(),
+    },
     walletLedgerEntry: {
       findMany: vi.fn(),
     },
@@ -61,15 +64,23 @@ vi.mock('../../lib/payat', () => ({
     }
   },
   PayatTokenError: class PayatTokenError extends Error {
-    constructor() {
+    stage: 'fetch_failed' | 'invalid_response'
+    status?: number
+    constructor(stage: 'fetch_failed' | 'invalid_response' = 'fetch_failed', status?: number) {
       super('token failure')
       this.name = 'PayatTokenError'
+      this.stage = stage
+      this.status = status
     }
   },
   PayatApiError: class PayatApiError extends Error {
-    constructor() {
+    stage: 'rtp_create_failed' | 'rtp_response_invalid'
+    status?: number
+    constructor(stage: 'rtp_create_failed' | 'rtp_response_invalid' = 'rtp_create_failed', status?: number) {
       super('api failure')
       this.name = 'PayatApiError'
+      this.stage = stage
+      this.status = status
     }
   },
 }))
@@ -97,6 +108,7 @@ describe('provider credits server actions', () => {
       id: 'provider-1',
       phone: '+27821234567',
     })
+    ;(db.providerWallet.upsert as any).mockResolvedValue({ id: 'wallet-1' })
 
     return { db }
   }
@@ -282,6 +294,9 @@ describe('provider credits server actions', () => {
       const result = await createProviderPayatTopUpIntent(10_000)
 
       expect(result).toMatchObject({ ok: false, code: 'UNKNOWN' })
+      if (result.ok === false) {
+        expect(result.userMessage).toBe('We couldn’t create your Pay@ reference. Please try again.')
+      }
     })
   })
 

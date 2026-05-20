@@ -95,15 +95,25 @@ async function doRegisterMerchant(token: string, apiBase: string): Promise<void>
   const merchantIdentifier = resolveMerchantIdentifier()
 
   // generatecredentials is idempotent (409 = already registered).
-  const res = await fetch(`${apiBase}/integrator/ecommerce/generatecredentials`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ merchantIdentifier, merchantId }),
-    signal: AbortSignal.timeout(10_000),
-  })
+  let res: Response
+  try {
+    res = await fetch(`${apiBase}/integrator/ecommerce/generatecredentials`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ merchantIdentifier, merchantId }),
+      signal: AbortSignal.timeout(10_000),
+    })
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : 'unknown_error'
+    throw new PayatApiError(
+      'rtp_create_failed',
+      undefined,
+      `Pay@ merchant registration request failed before response (${errorName})`,
+    )
+  }
 
   if (!res.ok && res.status !== 409) {
     console.warn(`[payat] generatecredentials returned ${res.status} — proceeding anyway`)
@@ -155,40 +165,50 @@ async function sendPayatPaymentRequest(
 
   const { successReturnUrl, failureReturnUrl, cancelReturnUrl } = getReturnUrls()
 
-  const response = await fetch(
-    `${apiBase}/integrator/ecommerce/rtp/create/single/${merchantIdentifier}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+  let response: Response
+  try {
+    response = await fetch(
+      `${apiBase}/integrator/ecommerce/rtp/create/single/${merchantIdentifier}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientAccountNumber: generateClientAccountNumber(),
+          // Pay@ YAPI RTP create expects amounts in CENTS (confirmed via sandbox
+          // test receipts). The webhook normalisePayload converts differently
+          // because ITN amounts vary by gateway variant — do not align these.
+          amount: String(params.amountCents),
+          minimumAmount: String(params.amountCents),
+          maximumAmount: String(params.amountCents),
+          description: params.description,
+          clientReferenceNumber: params.topupId,
+          merchantDisplayName: 'Plug A Pro',
+          notificationNumber: params.providerPhone,
+          customerNameSurname: params.providerName,
+          customerMobileNumber: params.providerPhone,
+          customerEmail: params.providerEmail,
+          daysValid: '3',
+          merchantEcommerceStoreName: 'PLUGAPRO',
+          successReturnUrl,
+          failureReturnUrl,
+          cancelReturnUrl,
+          lineItems: [{ description: params.description, amount: String(params.amountCents) }],
+          multiPremium: 1,
+        }),
+        signal: AbortSignal.timeout(10_000),
       },
-      body: JSON.stringify({
-        clientAccountNumber: generateClientAccountNumber(),
-        // Pay@ YAPI RTP create expects amounts in CENTS (confirmed via sandbox
-        // test receipts). The webhook normalisePayload converts differently
-        // because ITN amounts vary by gateway variant — do not align these.
-        amount: String(params.amountCents),
-        minimumAmount: String(params.amountCents),
-        maximumAmount: String(params.amountCents),
-        description: params.description,
-        clientReferenceNumber: params.topupId,
-        merchantDisplayName: 'Plug A Pro',
-        notificationNumber: params.providerPhone,
-        customerNameSurname: params.providerName,
-        customerMobileNumber: params.providerPhone,
-        customerEmail: params.providerEmail,
-        daysValid: '3',
-        merchantEcommerceStoreName: 'PLUGAPRO',
-        successReturnUrl,
-        failureReturnUrl,
-        cancelReturnUrl,
-        lineItems: [{ description: params.description, amount: String(params.amountCents) }],
-        multiPremium: 1,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    },
-  )
+    )
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : 'unknown_error'
+    throw new PayatApiError(
+      'rtp_create_failed',
+      undefined,
+      `Pay@ RTP creation request failed before response (${errorName})`,
+    )
+  }
 
   if (response.status === 401 && retryOnUnauthorized) {
     invalidatePayatToken()
@@ -206,10 +226,14 @@ async function sendPayatPaymentRequest(
     throw new PayatApiError('rtp_create_failed', response.status)
   }
 
-  return mapPayatResponse(
-    (await response.json()) as Record<string, unknown>,
-    params.topupId,
-  )
+  let responseData: Record<string, unknown>
+  try {
+    responseData = (await response.json()) as Record<string, unknown>
+  } catch {
+    throw new PayatApiError('rtp_response_invalid')
+  }
+
+  return mapPayatResponse(responseData, params.topupId)
 }
 
 export async function createPayatPaymentRequest(

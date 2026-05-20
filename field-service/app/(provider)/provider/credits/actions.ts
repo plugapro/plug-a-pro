@@ -28,6 +28,21 @@ const ACTIVE_PAYAT_STATUSES = ['PENDING_PAYMENT', 'ITN_RECEIVED'] as const
 const ESTIMATED_CREDITS_PER_LEAD_UNLOCK = 1
 const LEDGER_LIMIT = 20
 
+function resolvePayatEnvironment(): 'sandbox' | 'live' | 'unknown' {
+  const explicit = process.env.PAYAT_ENV?.trim().toLowerCase()
+  if (explicit === 'sandbox' || explicit === 'test') return 'sandbox'
+  if (explicit === 'live' || explicit === 'production') return 'live'
+
+  const apiBase = process.env.PAYAT_API_BASE?.trim().toLowerCase()
+  if (apiBase?.includes('sandbox')) return 'sandbox'
+  if (apiBase?.startsWith('https://')) return 'live'
+  return 'unknown'
+}
+
+function payatPackageIdForAmount(amountCents: number) {
+  return `payat_${amountCents}`
+}
+
 type ProviderWalletActor = {
   id: string
   phone: string | null
@@ -627,11 +642,22 @@ export async function createProviderPayatTopUpIntent(
   amountCents: number,
 ): Promise<ProviderPayatTopUpResponse> {
   const startedAt = Date.now()
+  const payatEnvironment = resolvePayatEnvironment()
+  const packageId = payatPackageIdForAmount(amountCents)
   let providerId: string | null = null
+  let walletId: string | null = null
   let intentId: string | undefined
+  let internalReference: string | undefined
   try {
     const provider = await getAuthenticatedProvider()
     providerId = provider.id
+    const wallet = await db.providerWallet.upsert({
+      where: { providerId: provider.id },
+      update: {},
+      create: { providerId: provider.id },
+      select: { id: true },
+    })
+    walletId = wallet.id
     const activeIntentCount = await db.paymentIntent.count({
       where: {
         providerId: provider.id,
@@ -642,8 +668,12 @@ export async function createProviderPayatTopUpIntent(
     if (activeIntentCount >= 3) {
       console.warn('[payat] checkout_blocked: too_many_pending', {
         providerId: provider.id,
+        walletId,
+        packageId,
         amountCents,
         activeIntentCount,
+        status: 'blocked',
+        environment: payatEnvironment,
         elapsedMs: Date.now() - startedAt,
       })
       return {
@@ -658,6 +688,7 @@ export async function createProviderPayatTopUpIntent(
       providerCellphone: provider.phone,
     })
     intentId = result.intent.id
+    internalReference = result.intent.paymentReference
     await db.paymentIntent.update({
       where: { id: result.intent.id },
       data: {
@@ -668,9 +699,15 @@ export async function createProviderPayatTopUpIntent(
     revalidatePath('/provider/credits')
     console.info('[payat] checkout_created', {
       providerId: provider.id,
+      walletId,
+      packageId,
       intentId,
+      internalReference,
       amountCents,
       creditsToIssue: result.intent.creditsToIssue,
+      payatReference: result.payat.reference,
+      status: 'pending_payment',
+      environment: payatEnvironment,
       elapsedMs: Date.now() - startedAt,
     })
     return {
@@ -687,9 +724,13 @@ export async function createProviderPayatTopUpIntent(
     if (err instanceof ProviderCreditPaymentIntentError) {
       console.warn('[payat] checkout_blocked: payment_intent_error', {
         providerId,
+        walletId,
+        packageId,
         amountCents,
         code: err.code,
         message: err.message,
+        status: 'blocked',
+        environment: payatEnvironment,
         elapsedMs: Date.now() - startedAt,
       })
       switch (err.code) {
@@ -719,43 +760,70 @@ export async function createProviderPayatTopUpIntent(
           }
       }
     }
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[payat] checkout_failed', {
+    const baseFailureLog = {
       providerId,
+      walletId,
+      packageId,
       amountCents,
       intentId,
+      internalReference,
+      status: 'failed',
+      environment: payatEnvironment,
       elapsedMs: Date.now() - startedAt,
-      error: message,
-    })
-    // Match on typed error classes instead of message strings - Pay@ may
-    // reword the underlying HTTP error copy without notice. PayatTokenError
-    // and PayatApiError carry a `stage` discriminator + HTTP status so future
-    // observability work can split metrics per failure mode.
+    }
     if (err instanceof PayatConfigError) {
+      console.error('[payat] checkout_failed: config', {
+        ...baseFailureLog,
+        failureReason: err.name,
+        code: 'PAYAT_CONFIG_MISSING',
+        detail: err.message,
+      })
       return {
         ok: false,
         code: 'PAYAT_CONFIG_MISSING' as const,
-        userMessage: 'Pay@ is temporarily unavailable. Please use Payfast or Manual EFT, or contact support.',
+        userMessage: 'Pay@ is temporarily unavailable right now. Please try again shortly.',
       }
     }
     if (err instanceof PayatTokenError) {
+      console.error('[payat] checkout_failed: token', {
+        ...baseFailureLog,
+        failureReason: err.name,
+        code: 'PAYAT_TOKEN_FAILED',
+        stage: err.stage,
+        httpStatus: err.status ?? null,
+        detail: err.message,
+      })
       return {
         ok: false,
         code: 'PAYAT_TOKEN_FAILED' as const,
-        userMessage: 'Could not authenticate with Pay@. Please try again in a minute, or use Payfast.',
+        userMessage: 'We could not reach Pay@ right now. Please try again in a minute.',
       }
     }
     if (err instanceof PayatApiError) {
+      console.error('[payat] checkout_failed: api', {
+        ...baseFailureLog,
+        failureReason: err.name,
+        code: 'PAYAT_API_FAILED',
+        stage: err.stage,
+        httpStatus: err.status ?? null,
+        detail: err.message,
+      })
       return {
         ok: false,
         code: 'PAYAT_API_FAILED' as const,
-        userMessage: 'Pay@ rejected the request. Please try Payfast or Manual EFT, or contact support.',
+        userMessage: 'We couldn’t create your Pay@ reference. Please try again.',
       }
     }
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[payat] checkout_failed: unknown', {
+      ...baseFailureLog,
+      failureReason: 'UNKNOWN',
+      error: message,
+    })
     return {
       ok: false,
       code: 'UNKNOWN' as const,
-      userMessage: 'Could not start Pay@ checkout. Please try again or use Payfast.',
+      userMessage: 'We couldn’t create your Pay@ reference. Please try again.',
     }
   }
 }
