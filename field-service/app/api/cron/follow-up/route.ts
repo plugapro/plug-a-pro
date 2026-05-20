@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasSuccessfulMessageForBooking } from '@/lib/message-events'
 import { sendFollowUp } from '@/lib/whatsapp'
+import { getJobRequestAccessUrl } from '@/lib/job-request-access'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -14,6 +15,11 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
+  const cronStart = Date.now()
+  const cronName = 'follow-up'
+  console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
+
+  try {
   const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
   // Widened from (28h, 20h) to (48h, 12h) to capture bookings completed later in the
@@ -21,7 +27,7 @@ export async function GET(request: Request) {
   const windowStart = new Date(now.getTime() - 48 * 60 * 60 * 1000)
   const windowEnd   = new Date(now.getTime() - 12 * 60 * 60 * 1000)
   // TODO: add a 72-96h second reminder pass once a `follow_up_reminder` WhatsApp
-  // template has been approved by Meta — the current `follow_up` template cannot be
+  // template has been approved by Meta - the current `follow_up` template cannot be
   // reused (blocked by hasSuccessfulMessageForBooking dedup), and freeform messages
   // outside the 24h session window will fail to deliver.
 
@@ -63,11 +69,12 @@ export async function GET(request: Request) {
         continue
       }
 
+      const ratingUrl = await getJobRequestAccessUrl(booking.match.jobRequest.id).catch(() => null) ?? appUrl
       await sendFollowUp({
         bookingId:     booking.id,
         customerName:  customer.name,
         customerPhone: customer.phone,
-        ratingUrl:     `${appUrl}/bookings/${booking.id}/rate`,
+        ratingUrl,
       })
 
       sent++
@@ -78,5 +85,12 @@ export async function GET(request: Request) {
   }
 
   console.log(`[cron/follow-up:${reqId}]`, { sent })
-  return NextResponse.json({ sent })
+  const duration = Date.now() - cronStart
+  console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+  return NextResponse.json({ sent, durationMs: duration })
+  } catch (err) {
+    const duration = Date.now() - cronStart
+    console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
+    throw err
+  }
 }

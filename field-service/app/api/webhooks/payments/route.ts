@@ -10,7 +10,9 @@ import {
   handlePaymentFailed,
 } from '@/lib/payments'
 import { sendBookingConfirmation } from '@/lib/whatsapp'
+import { getJobRequestAccessUrl } from '@/lib/job-request-access'
 import { db } from '@/lib/db'
+import { getCorrelationId } from '@/lib/correlation'
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -21,6 +23,8 @@ export async function POST(request: NextRequest) {
     ''
 
   const reqId = crypto.randomUUID().slice(0, 8)
+  const correlationId = await getCorrelationId()
+  console.log(JSON.stringify({ timestamp: new Date().toISOString(), correlationId, event: 'webhook_received', path: request.url }))
 
   // Verify webhook authenticity
   if (!verifyWebhookSignature(rawBody, signature)) {
@@ -39,7 +43,7 @@ export async function POST(request: NextRequest) {
   try {
     if (event.type === 'payment.success') {
       // Idempotency guard: check payment status BEFORE applying the handler.
-      // If already PAID, the confirmation was sent on a prior delivery — skip.
+      // If already PAID, the confirmation was sent on a prior delivery - skip.
       const existingPayment = await db.payment.findUnique({
         where: { bookingId: event.bookingId },
         select: { status: true },
@@ -48,7 +52,7 @@ export async function POST(request: NextRequest) {
       // Early-return BEFORE handlePaymentSuccess to prevent any duplicate DB writes.
       if (existingPayment?.status === 'PAID') {
         console.info(
-          `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} — already processed`,
+          `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
         )
         return NextResponse.json({ status: 'ok' })
       }
@@ -71,13 +75,14 @@ export async function POST(request: NextRequest) {
           month: 'long',
         })
 
+        const ticketUrl = await getJobRequestAccessUrl(booking.match.jobRequest.id).catch(() => null)
         await sendBookingConfirmation({
           bookingId: booking.id,
           customerName: customer.name,
           customerPhone: customer.phone,
           serviceName: booking.match.jobRequest.category,
           scheduledWindow: `${dateLabel}, ${window}`,
-          bookingUrl: `${process.env.NEXT_PUBLIC_APP_URL}/bookings/${booking.id}`,
+          bookingUrl: ticketUrl ?? (process.env.NEXT_PUBLIC_APP_URL ?? ''),
         })
       }
     } else if (event.type === 'payment.failed') {

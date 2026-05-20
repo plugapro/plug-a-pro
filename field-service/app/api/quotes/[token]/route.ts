@@ -1,5 +1,5 @@
-// GET  /api/quotes/[token]  — fetch quote details for the approval page
-// PATCH /api/quotes/[token] — body: { action: 'approve' | 'decline' }
+// GET  /api/quotes/[token]  - fetch quote details for the approval page
+// PATCH /api/quotes/[token] - body: { action: 'approve' | 'decline' }
 //   approve: creates Booking + Job in a transaction, notifies both parties
 //   decline: marks quote declined, notifies provider
 
@@ -101,6 +101,7 @@ async function notifyAfterDecision(result: {
   jobRequestId?: string
 }) {
   const { sendText, sendCtaUrl } = await import('@/lib/whatsapp-interactive')
+  const { ctaLabelFor } = await import('@/lib/whatsapp-copy')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const providerPhone = result.provider.phone
   const customerPhone = result.customer.phone
@@ -136,14 +137,14 @@ async function notifyAfterDecision(result: {
           })
         }
       } catch {
-        // Non-fatal — fall through to generic URL
+        // Non-fatal - fall through to generic URL
       }
     }
 
     await sendCtaUrl(
       providerPhone,
       `✅ *Quote Approved!*\n\n${category} job confirmed for ${dateStr}.\n\nOpen the job to view full details and update your status:`,
-      'View Job',
+      ctaLabelFor('view_job'),
       jobUrl ?? `${appUrl}/provider`,
       {
         footer: jobUrl
@@ -151,14 +152,20 @@ async function notifyAfterDecision(result: {
           : 'Navigate and update job status from the app',
       }
     ).catch(() => {})
-    const { sendBookingConfirmation } = await import('@/lib/whatsapp')
+    const [{ sendBookingConfirmation }, { getJobRequestAccessUrl }] = await Promise.all([
+      import('@/lib/whatsapp'),
+      import('@/lib/job-request-access'),
+    ])
+    const ticketUrl = result.jobRequestId
+      ? await getJobRequestAccessUrl(result.jobRequestId).catch(() => null)
+      : null
     await sendBookingConfirmation({
       bookingId: result.bookingId,
       customerName: result.customer.name,
       customerPhone,
       serviceName: category,
       scheduledWindow: dateStr,
-      bookingUrl: `${appUrl}/bookings/${result.bookingId}`,
+      bookingUrl: ticketUrl ?? appUrl,
     }).catch(() => {})
   } else {
     await sendText(

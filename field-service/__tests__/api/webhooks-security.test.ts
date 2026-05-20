@@ -21,6 +21,12 @@ vi.mock('@/lib/db', () => ({
     },
     messageEvent: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      create: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+    },
+    inboundWhatsAppMessage: {
+      create: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
     },
   },
 }))
@@ -45,6 +51,13 @@ vi.mock('@/lib/whatsapp', async (importOriginal) => {
     sendBookingConfirmation: vi.fn().mockResolvedValue(undefined),
   }
 })
+
+vi.mock('@/lib/job-request-access', () => ({
+  getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/requests/access/test-token'),
+  ensureJobRequestAccessToken: vi.fn().mockResolvedValue({ token: 'test-token', expiresAt: new Date(Date.now() + 86400000) }),
+  resolveJobRequestAccessToken: vi.fn(),
+  resolveJobRequestAccessScope: vi.fn(),
+}))
 
 vi.mock('@/lib/whatsapp-bot', () => ({
   processInboundMessage: vi.fn().mockResolvedValue(undefined),
@@ -156,6 +169,61 @@ describe('POST /api/webhooks/whatsapp — signature required', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
   })
+
+  it('skips processing duplicate inbound WAMID and only increments duplicate counter', async () => {
+    const { db } = await import('@/lib/db')
+    const { processInboundMessage } = await import('@/lib/whatsapp-bot')
+    const duplicateError = Object.assign(new Error('P2002 unique key violation'), { code: 'P2002' })
+    ;(db.inboundWhatsAppMessage.create as any).mockRejectedValueOnce(duplicateError)
+
+    const { POST } = await import('../../app/api/webhooks/whatsapp/route')
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{
+        id: 'entry-id',
+        changes: [{
+          value: {
+            messaging_product: 'whatsapp',
+            metadata: { phone_number_id: 'meta-phone' },
+            messages: [{
+              from: '+27821234567',
+              id: 'wamid.dup-1',
+              type: 'text',
+              text: { body: 'ops status' },
+              timestamp: String(Date.now()),
+            }],
+          },
+          field: 'messages',
+        }],
+      }],
+    }
+    const raw = JSON.stringify(payload)
+    const sig = makeMetaSig(raw, 'test-secret')
+
+    const req = new NextRequest('http://localhost/api/webhooks/whatsapp', {
+      method: 'POST',
+      body: raw,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-hub-signature-256': sig,
+      },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(db.inboundWhatsAppMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { externalId: 'wamid.dup-1' },
+        data: expect.objectContaining({
+          duplicateCount: { increment: 1 },
+        }),
+      }),
+    )
+    expect(processInboundMessage).not.toHaveBeenCalled()
+  })
 })
 
 // ─── Payments webhook — idempotency guard ────────────────────────────────────
@@ -175,6 +243,7 @@ describe('POST /api/webhooks/payments — idempotency', () => {
       scheduledWindow: '09:00–12:00',
       match: {
         jobRequest: {
+          id: 'jr-001',
           category: 'Plumbing',
           customer: { name: 'Alice', phone: '+27821234567' },
         },
@@ -193,6 +262,11 @@ describe('POST /api/webhooks/payments — idempotency', () => {
 
     const { sendBookingConfirmation } = await import('@/lib/whatsapp')
     expect(sendBookingConfirmation).toHaveBeenCalledOnce()
+    expect(sendBookingConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingUrl: expect.stringContaining('/requests/access/'),
+      }),
+    )
   })
 
   it('skips WhatsApp confirmation on duplicate delivery (booking already SCHEDULED)', async () => {
@@ -236,3 +310,8 @@ describe('POST /api/webhooks/payments — idempotency', () => {
     expect(JSON.stringify(body)).not.toContain('database timeout')
   })
 })
+
+// Note: WhatsApp sender → provider mapping tests live in
+// __tests__/lib/whatsapp-identity.test.ts (sender mismatch and unknown-sender
+// cases are covered by the 'returns unknown for a new number' and
+// 'returns provider for an approved active provider number' tests there).
