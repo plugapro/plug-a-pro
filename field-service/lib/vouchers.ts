@@ -29,7 +29,7 @@ export function generateVoucherCode(): string {
  * Call before hashing and before any display comparison.
  */
 export function normalizeVoucherCode(code: string): string {
-  return code.trim().toUpperCase().replace(/-/g, '')
+  return code.replace(/\s+/g, '').toUpperCase().replace(/-/g, '')
 }
 
 /**

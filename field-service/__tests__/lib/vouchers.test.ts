@@ -38,6 +38,7 @@ describe('voucherCodeToHash', () => {
   it('is deterministic — same input produces same hash', () => {
     expect(voucherCodeToHash('PAP-7KQ9-M2XD')).toBe(voucherCodeToHash('pap-7kq9-m2xd'))
     expect(voucherCodeToHash('PAP-7KQ9-M2XD')).toBe(voucherCodeToHash(' PAP-7KQ9-M2XD '))
+    expect(voucherCodeToHash('PAP-7KQ9-M2XD')).toBe(voucherCodeToHash('PAP7KQ9M2XD'))
   })
 
   it('different codes produce different hashes', () => {
