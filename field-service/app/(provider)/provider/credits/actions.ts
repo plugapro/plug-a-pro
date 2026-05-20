@@ -151,7 +151,13 @@ async function getAuthenticatedProvider(): Promise<ProviderWalletActor> {
     throw new Error('Provider account not found.')
   }
 
-  return provider
+  // Some legacy provider records still have null phone values while the current
+  // auth session includes a normalized E.164 phone. Prefer the provider row,
+  // then fall back to the authenticated session to keep Pay@ creation reliable.
+  return {
+    id: provider.id,
+    phone: provider.phone ?? session.phone ?? null,
+  }
 }
 
 function ledgerLabel(entryType: WalletLedgerEntryType) {

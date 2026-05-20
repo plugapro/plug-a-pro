@@ -8,6 +8,7 @@ import {
   createPayfastTopUpIntent,
   type PayfastTopUpMethod,
 } from '@/lib/provider-credit-payment-intents'
+import { PayatApiError, PayatConfigError, PayatTokenError } from '@/lib/payat'
 import { verifyRequestOrigin } from '@/lib/csrf'
 import { apiError } from '@/lib/api-response'
 
@@ -109,6 +110,40 @@ export async function POST(request: NextRequest) {
     if (error instanceof ProviderCreditPaymentIntentError) {
       const status = error.code === 'PROVIDER_NOT_FOUND' ? 403 : 400
       return NextResponse.json({ error: error.message, code: error.code }, { status })
+    }
+
+    if (error instanceof PayatConfigError) {
+      console.error('[provider/wallet/top-up-intents] payat_config_missing', {
+        detail: error.message,
+      })
+      return NextResponse.json(
+        { error: 'Pay@ is temporarily unavailable. Please try again shortly.', code: 'PAYAT_CONFIG_MISSING' },
+        { status: 503 },
+      )
+    }
+
+    if (error instanceof PayatTokenError) {
+      console.error('[provider/wallet/top-up-intents] payat_token_failed', {
+        stage: error.stage,
+        status: error.status ?? null,
+        detail: error.message,
+      })
+      return NextResponse.json(
+        { error: 'Could not reach Pay@ authentication right now. Please retry shortly.', code: 'PAYAT_TOKEN_FAILED' },
+        { status: 502 },
+      )
+    }
+
+    if (error instanceof PayatApiError) {
+      console.error('[provider/wallet/top-up-intents] payat_api_failed', {
+        stage: error.stage,
+        status: error.status ?? null,
+        detail: error.message,
+      })
+      return NextResponse.json(
+        { error: 'Could not create your Pay@ payment link right now. Please retry.', code: 'PAYAT_API_FAILED' },
+        { status: 502 },
+      )
     }
 
     console.error('[provider/wallet/top-up-intents] Failed to create payment intent:', error)

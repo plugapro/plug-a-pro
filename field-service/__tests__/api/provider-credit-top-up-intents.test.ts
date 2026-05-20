@@ -7,6 +7,9 @@ const {
   mockCreateManualEftTopUpIntent,
   mockCreatePayatTopUpIntent,
   mockCreatePayfastTopUpIntent,
+  PayatConfigErrorMock,
+  PayatTokenErrorMock,
+  PayatApiErrorMock,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockDb: {
@@ -17,6 +20,32 @@ const {
   mockCreateManualEftTopUpIntent: vi.fn(),
   mockCreatePayatTopUpIntent: vi.fn(),
   mockCreatePayfastTopUpIntent: vi.fn(),
+  PayatConfigErrorMock: class PayatConfigError extends Error {
+    constructor(envVarName: string) {
+      super(`${envVarName} must be set`)
+      this.name = 'PayatConfigError'
+    }
+  },
+  PayatTokenErrorMock: class PayatTokenError extends Error {
+    stage: 'fetch_failed' | 'invalid_response'
+    status?: number
+    constructor(stage: 'fetch_failed' | 'invalid_response', status?: number) {
+      super('token failed')
+      this.name = 'PayatTokenError'
+      this.stage = stage
+      this.status = status
+    }
+  },
+  PayatApiErrorMock: class PayatApiError extends Error {
+    stage: 'rtp_create_failed' | 'rtp_response_invalid'
+    status?: number
+    constructor(stage: 'rtp_create_failed' | 'rtp_response_invalid', status?: number) {
+      super('api failed')
+      this.name = 'PayatApiError'
+      this.stage = stage
+      this.status = status
+    }
+  },
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
@@ -31,6 +60,11 @@ vi.mock('@/lib/provider-credit-payment-intents', () => ({
   createManualEftTopUpIntent: mockCreateManualEftTopUpIntent,
   createPayatTopUpIntent: mockCreatePayatTopUpIntent,
   createPayfastTopUpIntent: mockCreatePayfastTopUpIntent,
+}))
+vi.mock('@/lib/payat', () => ({
+  PayatConfigError: PayatConfigErrorMock,
+  PayatTokenError: PayatTokenErrorMock,
+  PayatApiError: PayatApiErrorMock,
 }))
 
 describe('POST /api/provider/wallet/top-up-intents', () => {
@@ -179,5 +213,56 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     expect(mockDb.provider.findUnique).not.toHaveBeenCalled()
     expect(mockCreateManualEftTopUpIntent).not.toHaveBeenCalled()
     expect(mockCreatePayatTopUpIntent).not.toHaveBeenCalled()
+  })
+
+  it('maps Pay@ config failures to a deterministic 503 response', async () => {
+    mockCreatePayatTopUpIntent.mockRejectedValue(new PayatConfigErrorMock('PAYAT_MERCHANT_ID'))
+
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000 }),
+      }),
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'PAYAT_CONFIG_MISSING',
+    })
+  })
+
+  it('maps Pay@ token failures to 502 with a stable error code', async () => {
+    mockCreatePayatTopUpIntent.mockRejectedValue(new PayatTokenErrorMock('fetch_failed', 401))
+
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000 }),
+      }),
+    )
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'PAYAT_TOKEN_FAILED',
+    })
+  })
+
+  it('maps Pay@ RTP API failures to 502 with a stable error code', async () => {
+    mockCreatePayatTopUpIntent.mockRejectedValue(new PayatApiErrorMock('rtp_create_failed', 422))
+
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000 }),
+      }),
+    )
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'PAYAT_API_FAILED',
+    })
   })
 })

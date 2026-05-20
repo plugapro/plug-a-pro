@@ -226,6 +226,39 @@ describe('provider credits server actions', () => {
     })
   })
 
+  it('falls back to session phone when provider profile phone is null for Pay@ top-ups', async () => {
+    const { db } = await arrangeProvider()
+    ;(db.provider.findUnique as any).mockResolvedValue({
+      id: 'provider-1',
+      phone: null,
+    })
+    ;(db.paymentIntent.count as any).mockResolvedValue(0)
+    const { createPayatTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
+    ;(createPayatTopUpIntent as any).mockResolvedValue({
+      intent: {
+        id: 'intent-payat-1',
+        amountCents: 10_000,
+        creditsToIssue: 2,
+        paymentReference: 'PAT-ABCDEF',
+        metadata: {},
+      },
+      payat: {
+        reference: 'intent-payat-1',
+        paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
+      },
+    })
+
+    const { createProviderPayatTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
+    const result = await createProviderPayatTopUpIntent(10_000)
+
+    expect(result).toMatchObject({ ok: true })
+    expect(createPayatTopUpIntent).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      providerCellphone: '+27821234567',
+    })
+  })
+
   describe('createProviderPayatTopUpIntent error classification', () => {
     it('returns TOO_MANY_PENDING when provider already has 3 pending intents', async () => {
       const { db } = await arrangeProvider()
