@@ -52,7 +52,7 @@ export async function createDraftRequest(input: ClientDraftInput): Promise<{ id:
     city: input.address?.city ?? 'Unknown',
     province: input.address?.province ?? 'Gauteng',
     postalCode: input.address?.postalCode ?? null,
-    locationNodeId: 'unknown',
+    locationNodeId: null,
     source: 'pwa',
     urgency: input.schedule ?? null,
     providerPreference: null,

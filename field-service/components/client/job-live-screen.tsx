@@ -15,7 +15,7 @@ export function JobLiveScreen({ jobId, initialStatus }: { jobId: string; initial
   )
 
   useEffect(() => {
-    const shouldPoll = status.status === 'EN_ROUTE' || status.status === 'STARTED'
+    const shouldPoll = status.status === 'EN_ROUTE' || status.status === 'STARTED' || status.status === 'AWAITING_APPROVAL'
     if (!shouldPoll) return
     const timer = setInterval(async () => {
       const res = await fetch(`/api/client/jobs/${jobId}/status`, { cache: 'no-store' })

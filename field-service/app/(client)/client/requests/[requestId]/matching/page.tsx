@@ -11,6 +11,6 @@ export default async function RequestMatchingPage({ params }: { params: Promise<
   if (request.status === 'SHORTLIST_READY') redirect(`/client/requests/${request.id}/shortlist`)
   if (request.status === 'PROVIDER_CONFIRMATION_PENDING') redirect(`/client/requests/${request.id}/selected`)
   if (request.match?.quotes.length) redirect(`/client/requests/${request.id}`)
-  return <MatchingScreen />
+  return <MatchingScreen requestId={request.id} />
 }
 

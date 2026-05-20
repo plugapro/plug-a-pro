@@ -1,4 +1,27 @@
-export function MatchingScreen() {
+'use client'
+
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export function MatchingScreen({ requestId }: { requestId: string }) {
+  const router = useRouter()
+
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      const res = await fetch(`/api/client/requests/${requestId}/status`, { cache: 'no-store' })
+      if (!res.ok) return
+      const { status } = (await res.json()) as { status: string }
+      if (status === 'SHORTLIST_READY') {
+        router.replace(`/client/requests/${requestId}/shortlist`)
+      } else if (status === 'PROVIDER_CONFIRMATION_PENDING') {
+        router.replace(`/client/requests/${requestId}/selected`)
+      } else if (status === 'CANCELLED' || status === 'EXPIRED') {
+        router.replace('/client')
+      }
+    }, 30000)
+    return () => clearInterval(timer)
+  }, [requestId, router])
+
   return (
     <div className="mx-auto max-w-md px-5 py-10 text-center [animation:pap-fade-in_.2s_ease-out_both]">
       <div className="mx-auto grid h-44 w-44 place-items-center">
