@@ -118,6 +118,8 @@ export type FlowStep =
   | 'pj_topup_select_amount'   // package list: R100 / R200 / R500
   | 'pj_topup_eft_created'    // legacy — EFT details delivered (fallback only)
   | 'pj_topup_payat_created'  // Pay@ link sent, awaiting retailer payment
+  | 'pj_redeem_voucher'               // prompt provider to enter voucher code
+  | 'pj_redeem_voucher_awaiting_code' // capture the typed voucher code
   // Provider post-accept location prompt
   | 'post_accept_location_prompt'
   // Terminal

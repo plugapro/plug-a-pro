@@ -180,6 +180,22 @@ export const PROVIDER_WHATSAPP_COMMANDS: ProviderWhatsappCommand[] = [
     step: 'reg_start',
     state: 'application_capture',
   },
+  {
+    command: 'redeem_voucher',
+    aliases: [
+      'redeem',
+      'voucher',
+      'redeem voucher',
+      'claim voucher',
+      'my voucher',
+      'enter voucher',
+      'voucher code',
+    ],
+    flow: 'provider_journey' as FlowName,
+    step: 'pj_redeem_voucher' as FlowStep,
+    replyId: 'provider_redeem_voucher',
+    state: 'approved_idle' as ProviderWhatsappState,
+  },
 ]
 
 function normalizeProviderCommandText(text: string) {
