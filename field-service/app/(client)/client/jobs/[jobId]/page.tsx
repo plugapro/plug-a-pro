@@ -9,9 +9,10 @@ export default async function ClientJobPage({ params }: { params: Promise<{ jobI
   const { jobId } = await params
   const job = await getJobForClient(jobId, auth.customer.id)
   if (!job) redirect('/client')
-  if (job.status === 'EN_ROUTE' || job.status === 'STARTED') {
+  if (job.status === 'EN_ROUTE' || job.status === 'ARRIVED' || job.status === 'STARTED' || job.status === 'AWAITING_APPROVAL') {
     redirect(`/client/jobs/${job.id}/status`)
   }
+  if (job.status === 'FAILED' || job.status === 'CANCELLED') redirect('/client')
 
   if (job.status === 'COMPLETED') {
     return (

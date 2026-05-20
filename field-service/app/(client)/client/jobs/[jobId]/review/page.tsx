@@ -9,5 +9,6 @@ export default async function ClientJobReviewPage({ params }: { params: Promise<
   const { jobId } = await params
   const job = await getJobForClient(jobId, auth.customer.id)
   if (!job) redirect('/client')
+  if (job.status !== 'COMPLETED') redirect(`/client/jobs/${job.id}`)
   return <JobReviewScreen jobId={jobId} />
 }

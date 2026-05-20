@@ -380,6 +380,26 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('keeps /login alias public on admin domain', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/login?next=%2Fadmin'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps /signup alias public on admin domain', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/signup'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
   it('allows unauthenticated access to /r/* short handoff links', async () => {
     const { proxy } = await import('../proxy')
 

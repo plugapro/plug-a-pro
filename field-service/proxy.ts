@@ -25,7 +25,10 @@ import { checkWorkerPortalAccess, logWorkerPortalDecision } from '@/lib/worker-p
 const PUBLIC_PATHS = [
   '/',
   '/sign-in',              // customer phone OTP entry
+  '/login',                // customer auth alias → server-redirects to /sign-in
   '/verify',               // customer OTP verification + identity link
+  '/sign-up',              // customer sign-up route
+  '/signup',               // customer sign-up alias → server-redirects to /sign-up
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
   '/provider/terms',       // provider credit rules are linked before login/application
@@ -77,6 +80,9 @@ function toAdminInternalPath(pathname: string): string {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/admin') ||
     pathname.startsWith('/sign-in') ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/sign-up') ||
+    pathname.startsWith('/signup') ||
     pathname.startsWith('/verify') ||
     pathname.startsWith('/provider-')
   ) return pathname

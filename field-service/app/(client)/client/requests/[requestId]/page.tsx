@@ -16,6 +16,11 @@ export default async function ClientRequestPage({ params }: { params: Promise<{ 
   if (request.status === 'MATCHING' || request.status === 'OPEN' || request.status === 'PENDING_VALIDATION') {
     redirect(`/client/requests/${request.id}/matching`)
   }
+  if (request.status === 'MATCHED') {
+    const jobId = request.match?.booking?.job?.id
+    if (jobId) redirect(`/client/jobs/${jobId}`)
+  }
+
   const quote = request.match?.quotes[0]
   if (!quote) redirect('/client')
   return (

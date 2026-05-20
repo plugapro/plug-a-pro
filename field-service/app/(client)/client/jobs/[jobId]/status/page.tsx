@@ -9,6 +9,9 @@ export default async function ClientJobStatusPage({ params }: { params: Promise<
   const { jobId } = await params
   const job = await getJobForClient(jobId, auth.customer.id)
   if (!job) redirect('/client')
+  if (job.status === 'COMPLETED') redirect(`/client/jobs/${job.id}`)
+  if (job.status === 'FAILED' || job.status === 'CANCELLED') redirect('/client')
+
   return (
     <JobLiveScreen
       jobId={job.id}
