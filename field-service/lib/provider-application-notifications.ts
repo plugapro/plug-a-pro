@@ -38,23 +38,24 @@ export type ProviderApplicationApprovalNotificationResult =
 
 export function buildProviderApplicationApprovedMessage(
   name: string,
-  credits: ProviderApprovalCreditSummary = {
-    starterPromoCreditsAwarded: 0,
-    paidCredits: 0,
-    promoCredits: 0,
-  },
+  // _credits kept for call-site compatibility but no longer used in message body
+  _credits?: ProviderApprovalCreditSummary,
 ): { mainBody: string; termsBody: string } {
-  const totalCredits = credits.paidCredits + credits.promoCredits
-  const creditLine = credits.starterPromoCreditsAwarded > 0
-    ? `🎁 Starter credits awarded: *${creditCountLabel(credits.starterPromoCreditsAwarded)}*\n💳 Available credits: *${creditCountLabel(totalCredits)}*`
-    : `💳 Available credits: *${creditCountLabel(totalCredits)}*. You'll need credits to accept customer-selected jobs.`
-
-  const breakdownLine = totalCredits > 0
-    ? `\nStarter/onboarding: *${credits.promoCredits}* · Purchased: *${credits.paidCredits}*`
-    : ''
-
   return {
-    mainBody: `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nCredits are prepaid platform units, not cash, loans, or financial credit.\n${PROVIDER_CREDITS_PRICE_LINE}\nNo credits are used for previewing or saying you are interested.\n1 credit is used only when a customer selects you and you accept that selected job.\nFull customer details unlock after acceptance.\n\nYou can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours, and jobs:`,
+    mainBody: `✅ *Application approved!*
+
+Hi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.
+
+To activate your pilot credit, redeem your voucher code.
+Reply *REDEEM* to enter your voucher code.
+
+Credits are prepaid platform units, not cash, loans, or financial credit.
+${PROVIDER_CREDITS_PRICE_LINE}
+No credits are used for previewing or saying you are interested.
+1 credit is used only when a customer selects you and you accept that selected job.
+Full customer details unlock after acceptance.
+
+You can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours, and jobs:`,
     termsBody: `Provider credits terms and rules:\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`,
   }
 }
@@ -199,48 +200,6 @@ export function buildJobUnavailableMessage(params: {
   ].join('\n')
 }
 
-async function getApprovalCreditSummary(applicationId: string): Promise<ProviderApprovalCreditSummary> {
-  const application = await db.providerApplication.findUnique({
-    where: { id: applicationId },
-    select: {
-      providerId: true,
-      provider: {
-        select: {
-          wallet: {
-            select: {
-              paidCreditBalance: true,
-              promoCreditBalance: true,
-            },
-          },
-          promoAwards: {
-            where: {
-              awardType: 'MOBILE_VERIFIED',
-              status: 'AWARDED',
-            },
-            select: {
-              creditsAwarded: true,
-              referenceType: true,
-              referenceId: true,
-            },
-            take: 1,
-          },
-        },
-      },
-    },
-  })
-
-  const wallet = application?.provider?.wallet
-  const starterAward = application?.provider?.promoAwards.find((award) => (
-    award.referenceType === 'provider_application' &&
-    award.referenceId === applicationId
-  ))
-
-  return {
-    starterPromoCreditsAwarded: starterAward?.creditsAwarded ?? 0,
-    paidCredits: wallet?.paidCreditBalance ?? 0,
-    promoCredits: wallet?.promoCreditBalance ?? 0,
-  }
-}
 
 export async function notifyProviderApplicationApprovedOnce(params: {
   applicationId: string
@@ -284,8 +243,8 @@ export async function notifyProviderApplicationApprovedOnce(params: {
 
   try {
     const { sendCtaUrl } = await import('./whatsapp-interactive')
-    const credits = await getApprovalCreditSummary(params.applicationId)
-    const { mainBody, termsBody } = buildProviderApplicationApprovedMessage(params.name, credits)
+    const message = buildProviderApplicationApprovedMessage(params.name)
+    const { mainBody, termsBody } = message
 
     const externalId = await sendCtaUrl(
       params.phone,
