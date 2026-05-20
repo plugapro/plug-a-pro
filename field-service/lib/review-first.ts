@@ -1,5 +1,16 @@
 import { db } from './db'
 import { Prisma } from '@prisma/client'
+import {
+  ordinal,
+  normalize,
+  normalizeAreaKey,
+  isProviderDisplayEligible,
+  pickMainSkill,
+  buildServiceAreaLabel,
+  toLabourRateText,
+  filterDisplayableReviewAttempts,
+  providerCoversRequestArea,
+} from './review-first-domain'
 import type { LeadStatus } from '@prisma/client'
 import { rankCandidatesForJobRequest } from './matching/service'
 import { getReviewProviderProfileUrl } from './review-provider-profile-access'
@@ -27,11 +38,7 @@ export const MIN_SHORTLISTED_PROVIDERS = Math.max(
   1,
   Number.parseInt(process.env.MIN_SHORTLISTED_PROVIDERS ?? '1', 10) || 1,
 )
-export function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`
-}
+export { ordinal }
 
 const PROVIDERS_PER_BATCH = 3
 const MVP1_MATCH_RESULT_LIMIT = Math.min(
@@ -168,50 +175,6 @@ type ReviewDisplayAttempt = {
   }
 }
 
-function isProviderDisplayEligible(provider: {
-  active: boolean
-  status: string
-  availableNow: boolean
-  name: string
-  skills: string[]
-  serviceAreas: string[]
-  technicianServiceAreas: Array<{ active: boolean; label: string | null; city: string | null }>
-}) {
-  if (!provider.active) return false
-  if (provider.status !== 'ACTIVE') return false
-  if (!provider.name.trim()) return false
-  if (!provider.availableNow) return false
-  if (provider.skills.length === 0) return false
-  const hasArea = provider.serviceAreas.length > 0 || provider.technicianServiceAreas.some((row) => row.active)
-  if (!hasArea) return false
-  return true
-}
-
-function pickMainSkill(skills: string[], requestCategory: string) {
-  const normalizedRequestCategory = requestCategory.trim().toLowerCase()
-  const requestSkill = skills.find((skill) => skill.trim().toLowerCase() === normalizedRequestCategory)
-  return requestSkill ?? skills[0] ?? requestCategory
-}
-
-function buildServiceAreaLabel(provider: {
-  serviceAreas: string[]
-  technicianServiceAreas: Array<{ active: boolean; label: string | null; city: string | null }>
-}) {
-  const structured = provider.technicianServiceAreas
-    .filter((row) => row.active)
-    .map((row) => row.label ?? row.city)
-    .filter((row): row is string => Boolean(row))
-  const zones = [...structured, ...provider.serviceAreas].filter(Boolean)
-  return zones[0] ?? null
-}
-
-function toLabourRateText(callOutFee: number | null, hourlyRate: number | null, negotiable: boolean) {
-  if (hourlyRate != null) return `from R${Math.round(hourlyRate)}/hr`
-  if (callOutFee != null) return `call-out from R${Math.round(callOutFee)}`
-  if (negotiable) return 'rate negotiable'
-  return null
-}
-
 async function resolveUsableReviewDecisionId(params: {
   requestId: string
   latestDispatchDecisionId?: string | null
@@ -292,26 +255,6 @@ async function loadRankedDisplayAttempts(decisionId: string): Promise<ReviewDisp
       },
     },
   }) as Promise<ReviewDisplayAttempt[]>
-}
-
-function filterDisplayableReviewAttempts(
-  rankedAttempts: ReviewDisplayAttempt[],
-  request: ReviewDisplayRequest,
-) {
-  const normalizedRequestCategory = normalize(request.category)
-  const engagedProviderIds = new Set(
-    request.leads
-      .filter((lead) => ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED'].includes(lead.status))
-      .map((lead) => lead.providerId),
-  )
-
-  return rankedAttempts.filter((attempt) => {
-    if (engagedProviderIds.has(attempt.providerId)) return false
-    if (!isProviderDisplayEligible(attempt.provider)) return false
-    if (!providerCoversRequestArea(attempt.provider, { address: request.address })) return false
-    if (!attempt.provider.skills.map((skill) => normalize(skill)).includes(normalizedRequestCategory)) return false
-    return true
-  })
 }
 
 export async function getMatchedProvidersForCustomerRequest(params: {
@@ -508,54 +451,6 @@ type Mvp1MatchProvider = {
   whyMatched: string
 }
 
-function normalize(value: string | null | undefined) {
-  return (value ?? '').trim().toLowerCase()
-}
-
-function normalizeAreaKey(value: string | null | undefined) {
-  return normalize(value).replace(/\s+/g, '_')
-}
-
-function providerCoversRequestArea(
-  provider: {
-    serviceAreas: string[]
-    technicianServiceAreas: Array<{
-      active: boolean
-      label: string | null
-      city: string | null
-      regionKey: string | null
-      suburbKey: string | null
-      locationNodeId: string | null
-    }>
-  },
-  request: {
-    address: {
-      suburb: string
-      city: string
-      region: string | null
-      locationNodeId: string | null
-      locationNode: { regionKey: string | null } | null
-    } | null
-  },
-) {
-  const suburb = normalize(request.address?.suburb)
-  const city = normalize(request.address?.city)
-  const region = normalize(request.address?.region) || normalize(request.address?.locationNode?.regionKey)
-  const locationNodeId = request.address?.locationNodeId ?? null
-
-  const legacyAreas = new Set(provider.serviceAreas.map((area) => normalize(area)).filter(Boolean))
-  if (suburb && legacyAreas.has(suburb)) return true
-  if (city && legacyAreas.has(city)) return true
-  if (region && legacyAreas.has(region)) return true
-
-  const activeStructuredAreas = provider.technicianServiceAreas.filter((row) => row.active)
-  if (locationNodeId && activeStructuredAreas.some((row) => row.locationNodeId === locationNodeId)) return true
-  if (suburb && activeStructuredAreas.some((row) => normalizeAreaKey(row.suburbKey) === normalizeAreaKey(suburb))) return true
-  if (region && activeStructuredAreas.some((row) => normalize(row.regionKey) === region)) return true
-  if (city && activeStructuredAreas.some((row) => normalize(row.city) === city || normalize(row.label) === city)) return true
-
-  return false
-}
 
 /**
  * MVP1 workflow 1:
