@@ -190,7 +190,8 @@ function buildProviderSelectedNotificationBody(params: {
     `Photos: ${params.attachmentCount}\n\n` +
     `Accepting this job uses 1 credit.\n\n` +
     `Available balance: ${params.balanceLabel}\n` +
-    `After acceptance: ${params.remainingCreditLabel}`
+    `After acceptance: ${params.remainingCreditLabel}\n\n` +
+    `Reply:\n*1* Accept\n*2* Decline`
   )
 }
 

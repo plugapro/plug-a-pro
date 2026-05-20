@@ -242,7 +242,6 @@ export function buildProviderCreditSummaryMessage(
     PROVIDER_CREDITS_PRICE_LINE,
     'Credits are used only when you accept a customer-selected job.',
     'Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits.',
-    'Credits history is available below.',
   ].filter(Boolean).join('\n')
 }
 

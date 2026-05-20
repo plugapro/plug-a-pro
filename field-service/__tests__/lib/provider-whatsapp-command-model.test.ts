@@ -8,7 +8,7 @@ import {
 describe('provider WhatsApp command model', () => {
   it('routes required provider text commands to the canonical provider journey', () => {
     expect(resolveProviderWhatsappCommand('menu')?.step).toBe('pj_menu')
-    expect(resolveProviderWhatsappCommand('credits')?.step).toBe('pj_provider_status')
+    expect(resolveProviderWhatsappCommand('credits')?.step).toBe('pj_credits')
     expect(resolveProviderWhatsappCommand('balance')?.replyId).toBe('provider_check_status')
     expect(resolveProviderWhatsappCommand('credit history')?.replyId).toBe('provider_check_status')
     expect(resolveProviderWhatsappCommand('jobs')?.step).toBe('pj_job_list')
@@ -106,7 +106,7 @@ describe('provider WhatsApp command model', () => {
 
   it('is case-insensitive', () => {
     expect(resolveProviderWhatsappCommand('MENU')?.step).toBe('pj_menu')
-    expect(resolveProviderWhatsappCommand('Credits')?.step).toBe('pj_provider_status')
+    expect(resolveProviderWhatsappCommand('Credits')?.step).toBe('pj_credits')
     expect(resolveProviderWhatsappCommand('MY JOBS')?.replyId).toBe('provider_my_jobs')
     expect(resolveProviderWhatsappCommand('On The Way')?.flow).toBe('provider_journey')
   })

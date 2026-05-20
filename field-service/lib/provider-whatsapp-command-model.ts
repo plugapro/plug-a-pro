@@ -39,7 +39,7 @@ export const PROVIDER_WHATSAPP_COMMANDS: ProviderWhatsappCommand[] = [
     command: 'credits',
     aliases: ['credits', 'credit', 'balance', 'wallet', 'credit history', 'credits history', 'wallet history'],
     flow: 'provider_journey',
-    step: 'pj_provider_status',
+    step: 'pj_credits',
     replyId: 'provider_check_status',
     state: 'approved_idle',
   },

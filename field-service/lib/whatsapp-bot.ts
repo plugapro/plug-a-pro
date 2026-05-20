@@ -12,7 +12,16 @@
 
 import { db } from './db'
 import { Prisma } from '@prisma/client'
-import { parseInbound, sendText, sendButtons, sendCtaUrl, type InboundMessage } from './whatsapp-interactive'
+import {
+  parseInbound,
+  parseProviderLeadResponseAction,
+  sendText,
+  sendButtons,
+  sendCtaUrl,
+  type InboundMessage,
+  type WhatsAppProviderLeadResponse,
+  type WhatsAppProviderLeadResponseParseOutput,
+} from './whatsapp-interactive'
 import {
   handleJobRequestFlow,
   handleRebookFlow,
@@ -1514,8 +1523,8 @@ async function processInboundMessageUnlocked(
           await sendText(phone, result.message)
           return
         }
-        // For AMBIGUOUS_JOB or INVALID_COMMAND: fall through so the menu can
-        // show the provider their list of active jobs.
+        // For AMBIGUOUS_JOB, INVALID_COMMAND, or INVALID_TIME: fall through so
+        // the menu can show the provider their list of active jobs.
       }
     }
 

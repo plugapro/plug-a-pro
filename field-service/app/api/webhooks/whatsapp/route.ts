@@ -74,7 +74,9 @@ export async function POST(request: NextRequest) {
                     externalId: message.id,
                     phone:       message.from,
                     messageType: message.type,
-                    body:        message.text?.body ?? null,
+                    body:        message.text?.body
+                      ?? (message.image?.caption ?? message.video?.caption ?? message.document?.caption ?? null)
+                      ?? `[${message.type}]`,
                     payload:     message as unknown as Prisma.InputJsonValue,
                   },
                 })

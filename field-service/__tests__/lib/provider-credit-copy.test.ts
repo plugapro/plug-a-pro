@@ -304,7 +304,6 @@ describe('provider credit copy', () => {
     expect(message).toContain('Purchased: 2')
     expect(message).toContain('Credits are used only when you accept a customer-selected job')
     expect(message).toContain('Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits')
-    expect(message).toContain('Credits history is available below')
     expect(message).not.toContain('https://')
   })
 

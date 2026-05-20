@@ -100,8 +100,12 @@ export function resolveProviderPwaHandoffPath(params: {
     }
   }
 
-  if (token && (event === 'new_opportunity' || event === 'customer_selected_you')) {
+  if (token && event === 'new_opportunity') {
     return `/leads/access/${encodeURIComponent(token)}`
+  }
+
+  if (token && event === 'customer_selected_you') {
+    return `/leads/access/${encodeURIComponent(token)}?action=accept`
   }
 
   // For job-scoped events, resolve to the specific job handover page when we

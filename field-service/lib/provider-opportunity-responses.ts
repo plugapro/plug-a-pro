@@ -86,6 +86,9 @@ export async function getSafeProviderOpportunityPreview(leadId: string, provider
   if (lead.providerId !== providerId) {
     throw new ProviderOpportunityResponseError('FORBIDDEN', 'This opportunity belongs to another provider.')
   }
+  if (lead.status === 'EXPIRED' || lead.status === 'SUPERSEDED') {
+    throw new ProviderOpportunityResponseError('EXPIRED', 'This opportunity has expired and is no longer available.')
+  }
 
   // This return shape intentionally excludes customer, phone, email, street,
   // unit, complex, access notes, and GPS fields. Do not broaden without a

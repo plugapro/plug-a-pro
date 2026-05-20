@@ -2,7 +2,7 @@
  * Step 09 — Provider Credit Balance and Ledger Flow
  *
  * Verifies:
- * 1. WhatsApp credits/balance/credit-history commands route to pj_provider_status
+ * 1. WhatsApp credits/balance/credit-history commands route to pj_credits
  * 2. buildProviderCreditSummaryMessage produces the blueprint-specified format
  *    (Available / Starter/onboarding / Purchased breakdown)
  * 3. Ledger entries contain all required fields (schema columns + metadata)
@@ -22,44 +22,44 @@ import {
 } from '../../lib/provider-whatsapp-command-model'
 
 describe('credits command routing (step 09)', () => {
-  it('credits command routes to pj_provider_status with provider_check_status replyId', () => {
+  it('credits command routes to pj_credits with provider_check_status replyId', () => {
     const cmd = resolveProviderWhatsappCommand('credits')
-    expect(cmd?.step).toBe('pj_provider_status')
+    expect(cmd?.step).toBe('pj_credits')
     expect(cmd?.replyId).toBe('provider_check_status')
     expect(cmd?.flow).toBe('provider_journey')
   })
 
-  it('balance command routes to pj_provider_status with provider_check_status replyId', () => {
+  it('balance command routes to pj_credits with provider_check_status replyId', () => {
     const cmd = resolveProviderWhatsappCommand('balance')
-    expect(cmd?.step).toBe('pj_provider_status')
+    expect(cmd?.step).toBe('pj_credits')
     expect(cmd?.replyId).toBe('provider_check_status')
   })
 
-  it('credit history command routes to pj_provider_status', () => {
+  it('credit history command routes to pj_credits', () => {
     const cmd = resolveProviderWhatsappCommand('credit history')
-    expect(cmd?.step).toBe('pj_provider_status')
+    expect(cmd?.step).toBe('pj_credits')
     expect(cmd?.replyId).toBe('provider_check_status')
   })
 
-  it('credits history command (alias) routes to pj_provider_status', () => {
+  it('credits history command (alias) routes to pj_credits', () => {
     const cmd = resolveProviderWhatsappCommand('credits history')
-    expect(cmd?.step).toBe('pj_provider_status')
+    expect(cmd?.step).toBe('pj_credits')
   })
 
-  it('wallet command (alias) routes to pj_provider_status', () => {
+  it('wallet command (alias) routes to pj_credits', () => {
     const cmd = resolveProviderWhatsappCommand('wallet')
-    expect(cmd?.step).toBe('pj_provider_status')
+    expect(cmd?.step).toBe('pj_credits')
   })
 
-  it('wallet history command (alias) routes to pj_provider_status', () => {
+  it('wallet history command (alias) routes to pj_credits', () => {
     const cmd = resolveProviderWhatsappCommand('wallet history')
-    expect(cmd?.step).toBe('pj_provider_status')
+    expect(cmd?.step).toBe('pj_credits')
   })
 
   it('credits command is case-insensitive', () => {
-    expect(resolveProviderWhatsappCommand('CREDITS')?.step).toBe('pj_provider_status')
-    expect(resolveProviderWhatsappCommand('Balance')?.step).toBe('pj_provider_status')
-    expect(resolveProviderWhatsappCommand('CREDIT HISTORY')?.step).toBe('pj_provider_status')
+    expect(resolveProviderWhatsappCommand('CREDITS')?.step).toBe('pj_credits')
+    expect(resolveProviderWhatsappCommand('Balance')?.step).toBe('pj_credits')
+    expect(resolveProviderWhatsappCommand('CREDIT HISTORY')?.step).toBe('pj_credits')
   })
 
   it('credits command aliases are a subset of the credits command entry', () => {
@@ -425,10 +425,10 @@ describe('no-deduction rules (step 09)', () => {
     }
   })
 
-  it('credits command routes to status display, not to the lead unlock debit path', () => {
+  it('credits command routes to focused credits display, not to the lead unlock debit path', () => {
     const cmd = resolveProviderWhatsappCommand('credits')
-    expect(cmd?.step).toBe('pj_provider_status')
-    // pj_provider_status is a display step; it has no debit path
+    expect(cmd?.step).toBe('pj_credits')
+    // pj_credits is a focused display step; it has no debit path
     expect(cmd?.step).not.toBe('pj_job_list')
     expect(cmd?.step).not.toBe('pj_available_leads')
   })

@@ -135,7 +135,8 @@ describe('regression: provider-credit-copy producers must not embed raw URLs', (
       paidCreditBalance: 2,
     })
     expect(bodyContainsRawUrl(body)).toBe(false)
-    expect(body).toContain('Credits history is available below.')
+    // Credits history CTA is sent separately via sendCtaUrl — not embedded in body
+    expect(body).not.toContain('https://')
   })
 
   it('buildProviderApplicationSubmittedMessage body has no URL and no "Shall I"', async () => {

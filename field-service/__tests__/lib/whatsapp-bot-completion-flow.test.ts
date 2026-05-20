@@ -187,7 +187,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
       ok: true,
       jobId: JOB_ID,
       duplicate: false,
-      message: 'Job completed.\n\nThe customer has been notified.',
+      message: 'Job complete — awaiting customer confirmation.\n\nThe customer has been notified.',
     })
     // By default, parseProviderJobCommand returns null (not a shortcut command)
     mockParseProviderJobCommand.mockReturnValue(null)
@@ -244,7 +244,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
       )
       expect(mockSendText).toHaveBeenCalledWith(
         PHONE,
-        'Job completed.\n\nThe customer has been notified.',
+        'Job complete — awaiting customer confirmation.\n\nThe customer has been notified.',
       )
     })
 
@@ -304,13 +304,18 @@ describe('WhatsApp bot — provider job completion capture', () => {
   })
 
   describe('customer notification', () => {
-    it('customer notification is triggered via transitionJob to PENDING_COMPLETION_CONFIRMATION', () => {
-      // The notification is a side-effect of transitionJob, which is tested in jobs.test.ts.
-      // Here we verify completeProviderJobFromWhatsApp — which calls transitionJob — is invoked.
+    it('calls completeProviderJobFromWhatsApp when provider skips photo, triggering transitionJob', async () => {
       photoStepConversation()
-      // Confirmed by the 'SKIP' test above that mockCompleteProviderJobFromWhatsApp is called.
-      // This test documents the design contract.
-      expect(true).toBe(true)
+      await processInboundMessage(makeTextMessage('SKIP'))
+      // completeProviderJobFromWhatsApp internally calls transitionJob to PENDING_COMPLETION_CONFIRMATION,
+      // which triggers the customer notification side-effect (tested in jobs.test.ts).
+      expect(mockCompleteProviderJobFromWhatsApp).toHaveBeenCalledWith(
+        expect.objectContaining({ phone: PHONE, jobId: JOB_ID }),
+      )
+      expect(mockSendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('customer has been notified'),
+      )
     })
   })
 })

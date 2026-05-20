@@ -371,7 +371,7 @@ export async function executeProviderJobCommand(params: {
       ok: true,
       jobId,
       toStatus: null,
-      message: `Arrival time confirmed.\n\nCustomer has been notified:\n${formatTime(params.command.arrivalAt)}`,
+      message: `Arrival time confirmed. Customer notified: ${formatTime(params.command.arrivalAt)}`,
     }
   }
 
@@ -560,6 +560,6 @@ export async function completeProviderJobFromWhatsApp(params: {
     ok: true,
     jobId: job.id,
     duplicate: false,
-    message: 'Job completed.\n\nThe customer has been notified.',
+    message: 'Job complete — awaiting customer confirmation.\n\nThe customer has been notified.',
   }
 }

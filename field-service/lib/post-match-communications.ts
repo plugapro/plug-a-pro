@@ -295,7 +295,8 @@ export async function notifyPostMatchAcceptance(params: {
       `Address: *${address}*\n` +
       `Preferred availability: *${preferredAvailability}*\n` +
       `Ref: *${ref}*\n\n` +
-      `Customer contact:\n${customer.name}\n${customer.phone}\n\n` +
+      `Customer details:\n${customer.name}\n${customer.phone}\n\n` +
+      `Next step: Reply with your arrival time. Example: *14:00*\n\n` +
       `You can manage this job from the link below. No login is needed for this job link.`
 
     const providerContext = {

@@ -272,6 +272,8 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
       return handleProviderProfile(ctx)
     case 'pj_support':
       return handleProviderSupport(ctx)
+    case 'pj_credits':
+      return handleProviderCredits(ctx)
     case 'pj_provider_status':
       return handleProviderStatus(ctx)
     case 'pj_worker_portal':
@@ -325,8 +327,7 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
     [{
       title: 'Provider',
       rows: [
-        { id: 'provider_check_status', title: 'View Credits', description: 'Check balance and provider status' },
-        { id: 'provider_topup', title: 'Top Up Credits', description: 'Pay at Pick n Pay, Shoprite or Checkers' },
+        { id: 'provider_check_status', title: 'View Credits', description: 'Check balance and credit history' },
         { id: 'provider_available_jobs', title: 'View Opportunities', description: 'Review safe job previews' },
         { id: 'provider_my_jobs', title: 'View Active Jobs', description: 'Manage accepted and scheduled work' },
         paused
@@ -771,6 +772,42 @@ async function handleProviderSupport(ctx: FlowContext): Promise<FlowResult> {
       { id: 'back_home', title: 'Main Menu' },
     ],
   )
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function handleProviderCredits(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(ctx.phone)
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  let creditSummary = 'Credits balance: not available yet.'
+  try {
+    creditSummary = await providerCreditSummary(provider.id)
+  } catch {
+    // balance unavailable — send best-effort message
+  }
+
+  await sendButtons(
+    ctx.phone,
+    creditSummary,
+    [
+      { id: 'provider_topup', title: 'Top Up Credits' },
+      { id: 'back_home', title: 'Main Menu' },
+    ],
+  )
+  const creditHistoryUrl = getPublicAppUrl('/provider/credits')
+  if (creditHistoryUrl) {
+    await sendCtaUrl(
+      ctx.phone,
+      'Credits history is available below.',
+      ctaLabelFor('credit_history'),
+      creditHistoryUrl,
+      undefined,
+      { templateName: 'interactive:provider_credit_history_cta' },
+    )
+  }
   return { nextStep: 'pj_toggle_available' }
 }
 

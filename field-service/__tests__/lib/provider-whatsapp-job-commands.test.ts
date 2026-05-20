@@ -222,7 +222,7 @@ describe('executeProviderJobCommand', () => {
       }),
     )
     expect(result.ok && result.message).toContain('Arrival time confirmed')
-    expect(result.ok && result.message).toContain('Customer has been notified')
+    expect(result.ok && result.message).toContain('Customer notified')
   })
 
   it('does not resend arrival notification for identical duplicate arrival time', async () => {
@@ -347,7 +347,7 @@ describe('executeProviderJobCommand', () => {
       toStatus: 'PENDING_COMPLETION_CONFIRMATION',
       actorRole: 'provider',
     }))
-    expect(result.ok && result.message).toContain('Job completed')
+    expect(result.ok && result.message).toContain('Job complete')
   })
 
   it('does not resend completion notification for duplicate completed job', async () => {

@@ -104,7 +104,6 @@ describe('handleProviderJourneyFlow', () => {
         [expect.objectContaining({
           rows: [
             expect.objectContaining({ id: 'provider_check_status', title: 'View Credits' }),
-            expect.objectContaining({ id: 'provider_topup', title: 'Top Up Credits' }),
             expect.objectContaining({ id: 'provider_available_jobs', title: 'View Opportunities' }),
             expect.objectContaining({ id: 'provider_my_jobs', title: 'View Active Jobs' }),
             expect.objectContaining({ title: 'Update Availability' }),
@@ -710,7 +709,6 @@ describe('handleProviderJourneyFlow', () => {
       expect(message).toContain('Starter/onboarding: 3')
       expect(message).toContain('Purchased: 2')
       expect(message).toContain('Credits are used only when you accept a customer-selected job')
-      expect(message).toContain('Credits history is available below')
       expect(message).not.toContain('https://')
       expect(message).not.toContain('/provider/credits')
       expect(wa.sendCtaUrl).toHaveBeenCalledWith(
@@ -909,23 +907,23 @@ describe('handleProviderJourneyFlow', () => {
     })
   })
 
-  describe('provider menu includes Top Up Credits option', () => {
-    it('pj_menu includes provider_topup row', async () => {
+  describe('provider menu has 6 items matching blueprint order', () => {
+    it('pj_menu has exactly 6 rows: View Credits, View Opportunities, View Active Jobs, Update Availability, Update Profile, Contact Support', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
         active: true, status: 'ACTIVE',
       })
       await handleProviderJourneyFlow(mockCtx('pj_menu'))
-      expect(wa.sendList).toHaveBeenCalledWith(
-        '+27711111111',
-        expect.any(String),
-        [expect.objectContaining({
-          rows: expect.arrayContaining([
-            expect.objectContaining({ id: 'provider_topup', title: 'Top Up Credits' }),
-          ]),
-        })],
-        expect.anything(),
-      )
+      const listCall = (wa.sendList as ReturnType<typeof vi.fn>).mock.calls[0]
+      const rows = listCall[2][0].rows as Array<{ id: string; title: string }>
+      expect(rows).toHaveLength(6)
+      expect(rows.map((r) => r.id)).toContain('provider_check_status')
+      expect(rows.map((r) => r.id)).toContain('provider_available_jobs')
+      expect(rows.map((r) => r.id)).toContain('provider_my_jobs')
+      expect(rows.map((r) => r.id)).toContain('provider_profile')
+      expect(rows.map((r) => r.id)).toContain('provider_support')
+      // Top Up Credits is now accessible from the credits screen, not the main menu
+      expect(rows.map((r) => r.id)).not.toContain('provider_topup')
     })
   })
 
