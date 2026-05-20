@@ -52,6 +52,15 @@ function requirePayatConfig(name: string) {
   return value
 }
 
+function resolveMerchantIdentifier() {
+  const explicitIdentifier = process.env.PAYAT_MERCHANT_IDENTIFIER?.trim()
+  if (explicitIdentifier) return explicitIdentifier
+  // Backward-compatible fallback for environments that only configured
+  // PAYAT_MERCHANT_ID. Keeps checkout creation working while still allowing
+  // a dedicated identifier when provided.
+  return requirePayatConfig('PAYAT_MERCHANT_ID')
+}
+
 function getReturnUrls() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
   if (!appUrl) throw new PayatConfigError('NEXT_PUBLIC_APP_URL')
@@ -83,7 +92,7 @@ let merchantRegistrationInflight: Promise<void> | null = null
 
 async function doRegisterMerchant(token: string, apiBase: string): Promise<void> {
   const merchantId = requirePayatConfig('PAYAT_MERCHANT_ID')
-  const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
+  const merchantIdentifier = resolveMerchantIdentifier()
 
   // generatecredentials is idempotent (409 = already registered).
   const res = await fetch(`${apiBase}/integrator/ecommerce/generatecredentials`, {
@@ -140,7 +149,7 @@ async function sendPayatPaymentRequest(
   // must not re-validate because the final amount includes the fee.
   const token = await getPayatToken()
   const apiBase = requirePayatConfig('PAYAT_API_BASE').replace(/\/$/, '')
-  const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
+  const merchantIdentifier = resolveMerchantIdentifier()
 
   await ensureMerchantIdentifier(token, apiBase)
 

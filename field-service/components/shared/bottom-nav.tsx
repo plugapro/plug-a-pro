@@ -26,7 +26,7 @@ function BottomNav({ items, className }: BottomNavProps) {
     <nav
       aria-label="Main navigation"
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-40",
+        "layer-sticky fixed bottom-0 left-0 right-0",
         "flex justify-around",
         "px-3 pt-2 pb-[calc(28px+env(safe-area-inset-bottom,0px))]",
         "bg-white/85 dark:bg-[rgba(11,11,16,0.85)]",

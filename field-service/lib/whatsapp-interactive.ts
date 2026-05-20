@@ -345,6 +345,8 @@ export interface WhatsAppProviderLeadResponse {
   rawMessageType: WhatsAppInboundRawMessageType
 }
 
+type WhatsAppProviderLeadResponseFallbackHint = 'payload' | 'context' | 'unresolved'
+
 export type WhatsAppProviderLeadResponseErrorCode =
   | 'UNSUPPORTED_MESSAGE_SHAPE'
   | 'MALFORMED_PAYLOAD'
@@ -363,7 +365,7 @@ export interface WhatsAppProviderLeadResponseParseResult {
   ok: true
   parsed: WhatsAppProviderLeadResponse
   fallback: {
-    leadId: 'context' | 'payload' | 'unresolved'
+    leadId: WhatsAppProviderLeadResponseFallbackHint
     requiresContextLookup: boolean
   }
 }
@@ -377,7 +379,7 @@ export type WhatsAppProviderLeadResponseParseOutput =
   | WhatsAppProviderLeadResponseParseResult
   | WhatsAppProviderLeadResponseNoMatchResult
 
-const AVAILABLE_TEXTS = new Set(['i\'m available', 'im available', 'available', 'yes', 'accept'])
+const AVAILABLE_TEXTS = new Set(['i\'m available', 'im available', 'available'])
 const NOT_AVAILABLE_TEXTS = new Set(['not available', 'notavailable', 'not_available', 'unavailable'])
 
 function normalizeLeadTextAction(value: string) {
@@ -411,6 +413,90 @@ function parseProviderLeadActionValue(value: string): { action: WhatsAppLeadActi
   return null
 }
 
+function buildProviderLeadResponse(params: {
+  action: WhatsAppLeadAction
+  leadId: string | null
+  providerId: string | null
+  providerPhone: string
+  inboundMessageId: string
+  contextMessageId: string | null
+  rawMessageType: WhatsAppInboundRawMessageType
+}): WhatsAppProviderLeadResponse {
+  return {
+    source: 'whatsapp',
+    actionType: 'provider_lead_response',
+    action: params.action,
+    leadId: params.leadId,
+    providerId: params.providerId,
+    providerPhone: params.providerPhone,
+    inboundMessageId: params.inboundMessageId,
+    contextMessageId: params.contextMessageId,
+    rawMessageType: params.rawMessageType,
+  }
+}
+
+function parseProviderLeadButtonOrListPayload(
+  rawValue: string | undefined,
+  rawMessageType: WhatsAppInboundRawMessageType,
+  contextMessageId: string | null,
+  inboundMessageId: string,
+  providerPhone: string,
+): WhatsAppProviderLeadResponseParseOutput | null {
+  if (!rawValue) return null
+
+  const parsed = parseProviderLeadActionValue(rawValue)
+  if (parsed) {
+    return {
+      ok: true as const,
+      parsed: {
+        ...buildProviderLeadResponse({
+          action: parsed.action,
+          leadId: parsed.leadId,
+          providerId: parsed.providerId,
+          providerPhone,
+          inboundMessageId,
+          contextMessageId,
+          rawMessageType,
+        }),
+      },
+      fallback: { leadId: 'payload', requiresContextLookup: false },
+    }
+  }
+
+  if (!looksLikeProviderLeadButton(rawValue)) {
+    return null
+  }
+
+  if (rawValue === 'ops_accept' || rawValue === 'ops_decline') {
+    return {
+      ok: true as const,
+      parsed: {
+        ...buildProviderLeadResponse({
+          action: rawValue === 'ops_accept' ? 'available' : 'not_available',
+          leadId: null,
+          providerId: null,
+          providerPhone,
+          inboundMessageId,
+          contextMessageId,
+          rawMessageType,
+        }),
+      },
+      fallback: { leadId: contextMessageId ? 'context' : 'unresolved', requiresContextLookup: Boolean(contextMessageId) },
+    }
+  }
+
+  return {
+    ok: false as const,
+    reason: {
+      code: 'MALFORMED_PAYLOAD',
+      inboundMessageId,
+      contextMessageId,
+      rawMessageType,
+      value: rawValue,
+    },
+  }
+}
+
 function looksLikeProviderLeadButton(value: string): boolean {
   return value === 'ops_accept' || value === 'ops_decline' || value.startsWith('ops_accept:') || value.startsWith('ops_decline:')
 }
@@ -424,94 +510,29 @@ export function parseProviderLeadResponseAction(message: InboundMessage): WhatsA
   const contextMessageId = message.context?.id ?? null
   const providerPhone = normalizePhone(message.from)
 
-  const tryFromButtonPayload = (rawValue: string | undefined, rawMessageType: WhatsAppInboundRawMessageType) => {
-    if (!rawValue) return null
-    const parsed = parseProviderLeadActionValue(rawValue)
-    if (!parsed) {
-      return {
-        ok: false as const,
-        reason: {
-          code: 'MALFORMED_PAYLOAD',
-          inboundMessageId,
-          contextMessageId,
-          rawMessageType,
-          value: rawValue,
-        },
-      }
-    }
-    return {
-      ok: true as const,
-      parsed: {
-        source: 'whatsapp',
-        actionType: 'provider_lead_response',
-        action: parsed.action,
-        leadId: parsed.leadId,
-        providerId: parsed.providerId,
-        providerPhone,
-        inboundMessageId,
-        contextMessageId,
-        rawMessageType,
-      },
-      fallback: {
-        leadId: 'payload',
-        requiresContextLookup: false,
-      },
-    }
-  }
-
   if (message.type === 'interactive' && message.interactive?.type === 'button_reply') {
     const rawButtonId = message.interactive.button_reply?.id
-    if (rawButtonId) {
-      const result = parseProviderLeadActionValue(rawButtonId)
-      if (result) return {
-        ok: true,
-        parsed: {
-          source: 'whatsapp',
-          actionType: 'provider_lead_response',
-          action: result.action,
-          leadId: result.leadId,
-          providerId: result.providerId,
-          providerPhone,
-          inboundMessageId,
-          contextMessageId,
-          rawMessageType: 'interactive',
-        },
-        fallback: {
-          leadId: 'payload',
-          requiresContextLookup: false,
-        },
-      }
-
-      if (looksLikeProviderLeadButton(rawButtonId)) {
-        return {
-          ok: false,
-          reason: {
-            code: 'MALFORMED_PAYLOAD',
-            inboundMessageId,
-            contextMessageId,
-            rawMessageType: 'interactive',
-            value: rawButtonId,
-          },
-        }
-      }
+    const parsed = parseProviderLeadButtonOrListPayload(rawButtonId, 'interactive', contextMessageId, inboundMessageId, providerPhone)
+    if (parsed) {
+      return parsed
     }
 
     const actionFromTitle = message.interactive.button_reply?.title
-      ? normalizeLeadTextAction(message.interactive.button_reply?.title)
+      ? normalizeLeadTextAction(message.interactive.button_reply.title)
       : null
     if (actionFromTitle) {
       return {
         ok: true,
         parsed: {
-          source: 'whatsapp',
-          actionType: 'provider_lead_response',
-          action: actionFromTitle,
-          leadId: null,
-          providerId: null,
-          providerPhone,
-          inboundMessageId,
-          contextMessageId,
-          rawMessageType: 'interactive',
+          ...buildProviderLeadResponse({
+            action: actionFromTitle,
+            leadId: null,
+            providerId: null,
+            providerPhone,
+            inboundMessageId,
+            contextMessageId,
+            rawMessageType: 'interactive',
+          }),
         },
         fallback: {
           leadId: contextMessageId ? 'context' : 'unresolved',
@@ -523,115 +544,51 @@ export function parseProviderLeadResponseAction(message: InboundMessage): WhatsA
 
   if (message.type === 'button') {
     const rawButtonPayload = (message as { button?: { payload?: string; text?: string } }).button?.payload
-    if (rawButtonPayload) {
-      const parsedPayload = parseProviderLeadActionValue(rawButtonPayload)
-      if (parsedPayload) {
-        return {
-          ok: true,
-          parsed: {
-            source: 'whatsapp',
-            actionType: 'provider_lead_response',
-            action: parsedPayload.action,
-            leadId: parsedPayload.leadId,
-            providerId: parsedPayload.providerId,
+    const parsedPayload = parseProviderLeadButtonOrListPayload(rawButtonPayload, 'button', contextMessageId, inboundMessageId, providerPhone)
+    if (parsedPayload) {
+      return parsedPayload
+    }
+
+    const buttonText = (message as { button?: { payload?: string; text?: string } }).button?.text
+    const actionFromText = buttonText ? normalizeLeadTextAction(buttonText) : null
+    if (actionFromText) {
+      return {
+        ok: true,
+        parsed: {
+          ...buildProviderLeadResponse({
+            action: actionFromText,
+            leadId: null,
+            providerId: null,
             providerPhone,
             inboundMessageId,
             contextMessageId,
             rawMessageType: 'button',
-          },
-          fallback: {
-            leadId: 'payload',
-            requiresContextLookup: false,
-          },
-        }
-      }
-
-      if (looksLikeProviderLeadButton(rawButtonPayload)) {
-        return {
-          ok: false,
-          reason: {
-            code: 'MALFORMED_PAYLOAD',
-            inboundMessageId,
-            contextMessageId,
-            rawMessageType: 'button',
-            value: rawButtonPayload,
-          },
-        }
-      }
-      }
-
-      const buttonText = (message as { button?: { payload?: string; text?: string } }).button?.text
-      const actionFromText = buttonText ? normalizeLeadTextAction(buttonText) : null
-      if (actionFromText) {
-      return {
-        ok: true,
-        parsed: {
-          source: 'whatsapp',
-          actionType: 'provider_lead_response',
-          action: actionFromText,
-          leadId: null,
-          providerId: null,
-          providerPhone,
-          inboundMessageId,
-          contextMessageId,
-          rawMessageType: 'button',
+          }),
         },
         fallback: {
           leadId: contextMessageId ? 'context' : 'unresolved',
           requiresContextLookup: Boolean(contextMessageId),
         },
       }
-      }
-      return {
-        ok: false,
-        reason: {
-          code: 'UNRESOLVED_TEXT_ACTION',
-          inboundMessageId,
-          contextMessageId,
-          rawMessageType: 'button',
-          value: buttonText ?? rawButtonPayload ?? '',
-        },
-      }
-
     }
+
+    return {
+      ok: false,
+      reason: {
+        code: 'UNRESOLVED_TEXT_ACTION',
+        inboundMessageId,
+        contextMessageId,
+        rawMessageType: 'button',
+        value: buttonText ?? rawButtonPayload ?? '',
+      },
+    }
+  }
 
   if (message.type === 'interactive' && message.interactive?.type === 'list_reply') {
     const listValue = message.interactive.list_reply?.id
-    if (listValue) {
-      const parsedList = parseProviderLeadActionValue(listValue)
-      if (parsedList) {
-        return {
-          ok: true,
-          parsed: {
-            source: 'whatsapp',
-            actionType: 'provider_lead_response',
-            action: parsedList.action,
-            leadId: parsedList.leadId,
-            providerId: parsedList.providerId,
-            providerPhone,
-            inboundMessageId,
-            contextMessageId,
-            rawMessageType: 'interactive',
-          },
-          fallback: {
-            leadId: 'payload',
-            requiresContextLookup: false,
-          },
-        }
-      }
-
-      if (looksLikeProviderLeadButton(listValue)) {
-        return {
-          ok: false,
-          reason: {
-            code: 'MALFORMED_PAYLOAD',
-            inboundMessageId,
-            contextMessageId,
-            rawMessageType: 'interactive',
-            value: listValue,
-          },
-        }
-      }
+    const parsedList = parseProviderLeadButtonOrListPayload(listValue, 'interactive', contextMessageId, inboundMessageId, providerPhone)
+    if (parsedList) {
+      return parsedList
     }
   }
 
@@ -653,15 +610,15 @@ export function parseProviderLeadResponseAction(message: InboundMessage): WhatsA
     return {
       ok: true,
       parsed: {
-        source: 'whatsapp',
-        actionType: 'provider_lead_response',
-        action,
-        leadId: null,
-        providerId: null,
-        providerPhone,
-        inboundMessageId,
-        contextMessageId,
-        rawMessageType: 'text',
+        ...buildProviderLeadResponse({
+          action,
+          leadId: null,
+          providerId: null,
+          providerPhone,
+          inboundMessageId,
+          contextMessageId,
+          rawMessageType: 'text',
+        }),
       },
       fallback: {
         leadId: contextMessageId ? 'context' : 'unresolved',

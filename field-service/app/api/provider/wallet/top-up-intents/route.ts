@@ -23,8 +23,20 @@ type CreateTopUpIntentBody = {
 const PAYFAST_METHODS = new Set<string>(['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'])
 
 function parseAmountCents(body: CreateTopUpIntentBody) {
-  if (typeof body.amountCents === 'number') return body.amountCents
-  if (typeof body.amountRand === 'number') return body.amountRand * 100
+  if (typeof body.amountCents === 'number' && Number.isFinite(body.amountCents)) {
+    return body.amountCents
+  }
+  if (typeof body.amountCents === 'string') {
+    const parsed = Number.parseFloat(body.amountCents)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  if (typeof body.amountRand === 'number' && Number.isFinite(body.amountRand)) {
+    return body.amountRand * 100
+  }
+  if (typeof body.amountRand === 'string') {
+    const parsed = Number.parseFloat(body.amountRand)
+    if (Number.isFinite(parsed)) return parsed * 100
+  }
   return Number.NaN
 }
 

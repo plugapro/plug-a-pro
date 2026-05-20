@@ -21,6 +21,38 @@ describe('Pay@ YAPI payment request service', () => {
     mockGetPayatToken.mockResolvedValue('payat-token')
   })
 
+  it('falls back to PAYAT_MERCHANT_ID when PAYAT_MERCHANT_IDENTIFIER is unset', async () => {
+    vi.stubEnv('PAYAT_MERCHANT_IDENTIFIER', '')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{}' })
+      .mockResolvedValueOnce({
+        status: 201,
+        ok: true,
+        json: async () => ({ paymentLink: 'https://go.payat.co.za/pay/rtp-fallback' }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
+    const result = await createPayatPaymentRequest({
+      topupId: 'intent-fallback',
+      amountCents: 10_000,
+      description: 'Plug A Pro wallet top-up R100',
+      providerName: 'Jacob Dlamini',
+      providerPhone: '+27821234567',
+      providerEmail: 'jacob@example.com',
+    })
+
+    expect(result.paymentLink).toBe('https://go.payat.co.za/pay/rtp-fallback')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      merchantIdentifier: '418856',
+      merchantId: '418856',
+    })
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://go.payat.co.za/yapi/v1/integrator/ecommerce/rtp/create/single/418856',
+    )
+  })
+
   it('registers merchantIdentifier then creates RTP with correct YAPI fields', async () => {
     const fetchMock = vi
       .fn()

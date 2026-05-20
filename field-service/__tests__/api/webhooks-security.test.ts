@@ -21,6 +21,12 @@ vi.mock('@/lib/db', () => ({
     },
     messageEvent: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      create: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+    },
+    inboundWhatsAppMessage: {
+      create: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
     },
   },
 }))
@@ -155,6 +161,61 @@ describe('POST /api/webhooks/whatsapp — signature required', () => {
 
     const res = await POST(req)
     expect(res.status).toBe(200)
+  })
+
+  it('skips processing duplicate inbound WAMID and only increments duplicate counter', async () => {
+    const { db } = await import('@/lib/db')
+    const { processInboundMessage } = await import('@/lib/whatsapp-bot')
+    const duplicateError = Object.assign(new Error('P2002 unique key violation'), { code: 'P2002' })
+    ;(db.inboundWhatsAppMessage.create as any).mockRejectedValueOnce(duplicateError)
+
+    const { POST } = await import('../../app/api/webhooks/whatsapp/route')
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{
+        id: 'entry-id',
+        changes: [{
+          value: {
+            messaging_product: 'whatsapp',
+            metadata: { phone_number_id: 'meta-phone' },
+            messages: [{
+              from: '+27821234567',
+              id: 'wamid.dup-1',
+              type: 'text',
+              text: { body: 'ops status' },
+              timestamp: String(Date.now()),
+            }],
+          },
+          field: 'messages',
+        }],
+      }],
+    }
+    const raw = JSON.stringify(payload)
+    const sig = makeMetaSig(raw, 'test-secret')
+
+    const req = new NextRequest('http://localhost/api/webhooks/whatsapp', {
+      method: 'POST',
+      body: raw,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-hub-signature-256': sig,
+      },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(db.inboundWhatsAppMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { externalId: 'wamid.dup-1' },
+        data: expect.objectContaining({
+          duplicateCount: { increment: 1 },
+        }),
+      }),
+    )
+    expect(processInboundMessage).not.toHaveBeenCalled()
   })
 })
 

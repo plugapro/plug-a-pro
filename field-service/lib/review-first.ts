@@ -1474,7 +1474,8 @@ export async function sendRequestToShortlistedProviders(params: {
 
         // Follow-up: native Accept/Decline buttons for providers on social-data bundles.
         // The template above is the reliable notification; these buttons are best-effort.
-        // Uses ops_accept:{leadId} so the bot can accept directly without a hold lookup.
+        // Uses ops_accept:{leadId}:{providerId} so the bot can accept/decline directly
+        // without a hold lookup.
         const providerPhone = normaliseWhatsAppPhone(lead.provider.phone)
         if (providerPhone) {
           const actionsBody = [
@@ -1487,8 +1488,8 @@ export async function sendRequestToShortlistedProviders(params: {
             providerPhone,
             actionsBody,
             [
-              { id: `ops_accept:${lead.id}`, title: "I'm Available" },
-              { id: `ops_decline:${lead.id}`, title: 'Not Available' },
+              { id: `ops_accept:${lead.id}:${lead.provider.id}`, title: "I'm Available" },
+              { id: `ops_decline:${lead.id}:${lead.provider.id}`, title: 'Not Available' },
             ],
             undefined,
             { templateName: 'rfp:job_lead_actions', metadata: { requestId: request.id, leadId: lead.id, providerId: lead.provider.id } },
@@ -2445,8 +2446,8 @@ export async function cascadeToNextShortlistedProvider(params: {
           "Tap *I'm Available* if you can take this job. Accepting uses 1 credit.",
         ].filter(Boolean).join('\n'),
         [
-          { id: `ops_accept:${leadId}`, title: "I'm Available" },
-          { id: `ops_decline:${leadId}`, title: 'Not Available' },
+          { id: `ops_accept:${leadId}:${provider.id}`, title: "I'm Available" },
+          { id: `ops_decline:${leadId}:${provider.id}`, title: 'Not Available' },
         ],
         undefined,
         { templateName: 'rfp:job_lead_actions', metadata: { requestId: request.id, leadId, providerId: provider.id } },

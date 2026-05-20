@@ -17,13 +17,14 @@ const {
 } = vi.hoisted(() => ({
   mockDb: {
     conversation: { findUnique: vi.fn(), upsert: vi.fn() },
-    provider: { findUnique: vi.fn() },
-    lead: { findFirst: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
+    provider: { findUnique: vi.fn(), findFirst: vi.fn() },
+    lead: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
     customer: { findUnique: vi.fn() },
     jobRequest: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    messageEvent: { create: vi.fn() },
+    messageEvent: { create: vi.fn(), findFirst: vi.fn() },
     match: { findFirst: vi.fn() },
     booking: { findFirst: vi.fn() },
+    providerWallet: { findUnique: vi.fn(), updateMany: vi.fn() },
     providerApplication: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -165,6 +166,28 @@ function textMessage(id: string, body: string) {
   }
 }
 
+function textMessageWithContext(id: string, body: string, contextId?: string) {
+  return {
+    from: PHONE,
+    id,
+    type: 'text',
+    text: { body },
+    timestamp: String(Date.now()),
+    ...(contextId ? { context: { id: contextId, from: PHONE } } : {}),
+  }
+}
+
+function buttonPayloadMessage(payload: string, title = payload, contextId?: string) {
+  return {
+    from: PHONE,
+    id: `wamid.${payload}`,
+    type: 'button',
+    button: { payload, text: title },
+    timestamp: String(Date.now()),
+    ...(contextId ? { context: { id: contextId, from: PHONE } } : {}),
+  }
+}
+
 function listReplyMessage(id: string, title = id) {
   return {
     from: PHONE,
@@ -197,6 +220,12 @@ describe('processInboundMessage stateless notification replies', () => {
     mockDeclineSelectedProviderJob.mockResolvedValue({ ok: true })
     mockDb.lead.findFirst.mockReset()
     mockDb.lead.findFirst.mockResolvedValue(null)
+    mockDb.lead.findMany.mockReset()
+    mockDb.lead.findMany.mockResolvedValue([])
+    mockDb.provider.findFirst.mockReset()
+    mockDb.provider.findFirst.mockResolvedValue(null)
+    mockDb.messageEvent.findFirst.mockReset()
+    mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.providerApplication.findFirst.mockResolvedValue(null)
     mockDb.providerApplication.findUnique.mockResolvedValue(null)
     mockDb.providerApplication.update.mockResolvedValue({})
@@ -1262,6 +1291,8 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
     mockDb.providerApplication.update.mockResolvedValue({})
     expiredMidFlowConversation()
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findFirst.mockResolvedValue(null)
+    mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.lead.findUnique.mockResolvedValue(makeRfpLead())
     mockDb.lead.updateMany.mockResolvedValue({ count: 1 })
     ;(mockDb as any).auditLog = { create: vi.fn().mockResolvedValue({}) }
@@ -1272,20 +1303,209 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
     )
   })
 
-    it('registers interest and sends availability-noted message on happy path', async () => {
-      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+  it('registers interest from interactive button payload with lead+provider IDs', async () => {
+    await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1:provider-1'))
 
-      expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ id: 'rfp-lead-1' }),
-          data: expect.objectContaining({ status: 'INTERESTED' }),
-        }),
-      )
-      expect(mockSendText).toHaveBeenCalledWith(
-        PHONE,
-        expect.stringContaining('Availability noted'),
-      )
+    expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'rfp-lead-1' }),
+        data: expect.objectContaining({ status: 'INTERESTED' }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Availability noted'),
+    )
+  })
+
+  it('registers interest from button payload format used by older providers', async () => {
+    await processInboundMessage(buttonPayloadMessage('ops_accept:rfp-lead-1:provider-1'))
+
+    expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'rfp-lead-1' }),
+        data: expect.objectContaining({ status: 'INTERESTED' }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Availability noted'),
+    )
+  })
+
+  it('registers interest from plain-text fallback using context message mapping', async () => {
+    mockDb.messageEvent.findFirst.mockResolvedValueOnce({
+      id: 'evt-ctx-1',
+      metadata: {
+        requestId: 'jr-1',
+        leadId: 'rfp-lead-1',
+        providerId: 'provider-1',
+      },
     })
+
+    await processInboundMessage(textMessageWithContext('wamid.text-ctx', 'I\'m Available', 'wamid.outbound-ctx'))
+
+    expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'rfp-lead-1' }),
+        data: expect.objectContaining({ status: 'INTERESTED' }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Availability noted'),
+    )
+  })
+
+  it('registers interest from interactive "ops_accept" without IDs via context mapping', async () => {
+    mockDb.messageEvent.findFirst.mockResolvedValueOnce({
+      id: 'evt-ctx-ops-accept',
+      metadata: {
+        requestId: 'jr-1',
+        leadId: 'rfp-lead-1',
+        providerId: 'provider-1',
+      },
+    })
+
+    await processInboundMessage({
+      from: PHONE,
+      id: 'wamid.interactive-ops-accept-context',
+      type: 'interactive',
+      interactive: {
+        type: 'button_reply',
+        button_reply: { id: 'ops_accept', title: "I'm Available" },
+      },
+      context: { id: 'wamid.outbound-ctx-ops-accept', from: PHONE },
+      timestamp: String(Date.now()),
+    })
+
+    expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'rfp-lead-1' }),
+        data: expect.objectContaining({ status: 'INTERESTED' }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Availability noted'),
+    )
+  })
+
+  it('uses safe fallback only when exactly one active lead is available without context ID', async () => {
+    mockDb.messageEvent.findFirst.mockResolvedValue(null)
+    mockDb.lead.findMany.mockResolvedValueOnce([{ id: 'rfp-lead-1', jobRequestId: 'jr-1' }])
+
+    await processInboundMessage(textMessage('wamid.text-fallback', 'I\'m Available'))
+
+    expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'rfp-lead-1' }),
+        data: expect.objectContaining({ status: 'INTERESTED' }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Availability noted'),
+    )
+  })
+
+  it('reports resolution failure when context cannot be resolved and no unique fallback lead exists', async () => {
+    mockDb.messageEvent.findFirst.mockResolvedValue(null)
+    mockDb.lead.findMany.mockResolvedValueOnce([])
+
+    await processInboundMessage(textMessage('wamid.text-missing-context', 'I\'m Available'))
+
+    expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('We couldn\'t find an open lead for that response'),
+    )
+  })
+
+  it('reports resolution failure when missing context has multiple active lead candidates', async () => {
+    mockDb.messageEvent.findFirst.mockResolvedValue(null)
+    mockDb.lead.findMany.mockResolvedValueOnce([
+      { id: 'rfp-lead-1', jobRequestId: 'jr-1' },
+      { id: 'rfp-lead-2', jobRequestId: 'jr-2' },
+    ])
+
+    await processInboundMessage(textMessage('wamid.text-missing-context-multiple', 'I\'m Available'))
+
+    expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('multiple open leads'),
+    )
+  })
+
+  it('does not match unknown provider phone numbers for availability responses', async () => {
+    mockDb.provider.findUnique.mockResolvedValueOnce(null)
+    mockDb.provider.findFirst.mockResolvedValueOnce(null)
+
+    await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1:provider-1'))
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find your provider profile"),
+    )
+  })
+
+  it('does not perform wallet credit checks for availability taps (zero-credit providers are still eligible)', async () => {
+    await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1:provider-1'))
+
+    expect(mockDb.providerWallet.findUnique).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Availability noted'),
+    )
+  })
+
+  it('works for legacy south-african phone formats when provider phone is normalised', async () => {
+    const localPhone = '0821234567'
+    mockDb.provider.findUnique.mockResolvedValueOnce(null)
+    mockDb.provider.findFirst.mockResolvedValueOnce({ id: 'provider-1', name: 'Sipho Dlamini' })
+
+    await processInboundMessage({
+      from: localPhone,
+      id: 'wamid.sa-phone-format',
+      type: 'button',
+      button: { payload: 'ops_accept:rfp-lead-1:provider-1', text: 'I\'m Available' },
+      timestamp: String(Date.now()),
+    })
+
+    expect(mockDb.provider.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          phone: {
+            in: expect.arrayContaining(['+27821234567']),
+          },
+        },
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Availability noted'),
+    )
+  })
+
+  it('records "Not Available" without charging credits', async () => {
+    await processInboundMessage(buttonMessage('ops_decline:rfp-lead-1:provider-1'))
+
+    expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'rfp-lead-1',
+          providerId: 'provider-1',
+        }),
+      }),
+    )
+    expect((mockDb as any).providerLeadResponse.create).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Understood — noted as unavailable'),
+    )
+  })
 
     it('sends "already noted" idempotent response when updateMany returns count=0', async () => {
       mockDb.lead.updateMany.mockResolvedValue({ count: 0 })
@@ -1325,7 +1545,7 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
         PHONE,
         expect.stringContaining("couldn't register your availability"),
         expect.arrayContaining([
-          expect.objectContaining({ id: 'ops_accept:rfp-lead-1', title: "I'm Available" }),
+          expect.objectContaining({ id: expect.stringContaining('ops_accept:rfp-lead-1:'), title: "I'm Available" }),
         ]),
       )
       const [, , buttons] = mockSendButtons.mock.calls.find(([p]) => p === PHONE) ?? []
@@ -1364,7 +1584,7 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
         PHONE,
         expect.stringContaining("couldn't register your availability"),
         expect.arrayContaining([
-          expect.objectContaining({ id: 'ops_accept:rfp-lead-1', title: "I'm Available" }),
+          expect.objectContaining({ id: expect.stringContaining('ops_accept:rfp-lead-1:'), title: "I'm Available" }),
         ]),
       )
       const [, , buttons] = mockSendButtons.mock.calls.find(([p]) => p === PHONE) ?? []
@@ -1406,6 +1626,20 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
 
       expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
       expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('expired'))
+    })
+
+    it('reports unavailable if job request is no longer in the shortlist review window', async () => {
+      mockDb.lead.findUnique.mockResolvedValue(
+        makeRfpLead({ jobRequest: { id: 'jr-1', category: 'Plumbing', status: 'MATCHED' } }),
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1:provider-1'))
+
+      expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+      expect(mockSendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('customer has moved forward with another provider'),
+      )
     })
   })
 

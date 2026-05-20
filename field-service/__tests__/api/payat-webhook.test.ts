@@ -24,6 +24,10 @@ function sign(body: string) {
   return createHmac('sha256', 'webhook-secret').update(body).digest('hex')
 }
 
+function signBase64(body: string) {
+  return createHmac('sha256', 'webhook-secret').update(body).digest('base64')
+}
+
 function request(payload: Record<string, unknown>, signature = sign(JSON.stringify(payload))) {
   const body = JSON.stringify(payload)
   return new NextRequest('http://localhost/api/payat/webhook', {
@@ -62,6 +66,25 @@ describe('POST /api/payat/webhook', () => {
 
     expect(res.status).toBe(401)
     expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
+
+  it('accepts base64 signatures and sha256-prefixed signatures', async () => {
+    const payload = { reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }
+    const body = JSON.stringify(payload)
+    const signature = `sha256=${signBase64(body)}`
+    const req = new NextRequest('http://localhost/api/payat/webhook', {
+      method: 'POST',
+      body,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-payat-signature': signature,
+      },
+    })
+
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
   })
 
   it('marks a matching paid Pay@ intent and credits the wallet exactly once', async () => {

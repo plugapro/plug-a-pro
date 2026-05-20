@@ -36,12 +36,16 @@ function requireWebhookSecret(): string {
 
 function isValidSignature(rawBody: string, signature: string, secret: string) {
   const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
-  const received = signature.trim()
+  const received = signature.trim().replace(/^sha256=/i, '')
 
   if (!received) return false
 
   const expectedBuffer = Buffer.from(expected, 'hex')
-  const receivedBuffer = Buffer.from(received, 'hex')
+  const receivedBuffer = decodeSignature(received)
+  if (!receivedBuffer) {
+    console.warn('[payat-webhook] signature decode failed')
+    return false
+  }
   if (expectedBuffer.length !== receivedBuffer.length) {
     // Length mismatch usually means the signature was base64-encoded rather than
     // hex-encoded. Check Pay@ merchant portal → webhook settings if this fires.
@@ -53,6 +57,21 @@ function isValidSignature(rawBody: string, signature: string, secret: string) {
   }
 
   return timingSafeEqual(expectedBuffer, receivedBuffer)
+}
+
+function decodeSignature(signature: string) {
+  if (/^[0-9a-f]+$/i.test(signature) && signature.length % 2 === 0) {
+    return Buffer.from(signature, 'hex')
+  }
+
+  try {
+    const base64 = Buffer.from(signature, 'base64')
+    if (base64.length > 0) return base64
+  } catch {
+    return null
+  }
+
+  return null
 }
 
 // Minimum package is R100 = 10000 cents. Amounts below this threshold are

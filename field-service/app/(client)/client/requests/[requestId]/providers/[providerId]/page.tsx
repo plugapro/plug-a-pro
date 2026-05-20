@@ -24,5 +24,30 @@ export default async function RequestProviderPage({
   if (!shortlist) redirect(`/client/requests/${requestId}/shortlist`)
   const provider = shortlist.items.find((item) => item.providerId === providerId)
   if (!provider) redirect(`/client/requests/${requestId}/shortlist`)
-  return <ProviderProfileScreen requestId={requestId} providerId={providerId} providerName={provider.provider.name ?? 'Provider'} />
+  return (
+    <ProviderProfileScreen
+      requestId={requestId}
+      providerId={providerId}
+      providerName={provider.provider.name ?? 'Provider'}
+      profile={{
+        bio: provider.provider.bio ?? null,
+        experience: provider.provider.experience ?? null,
+        skills: provider.provider.skills ?? [],
+        serviceAreas: provider.provider.serviceAreas ?? [],
+        verified: Boolean(provider.provider.verified),
+        averageRating:
+          provider.provider.averageRating != null && Number.isFinite(Number(provider.provider.averageRating))
+            ? Number(provider.provider.averageRating)
+            : null,
+        completedJobsCount:
+          typeof provider.provider.completedJobsCount === 'number'
+            ? provider.provider.completedJobsCount
+            : null,
+        callOutFee: typeof provider.callOutFee === 'number' ? provider.callOutFee : null,
+        estimatedArrivalAt: provider.estimatedArrivalAt ? provider.estimatedArrivalAt.toISOString() : null,
+        negotiable: provider.negotiable ?? true,
+        providerNote: provider.providerNote ?? null,
+      }}
+    />
+  )
 }

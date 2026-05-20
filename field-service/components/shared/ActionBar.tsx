@@ -37,7 +37,7 @@ export function ActionBar({
   return (
     <div
       className={cn(
-        'app-action-bar fixed bottom-0 left-0 right-0 z-40 safe-bottom',
+        'app-action-bar layer-sticky fixed bottom-0 left-0 right-0 safe-bottom',
         className,
       )}
       role="region"

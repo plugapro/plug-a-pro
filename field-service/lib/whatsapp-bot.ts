@@ -237,6 +237,253 @@ const ACTIVE_FLOW_NAMES: FlowName[] = [
   'alt_slot',
 ]
 
+const RFP_LEAD_RESPONSE_ACTION_STATUSES = [
+  'SHORTLISTED',
+  'SEND_PENDING',
+  'SEND_FAILED',
+  'SENT',
+  'VIEWED',
+  'INTERESTED',
+] as const
+
+const RFP_JOB_WINDOW_STATUSES = ['MATCHING', 'SHORTLIST_READY'] as const
+
+type ProviderLeadResponseFallbackHint = 'payload' | 'context' | 'unresolved'
+
+type OpsActionButton = {
+  buttonType: 'ops_accept' | 'ops_decline'
+  leadId: string
+  providerId: string | null
+}
+
+function parseOpsActionButton(buttonId: string): OpsActionButton | null {
+  const [prefix, leadIdRaw, providerIdRaw] = buttonId.split(':')
+  if (prefix !== 'ops_accept' && prefix !== 'ops_decline') {
+    return null
+  }
+
+  const leadId = leadIdRaw?.trim()
+  if (!leadId) return null
+
+  return {
+    buttonType: prefix,
+    leadId,
+    providerId: providerIdRaw?.trim() ? providerIdRaw.trim() : null,
+  }
+}
+
+type ProviderLeadResponseResolutionSource = 'payload' | 'context' | 'fallback'
+type ProviderLeadResponseResolutionErrorCode =
+  | 'LEAD_NOT_FOUND'
+  | 'LEAD_NOT_ASSIGNED'
+  | 'PROVIDER_NOT_FOUND'
+  | 'PROVIDER_CONTEXT_MISMATCH'
+  | 'MISSING_CONTEXT_REFERENCE'
+  | 'CONTEXT_LOOKUP_FAILED'
+  | 'NO_ACTIVE_LEAD'
+  | 'MULTIPLE_ACTIVE_LEADS'
+
+type ProviderLeadResponseResolution =
+  | {
+      ok: true
+      leadId: string
+      providerId: string
+      requestId: string | null
+      source: ProviderLeadResponseResolutionSource
+    }
+  | {
+      ok: false
+      reason: ProviderLeadResponseResolutionErrorCode
+    }
+
+function metadataString(metadata: unknown, key: string): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const maybeValue = (metadata as Record<string, unknown>)[key]
+  return typeof maybeValue === 'string' && maybeValue.trim().length > 0 ? maybeValue.trim() : null
+}
+
+function mapProviderLeadResponseFailureMessage(reason: ProviderLeadResponseResolutionErrorCode) {
+  if (reason === 'LEAD_NOT_FOUND' || reason === 'LEAD_NOT_ASSIGNED') {
+    return '⚠️ This lead could not be found or is not assigned to your account.'
+  }
+  if (reason === 'PROVIDER_NOT_FOUND') {
+    return "We couldn't find your provider profile. Reply *Hi* to continue."
+  }
+  if (reason === 'PROVIDER_CONTEXT_MISMATCH') {
+    return '⚠️ This lead is linked to a different provider profile. Please use the latest lead message.'
+  }
+  if (reason === 'MISSING_CONTEXT_REFERENCE' || reason === 'CONTEXT_LOOKUP_FAILED') {
+    return 'We couldn\'t match this reply to an active lead. Please tap "I\'m Available" from the latest lead message and try again.'
+  }
+  if (reason === 'MULTIPLE_ACTIVE_LEADS') {
+    return 'We found multiple active lead replies. Please use the latest message, or type *menu* and open your jobs list.'
+  }
+  return 'No matching open lead was found for that response. Reply *menu* to continue.'
+}
+
+function mapProviderLeadResponseFailureToActionMessage(reason: ProviderLeadResponseResolutionErrorCode, action: 'available' | 'not_available') {
+  const base = action === 'available'
+    ? 'Couldn\'t record your availability response.'
+    : 'Couldn\'t record your availability response.'
+
+  if (reason === 'NO_ACTIVE_LEAD') {
+    return `${base} We couldn't find an open lead for that response.`
+  }
+  if (reason === 'MULTIPLE_ACTIVE_LEADS') {
+    return `${base} We found multiple open leads, so please tap the button from the latest lead message.`
+  }
+  if (reason === 'CONTEXT_LOOKUP_FAILED' || reason === 'MISSING_CONTEXT_REFERENCE') {
+    return `${base} We couldn't link this reply to the lead message. Please tap "I'm Available" from the latest lead message again.`
+  }
+  if (reason === 'PROVIDER_CONTEXT_MISMATCH') {
+    return '⚠️ This lead is linked to a different provider profile. Please use the latest lead message.'
+  }
+  if (reason === 'LEAD_NOT_FOUND' || reason === 'LEAD_NOT_ASSIGNED') {
+    return '⚠️ This lead could not be found or is not assigned to your account.'
+  }
+  if (reason === 'PROVIDER_NOT_FOUND') {
+    return "We couldn't find your provider profile. Reply *Hi* to continue."
+  }
+  return mapProviderLeadResponseFailureMessage(reason)
+}
+
+function mapProviderLeadParseErrorMessage(
+  reason: 'UNSUPPORTED_MESSAGE_SHAPE' | 'MALFORMED_PAYLOAD' | 'UNRESOLVED_TEXT_ACTION' | 'NO_CONTEXT_REFERENCE',
+): string {
+  if (reason === 'NO_CONTEXT_REFERENCE') {
+    return 'We couldn\'t match this reply to a lead message. Please tap "I\'m Available" or "Not Available" from the latest lead message.'
+  }
+  if (reason === 'UNRESOLVED_TEXT_ACTION') {
+    return 'We couldn\'t read your lead response text. Tap "I\'m Available" or "Not Available" from the latest lead message.'
+  }
+  return '⚠️ We couldn\'t read that lead action button. Please tap "I\'m Available" or "Not Available" from the latest lead message.'
+}
+
+async function resolveProviderLeadResponseFromContext(contextMessageId: string) {
+  const messageEvent = await db.messageEvent.findFirst({
+    where: {
+      externalId: contextMessageId,
+      templateName: 'rfp:job_lead_actions',
+    },
+    select: { id: true, metadata: true },
+  })
+
+  const leadId = metadataString(messageEvent?.metadata, 'leadId')
+  const providerId = metadataString(messageEvent?.metadata, 'providerId')
+  const requestId = metadataString(messageEvent?.metadata, 'requestId')
+  if (!messageEvent || !leadId || !providerId) {
+    return {
+      ok: false as const,
+      messageEventId: messageEvent?.id ?? null,
+      reason: 'CONTEXT_LOOKUP_FAILED' as const,
+    }
+  }
+
+  return {
+    ok: true as const,
+    messageEventId: messageEvent.id,
+    leadId,
+    providerId,
+    requestId,
+  }
+}
+
+async function resolveProviderLeadResponse(
+  parsed: WhatsAppProviderLeadResponse,
+  fallbackHint: ProviderLeadResponseFallbackHint,
+): Promise<ProviderLeadResponseResolution> {
+  const provider = await findProviderByWhatsAppPhone(parsed.providerPhone, { id: true })
+  if (!provider) {
+    return { ok: false, reason: 'PROVIDER_NOT_FOUND' }
+  }
+
+  if (parsed.providerId && parsed.providerId !== provider.id) {
+    return { ok: false, reason: 'PROVIDER_CONTEXT_MISMATCH' }
+  }
+
+  let leadId = parsed.leadId
+  let requestId: string | null = null
+  let source: ProviderLeadResponseResolutionSource = fallbackHint === 'context'
+    ? 'context'
+    : fallbackHint === 'payload'
+      ? 'payload'
+      : 'fallback'
+
+  if (!leadId) {
+    if (parsed.contextMessageId) {
+      const context = await resolveProviderLeadResponseFromContext(parsed.contextMessageId)
+      if (!context.ok) {
+        return { ok: false, reason: context.reason === 'CONTEXT_LOOKUP_FAILED' ? 'CONTEXT_LOOKUP_FAILED' : 'MISSING_CONTEXT_REFERENCE' }
+      }
+      if (context.providerId !== provider.id) {
+        return { ok: false, reason: 'PROVIDER_CONTEXT_MISMATCH' }
+      }
+      leadId = context.leadId
+      requestId = context.requestId
+      source = 'context'
+    } else {
+      const openLeadCandidates = await db.lead.findMany({
+        where: {
+          providerId: provider.id,
+          status: { in: [...RFP_LEAD_RESPONSE_ACTION_STATUSES] },
+          jobRequest: { status: { in: [...RFP_JOB_WINDOW_STATUSES] } },
+        },
+        select: { id: true, jobRequestId: true },
+      })
+
+      if (openLeadCandidates.length === 0) {
+        return { ok: false, reason: 'NO_ACTIVE_LEAD' }
+      }
+      if (openLeadCandidates.length > 1) {
+        return { ok: false, reason: 'MULTIPLE_ACTIVE_LEADS' }
+      }
+      leadId = openLeadCandidates[0]?.id ?? null
+      requestId = openLeadCandidates[0]?.jobRequestId ?? null
+      source = 'fallback'
+    }
+  }
+
+  if (!leadId) {
+    return { ok: false, reason: 'LEAD_NOT_FOUND' }
+  }
+
+  const lead = await db.lead.findUnique({
+    where: { id: leadId },
+    select: {
+      id: true,
+      providerId: true,
+      jobRequestId: true,
+      status: true,
+      jobRequest: {
+        select: {
+          status: true,
+        },
+      },
+    },
+  })
+
+  if (!lead) {
+    return { ok: false, reason: 'LEAD_NOT_FOUND' }
+  }
+  if (lead.providerId !== provider.id) {
+    return { ok: false, reason: 'LEAD_NOT_ASSIGNED' }
+  }
+  if (requestId && requestId !== lead.jobRequestId) {
+    return {
+      ok: false,
+      reason: 'PROVIDER_CONTEXT_MISMATCH',
+    }
+  }
+
+  return {
+    ok: true,
+    leadId: lead.id,
+    providerId: provider.id,
+    requestId: lead.jobRequestId,
+    source,
+  }
+}
+
 function firstName(name: string | null | undefined) {
   return (name?.trim() || 'there').split(/\s+/)[0]
 }
@@ -584,6 +831,63 @@ function enqueuePhoneMessage(
   return current
 }
 
+async function handleProviderLeadResponseFromParsedAction(
+  phone: string,
+  parsedResult: Extract<WhatsAppProviderLeadResponseParseOutput, { ok: true }>,
+) {
+  const parsed = parsedResult.parsed
+  const traceId = createTraceId('wbot')
+  const { inboundMessageId, contextMessageId, action, providerPhone } = parsed
+  console.info('[whatsapp-bot] rfp_lead_response: parse_hit', {
+    traceId,
+    inboundMessageId,
+    contextMessageId,
+    normalizedAction: action,
+    rawMessageType: parsed.rawMessageType,
+    providerPhoneMasked: maskedPhone(providerPhone),
+  })
+
+  const resolved = await resolveProviderLeadResponse(parsed, parsedResult.fallback.leadId)
+  if (!resolved.ok) {
+    console.warn('[whatsapp-bot] rfp_lead_response: resolution_failed', {
+      traceId,
+      inboundMessageId,
+      contextMessageId,
+      providerPhoneMasked: maskedPhone(providerPhone),
+      action,
+      reason: resolved.reason,
+      rawMessageType: parsed.rawMessageType,
+    })
+    await sendText(
+      phone,
+      `${mapProviderLeadResponseFailureToActionMessage(resolved.reason, action)}\n\n_Ref: ${traceId}_`,
+    )
+    return
+  }
+
+  console.info('[whatsapp-bot] rfp_lead_response: response_resolved', {
+    traceId,
+    inboundMessageId,
+    contextMessageId,
+    leadId: resolved.leadId,
+    providerId: resolved.providerId,
+    requestId: resolved.requestId,
+    source: resolved.source,
+    normalizedAction: action,
+  })
+
+  if (action === 'available') {
+    await handleRfpLeadInterest(phone, resolved.providerId, resolved.leadId, traceId, {
+      inboundMessageId,
+      contextMessageId,
+      source: resolved.source,
+    })
+    return
+  }
+
+  await handleOpsLeadDeclineWithProviderId(phone, resolved.leadId, resolved.providerId, traceId)
+}
+
 function enqueuePhoneMessageBatch(phone: string, messages: InboundMessage[], mode: MessageBatchMode): Promise<void> {
   const previous = phoneMessageQueues.get(phone) ?? Promise.resolve()
   const current = previous
@@ -614,12 +918,49 @@ async function processInboundMessageUnlocked(
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = normalizePhone(message.from)
   const reply = parseInbound(message)
+  const providerLeadResponse = parseProviderLeadResponseAction(message)
   let flow: FlowName = 'idle'
   let step: FlowStep = 'welcome'
   let data: ConversationData = {}
   let recoveryRole: JourneyUserRole = 'unknown'
 
   try {
+    if (providerLeadResponse.ok && providerLeadResponse.parsed.actionType === 'provider_lead_response') {
+      await handleProviderLeadResponseFromParsedAction(phone, providerLeadResponse)
+      return
+    }
+    if (
+      !providerLeadResponse.ok &&
+      (
+        providerLeadResponse.reason.code === 'MALFORMED_PAYLOAD' ||
+        (providerLeadResponse.reason.code === 'UNRESOLVED_TEXT_ACTION' && providerLeadResponse.reason.rawMessageType === 'button')
+      )
+    ) {
+      const traceId = createTraceId('wbot')
+      if (
+        providerLeadResponse.reason.code === 'MALFORMED_PAYLOAD' ||
+        providerLeadResponse.reason.code === 'UNRESOLVED_TEXT_ACTION'
+      ) {
+        console.warn('[whatsapp-bot] rfp_lead_response: malformed_lead_reply', {
+          traceId,
+          inboundMessageId: providerLeadResponse.reason.inboundMessageId,
+          contextMessageId: providerLeadResponse.reason.contextMessageId,
+          rawMessageType: providerLeadResponse.reason.rawMessageType,
+          value: providerLeadResponse.reason.value,
+        })
+        await sendText(
+          phone,
+          `${mapProviderLeadParseErrorMessage(providerLeadResponse.reason.code)}\n\n_Ref: ${traceId}_`,
+        )
+        return
+      }
+      await sendText(
+        phone,
+        `We couldn't read that lead response. Please use the latest lead message or reply *menu*.\n\n_Ref: ${traceId}_`,
+      )
+      return
+    }
+
     // Load or create conversation session
     const conversation = await loadConversation(phone)
     const isExpired = conversation.expiresAt < new Date()
@@ -1141,7 +1482,12 @@ async function processInboundMessageUnlocked(
 
     if (reply.id?.startsWith('ops_decline:')) {
       // ── OPS_REVIEW / RFP direct lead decline — show reason sub-menu ──────────
-      const leadId = reply.id.slice('ops_decline:'.length)
+      const parsed = parseOpsActionButton(reply.id)
+      const leadId = parsed?.leadId
+      if (!parsed || !leadId) {
+        await sendText(phone, `We couldn't read that lead response. Please use the latest lead message or reply *menu*.\n\n_Ref: ${createTraceId('wbot')}_`)
+        return
+      }
       await sendButtons(
         phone,
         '❌ *Not Available*\n\nWhat\'s the reason?',
@@ -3262,7 +3608,7 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
 }
 
 // ─── RFP: register provider interest (no credit deduction, customer still selects) ──
-// Button ID format: `ops_accept:{leadId}`
+// Button ID format: `ops_accept:{leadId}` (legacy) or `ops_accept:{leadId}:{providerId}`.
 // These buttons are sent exclusively from sendRequestToShortlistedProviders (review-first
 // flow). Tapping "I'm Available" marks the lead INTERESTED + records a ProviderLeadResponse
 // so the customer can compare responses and select a provider. Credits are deducted only
@@ -3270,7 +3616,18 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
 
 async function handleOpsLeadAcceptance(phone: string, buttonId: string): Promise<void> {
   const traceId = createTraceId('wbot')
-  const leadId = buttonId.slice('ops_accept:'.length).trim()
+  const parsed = parseOpsActionButton(buttonId)
+  if (!parsed) {
+    await sendText(phone, `We couldn't read that lead response. Please use the latest lead message or reply *menu*.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  if (parsed.buttonType !== 'ops_accept') {
+    await sendText(phone, `We couldn't read that lead response. Please use the latest lead message or reply *menu*.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  const leadId = parsed.leadId
   if (!leadId) {
     await sendText(phone, `We couldn't read that lead response. Please use the latest lead message or reply *menu*.\n\n_Ref: ${traceId}_`)
     return
@@ -3282,7 +3639,96 @@ async function handleOpsLeadAcceptance(phone: string, buttonId: string): Promise
     return
   }
 
-  await handleRfpLeadInterest(phone, provider.id, leadId, traceId)
+  if (parsed.providerId && parsed.providerId !== provider.id) {
+    await sendText(phone, '⚠️ This lead is linked to a different provider profile. Please use the latest lead message.')
+    return
+  }
+
+  await handleRfpLeadInterest(phone, provider.id, leadId, traceId, { source: 'payload' })
+}
+
+async function handleOpsLeadDeclineWithProviderId(
+  phone: string,
+  leadId: string,
+  providerId: string,
+  traceId: string,
+): Promise<void> {
+  const provider = await db.provider.findUnique({ where: { id: providerId }, select: { id: true } })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  try {
+    const lead = await db.lead.findUnique({
+      where: { id: leadId },
+      select: {
+        id: true,
+        status: true,
+        providerId: true,
+        assignmentHoldId: true,
+        jobRequestId: true,
+      },
+    })
+
+    if (!lead || lead.providerId !== provider.id) {
+      await sendText(phone, '⚠️ This lead could not be found or is not assigned to your account.')
+      return
+    }
+
+    const rfpOpenStatuses = ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED'] as const
+    if (rfpOpenStatuses.includes(lead.status as (typeof rfpOpenStatuses)[number]) && !lead.assignmentHoldId) {
+      const now = new Date()
+      const updatedCount = await db.lead.updateMany({
+        where: { id: leadId, providerId: provider.id, status: { in: [...rfpOpenStatuses] } },
+        data: { status: 'DECLINED', respondedAt: now, declinedAt: now },
+      })
+
+      if (updatedCount.count === 0) {
+        await sendText(phone, `✅ This lead is already noted as unavailable.\n\nNew jobs will continue to come through as they are available.`)
+        return
+      }
+
+      await sendText(phone, `Understood — noted as unavailable. You'll receive new job notifications as they arise.`)
+      console.info('[whatsapp-bot] ops_decline: rfp_lead_declined', {
+        traceId,
+        leadId,
+        providerId: provider.id,
+      })
+      if (updatedCount.count > 0) {
+        await cascadeToNextShortlistedProvider({
+          requestId: lead.jobRequestId,
+          declinedLeadId: leadId,
+        }).catch((err: unknown) => {
+          console.warn('[whatsapp-bot] ops_decline: rfp_cascade_failed', {
+            traceId,
+            leadId,
+            requestId: lead.jobRequestId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+      }
+      return
+    }
+
+    const { declineLead } = await import('./matching-engine')
+    await declineLead({ leadId, providerId: provider.id })
+    await sendText(phone, `Understood — noted as unavailable. You'll receive new job notifications as they arise.`)
+    console.info('[whatsapp-bot] ops_decline: lead declined', {
+      traceId,
+      leadId,
+      providerId: provider.id,
+    })
+  } catch (error) {
+    console.error('[whatsapp-bot] ops_decline: unexpected failure', {
+      traceId,
+      phone,
+      leadId,
+      providerId,
+      error,
+    })
+    await sendText(phone, `We couldn't process your response right now. Reply *menu* to return to the main menu or *status* to check your active leads.\n\n_Ref: ${traceId}_`)
+  }
 }
 
 async function handleRfpLeadInterest(
@@ -3290,6 +3736,11 @@ async function handleRfpLeadInterest(
   providerId: string,
   leadId: string,
   traceId: string,
+  options?: {
+    inboundMessageId?: string | null
+    contextMessageId?: string | null
+    source?: ProviderLeadResponseResolutionSource | null
+  },
 ): Promise<void> {
   const lead = await db.lead.findUnique({
     where: { id: leadId },
@@ -3334,6 +3785,18 @@ async function handleRfpLeadInterest(
     await sendText(phone, '⚠️ This lead has expired. New leads will come through as jobs arise.')
     return
   }
+
+  console.info('[whatsapp-bot] rfp_interest: request_start', {
+    traceId,
+    leadId: lead.id,
+    providerId,
+    requestId: lead.jobRequestId,
+    inboundMessageId: options?.inboundMessageId ?? null,
+    contextMessageId: options?.contextMessageId ?? null,
+    resolutionSource: options?.source ?? null,
+    leadStatus: lead.status,
+    jobRequestStatus: lead.jobRequest.status,
+  })
 
   const ref = leadId.slice(-8).toUpperCase()
 
@@ -3458,7 +3921,13 @@ async function handleRfpLeadInterest(
       transactionError = null
       if (!alreadyRegistered) {
         console.info('[whatsapp-bot] rfp_interest: interest registered', {
-          traceId, leadId, providerId, prevLeadStatus: lead.status,
+          traceId,
+          leadId,
+          providerId,
+          prevLeadStatus: lead.status,
+          inboundMessageId: options?.inboundMessageId ?? null,
+          contextMessageId: options?.contextMessageId ?? null,
+          resolutionSource: options?.source ?? null,
         })
       }
       break
@@ -3489,6 +3958,9 @@ async function handleRfpLeadInterest(
       traceId, leadId, providerId,
       errorCode: (transactionError as { code?: string })?.code ?? 'unknown',
       error: transactionError instanceof Error ? transactionError.message : String(transactionError),
+      inboundMessageId: options?.inboundMessageId ?? null,
+      contextMessageId: options?.contextMessageId ?? null,
+      resolutionSource: options?.source ?? null,
     })
     // Re-send only the retry button — omitting "Not Available" avoids an accidental
     // decline if the provider taps reflexively after seeing an error.
@@ -3496,7 +3968,7 @@ async function handleRfpLeadInterest(
       phone,
       `⚠️ We couldn't register your availability right now — please try again.\n\n_Ref: ${traceId}_`,
       [
-        { id: `ops_accept:${leadId}`, title: "I'm Available" },
+        { id: `ops_accept:${leadId}:${providerId}`, title: "I'm Available" },
       ],
     )
     return

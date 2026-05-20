@@ -63,6 +63,16 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendButtons: vi.fn().mockResolvedValue(undefined),
   sendList: vi.fn().mockResolvedValue(undefined),
   sendCtaUrl: vi.fn().mockResolvedValue(undefined),
+  parseProviderLeadResponseAction: vi.fn(() => ({
+    ok: false,
+    reason: {
+      code: 'UNSUPPORTED_MESSAGE_SHAPE',
+      inboundMessageId: '',
+      contextMessageId: null,
+      rawMessageType: 'unknown',
+      value: '',
+    },
+  })),
 }))
 
 vi.mock('@/lib/whatsapp-media', () => ({

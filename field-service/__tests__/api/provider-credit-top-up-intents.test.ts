@@ -102,6 +102,22 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     }))
   })
 
+  it('accepts string amounts from non-browser clients', async () => {
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: '10000' }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockCreatePayatTopUpIntent).toHaveBeenCalledWith(expect.objectContaining({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+    }))
+  })
+
   it('keeps manual EFT available as an explicit secondary provider path', async () => {
     const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
     const response = await POST(

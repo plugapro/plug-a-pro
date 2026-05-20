@@ -78,14 +78,22 @@ async function ensureCustomerOwnsJob(jobId: string, customerId: string): Promise
 
 export type ClientDraftInput = {
   category: string
+  subcategory?: string | null
   title: string
   description?: string
+  budgetPreference?: string | null
+  providerPreference?: string | null
+  maxCallOutFee?: number | null
+  verifiedOnly?: boolean
   address?: {
     street: string
     suburb: string
     city: string
     province?: string
     postalCode?: string
+    unitNumber?: string | null
+    complexName?: string | null
+    accessNotes?: string | null
   } | null
   schedule?: 'asap' | 'morning' | 'afternoon' | 'specific' | null
 }
@@ -109,9 +117,6 @@ export async function createDraftRequest(input: ClientDraftInput): Promise<{ id:
     street: input.address?.street ?? 'Unknown',
     addressLine1: input.address?.street ?? 'Unknown',
     addressLine2: null,
-    complexName: null,
-    unitNumber: null,
-    accessNotes: null,
     suburb: input.address?.suburb ?? 'Unknown',
     region: input.address?.city ?? 'Unknown',
     city: input.address?.city ?? 'Unknown',
@@ -119,11 +124,15 @@ export async function createDraftRequest(input: ClientDraftInput): Promise<{ id:
     postalCode: input.address?.postalCode ?? null,
     locationNodeId: null,
     source: 'pwa',
+    subcategory: input.subcategory ?? null,
     urgency: input.schedule ?? null,
-    providerPreference: null,
-    budgetPreference: null,
-    maxCallOutFee: null,
-    verifiedOnly: false,
+    providerPreference: input.providerPreference ?? null,
+    budgetPreference: input.budgetPreference ?? null,
+    maxCallOutFee: input.maxCallOutFee ?? null,
+    verifiedOnly: Boolean(input.verifiedOnly),
+    unitNumber: input.address?.unitNumber ?? null,
+    complexName: input.address?.complexName ?? null,
+    accessNotes: input.address?.accessNotes ?? null,
   })
 
   return { id: request.jobRequestId, status: 'draft' }
@@ -140,9 +149,16 @@ export async function saveDraftRequest(
 
   const data: Prisma.JobRequestUpdateInput = {}
   if (patch.category) data.category = patch.category
+  if (typeof patch.subcategory === 'string') data.subcategory = patch.subcategory
   if (patch.title) data.title = patch.title
   if (typeof patch.description === 'string') data.description = patch.description
   if (patch.schedule) data.urgency = patch.schedule
+  if (typeof patch.providerPreference === 'string') data.providerPreference = patch.providerPreference
+  if (typeof patch.budgetPreference === 'string') data.budgetPreference = patch.budgetPreference
+  if (typeof patch.maxCallOutFee === 'number' && Number.isFinite(patch.maxCallOutFee)) {
+    data.maxCallOutFee = patch.maxCallOutFee
+  }
+  if (typeof patch.verifiedOnly === 'boolean') data.verifiedOnly = patch.verifiedOnly
 
   const request = await db.jobRequest.update({
     where: { id },
@@ -156,6 +172,27 @@ export async function submitRequest(id: string): Promise<{ requestId: string; st
   const auth = await getAuthenticatedCustomerContext()
   if (!auth || !(await ensureCustomerOwnsRequest(id, auth.customer.id))) {
     throw new Error('Unauthorized')
+  }
+
+  const existing = await db.jobRequest.findFirst({
+    where: requestWithCustomerWhere(id, auth.customer.id),
+    select: { id: true, status: true },
+  })
+  if (!existing) {
+    throw new Error('Unauthorized')
+  }
+
+  if (
+    existing.status === 'MATCHING' ||
+    existing.status === 'SHORTLIST_READY' ||
+    existing.status === 'PROVIDER_CONFIRMATION_PENDING' ||
+    existing.status === 'MATCHED'
+  ) {
+    return { requestId: existing.id, status: 'matching' }
+  }
+
+  if (existing.status === 'CANCELLED' || existing.status === 'EXPIRED') {
+    throw new Error('Request is no longer active')
   }
 
   const request = await db.jobRequest.update({

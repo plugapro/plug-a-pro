@@ -6,6 +6,31 @@
    This keeps Tailwind dark: utilities and CSS-variable .dark overrides in sync. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Map semantic design tokens to Tailwind color utilities (bg-popover, etc.).
+   Without this, utility classes can compile without the expected CSS variable
+   bindings, which leaves overlay surfaces transparent on some mobile browsers. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
 /* ── Brand gradient utilities ──────────────────────────────────────────── */
 @utility brand-gradient {
   background: var(--brand-gradient);
@@ -461,6 +486,26 @@
     border-color: var(--tone-brand-border);
     background: var(--tone-brand-bg);
     color: var(--tone-brand-fg);
+  }
+}
+
+@layer utilities {
+  /* Shared z-index scale:
+     - sticky bars/nav: 40
+     - dropdown/popover panels: 60
+     - modal/dialog surfaces: 80
+     - global toasts/alerts: 90 */
+  .layer-sticky {
+    z-index: 40;
+  }
+  .layer-dropdown {
+    z-index: 60;
+  }
+  .layer-modal {
+    z-index: 80;
+  }
+  .layer-toast {
+    z-index: 90;
   }
 }
 
