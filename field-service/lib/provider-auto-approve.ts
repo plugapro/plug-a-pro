@@ -336,31 +336,14 @@ async function executeSideEffectAction(params: {
   sourceRefId: string
 }) {
   if (params.kind === 'PROMO_AWARD') {
-    const award = await awardPromoCreditsForMilestone(
-      params.providerId,
-      'MOBILE_VERIFIED',
-      {
-        referenceType: params.sourceRefType,
-        referenceId: params.sourceRefId,
-        createdBy: ACTOR_ID,
-        metadata: { autoApprove: true },
-      },
-    )
-
-    if (!award.awarded) {
-      return {
-        status: 'done' as const,
-        reason: `MOBILE_VERIFIED_${award.skippedReason ?? 'SKIPPED'}`,
-        awarded: false,
-        attempted: true,
-      }
-    }
-
+    // VOUCHER_PILOT: Auto-award disabled. Provider credits are now granted exclusively
+    // via single-use voucher redemption (WhatsApp "redeem" or PWA /provider/voucher).
+    // Returning 'done' prevents infinite retries while preserving the marker audit trail.
     return {
       status: 'done' as const,
-      reason: 'MOBILE_VERIFIED_AWARDED',
-      awarded: true,
-      attempted: true,
+      reason: 'PROMO_AWARD_DISABLED_VOUCHER_PILOT',
+      awarded: false,
+      attempted: false,
     }
   }
 

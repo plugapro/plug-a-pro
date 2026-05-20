@@ -241,17 +241,19 @@ describe('provider auto-approval', () => {
 
     const result = await autoApproveProviderApplications(client)
 
+    // VOUCHER_PILOT: PROMO_AWARD is now a no-op that returns 'done' immediately.
+    // promoFailed stays 0; awardPromoCreditsForMilestone is never invoked.
     expect(result).toMatchObject({
       attempted: 1,
       approved: 1,
       skipped: 0,
       errors: 0,
       sideEffectSummary: {
-        promoFailed: 1,
+        promoFailed: 0,
       },
     })
     expect(mockReleaseOpsQueueItem).toHaveBeenCalled()
-    expect(mockAwardPromoCreditsForMilestone).toHaveBeenCalledOnce()
+    expect(mockAwardPromoCreditsForMilestone).not.toHaveBeenCalled()
   })
 
   it('falls back to direct side-effect execution when marker writes fail', async () => {
@@ -310,7 +312,8 @@ describe('provider auto-approval', () => {
     expect(markerStorage.upsert).toHaveBeenCalled()
     expect(mockNotifyProviderApplicationApprovedOnce).toHaveBeenCalled()
     expect(mockCheckJobsForNewProviderAvailability).toHaveBeenCalled()
-    expect(mockAwardPromoCreditsForMilestone).toHaveBeenCalled()
+    // VOUCHER_PILOT: PROMO_AWARD is now a no-op; awardPromoCreditsForMilestone is never invoked.
+    expect(mockAwardPromoCreditsForMilestone).not.toHaveBeenCalled()
   })
 
   it('marks no-op when a concurrent worker already updated the row', async () => {
