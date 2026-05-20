@@ -13,15 +13,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
-
-function buildCookieHeader(token: string, maxAge: number): string {
-  const isProd = process.env.NODE_ENV === 'production'
-  const secure = isProd ? '; Secure' : ''
-  return `sb-access-token=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`
-}
-
-const DEFAULT_SESSION_MAX_AGE = 60 * 60
-const MAX_SESSION_MAX_AGE = 60 * 60 * 24
+import { buildSessionCookieHeader, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
 
 export async function POST(request: NextRequest) {
   try {
@@ -97,15 +89,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required', adminAccess: false }, { status: 403 })
     }
 
-    const requestedMaxAge =
-      typeof expiresIn === 'number' && Number.isFinite(expiresIn) ? expiresIn : DEFAULT_SESSION_MAX_AGE
-    const maxAge = Math.min(
-      MAX_SESSION_MAX_AGE,
-      Math.max(DEFAULT_SESSION_MAX_AGE, Math.floor(requestedMaxAge)),
-    )
+    const maxAge = resolveSessionMaxAge(expiresIn)
 
     const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
-    response.headers.set('Set-Cookie', buildCookieHeader(accessToken, maxAge))
+    response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
     return response
   } catch (err) {
     console.error('[api/auth/session] POST error:', err)

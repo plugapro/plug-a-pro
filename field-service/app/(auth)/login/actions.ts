@@ -1,9 +1,11 @@
 'use server'
 
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { getSafeAdminNextPath } from '@/lib/safe-redirect'
+import { normalizeEmailInput, normalizePasswordInput } from '@/lib/auth-input'
+import { SESSION_COOKIE_NAME, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
 
 type ErrorCode =
   | 'err/auth/invalid-request'
@@ -19,10 +21,6 @@ export type LoginState =
   | { status: 'error'; email?: string; errorCode?: ErrorCode; attemptsUsed?: number; attemptsMax?: number }
   | { status: '2fa-required'; email?: string; message?: string }
   | { status: 'locked'; retryAfter?: number }
-
-function normalizeInput(value: FormDataEntryValue | null): string {
-  return typeof value === 'string' ? value.trim().toLowerCase() : ''
-}
 
 async function resolveAbsoluteUrl(path: string): Promise<string> {
   const requestHeaders = await headers()
@@ -62,8 +60,8 @@ export async function loginAction(
   _prevState: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
-  const email = normalizeInput(formData.get('email'))
-  const password = normalizeInput(formData.get('password'))
+  const email = normalizeEmailInput(formData.get('email'))
+  const password = normalizePasswordInput(formData.get('password'))
   const nextRaw = formData.get('next')
   const next = getSafeAdminNextPath(
     typeof nextRaw === 'string' ? nextRaw : null,
@@ -153,6 +151,15 @@ export async function loginAction(
       errorCode: 'err/auth/service-unavailable',
     }
   }
+
+  const cookieStore = await cookies()
+  cookieStore.set(SESSION_COOKIE_NAME, data.session.access_token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: resolveSessionMaxAge(data.session.expires_in),
+    secure: process.env.NODE_ENV === 'production',
+  })
 
   redirect(next)
 }
