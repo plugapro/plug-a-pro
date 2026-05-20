@@ -12,6 +12,8 @@
 // ─── CTA link types ──────────────────────────────────────────────────────────
 
 export type WhatsAppCtaPurpose =
+  | 'view_lead'
+  | 'view_job'
   | 'credit_history'
   | 'credits_terms'
   | 'buy_credits'
@@ -39,6 +41,8 @@ export type WhatsAppCtaLink = {
 }
 
 const CTA_LABELS: Record<WhatsAppCtaPurpose, string> = {
+  view_lead: 'View lead',
+  view_job: 'View job',
   credit_history: 'View credits history',
   credits_terms: 'View credits rules',
   buy_credits: 'Buy credits',
