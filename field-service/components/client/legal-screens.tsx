@@ -1,14 +1,14 @@
 import Link from 'next/link'
 
 export const LEGAL_PAGES = [
-  { slug: 'privacy', title: 'Privacy policy', path: '/privacy', group: 'For everyone', blurb: 'How we collect and use your information.' },
-  { slug: 'terms', title: 'Terms of service', path: '/terms', group: 'For everyone', blurb: 'The agreement between you and Plug A Pro.' },
-  { slug: 'refund-policy', title: 'Refund policy', path: '/refund-policy', group: 'For everyone', blurb: 'When refunds apply and how they are processed.' },
-  { slug: 'trust', title: 'Trust & safety', path: '/trust', group: 'For everyone', blurb: 'How we verify providers and handle disputes.' },
-  { slug: 'provider-terms', title: 'Provider terms', path: '/provider-terms', group: 'For service providers', blurb: 'Marketplace rules for providers.' },
-  { slug: 'credits-policy', title: 'Provider credits rules', path: '/credits-policy', group: 'For service providers', blurb: 'How credits are charged and refunded.' },
-  { slug: 'faq', title: 'FAQ', path: '/faq', group: 'Help', blurb: 'Common customer and provider questions.' },
-  { slug: 'contact', title: 'Contact support', path: '/contact', group: 'Help', blurb: 'How to reach Plug A Pro support.' },
+  { slug: 'privacy', title: 'Privacy policy', path: '/privacy', group: 'For everyone', blurb: 'How we collect, use, and share your information across requests, quotes, and jobs.' },
+  { slug: 'terms', title: 'Terms of service', path: '/terms', group: 'For everyone', blurb: 'The agreement between you and Plug A Pro, including rights and responsibilities.' },
+  { slug: 'refund-policy', title: 'Refund policy', path: '/refund-policy', group: 'For everyone', blurb: 'When refunds apply, how to request one, and how long refunds usually take.' },
+  { slug: 'trust', title: 'Trust & safety', path: '/trust', group: 'For everyone', blurb: 'How we verify providers, protect details, and handle escalations or disputes.' },
+  { slug: 'provider-terms', title: 'Provider terms', path: '/provider-terms', group: 'For service providers', blurb: 'Marketplace rules for approved providers, conduct, and policy enforcement.' },
+  { slug: 'credits-policy', title: 'Provider credits rules', path: '/credits-policy', group: 'For service providers', blurb: 'How credits are purchased, charged on acceptance, and refunded when eligible.' },
+  { slug: 'faq', title: 'FAQ', path: '/faq', group: 'Help', blurb: 'Answers to common customer and provider questions about the platform.' },
+  { slug: 'contact', title: 'Contact support', path: '/contact', group: 'Help', blurb: 'Support channels and response expectations for urgent and non-urgent issues.' },
 ] as const
 
 export function LegalHubScreen() {
@@ -19,11 +19,12 @@ export function LegalHubScreen() {
   }, {})
 
   return (
-    <div className="mx-auto max-w-md px-5 py-6">
+    <div className="mx-auto max-w-md px-5 py-6 [animation:pap-fade-in_.2s_ease-out_both]">
       <h1 className="text-2xl font-bold tracking-tight">Legal & policies</h1>
-      <p className="mt-2 rounded-2xl bg-[var(--tone-brand-bg)] p-3 text-sm text-[var(--ink-mute)]">
-        Canonical source: plugapro.co.za
-      </p>
+      <div className="mt-3 rounded-2xl bg-[var(--tone-brand-bg)] p-3">
+        <p className="text-[13px] font-semibold">Canonical source</p>
+        <p className="text-xs text-[var(--ink-mute)]">All policy text is served from plugapro.co.za</p>
+      </div>
       {Object.entries(groups).map(([group, pages]) => (
         <section key={group} className="mt-5">
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--ink-mute)]">{group}</p>
@@ -52,12 +53,15 @@ export function LegalPageScreen({
 }) {
   const fullUrl = `https://plugapro.co.za${path}`
   return (
-    <div className="mx-auto max-w-md px-5 pb-28 pt-6">
+    <div className="mx-auto max-w-md px-5 pb-28 pt-6 [animation:pap-fade-in_.2s_ease-out_both]">
       <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
       <p className="mt-2 text-sm text-[var(--ink-mute)]">{blurb}</p>
       <p className="mt-3 inline-flex rounded-full bg-[var(--tone-brand-bg)] px-3 py-1 font-mono text-xs text-[var(--tone-brand-fg)]">
         plugapro.co.za{path}
       </p>
+      <div className="mt-3 rounded-xl bg-[var(--card-alt)] px-3 py-2 text-xs text-[var(--ink-mute)]">
+        We do not keep legal copy in this app. This is a live canonical embed.
+      </div>
       <iframe
         src={fullUrl}
         title={title}
