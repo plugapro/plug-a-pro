@@ -82,25 +82,25 @@ export default async function CustomerLayout({
     ? [
         { id: 'home',    label: 'Home',    icon: <Home size={ICON_SIZE} />,     href: '/' },
         { id: 'browse',  label: 'Browse',  icon: <Search size={ICON_SIZE} />,   href: '/providers' },
-        { id: 'signin',  label: 'Sign in', icon: <CircleUser size={ICON_SIZE} />, href: '/sign-in' },
+        { id: 'account', label: 'Sign in', icon: <CircleUser size={ICON_SIZE} />, href: '/sign-in' },
       ]
     : isMultiRole
       ? [
           { id: 'home',     label: 'Home',     icon: <Home size={ICON_SIZE} />,           href: '/' },
           { id: 'request',  label: 'Request',  icon: <Search size={ICON_SIZE} />,         href: '/services' },
           { id: 'provider', label: 'Provider', icon: <Briefcase size={ICON_SIZE} />,      href: '/provider' },
-          { id: 'profile',  label: 'Profile',  icon: <CircleUser size={ICON_SIZE} />,     href: '/profile' },
+          { id: 'account',  label: 'Profile',  icon: <CircleUser size={ICON_SIZE} />,     href: '/profile' },
         ]
       : hasProviderRole
         ? [
             { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={ICON_SIZE} />, href: '/provider' },
             { id: 'jobs',      label: 'Jobs',      icon: <Briefcase size={ICON_SIZE} />,       href: '/provider/jobs' },
-            { id: 'profile',   label: 'Profile',   icon: <CircleUser size={ICON_SIZE} />,      href: '/provider/profile' },
+            { id: 'account',   label: 'Profile',   icon: <CircleUser size={ICON_SIZE} />,      href: '/provider/profile' },
           ]
         : [
             { id: 'home',     label: 'Home',     icon: <Home size={ICON_SIZE} />,         href: '/' },
             { id: 'bookings', label: 'Bookings', icon: <CalendarDays size={ICON_SIZE} />, href: '/bookings' },
-            { id: 'profile',  label: 'Profile',  icon: <CircleUser size={ICON_SIZE} />,   href: '/profile' },
+            { id: 'account',  label: 'Profile',  icon: <CircleUser size={ICON_SIZE} />,   href: '/profile' },
           ]
 
   return (
@@ -109,7 +109,24 @@ export default async function CustomerLayout({
         {children}
       </main>
 
-      <BottomNav items={navItems} />
+      <BottomNav
+        items={navItems}
+        authAwareAccount={{
+          accountItemId: 'account',
+          protectedPathPrefixes: ['/bookings', '/profile', '/messages', '/account'],
+          signedOut: { label: 'Sign in', href: '/sign-in' },
+          signedInCustomer: { label: 'Profile', href: '/profile' },
+          signedInProvider: {
+            label: 'Profile',
+            href: hasProviderRole && !hasCustomerRole ? '/provider/profile' : '/profile',
+          },
+          loading: { label: 'Account', href: '/profile' },
+          initialAuthState: {
+            authenticated: Boolean(session),
+            role: session?.role ?? null,
+          },
+        }}
+      />
       <InstallPrompt />
       {showBusinessPrompt && <BusinessTypePrompt />}
     </div>

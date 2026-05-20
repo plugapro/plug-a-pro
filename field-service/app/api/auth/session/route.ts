@@ -13,7 +13,27 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
 import { buildSessionCookieHeader, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+
+export async function GET() {
+  try {
+    const session = await getSession()
+    const response = NextResponse.json({
+      authenticated: Boolean(session),
+      role: session?.role ?? null,
+    })
+    response.headers.set('Cache-Control', 'no-store')
+    return response
+  } catch {
+    const response = NextResponse.json({
+      authenticated: false,
+      role: null,
+    })
+    response.headers.set('Cache-Control', 'no-store')
+    return response
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

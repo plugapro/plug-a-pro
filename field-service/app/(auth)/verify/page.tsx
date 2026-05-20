@@ -120,6 +120,7 @@ function VerifyForm() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accessToken: data.session.access_token, expiresIn: data.session.expires_in ?? 3600 }),
         })
+        window.dispatchEvent(new Event('pap:auth-session-changed'))
       }
 
       const res = await fetch('/api/auth/link', {

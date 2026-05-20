@@ -36,6 +36,46 @@ vi.mock('../../lib/auth', () => ({
 
 // ─── /api/auth/session ────────────────────────────────────────────────────────
 
+describe('GET /api/auth/session', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    const { getSession } = await import('../../lib/auth')
+    ;(getSession as any).mockResolvedValue(null)
+  })
+
+  it('returns unauthenticated when no session cookie resolves', async () => {
+    const { GET } = await import('../../app/api/auth/session/route')
+    const res = await GET()
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      authenticated: false,
+      role: null,
+    })
+    expect(res.headers.get('Cache-Control')).toBe('no-store')
+  })
+
+  it('returns authenticated session role when present', async () => {
+    const { getSession } = await import('../../lib/auth')
+    ;(getSession as any).mockResolvedValue({
+      id: 'user-123',
+      role: 'customer',
+      email: null,
+      phone: '+27825550000',
+    })
+
+    const { GET } = await import('../../app/api/auth/session/route')
+    const res = await GET()
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      authenticated: true,
+      role: 'customer',
+    })
+    expect(res.headers.get('Cache-Control')).toBe('no-store')
+  })
+})
+
 describe('POST /api/auth/session', () => {
   beforeEach(async () => {
     vi.clearAllMocks()

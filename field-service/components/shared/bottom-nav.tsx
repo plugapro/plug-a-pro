@@ -4,6 +4,11 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
+import {
+  resolveBottomNavAccountItem,
+  type BottomNavAuthRole,
+  type BottomNavAuthState,
+} from "@/lib/bottom-nav-auth"
 import { cn } from "@/lib/utils"
 
 export interface BottomNavItem {
@@ -17,10 +22,119 @@ export interface BottomNavItem {
 interface BottomNavProps {
   items: BottomNavItem[]
   className?: string
+  authAwareAccount?: {
+    accountItemId: string
+    protectedPathPrefixes?: string[]
+    signedOut: {
+      label: string
+      href: string
+    }
+    signedInCustomer: {
+      label: string
+      href: string
+    }
+    signedInProvider?: {
+      label: string
+      href: string
+    }
+    loading?: {
+      label: string
+      href: string
+    }
+    initialAuthState?: {
+      authenticated: boolean
+      role: BottomNavAuthRole
+    } | null
+  }
 }
 
-function BottomNav({ items, className }: BottomNavProps) {
+function BottomNav({ items, className, authAwareAccount }: BottomNavProps) {
   const pathname = usePathname()
+  const [authState, setAuthState] = React.useState<BottomNavAuthState>(() => {
+    if (!authAwareAccount) return { status: 'signed_out', role: null }
+    if (!authAwareAccount.initialAuthState) return { status: 'loading', role: null }
+    if (authAwareAccount.initialAuthState.authenticated) {
+      return {
+        status: 'signed_in',
+        role: authAwareAccount.initialAuthState.role,
+      }
+    }
+    const protectedPrefixes = authAwareAccount.protectedPathPrefixes ?? []
+    const isProtected = protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+    return isProtected
+      ? { status: 'loading', role: null }
+      : { status: 'signed_out', role: null }
+  })
+
+  React.useEffect(() => {
+    if (!authAwareAccount) return
+
+    let cancelled = false
+
+    const refreshAuthState = async () => {
+      try {
+        const res = await fetch('/api/auth/session', {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        if (!res.ok) return
+
+        const body = await res.json() as { authenticated?: boolean; role?: BottomNavAuthRole }
+        if (cancelled) return
+
+        if (body.authenticated) {
+          setAuthState({
+            status: 'signed_in',
+            role: body.role ?? null,
+          })
+          return
+        }
+
+        setAuthState({
+          status: 'signed_out',
+          role: null,
+        })
+      } catch {
+        // Keep the current server-provided state if the probe fails.
+      }
+    }
+
+    void refreshAuthState()
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshAuthState()
+    }
+    const onFocus = () => void refreshAuthState()
+    const onAuthChanged = () => void refreshAuthState()
+
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pap:auth-session-changed', onAuthChanged as EventListener)
+
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pap:auth-session-changed', onAuthChanged as EventListener)
+    }
+  }, [authAwareAccount])
+
+  const resolvedItems = React.useMemo(() => {
+    if (!authAwareAccount) return items
+
+    const protectedPathPrefixes = authAwareAccount.protectedPathPrefixes ?? []
+    return items.map((item) => resolveBottomNavAccountItem(item, {
+      accountItemId: authAwareAccount.accountItemId,
+      auth: authState,
+      pathname,
+      protectedPathPrefixes,
+      signedOutTarget: authAwareAccount.signedOut,
+      signedInCustomerTarget: authAwareAccount.signedInCustomer,
+      signedInProviderTarget: authAwareAccount.signedInProvider,
+      loadingTarget: authAwareAccount.loading,
+    }))
+  }, [authAwareAccount, authState, items, pathname])
 
   return (
     <nav
@@ -35,7 +149,7 @@ function BottomNav({ items, className }: BottomNavProps) {
         className
       )}
     >
-      {items.map((item) => {
+      {resolvedItems.map((item) => {
         const active = item.exact
           ? pathname === item.href
           : pathname === item.href || pathname.startsWith(item.href + "/")

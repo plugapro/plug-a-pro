@@ -16,7 +16,9 @@ export function SignOutButton() {
 
   async function handleSignOut() {
     const supabase = getSupabase()
-    await supabase.auth.signOut()
+    await supabase.auth.signOut().catch(() => undefined)
+    await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => undefined)
+    window.dispatchEvent(new Event('pap:auth-session-changed'))
     router.push('/sign-in')
   }
 
