@@ -18,7 +18,7 @@ import { ExtraWorkForm } from '@/components/technician/ExtraWorkForm'
 import { Button } from '@/components/ui/button'
 import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { ChevronLeft } from 'lucide-react'
-import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { getProviderJobDetailForViewer } from '@/lib/booking-detail-loaders'
 
 export const metadata = buildMetadata({ title: 'Job Detail', noIndex: true })
 
@@ -33,37 +33,31 @@ export default async function JobDetailPage({
   const provider = await db.provider.findUnique({ where: { userId: session.id } })
   if (!provider) redirect('/provider')
 
-  const job = await db.job.findUnique({
-    where: { id },
-    include: {
-      booking: {
-        include: {
-          match: {
-            include: {
-              jobRequest: {
-                include: {
-                  customer: { select: { name: true, phone: true } },
-                  address:  true,
-                },
-              },
-            },
-          },
-          payment: { select: { status: true } },
-        },
-      },
-      statusHistory: { orderBy: { timestamp: 'asc' } },
-      extras:        { orderBy: { createdAt: 'desc' } },
-      photos:        { orderBy: { createdAt: 'asc' } },
-    },
+  const detail = await getProviderJobDetailForViewer({
+    route: '/provider/jobs/[jobId]',
+    viewerUserId: session.id,
+    viewerProviderId: provider.id,
+    jobId: id,
   })
 
-  if (!job || job.providerId !== provider.id) notFound()
+  if (!detail.ok) {
+    if (detail.error === 'not_found' || detail.error === 'unauthorized') notFound()
+    return (
+      <div className="min-h-screen px-[18px] pt-[80px] pb-10">
+        <div className="rounded-[20px] bg-card p-5 shadow-[inset_0_0_0_1px_var(--border)]">
+          <p className="text-sm font-semibold text-[var(--ink)]">Could not load this job right now.</p>
+          <p className="mt-1 text-[13px] text-[var(--ink-mute)]">
+            Please go back to your jobs list and try again.
+          </p>
+          <Button asChild className="mt-4 w-full">
+            <Link href="/provider/jobs">Back to jobs</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
-  const jobRequest = job.booking.match.jobRequest
-  const customer   = jobRequest.customer
-  const address    = jobRequest.address
-  const b          = job.booking
-  const customerFirst = customer.name.split(' ')[0]
+  const { job, booking: b, jobRequest, addressDisplay, mapQuery, scheduledDateLabel, customerFirstName } = detail.data
   const disputes = await db.dispute.findMany({
     where: { jobId: job.id },
     orderBy: { createdAt: 'desc' },
@@ -150,25 +144,25 @@ export default async function JobDetailPage({
           className="rounded-[20px] p-5 space-y-2 text-sm"
           style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
         >
-          <Row label="Customer">{customerFirst}</Row>
-          {address && (
+          <Row label="Customer">{customerFirstName}</Row>
+          {addressDisplay && (
             <Row label="Address">
               <a
                 href={`https://maps.google.com/?q=${encodeURIComponent(
-                  `${address.street}, ${normaliseLocationDisplayName(address.suburb)}, ${normaliseLocationDisplayName(address.city)}`
+                  mapQuery ??
+                  addressDisplay
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-primary underline-offset-4 hover:underline"
               >
-                {address.street}, {normaliseLocationDisplayName(address.suburb)}, {normaliseLocationDisplayName(address.city)}
+                {addressDisplay}
               </a>
             </Row>
           )}
-          {b.scheduledDate && (
+          {scheduledDateLabel && (
             <Row label="Scheduled">
-              {b.scheduledDate.toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' })}
-              {b.scheduledWindow ? ` · ${b.scheduledWindow}` : ''}
+              {scheduledDateLabel}
             </Row>
           )}
           {b.notes && <Row label="Notes">{b.notes}</Row>}

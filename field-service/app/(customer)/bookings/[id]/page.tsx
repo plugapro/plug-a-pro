@@ -22,6 +22,7 @@ import { AlertCallout } from '@/components/shared/AlertCallout'
 import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 import { AutoRefresh } from '@/components/customer/AutoRefresh'
 import { ChevronLeft, Wrench, MapPin, Star } from 'lucide-react'
+import { getCustomerBookingDetailForViewer } from '@/lib/booking-detail-loaders'
 
 export const metadata = buildMetadata({ title: 'Booking Details' })
 
@@ -37,42 +38,35 @@ export default async function BookingDetailPage({
   const session = await getSession()
   if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
-  const booking = await db.booking.findUnique({
-    where: { id },
-    include: {
-      match: {
-        include: {
-          jobRequest: {
-            include: {
-              customer: { select: { id: true } },
-              address: true,
-            },
-          },
-          provider: { select: { id: true, name: true, phone: true } },
-          quotes: { orderBy: { createdAt: 'desc' } },
-        },
-      },
-      quote: true,
-      job: {
-        include: {
-          statusHistory: { orderBy: { timestamp: 'asc' } },
-          extras: { where: { status: 'PENDING' } },
-          photos: true,
-        },
-      },
-    },
+  const customer = await resolveCustomerForSession(db, session)
+  if (!customer) redirect('/bookings')
+
+  const detail = await getCustomerBookingDetailForViewer({
+    route: '/bookings/[id]',
+    viewerUserId: session.id,
+    viewerCustomerId: customer.id,
+    bookingId: id,
   })
 
-  if (!booking) notFound()
-
-  const bookingCustomer = booking.match.jobRequest.customer
-  const customer = await resolveCustomerForSession(db, session)
-  const address = booking.match.jobRequest.address
-
-  // Verify ownership
-  if (!customer || bookingCustomer.id !== customer.id) {
-    redirect('/bookings')
+  if (!detail.ok) {
+    if (detail.error === 'not_found') notFound()
+    if (detail.error === 'unauthorized') redirect('/bookings')
+    return (
+      <div className="min-h-screen px-[18px] pt-[80px] pb-10">
+        <div className="rounded-[20px] bg-card p-5 shadow-[inset_0_0_0_1px_var(--border)]">
+          <p className="text-sm font-semibold text-[var(--ink)]">Could not load this booking right now.</p>
+          <p className="mt-1 text-[13px] text-[var(--ink-mute)]">
+            Please return to your bookings list and try again.
+          </p>
+          <Button asChild className="mt-4 w-full">
+            <Link href="/bookings">View my bookings</Link>
+          </Button>
+        </div>
+      </div>
+    )
   }
+
+  const { booking, addressDisplay, providerDisplayName, providerInitials } = detail.data
 
   // Check for existing rating
   const existingRating = await db.review.findFirst({
@@ -328,11 +322,11 @@ export default async function BookingDetailPage({
                  style={{ borderTop: '1px solid var(--border)' }}>
               <div className="w-9 h-9 rounded-[10px] flex items-center justify-center text-[11px] font-bold text-white shrink-0"
                    style={{ background: `linear-gradient(135deg, ${heroHue}, #8B3FE8)` }}>
-                {booking.match.provider.name.split(' ').map((s: string) => s[0]).slice(0, 2).join('')}
+                {providerInitials}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--ink)' }}>
-                  {booking.match.provider.name}
+                  {providerDisplayName}
                 </div>
                 <div className="text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>Service provider</div>
               </div>
@@ -344,7 +338,7 @@ export default async function BookingDetailPage({
                     rel="noopener noreferrer"
                     className="h-8 px-3 rounded-[10px] text-[12.5px] font-semibold flex items-center gap-1.5"
                     style={{ background: '#1FAD5218', color: '#1FAD52' }}
-                    aria-label={`Message ${booking.match.provider.name.split(' ')[0]} on WhatsApp`}
+                    aria-label={`Message ${providerDisplayName.split(' ')[0]} on WhatsApp`}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-3.5" aria-hidden>
                       <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
@@ -362,12 +356,12 @@ export default async function BookingDetailPage({
           )}
 
           {/* Address */}
-          {address && (
+          {addressDisplay && (
             <div className="flex items-start gap-2 mt-3 pt-3"
                  style={{ borderTop: '1px solid var(--border)' }}>
               <MapPin size={14} className="shrink-0 mt-0.5" style={{ color: 'var(--ink-mute)' }} />
               <div className="text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
-                {address.street}, {address.suburb}, {address.city}
+                {addressDisplay}
               </div>
             </div>
           )}
