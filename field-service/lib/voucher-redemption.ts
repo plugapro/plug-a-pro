@@ -106,7 +106,7 @@ export async function redeemVoucher(
     )
 
     const ledgerEntryId = walletResult.ledgerEntries[0]?.id
-    if (!ledgerEntryId) throw new Error('creditVoucherRedemptionInTransaction returned no ledger entry')
+    if (ledgerEntryId == null) throw new Error('creditVoucherRedemptionInTransaction returned no ledger entry')
     return { ok: true, creditsAwarded: voucher.creditAmount, ledgerEntryId } as const
   })
 }
