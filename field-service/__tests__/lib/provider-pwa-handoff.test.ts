@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   PROVIDER_PWA_HANDOFF_MAP,
+  isProviderWhatsappHandoffEvent,
   resolveProviderPwaHandoffPath,
 } from '@/lib/provider-pwa-handoff'
 
@@ -150,5 +151,25 @@ describe('provider PWA handoff resolver', () => {
         jobRequest: { match: null },
       },
     })).toBe('/leads/access/opp.token')
+  })
+
+  it('falls back to new_opportunity route when handoff event is malformed', () => {
+    expect(resolveProviderPwaHandoffPath({
+      event: 'not-a-real-event',
+    })).toBe('/provider/leads')
+  })
+})
+
+describe('provider handoff event guard', () => {
+  it('accepts known provider handoff events', () => {
+    expect(isProviderWhatsappHandoffEvent('new_opportunity')).toBe(true)
+    expect(isProviderWhatsappHandoffEvent('job_accepted')).toBe(true)
+  })
+
+  it('rejects unknown handoff events', () => {
+    expect(isProviderWhatsappHandoffEvent('foo')).toBe(false)
+    expect(isProviderWhatsappHandoffEvent('')).toBe(false)
+    expect(isProviderWhatsappHandoffEvent(undefined)).toBe(false)
+    expect(isProviderWhatsappHandoffEvent(null)).toBe(false)
   })
 })

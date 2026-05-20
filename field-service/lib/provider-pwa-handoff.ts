@@ -41,6 +41,16 @@ export const PROVIDER_PWA_HANDOFF_MAP: Record<ProviderWhatsappHandoffEvent, stri
   credits_history: '/provider/credits',
 }
 
+const PROVIDER_WHATSAPP_HANDOFF_EVENTS = new Set<ProviderWhatsappHandoffEvent>(
+  Object.keys(PROVIDER_PWA_HANDOFF_MAP) as ProviderWhatsappHandoffEvent[],
+)
+
+export function isProviderWhatsappHandoffEvent(
+  value: string | null | undefined,
+): value is ProviderWhatsappHandoffEvent {
+  return Boolean(value && PROVIDER_WHATSAPP_HANDOFF_EVENTS.has(value as ProviderWhatsappHandoffEvent))
+}
+
 /**
  * Job-scoped events that should resolve to the specific job handover page
  * when a jobId or lead is available. Falls back to the jobs list when not.
@@ -64,12 +74,15 @@ const JOB_SCOPED_EVENTS: ReadonlySet<ProviderWhatsappHandoffEvent> = new Set([
  * resolved job/jobRequest identifier.
  */
 export function resolveProviderPwaHandoffPath(params: {
-  event: ProviderWhatsappHandoffEvent
+  event: ProviderWhatsappHandoffEvent | string
   token?: string | null
   lead?: ProviderHandoffLead | null
   /** Canonical job or jobRequest id — used to build a job-specific deep link */
   jobId?: string | null
 }) {
+  const event = isProviderWhatsappHandoffEvent(params.event)
+    ? params.event
+    : 'new_opportunity'
   const token = params.token?.trim()
   const lead = params.lead ?? null
 
@@ -87,14 +100,14 @@ export function resolveProviderPwaHandoffPath(params: {
     }
   }
 
-  if (token && (params.event === 'new_opportunity' || params.event === 'customer_selected_you')) {
+  if (token && (event === 'new_opportunity' || event === 'customer_selected_you')) {
     return `/leads/access/${encodeURIComponent(token)}`
   }
 
   // For job-scoped events, resolve to the specific job handover page when we
   // have enough information, so that confirm_arrival and complete_job links
   // are not left pointing at the generic jobs list.
-  if (JOB_SCOPED_EVENTS.has(params.event)) {
+  if (JOB_SCOPED_EVENTS.has(event)) {
     // Prefer an explicit jobId, then fall back to the lead's jobRequestId.
     const resolvedJobId = params.jobId?.trim() || lead?.jobRequestId?.trim()
     if (resolvedJobId) {
@@ -105,5 +118,5 @@ export function resolveProviderPwaHandoffPath(params: {
     }
   }
 
-  return PROVIDER_PWA_HANDOFF_MAP[params.event]
+  return PROVIDER_PWA_HANDOFF_MAP[event]
 }
