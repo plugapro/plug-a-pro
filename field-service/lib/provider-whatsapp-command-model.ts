@@ -191,10 +191,10 @@ export const PROVIDER_WHATSAPP_COMMANDS: ProviderWhatsappCommand[] = [
       'enter voucher',
       'voucher code',
     ],
-    flow: 'provider_journey' as FlowName,
-    step: 'pj_redeem_voucher' as FlowStep,
+    flow: 'provider_journey',
+    step: 'pj_redeem_voucher',
     replyId: 'provider_redeem_voucher',
-    state: 'approved_idle' as ProviderWhatsappState,
+    state: 'approved_idle',
   },
 ]
 
