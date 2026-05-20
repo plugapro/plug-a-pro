@@ -239,6 +239,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
+  // ─── Vouchers ────────────────────────────────────────────────────────────────
+  'admin.vouchers': {
+    description: 'Enable the admin Vouchers page and cancel-voucher mutation.',
+    owner: 'ops',
+    defaultValue: false,
+  },
+
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',
