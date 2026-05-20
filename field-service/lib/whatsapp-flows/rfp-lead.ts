@@ -7,6 +7,7 @@ import { db } from '../db'
 import { Prisma } from '@prisma/client'
 import { sendText, sendButtons } from '../whatsapp-interactive'
 import { notifyCustomerRfpResponseSummary } from '../review-first'
+import { createPrismaLeadRepository, type LeadRepository } from '../lead-repository'
 
 type ProviderLeadResponseResolutionSource = 'payload' | 'context' | 'fallback'
 
@@ -19,25 +20,11 @@ export async function handleRfpLeadInterest(
     inboundMessageId?: string | null
     contextMessageId?: string | null
     source?: ProviderLeadResponseResolutionSource | null
+    _repo?: LeadRepository  // injectable for tests; defaults to Prisma
   },
 ): Promise<void> {
-  const lead = await db.lead.findUnique({
-    where: { id: leadId },
-    select: {
-      id: true,
-      status: true,
-      providerId: true,
-      jobRequestId: true,
-      expiresAt: true,
-      jobRequest: {
-        select: {
-          id: true,
-          category: true,
-          status: true,
-        },
-      },
-    },
-  })
+  const repo = options?._repo ?? createPrismaLeadRepository()
+  const lead = await repo.findLeadWithJobRequest(leadId)
 
   if (!lead || lead.providerId !== providerId) {
     if (lead && lead.providerId !== providerId) {

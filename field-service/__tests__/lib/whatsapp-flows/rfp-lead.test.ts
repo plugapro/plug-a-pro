@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { JobRequestStatus, LeadStatus } from '@prisma/client'
 
 const {
   mockDb,
@@ -8,7 +9,6 @@ const {
   mockNotifyCustomer,
 } = vi.hoisted(() => {
   const mockDb = {
-    lead: { findUnique: vi.fn() },
     auditLog: { create: vi.fn().mockResolvedValue({}) },
     providerRate: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: vi.fn(),
@@ -44,19 +44,20 @@ vi.mock('@/lib/whatsapp-copy', () => ({ ctaLabelFor: vi.fn().mockReturnValue('Vi
 vi.mock('@/lib/lead-unlocks', () => ({ LEAD_UNLOCK_COST_CREDITS: 1 }))
 
 import { handleRfpLeadInterest } from '@/lib/whatsapp-flows/rfp-lead'
+import { type LeadWithJobRequest, createInMemoryLeadRepository } from '@/lib/lead-repository'
 
 const PHONE = '+27820000001'
 const PROVIDER_ID = 'prov-1'
 const LEAD_ID = 'lead-abc123'
 const TRACE_ID = 'trace-test-1'
 
-const BASE_LEAD = {
+const BASE_LEAD: LeadWithJobRequest = {
   id: LEAD_ID,
-  status: 'SENT',
+  status: LeadStatus.SENT,
   providerId: PROVIDER_ID,
   jobRequestId: 'req-1',
   expiresAt: null,
-  jobRequest: { id: 'req-1', category: 'plumbing', status: 'MATCHING' },
+  jobRequest: { id: 'req-1', category: 'plumbing', status: JobRequestStatus.MATCHING },
 }
 
 const makeTx = () => ({
@@ -65,9 +66,11 @@ const makeTx = () => ({
 })
 
 describe('handleRfpLeadInterest', () => {
+  let defaultRepo: ReturnType<typeof createInMemoryLeadRepository>
+
   beforeEach(() => {
     vi.clearAllMocks()
-    mockDb.lead.findUnique.mockResolvedValue(BASE_LEAD)
+    defaultRepo = createInMemoryLeadRepository([BASE_LEAD])
     const tx = makeTx()
     mockDb.$transaction.mockImplementation(
       async (fn: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => fn(tx),
@@ -75,7 +78,7 @@ describe('handleRfpLeadInterest', () => {
   })
 
   it('sends availability confirmation on successful transaction', async () => {
-    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID)
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: defaultRepo })
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Availability noted'))
   })
 
@@ -89,7 +92,7 @@ describe('handleRfpLeadInterest', () => {
         return fn(tx)
       },
     )
-    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID)
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: defaultRepo })
     expect(mockDb.$transaction).toHaveBeenCalledTimes(2)
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Availability noted'))
   })
@@ -98,7 +101,7 @@ describe('handleRfpLeadInterest', () => {
     mockDb.$transaction.mockRejectedValue(
       Object.assign(new Error('pool timeout'), { code: 'P2024' }),
     )
-    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID)
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: defaultRepo })
     expect(mockSendButtons).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining("couldn't register your availability"),
@@ -114,23 +117,22 @@ describe('handleRfpLeadInterest', () => {
     mockDb.$transaction.mockRejectedValue(
       Object.assign(new Error('unique constraint'), { code: 'P2002' }),
     )
-    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID)
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: defaultRepo })
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('already noted'))
   })
 
   it('returns early with error when lead not found', async () => {
-    mockDb.lead.findUnique.mockResolvedValue(null)
-    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID)
+    const emptyRepo = createInMemoryLeadRepository([])
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: emptyRepo })
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('could not be found'))
     expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 
   it('returns early when lead is expired', async () => {
-    mockDb.lead.findUnique.mockResolvedValue({
-      ...BASE_LEAD,
-      expiresAt: new Date(Date.now() - 1000),
-    })
-    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID)
+    const expiredRepo = createInMemoryLeadRepository([
+      { ...BASE_LEAD, expiresAt: new Date(Date.now() - 1000) },
+    ])
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: expiredRepo })
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('expired'))
     expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
