@@ -37,6 +37,7 @@ import {
   type PreferredTimeWindow,
   type ProviderPreference,
 } from '@/lib/client-request-flow'
+import { getRequestSuccessContent } from '@/lib/customer-request-success-content'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -183,6 +184,27 @@ export function BookingFlow({
   const streetSummary = buildLegacyStreetAddress(address)
   const draftStorageKey = `plugapro:client-request-draft:${category.slug}`
   const hasInitialDraft = Boolean(initialDraft && Object.values(initialDraft).some(Boolean))
+
+  useEffect(() => {
+    if (step !== 'submitted' || !jobRequestId) return
+
+    const successView = getRequestSuccessContent({
+      jobRequestId,
+      ticketUrl,
+      selectedMatchingMode,
+      preferredProviderId,
+      hasProviderResponses: Boolean(ticketUrl?.includes('view=shortlist')),
+    })
+
+    console.info('[booking-flow] request_submitted_success_viewed', {
+      event: 'request_submitted_success_viewed',
+      requestId: jobRequestId,
+      matchMode: successView.mode,
+      requestStatus: successView.statusLabel,
+      authState: 'authenticated',
+      source: 'pwa',
+    })
+  }, [jobRequestId, preferredProviderId, selectedMatchingMode, step, ticketUrl])
 
   useEffect(() => {
     if (hasInitialDraft) return
@@ -1198,6 +1220,23 @@ export function BookingFlow({
                style={{ background: 'radial-gradient(60% 50% at 50% 30%, rgba(139,63,232,0.12), transparent 70%)' }} />
 
           <div className="relative px-[22px] pt-[60px] pb-10 flex flex-col items-center">
+            {(() => {
+              const modeAwareContent = (selectedMatchingMode || preferredProviderId)
+                ? getRequestSuccessContent({
+                    jobRequestId,
+                    ticketUrl,
+                    selectedMatchingMode,
+                    preferredProviderId,
+                    hasProviderResponses: Boolean(ticketUrl?.includes('view=shortlist')),
+                  })
+                : null
+              const ctaHref = modeAwareContent?.primaryCtaHref ?? (ticketUrl ?? `/requests/${jobRequestId}`)
+              const ctaLabel = modeAwareContent?.primaryCtaLabel ?? 'Track request'
+              const secondaryHref = modeAwareContent?.secondaryCtaHref ?? '/bookings'
+              const secondaryLabel = modeAwareContent?.secondaryCtaLabel ?? 'View my requests'
+
+              return (
+                <>
             {/* Layered icon */}
             <div className="w-[120px] h-[120px] rounded-[36px] flex items-center justify-center mb-5"
                  style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))' }}>
@@ -1208,10 +1247,12 @@ export function BookingFlow({
             </div>
 
             <h1 className="text-[26px] font-bold tracking-[-0.03em] text-center mb-2"
-                style={{ color: 'var(--ink)' }}>Request received</h1>
+                style={{ color: 'var(--ink)' }}>
+              {modeAwareContent?.title ?? 'Request received'}
+            </h1>
             <p className="text-[14.5px] text-center mb-6 leading-[1.55]"
                style={{ color: 'var(--ink-mute)', maxWidth: 320 }}>
-              We&apos;re matching qualified providers in your area now. You&apos;ll get a notification when the first one responds.
+              {modeAwareContent?.description ?? 'Choose your matching mode below so we can start provider outreach.'}
             </p>
 
             {/* Reference card */}
@@ -1232,7 +1273,7 @@ export function BookingFlow({
                 <div className="flex items-center gap-1.5 h-[22px] px-2.5 rounded-full text-[11.5px] font-semibold"
                      style={{ background: 'rgba(255,194,43,0.15)', color: '#FFC22B' }}>
                   <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#FFC22B' }} />
-                  Matching
+                  {modeAwareContent?.statusLabel ?? 'Choose mode'}
                 </div>
               </div>
             </div>
@@ -1261,6 +1302,7 @@ export function BookingFlow({
 
             {/* Matching mode selector */}
             {!selectedMatchingMode ? (
+              !preferredProviderId ? (
               <div className="w-full rounded-[20px] p-4 mb-6"
                    style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
                 <div className="text-[14px] font-semibold mb-1" style={{ color: 'var(--ink)' }}>
@@ -1280,26 +1322,50 @@ export function BookingFlow({
                   </Button>
                 </div>
               </div>
+              ) : null
             ) : (
               <div className="w-full rounded-[20px] p-4 mb-6"
                    style={{ background: 'rgba(15,162,138,0.06)', boxShadow: 'inset 0 0 0 1px rgba(15,162,138,0.2)' }}>
                 <div className="text-[13.5px]" style={{ color: 'var(--ink)' }}>
-                  {selectedMatchingMode === 'quick_match'
-                    ? 'Quick Match is active. We are checking with one suitable provider now and will rotate if they do not respond.'
-                    : 'Review Providers First is active. We are collecting provider responses so you can compare before selecting.'}
+                  {modeAwareContent?.whatsappNote ??
+                    (selectedMatchingMode === 'quick_match'
+                      ? 'Quick Match is active. We are checking with one suitable provider now and will rotate if they do not respond.'
+                      : 'Review Providers First is active. We are collecting provider responses so you can compare before selecting.')}
                 </div>
+                {modeAwareContent?.helperNote && (
+                  <div className="text-[12px] mt-2" style={{ color: 'var(--ink-mute)' }}>
+                    {modeAwareContent.helperNote}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {modeAwareContent?.steps && (
+              <div className="w-full rounded-[20px] p-4 mb-6"
+                   style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                <div className="text-[13px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>
+                  What happens next?
+                </div>
+                <ol className="space-y-1 text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
+                  {modeAwareContent.steps.map((stepLabel, index) => (
+                    <li key={stepLabel}>{index + 1}. {stepLabel}</li>
+                  ))}
+                </ol>
               </div>
             )}
 
             <div className="w-full space-y-2.5">
               <Button asChild className="w-full" size="lg">
-                <Link href={ticketUrl ?? `/requests/${jobRequestId}`}>Track this request</Link>
+                <Link href={ctaHref}>{ctaLabel}</Link>
               </Button>
-              <Link href="/bookings"
+              <Link href={secondaryHref}
                     className="block text-center text-[13px]" style={{ color: 'var(--ink-mute)' }}>
-                View my requests &amp; bookings
+                {secondaryLabel}
               </Link>
             </div>
+                </>
+              )
+            })()}
           </div>
         </div>
       )}
