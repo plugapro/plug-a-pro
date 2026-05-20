@@ -63,6 +63,7 @@ import { ctaLabelFor } from './whatsapp-copy'
 import { resolveJourneyRecovery, sendWhatsAppJourneyRecovery, type JourneyUserRole } from './journey-recovery'
 import { cascadeToNextShortlistedProvider, notifyCustomerRfpResponseSummary } from './review-first'
 import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
+import { createBatchAccumulators } from './whatsapp-batch'
 import {
   completeProviderJobFromWhatsApp,
   executeProviderJobCommand,
@@ -90,26 +91,12 @@ const PROVIDER_EVIDENCE_BATCH_WINDOW_MS =
   Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || MEDIA_UPLOAD_BATCH_WINDOW_MS
 const CITY_TEXT_SUPERSEDE_WINDOW_MS = Number(process.env.WHATSAPP_CITY_TEXT_SUPERSEDE_WINDOW_MS) || 800
 const phoneMessageQueues = new Map<string, Promise<void>>()
-const customerPhotoBatches = new Map<string, {
-  messages: InboundMessage[]
-  timer: ReturnType<typeof setTimeout>
-  waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>
-}>()
-const providerEvidenceBatches = new Map<string, {
-  messages: InboundMessage[]
-  timer: ReturnType<typeof setTimeout>
-  waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>
-}>()
-const pendingCityTextMessages = new Map<string, {
-  message: InboundMessage
-  timer: ReturnType<typeof setTimeout>
-  resolve: () => void
-  reject: (error: unknown) => void
-}>()
-const recentCityInteractiveSelections = new Map<string, {
-  messageId: string
-  timer: ReturnType<typeof setTimeout>
-}>()
+const {
+  customerPhotoBatches,
+  providerEvidenceBatches,
+  pendingCityTextMessages,
+  recentCityInteractiveSelections,
+} = createBatchAccumulators()
 
 async function sendAcceptedLeadFallbackConfirmation(params: {
   phone: string
