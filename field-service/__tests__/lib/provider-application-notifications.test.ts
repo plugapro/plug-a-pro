@@ -98,33 +98,32 @@ describe('provider application approval notifications', () => {
     })
   })
 
-  it('builds approval copy that explains starter credits, balance, and credits rules', () => {
-    const { mainBody, termsBody } = buildProviderApplicationApprovedMessage('Jacob Hesser', {
-      starterPromoCreditsAwarded: 3,
-      paidCredits: 2,
-      promoCredits: 3,
-    })
+  it('builds voucher CTA approval copy with credits rules (VOUCHER_PILOT)', () => {
+    // Auto-award is disabled — message no longer references credit balance or starter credits
+    const { mainBody, termsBody } = buildProviderApplicationApprovedMessage('Jacob Hesser')
 
-    expect(mainBody).toContain('Starter credits awarded: *3 credits*')
-    expect(mainBody).toContain('Available credits: *5 credits*')
-    expect(mainBody).toContain('Starter/onboarding: *3* · Purchased: *2*')
+    expect(mainBody).toContain('redeem your voucher code')
+    expect(mainBody).toContain('Reply *REDEEM*')
     expect(mainBody).toContain('No credits are used for previewing or saying you are interested')
     expect(mainBody).toContain('1 credit is used only when a customer selects you')
     expect(mainBody).toContain('You can continue here on WhatsApp')
     expect(mainBody).toContain('Worker Portal')
     expect(termsBody).toContain('Provider credits terms and rules')
-    expect(mainBody.toLowerCase()).not.toContain('promo pilot')
+    expect(mainBody).not.toContain('Starter credits awarded')
+    expect(mainBody).not.toContain('Available credits')
   })
 
-  it('builds approval copy with top-up guidance when no starter credits were awarded', () => {
+  it('ignores legacy credits parameter and still produces voucher CTA (VOUCHER_PILOT)', () => {
+    // _credits param is accepted for call-site compat but unused
     const { mainBody } = buildProviderApplicationApprovedMessage('Jacob Hesser', {
       starterPromoCreditsAwarded: 0,
       paidCredits: 0,
       promoCredits: 0,
     })
 
-    expect(mainBody).toContain("Available credits: *0 credits*. You'll need credits")
+    expect(mainBody).toContain('redeem your voucher code')
     expect(mainBody).not.toContain('Starter credits awarded')
+    expect(mainBody).not.toContain('Available credits')
   })
 
   it('does not send again when the approval WhatsApp was already sent', async () => {
