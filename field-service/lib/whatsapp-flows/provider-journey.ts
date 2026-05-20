@@ -1848,10 +1848,14 @@ async function handleVoucherRedeemPrompt(ctx: FlowContext): Promise<FlowResult> 
     return { nextStep: 'done' }
   }
 
-  if (!provider.active || provider.status !== 'ACTIVE') {
-    await sendText(
+  if (isProviderInactive(provider) || !provider.active || provider.status !== 'ACTIVE') {
+    await sendButtons(
       ctx.phone,
-      'Your profile must be approved before you can redeem a voucher. Reply *menu* to check your application status.',
+      'Your profile must be approved before you can redeem a voucher.',
+      [
+        { id: 'provider_status', title: 'Provider Status' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
     )
     return { nextStep: 'done' }
   }
