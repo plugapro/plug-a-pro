@@ -138,7 +138,7 @@ export default function SignInPage() {
               <WhatsAppIcon />
             </div>
             <span className="text-[12.5px] text-[var(--ink)] leading-[1.35]">
-              We&apos;ll send a 6-digit code via <b>WhatsApp</b>. SMS fallback if needed.
+              We&apos;ll send a 6-digit code via <b>WhatsApp</b>.
             </span>
           </div>
         )}
