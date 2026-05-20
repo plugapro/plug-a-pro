@@ -50,6 +50,9 @@ interface SavedSite {
   id: string
   label: string | null
   street: string
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
   suburb: string
   city: string
   province: string
@@ -374,14 +377,13 @@ export function BookingFlow({
     setAddress((current) => ({
       ...current,
       addressLine1: site.street,
+      addressLine2: site.addressLine2 ?? '',
+      complexName: site.complexName ?? '',
+      unitNumber: site.unitNumber ?? '',
       suburb: site.suburb,
       city: site.city,
       province: site.province,
       postalCode: site.postalCode ?? '',
-      // Clear fields that are not stored on CustomerAddress
-      addressLine2: '',
-      complexName: '',
-      unitNumber: '',
       region: site.locationNode?.regionKey ?? '',
     }))
     setLocationNodeId(site.locationNodeId ?? null)

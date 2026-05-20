@@ -82,6 +82,41 @@ function makeTx() {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(),
     },
+    customerAddress: {
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({
+        id: 'site-1',
+        customerId: 'cust-1',
+        label: '1 Main St',
+        street: '1 Main St',
+        suburb: 'Randburg',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        postalCode: null,
+        lat: null,
+        lng: null,
+        locationNodeId: null,
+        isDefault: true,
+        createdAt: new Date(),
+        locationNode: null,
+      }),
+      update: vi.fn().mockResolvedValue({
+        id: 'site-1',
+        customerId: 'cust-1',
+        label: '1 Main St',
+        street: '1 Main St',
+        suburb: 'Randburg',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        postalCode: null,
+        lat: null,
+        lng: null,
+        locationNodeId: null,
+        isDefault: true,
+        createdAt: new Date(),
+        locationNode: null,
+      }),
+    },
     jobRequest: {
       // Default: no existing active request — dedup guard passes through
       findFirst: vi.fn().mockResolvedValue(null),
@@ -118,6 +153,22 @@ describe('createJobRequest', () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.customerAddress.create.mockResolvedValue({
+      id: 'site-1',
+      customerId: 'cust-1',
+      label: '1 Main St',
+      street: '1 Main St',
+      suburb: 'Randburg',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+      postalCode: null,
+      lat: -26.1,
+      lng: 27.9,
+      locationNodeId: null,
+      isDefault: true,
+      createdAt: new Date(),
+      locationNode: null,
+    })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
 
@@ -126,6 +177,16 @@ describe('createJobRequest', () => {
     expect(tx.customer.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { phone: '+27821234567' } }),
     )
+    expect(tx.customerAddress.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        customerId: 'cust-1',
+        street: '1 Main St',
+        suburb: 'Randburg',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        isDefault: true,
+      }),
+    }))
     expect(tx.address.create).toHaveBeenCalledOnce()
     expect(tx.jobRequest.create).toHaveBeenCalledOnce()
     expect(result).toMatchObject({ jobRequestId: 'jr-1', customerId: 'cust-1', ticketUrl: null })

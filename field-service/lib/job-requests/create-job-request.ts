@@ -18,6 +18,10 @@ import { phoneLookupVariants } from '../whatsapp-identity'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildRequestRef } from '../client-request-data'
 import { normalizeCustomerName } from '../customer-name'
+import {
+  syncReusableCustomerAddressFromSnapshot,
+  type ReusableAddressTx,
+} from '../customer-address-book'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -331,6 +335,27 @@ export async function createJobRequest(
         select: { id: true },
       })
     }
+
+    await syncReusableCustomerAddressFromSnapshot(tx as unknown as ReusableAddressTx, {
+      customerId: customer.id,
+      authUserId: params.userId ?? null,
+      customerPhone: params.phone,
+      source: params.source === 'whatsapp' ? 'whatsapp' : params.source === 'pwa' ? 'pwa' : 'merged',
+      snapshot: {
+        label: params.addressLine1?.trim() || params.street,
+        street: params.street,
+        suburb: locality.suburb,
+        city: locality.city,
+        province: locality.province,
+        postalCode: params.postalCode ?? null,
+        locationNodeId: resolvedLocationNodeId ?? null,
+        lat: geo?.lat ?? null,
+        lng: geo?.lng ?? null,
+        addressLine2: params.addressLine2?.trim() || null,
+        complexName: params.complexName?.trim() || null,
+        unitNumber: params.unitNumber?.trim() || null,
+      },
+    })
 
     const autoCreateBookingOnAssignment =
       categoryRequirements.policy.bookingOnAssignment &&

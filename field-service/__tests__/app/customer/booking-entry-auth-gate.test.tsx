@@ -5,8 +5,7 @@ import { NextRequest } from 'next/server'
 const {
   mockGetSession,
   mockResolveCustomerForSession,
-  mockIsEnabled,
-  mockCustomerAddressFindMany,
+  mockResolveReusableCustomerSites,
   mockJobRequestFindFirst,
   mockProviderFindFirst,
   mockBookingFlow,
@@ -15,8 +14,7 @@ const {
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockResolveCustomerForSession: vi.fn(),
-  mockIsEnabled: vi.fn(),
-  mockCustomerAddressFindMany: vi.fn(),
+  mockResolveReusableCustomerSites: vi.fn(),
   mockJobRequestFindFirst: vi.fn(),
   mockProviderFindFirst: vi.fn(),
   mockBookingFlow: vi.fn((props: any) => (
@@ -47,15 +45,12 @@ vi.mock('@/lib/customer-session', () => ({
   resolveCustomerForSession: mockResolveCustomerForSession,
 }))
 
-vi.mock('@/lib/flags', () => ({
-  isEnabled: mockIsEnabled,
+vi.mock('@/lib/customer-address-book', () => ({
+  resolveReusableCustomerSites: mockResolveReusableCustomerSites,
 }))
 
 vi.mock('@/lib/db', () => ({
   db: {
-    customerAddress: {
-      findMany: mockCustomerAddressFindMany,
-    },
     jobRequest: {
       findFirst: mockJobRequestFindFirst,
     },
@@ -74,8 +69,7 @@ describe('customer booking entry auth gate', () => {
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue(null)
     mockResolveCustomerForSession.mockResolvedValue(null)
-    mockIsEnabled.mockResolvedValue(false)
-    mockCustomerAddressFindMany.mockResolvedValue([])
+    mockResolveReusableCustomerSites.mockResolvedValue([])
     mockJobRequestFindFirst.mockResolvedValue(null)
     mockProviderFindFirst.mockResolvedValue(null)
   })
@@ -112,8 +106,7 @@ describe('customer booking entry auth gate', () => {
   it('still loads saved sites and template drafts for signed-in customers', async () => {
     mockGetSession.mockResolvedValue({ id: 'user-1', role: 'customer', phone: '+27821234567' })
     mockResolveCustomerForSession.mockResolvedValue({ id: 'cust-1', name: 'Sarah' })
-    mockIsEnabled.mockResolvedValue(true)
-    mockCustomerAddressFindMany.mockResolvedValue([{ id: 'site-1' }])
+    mockResolveReusableCustomerSites.mockResolvedValue([{ id: 'site-1' }])
     mockJobRequestFindFirst.mockResolvedValue({
       title: 'Old leaking tap',
       description: 'Kitchen sink leak',
@@ -129,9 +122,12 @@ describe('customer booking entry auth gate', () => {
     )
 
     expect(mockResolveCustomerForSession).toHaveBeenCalled()
-    expect(mockCustomerAddressFindMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { customerId: 'cust-1' },
-    }))
+    expect(mockResolveReusableCustomerSites).toHaveBeenCalledWith({
+      customerId: 'cust-1',
+      authUserId: 'user-1',
+      customerPhone: '+27821234567',
+      source: 'pwa',
+    })
     expect(mockJobRequestFindFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'jr-1', customerId: 'cust-1' },
     }))

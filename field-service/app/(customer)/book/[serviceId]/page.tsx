@@ -7,7 +7,7 @@ import { notFound } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
-import { isEnabled } from '@/lib/flags'
+import { resolveReusableCustomerSites } from '@/lib/customer-address-book'
 import { buildMetadata } from '@/lib/metadata'
 import { BookingFlow } from '@/components/customer/BookingFlow'
 import { getPilotServiceCategories } from '@/lib/service-categories'
@@ -49,20 +49,20 @@ export default async function RequestJobPage({
   // Logged-out visitors can complete the request draft; auth is enforced when
   // the booking API receives the submit. Customer-specific saved-site/template
   // data is loaded only after a session exists.
-  const [customer, addressBookEnabled] = session
-    ? await Promise.all([
-        resolveCustomerForSession(db, session),
-        isEnabled('feature.customer.address_book', { userId: session.id }),
-      ])
-    : [null, false] as const
+  const customer = session
+    ? await resolveCustomerForSession(db, session)
+    : null
 
   const savedSites = customer
-    ? await db.customerAddress.findMany({
-        where: { customerId: customer.id },
-        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-        include: { locationNode: { select: { regionKey: true } } },
+    ? await resolveReusableCustomerSites({
+        customerId: customer.id,
+        authUserId: session?.id ?? null,
+        customerPhone: session?.phone ?? customer.phone,
+        source: 'pwa',
       })
     : []
+
+  const addressBookEnabled = Boolean(session && customer && savedSites.length > 0)
 
   // Resolve template pre-fill - silently ignore invalid/missing ids.
   let initialDraft: { title: string; description: string } | undefined
