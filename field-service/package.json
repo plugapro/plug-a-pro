@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "e2e": "pnpm test:e2e:journeys",
     "test:watch": "vitest",
     "build:ci": "pnpm typecheck && pnpm build",
     "start:ci": "next start -p ${PORT:-3000}",
