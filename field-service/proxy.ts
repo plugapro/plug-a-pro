@@ -60,7 +60,9 @@ const PUBLIC_PATHS = [
   '/confirm-completion',            // HMAC-token job sign-off — no session needed; page verifies token
   '/review',                        // HMAC-token provider review — no session needed; page verifies token
   '/quotes',                        // token-gated quote approval — no session needed; page verifies approvalToken
-  '/requests',                      // WhatsApp match-found links land here; page redirects unauthenticated visitors to the tokenized /requests/access/{token} route
+  '/requests',                      // WhatsApp match-found links land here; page redirects unauthenticated visitors
+                                    // to /requests/access/{token} (if a valid token exists) or to /sign-in.
+                                    // Must remain public so the page-level token-redirect logic can execute.
 ]
 
 const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/

@@ -51,14 +51,36 @@ export async function ensureJobRequestAccessToken(jobRequestId: string) {
   const token = generateAccessToken()
   const expiresAt = buildExpiryDate()
 
-  await db.jobRequest.update({
-    where: { id: jobRequestId },
+  // Conditional write: only update if the row still has no usable token.
+  // If a concurrent caller already wrote a new token, count === 0 and we
+  // re-read that winning token instead of overwriting it with ours.
+  const updated = await db.jobRequest.updateMany({
+    where: {
+      id: jobRequestId,
+      OR: [
+        { customerAccessToken: null },
+        { customerAccessTokenRevokedAt: { not: null } },
+        { customerAccessTokenExpiresAt: { lt: now } },
+      ],
+    },
     data: {
       customerAccessToken: token,
       customerAccessTokenExpiresAt: expiresAt,
       customerAccessTokenRevokedAt: null,
     },
   })
+
+  if (updated.count === 0) {
+    const winner = await db.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      select: { customerAccessToken: true, customerAccessTokenExpiresAt: true },
+    })
+    console.info('[job-request-access] token race: reusing concurrent winner', { jobRequestId })
+    return {
+      token: winner!.customerAccessToken!,
+      expiresAt: winner!.customerAccessTokenExpiresAt!,
+    }
+  }
 
   console.info('[job-request-access] ticket token generated', {
     jobRequestId,

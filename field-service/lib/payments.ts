@@ -471,7 +471,11 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
       where: { bookingId: event.bookingId },
       select: { status: true, booking: { select: { status: true } } },
     })
-    if (payment?.status === 'REFUNDED' || payment?.status === 'PARTIALLY_REFUNDED') return
+    if (
+      payment?.status === 'PAID' ||
+      payment?.status === 'REFUNDED' ||
+      payment?.status === 'PARTIALLY_REFUNDED'
+    ) return
 
     const fromStatus = payment?.booking?.status ?? null
 

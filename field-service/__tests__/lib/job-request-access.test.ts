@@ -4,7 +4,7 @@ vi.mock('@/lib/db', () => ({
   db: {
     jobRequest: {
       findUnique: vi.fn(),
-      update: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
 }))
@@ -29,7 +29,7 @@ describe('job request access tokens', () => {
     const result = await ensureJobRequestAccessToken('jr_1')
 
     expect(result).toEqual({ token: 'existing-token', expiresAt })
-    expect(db.jobRequest.update).not.toHaveBeenCalled()
+    expect(db.jobRequest.updateMany).not.toHaveBeenCalled()
   })
 
   it('rotates a token when it is expired and builds a direct ticket URL', async () => {
@@ -39,13 +39,13 @@ describe('job request access tokens', () => {
       customerAccessTokenExpiresAt: new Date('2020-01-01T00:00:00Z'),
       customerAccessTokenRevokedAt: null,
     })
-    ;(db.jobRequest.update as any).mockResolvedValue({})
+    ;(db.jobRequest.updateMany as any).mockResolvedValue({ count: 1 })
 
     const { getJobRequestAccessUrl } = await import('@/lib/job-request-access')
     const url = await getJobRequestAccessUrl('jr_2')
 
     expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/requests\/access\//)
-    expect(db.jobRequest.update).toHaveBeenCalledOnce()
+    expect(db.jobRequest.updateMany).toHaveBeenCalledOnce()
   })
 
   it('adds handoff view to ticket URLs without changing the token path', async () => {
