@@ -48,8 +48,11 @@ export async function redeemVoucher(
     }
 
     // 3. Validate voucher state
-    if (voucher.status === 'REDEEMED' || voucher.redemptionCount >= voucher.maxRedemptions) {
+    if (voucher.status === 'REDEEMED') {
       return { ok: false, code: 'VOUCHER_ALREADY_REDEEMED', message: 'That voucher has already been redeemed.' } as const
+    }
+    if (voucher.redemptionCount >= voucher.maxRedemptions) {
+      return { ok: false, code: 'VOUCHER_MAX_REDEMPTIONS_REACHED', message: 'That voucher code is no longer available.' } as const
     }
     if (voucher.status === 'CANCELLED') {
       return { ok: false, code: 'VOUCHER_CANCELLED', message: 'That voucher code is invalid or unavailable.' } as const
@@ -102,10 +105,8 @@ export async function redeemVoucher(
       },
     )
 
-    return {
-      ok: true,
-      creditsAwarded: voucher.creditAmount,
-      ledgerEntryId: walletResult.ledgerEntries[0]?.id ?? '',
-    } as const
+    const ledgerEntryId = walletResult.ledgerEntries[0]?.id
+    if (!ledgerEntryId) throw new Error('creditVoucherRedemptionInTransaction returned no ledger entry')
+    return { ok: true, creditsAwarded: voucher.creditAmount, ledgerEntryId } as const
   })
 }

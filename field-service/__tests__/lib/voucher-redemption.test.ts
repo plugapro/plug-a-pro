@@ -132,6 +132,17 @@ describe('redeemVoucher', () => {
     expect(result.code).toBe('VOUCHER_ALREADY_REDEEMED')
   })
 
+  it('rejects: voucher max redemptions reached (count exhausted)', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher({ status: 'ACTIVE', redemptionCount: 1, maxRedemptions: 1 }))
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', RAW_CODE)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_MAX_REDEMPTIONS_REACHED')
+  })
+
   it('rejects: voucher cancelled', async () => {
     const tx = makeTx(makeProvider(), makeVoucher({ status: 'CANCELLED' }))
     setupTransaction(tx)
@@ -185,6 +196,9 @@ describe('redeemVoucher', () => {
       makeTx(makeProvider({ active: false }), makeVoucher()),                 // not approved
       makeTx(makeProvider(), null),                                           // bad code
       makeTx(makeProvider(), makeVoucher({ status: 'REDEEMED' })),           // already redeemed
+      makeTx(makeProvider(), makeVoucher({ status: 'CANCELLED' })),          // cancelled
+      makeTx(makeProvider(), makeVoucher({ expiresAt: new Date('2020-01-01') })),  // expired
+      makeTx(makeProvider(), makeVoucher(), { id: 'vchr_old' }),             // campaign duplicate
     ]
 
     for (const tx of paths) {
