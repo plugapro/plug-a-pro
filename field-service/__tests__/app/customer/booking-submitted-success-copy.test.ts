@@ -16,6 +16,7 @@ describe('BookingFlow submitted screen copy and CTA behavior', () => {
     expect(source).toContain('What happens next?')
     expect(source).toContain('Track request')
     expect(source).toContain('View my requests')
+    expect(source).toContain("data.status === 'review_options_ready'")
   })
 
   it('emits structured success-view observability event', () => {

@@ -59,7 +59,7 @@ export function getRequestSuccessContent(params: {
       primaryCtaHref: withTicketView(params.ticketUrl, 'provider_confirmation', fallbackTrackHref),
       secondaryCtaLabel: 'View my requests',
       secondaryCtaHref,
-      helperNote: 'No action needed right now. We’ll notify you when the provider responds.',
+      helperNote: 'No action needed right now. We\'ll notify you when the provider responds.',
       steps: baseSteps,
     }
   }
@@ -84,7 +84,7 @@ export function getRequestSuccessContent(params: {
       secondaryCtaHref,
       helperNote: hasResponses
         ? 'Review responses now and choose your provider.'
-        : 'No action needed right now. We’ll notify you when the first provider responds.',
+        : 'No action needed right now. We\'ll notify you when the first provider responds.',
       steps: baseSteps,
     }
   }
@@ -100,7 +100,7 @@ export function getRequestSuccessContent(params: {
       primaryCtaHref: withTicketView(params.ticketUrl, 'matching_progress', fallbackTrackHref),
       secondaryCtaLabel: 'View my requests',
       secondaryCtaHref,
-      helperNote: 'No action needed right now. We’re working on your match.',
+      helperNote: 'No action needed right now. We\'re working on your match.',
       steps: [
         'We contact the fastest suitable provider first',
         'If they do not respond, we rotate to the next provider',

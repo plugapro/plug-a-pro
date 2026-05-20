@@ -179,6 +179,7 @@ export function BookingFlow({
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
   const [ticketUrl, setTicketUrl] = useState<string | null>(null)
   const [selectedMatchingMode, setSelectedMatchingMode] = useState<MatchingMode | null>(null)
+  const [hasProviderResponses, setHasProviderResponses] = useState(false)
   const [matchingModeSubmitting, setMatchingModeSubmitting] = useState(false)
   const [waitlistedCity, setWaitlistedCity] = useState<string | null>(null)
   const streetSummary = buildLegacyStreetAddress(address)
@@ -193,7 +194,7 @@ export function BookingFlow({
       ticketUrl,
       selectedMatchingMode,
       preferredProviderId,
-      hasProviderResponses: Boolean(ticketUrl?.includes('view=shortlist')),
+      hasProviderResponses,
     })
 
     console.info('[booking-flow] request_submitted_success_viewed', {
@@ -204,7 +205,7 @@ export function BookingFlow({
       authState: 'authenticated',
       source: 'pwa',
     })
-  }, [jobRequestId, preferredProviderId, selectedMatchingMode, step, ticketUrl])
+  }, [hasProviderResponses, jobRequestId, preferredProviderId, selectedMatchingMode, step, ticketUrl])
 
   useEffect(() => {
     if (hasInitialDraft) return
@@ -573,6 +574,8 @@ export function BookingFlow({
         }
         throw new Error('Could not start matching mode right now. Please try again.')
       }
+      const data = await res.json().catch(() => ({})) as { status?: string }
+      setHasProviderResponses(mode === 'review_first' && data.status === 'review_options_ready')
       setSelectedMatchingMode(mode)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start matching mode right now. Please try again.')
@@ -1227,7 +1230,7 @@ export function BookingFlow({
                     ticketUrl,
                     selectedMatchingMode,
                     preferredProviderId,
-                    hasProviderResponses: Boolean(ticketUrl?.includes('view=shortlist')),
+                    hasProviderResponses,
                   })
                 : null
               const ctaHref = modeAwareContent?.primaryCtaHref ?? (ticketUrl ?? `/requests/${jobRequestId}`)
