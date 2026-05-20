@@ -4,6 +4,8 @@
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { sendCustomerRunningLateNotification, sendProviderInvoiceTemplate } from '../whatsapp'
+import { redeemVoucher } from '../voucher-redemption'
+import { mapVoucherRedemptionErrorToMessage } from '../vouchers'
 import { createPayatTopUpIntent } from '../provider-credit-payment-intents'
 import { notifyProviderPaymentIntentCreated } from '../provider-wallet-notifications'
 import { logOutboundMessage } from '../message-events'
@@ -297,6 +299,10 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
     case 'pj_topup_payat_created':
     case 'pj_topup_eft_created':
       return handleProviderMenu(ctx)
+    case 'pj_redeem_voucher':
+      return handleVoucherRedeemPrompt(ctx)
+    case 'pj_redeem_voucher_awaiting_code':
+      return handleVoucherCodeEntry(ctx)
     default:
       return handleProviderMenu(ctx)
   }
@@ -1831,4 +1837,52 @@ async function handleTopUpPayatCreate(
   }
 
   return { nextStep: 'pj_topup_payat_created' }
+}
+
+// ─── Voucher Redemption ───────────────────────────────────────────────────────
+
+async function handleVoucherRedeemPrompt(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(ctx.phone)
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  if (!provider.active || provider.status !== 'ACTIVE') {
+    await sendText(
+      ctx.phone,
+      'Your profile must be approved before you can redeem a voucher. Reply *menu* to check your application status.',
+    )
+    return { nextStep: 'done' }
+  }
+
+  await sendText(ctx.phone, 'Please send your voucher code.\n\n_Example: PAP-7KQ9-M2XD_')
+  return { nextStep: 'pj_redeem_voucher_awaiting_code' }
+}
+
+async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(ctx.phone)
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  const rawCode = ctx.reply.text?.trim() ?? ''
+  if (!rawCode) {
+    await sendText(ctx.phone, 'Please send your voucher code.\n\n_Example: PAP-7KQ9-M2XD_')
+    return { nextStep: 'pj_redeem_voucher_awaiting_code' }
+  }
+
+  const result = await redeemVoucher(provider.id, rawCode)
+
+  if (result.ok) {
+    await sendText(
+      ctx.phone,
+      `✅ Voucher redeemed successfully. 1 credit has been added to your account.\n\nReply *credits* to view your balance.`,
+    )
+  } else {
+    await sendText(ctx.phone, mapVoucherRedemptionErrorToMessage(result.code))
+  }
+
+  return { nextStep: 'pj_credits' }
 }
