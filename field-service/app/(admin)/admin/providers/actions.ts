@@ -239,11 +239,16 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
 // ─── setProviderStatus ────────────────────────────────────────────────────────
 
 export async function setProviderStatusAction(input: SetStatusInput) {
+  const isOwnerOnlyStatus = input.status === 'ARCHIVED' || input.status === 'BANNED'
   const result = await crudAction<SetStatusInput, { id: string }>({
     entity: 'Provider',
     entityId: input.providerId,
-    action: `provider.status.${input.status.toLowerCase()}`,
-    requiredRole: [...OPS_ROLES],
+    action: input.status === 'ARCHIVED'
+      ? 'provider.archive'
+      : input.status === 'BANNED'
+        ? 'provider.ban'
+        : 'provider.set_status',
+    requiredRole: isOwnerOnlyStatus ? ['OWNER'] : [...OPS_ROLES],
     requiredFlag: FLAG,
     schema: SetProviderStatusSchema,
     input,

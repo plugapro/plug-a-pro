@@ -3,10 +3,17 @@
 
 export const dynamic = 'force-dynamic'
 
+import type * as React from 'react'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  buildPaymentFilterHref,
+  dateRangeToCreatedAt,
+  parsePaymentFilters,
+  type PaymentDateRange,
+} from '@/lib/admin/payment-filters'
 import {
   OPS_QUEUE_TYPES,
   formatOpsQueueOwnerLabel,
@@ -14,15 +21,13 @@ import {
 } from '@/lib/ops-queue'
 import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/admin/ui/SubmitButton'
 import { getPaymentAdminMessage } from '@/lib/admin-action-messages'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 import { claimPaymentAction, releasePaymentAction } from './actions'
-import { ReconcilePaymentButton } from './_components/ReconcilePaymentButton'
-import { WriteOffPaymentButton } from './_components/WriteOffPaymentButton'
-import { RefundPaymentButton } from './_components/RefundPaymentButton'
+import { ManagePaymentDialog } from './_components/ManagePaymentDialog'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
@@ -49,11 +54,21 @@ const STATUS_LABEL: Record<PaymentStatus, string> = {
   PARTIALLY_REFUNDED: 'Part. Refunded',
 }
 
-const FILTER_OPTIONS: { value: PaymentStatus | 'ALL'; label: string }[] = [
-  { value: 'ALL',     label: 'All' },
-  { value: 'PAID',    label: 'Paid' },
+const STATUS_FILTER_OPTIONS: { value: PaymentStatus | 'ALL'; label: string }[] = [
   { value: 'PENDING', label: 'Pending' },
-  { value: 'FAILED',  label: 'Failed' },
+  { value: 'AUTHORISED', label: 'Authorised' },
+  { value: 'PAID', label: 'Paid' },
+  { value: 'FAILED', label: 'Failed' },
+  { value: 'REFUNDED', label: 'Refunded' },
+  { value: 'PARTIALLY_REFUNDED', label: 'Partially refunded' },
+  { value: 'ALL', label: 'All' },
+]
+
+const DATE_FILTER_OPTIONS: { value: PaymentDateRange; label: string }[] = [
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+  { value: '90d', label: '90 days' },
+  { value: 'ALL', label: 'All time' },
 ]
 
 const COLLECTION_LABEL: Record<PaymentCollectionMode, string> = {
@@ -66,21 +81,30 @@ const COLLECTION_LABEL: Record<PaymentCollectionMode, string> = {
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; message?: string }>
+  searchParams: Promise<{ status?: string; date?: string; psp?: string; message?: string }>
 }) {
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
   const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
-  const { status, message } = await searchParams
+  const rawParams = await searchParams
+  const { message } = rawParams
   const banner = getPaymentAdminMessage(message)
 
-  const validStatuses: PaymentStatus[] = ['PENDING', 'AUTHORISED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED']
-  const statusFilter = validStatuses.includes(status as PaymentStatus)
-    ? (status as PaymentStatus)
-    : undefined
+  const filters = parsePaymentFilters(rawParams)
+  const createdAtGte = dateRangeToCreatedAt(filters.dateRange)
+  const pspOptions = await db.payment.findMany({
+    where: { pspProvider: { not: null } },
+    select: { pspProvider: true },
+    distinct: ['pspProvider'],
+    orderBy: { pspProvider: 'asc' },
+  })
 
   const payments = await db.payment.findMany({
-    where: statusFilter ? { status: statusFilter } : undefined,
+    where: {
+      ...(filters.status !== 'ALL' ? { status: filters.status } : {}),
+      ...(createdAtGte ? { createdAt: { gte: createdAtGte } } : {}),
+      ...(filters.psp !== 'ALL' ? { pspProvider: filters.psp } : {}),
+    },
     include: {
       booking: {
         include: {
@@ -142,24 +166,49 @@ export default async function PaymentsPage({
         </div>
       )}
 
-      {/* Status filter tabs */}
-      <div className="flex gap-1 flex-wrap">
-        {FILTER_OPTIONS.map((opt) => {
-          const active = opt.value === 'ALL' ? !statusFilter : opt.value === statusFilter
-          return (
-            <a
-              key={opt.value}
-              href={opt.value === 'ALL' ? '/admin/payments' : `/admin/payments?status=${opt.value}`}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                active
-                  ? 'bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(37,99,235,0.18)]'
-                  : 'border border-border/80 bg-card/70 text-muted-foreground hover:bg-accent'
-              }`}
+      <div className="space-y-3 rounded-xl border bg-card p-4">
+        <FilterGroup label="Status">
+          {STATUS_FILTER_OPTIONS.map((option) => (
+            <FilterChip
+              key={option.value}
+              active={filters.status === option.value}
+              href={buildPaymentFilterHref(rawParams, { status: option.value })}
             >
-              {opt.label}
-            </a>
-          )
-        })}
+              {option.label}
+            </FilterChip>
+          ))}
+        </FilterGroup>
+        <FilterGroup label="Date range">
+          {DATE_FILTER_OPTIONS.map((option) => (
+            <FilterChip
+              key={option.value}
+              active={filters.dateRange === option.value}
+              href={buildPaymentFilterHref(rawParams, { dateRange: option.value })}
+            >
+              {option.label}
+            </FilterChip>
+          ))}
+        </FilterGroup>
+        <FilterGroup label="PSP">
+          <FilterChip
+            active={filters.psp === 'ALL'}
+            href={buildPaymentFilterHref(rawParams, { psp: 'ALL' })}
+          >
+            All
+          </FilterChip>
+          {pspOptions.map((option) => {
+            if (!option.pspProvider) return null
+            return (
+              <FilterChip
+                key={option.pspProvider}
+                active={filters.psp === option.pspProvider}
+                href={buildPaymentFilterHref(rawParams, { psp: option.pspProvider })}
+              >
+                {option.pspProvider}
+              </FilterChip>
+            )
+          })}
+        </FilterGroup>
       </div>
 
       {/* Table */}
@@ -237,40 +286,24 @@ export default async function PaymentsPage({
                       {!claimedByCurrentUser ? (
                         <form action={claimPaymentAction}>
                           <input type="hidden" name="paymentId" value={p.id} />
-                          <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                          <SubmitButton type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                             {assignment?.claimedById ? 'Take over' : 'Claim'}
-                          </Button>
+                          </SubmitButton>
                         </form>
                       ) : (
                         <form action={releasePaymentAction}>
                           <input type="hidden" name="paymentId" value={p.id} />
-                          <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                          <SubmitButton type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                             Release
-                          </Button>
+                          </SubmitButton>
                         </form>
                       )}
-                      {p.status === 'PAID' && (
-                        <RefundPaymentButton
-                          paymentId={p.id}
-                          maxAmount={Number(p.amount)}
-                          amountLabel={`R ${Number(p.amount).toFixed(2)}`}
-                          disabled={!crudEnabled}
-                        />
-                      )}
-                      {(p.status === 'PENDING' || p.status === 'AUTHORISED') && (
-                        <ReconcilePaymentButton
-                          paymentId={p.id}
-                          amountLabel={`R ${Number(p.amount).toFixed(2)}`}
-                          disabled={!crudEnabled}
-                        />
-                      )}
-                      {(p.status === 'PENDING' || p.status === 'FAILED') && (
-                        <WriteOffPaymentButton
-                          paymentId={p.id}
-                          amountLabel={`R ${Number(p.amount).toFixed(2)}`}
-                          disabled={!crudEnabled}
-                        />
-                      )}
+                      <ManagePaymentDialog
+                        paymentId={p.id}
+                        amount={Number(p.amount)}
+                        status={p.status}
+                        disabled={!crudEnabled}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -302,5 +335,39 @@ export default async function PaymentsPage({
         </div>
       )}
     </div>
+  )
+}
+
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 md:flex-row md:items-center">
+      <p className="w-24 shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </p>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  )
+}
+
+function FilterChip({
+  active,
+  href,
+  children,
+}: {
+  active: boolean
+  href: string
+  children: React.ReactNode
+}) {
+  return (
+    <a
+      href={href}
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? 'bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(37,99,235,0.18)]'
+          : 'border border-border/80 bg-card/70 text-muted-foreground hover:bg-accent'
+      }`}
+    >
+      {children}
+    </a>
   )
 }

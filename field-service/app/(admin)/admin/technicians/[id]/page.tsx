@@ -352,6 +352,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
         currentKycStatus={provider.kycStatus}
         isVerified={provider.verified}
         crudEnabled={crudEnabled}
+        adminRole={admin.adminRole}
       />
 
       <div className="grid gap-6 md:grid-cols-3">

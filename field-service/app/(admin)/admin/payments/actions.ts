@@ -71,7 +71,7 @@ export async function writeOffPaymentAction(input: WriteOffInput) {
   const result = await crudAction<WriteOffInput, { id: string }>({
     entity: AUDIT_ENTITY.PAYMENT,
     entityId: input.paymentId,
-    action: 'payment.write_off',
+    action: 'payment.writeoff',
     requiredRole: ['FINANCE', 'ADMIN', 'OWNER'],
     requiredFlag: FLAG,
     schema: WriteOffPaymentSchema,

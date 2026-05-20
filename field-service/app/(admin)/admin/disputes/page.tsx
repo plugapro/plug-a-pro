@@ -21,8 +21,8 @@ import { getDisputesAdminMessage } from '@/lib/admin-action-messages'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
 import { SubmitButton } from '@/components/admin/ui'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+import { getDisputeResolutionLabel } from '@/lib/admin/dispute-resolution'
+import { ResolveForm } from '@/components/admin/disputes/ResolveForm'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
@@ -330,7 +330,7 @@ export default async function AdminDisputesPage({
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={DISPUTE_STYLES[dispute.status] ?? DISPUTE_STYLES.OPEN}>
-                      {dispute.status.replaceAll('_', ' ').toLowerCase()}
+                      {getDisputeResolutionLabel(dispute.status)}
                     </Badge>
                     <Badge variant={claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'}>
                       {formatOpsQueueOwnerLabel(assignment, admin.id)}
@@ -404,38 +404,14 @@ export default async function AdminDisputesPage({
                   )}
                 </div>
 
-                <form action={updateDisputeAction} className="space-y-3 rounded-lg border bg-muted/20 px-3 py-3">
-                  <input type="hidden" name="disputeId" value={dispute.id} />
-                  <div className="grid gap-3 md:grid-cols-[180px_1fr]">
-                    <Select
-                      name="status"
-                      defaultValue={dispute.status}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="OPEN">Open</SelectItem>
-                        <SelectItem value="UNDER_REVIEW">Under review</SelectItem>
-                        <SelectItem value="RESOLVED_CUSTOMER">Resolved for customer</SelectItem>
-                        <SelectItem value="RESOLVED_PROVIDER">Resolved for provider</SelectItem>
-                        <SelectItem value="RESOLVED_SPLIT">Resolved with split outcome</SelectItem>
-                        <SelectItem value="CLOSED">Closed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Textarea
-                      name="resolution"
-                      defaultValue={dispute.resolution ?? ''}
-                      placeholder="Add internal resolution notes for this case."
-                      className="min-h-24"
-                    />
-                  </div>
-                  <SubmitButton
-                    disabled={!crudEnabled}
-                  >
-                    Save dispute update
-                  </SubmitButton>
-                </form>
+                {isActiveDispute ? (
+                  <ResolveForm
+                    disputeId={dispute.id}
+                    action={updateDisputeAction}
+                    defaultNotes={dispute.resolution}
+                    disabled={!crudEnabled || !claimedByCurrentUser}
+                  />
+                ) : null}
 
                 {casesEnabled && (() => {
                   const activeCase = caseByDispute.get(dispute.id)

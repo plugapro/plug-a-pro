@@ -680,45 +680,36 @@ function QueueCard({
       <CardHeader className="gap-3">
         <div className="flex items-center justify-between gap-3">
           <Badge variant={laneBadgeClass(lane)}>{lane}</Badge>
-          <Badge variant={slaBadgeClass(tone)}>{count} open</Badge>
+          <Badge variant={slaBadgeClass(tone)}>{detail}</Badge>
         </div>
         <div className="space-y-1">
           <CardTitle className="text-base">{title}</CardTitle>
           <p className="text-sm text-muted-foreground">{note}</p>
-          <p className="text-xs text-muted-foreground">{detail}</p>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
+            <p className="font-mono text-[10px] font-medium uppercase leading-[13px] tracking-[0.16em] text-muted-foreground">
+              {target}
+            </p>
             <p className="text-3xl font-semibold tracking-tight">{count}</p>
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{target}</p>
+            <p className="font-mono text-xs text-muted-foreground">
+              {health.overdueCount} overdue · {health.unclaimedCount} unclaimed · {health.claimedByYouCount} mine
+            </p>
           </div>
           <Button asChild variant="outline" size="sm">
             <Link href={href}>Open queue</Link>
           </Button>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant={health.overdueCount > 0 ? 'danger' : 'outline'}>
-            {health.overdueCount} overdue
-          </Badge>
-          <Badge variant={health.unclaimedCount > 0 ? 'warning' : 'outline'}>
-            {health.unclaimedCount} unclaimed
-          </Badge>
-          <Badge variant={health.claimedByYouCount > 0 ? 'brand' : 'outline'}>
-            {health.claimedByYouCount} yours
-          </Badge>
           <Badge variant="outline">
             Oldest {formatAgeMinutes(health.oldestAgeMinutes)}
           </Badge>
+          <Badge variant={slaBadgeClass(tone)}>{count} open</Badge>
         </div>
-        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            SLA target: {target}
-          </div>
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            Queue health: {detail}
-          </div>
+        <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
+          Queue health: {detail}
         </div>
       </CardContent>
     </Card>
@@ -916,4 +907,3 @@ function MatchingStatCell({
     </div>
   )
 }
-

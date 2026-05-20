@@ -102,7 +102,7 @@ export default async function AdminQuoteQueuePage() {
 
   const quoteIds = quotes.map((quote) => quote.id)
 
-  const [assignments, rawAuditLogs] = await Promise.all([
+  const [assignments, rawAuditLogs, quoteReadyMessages] = await Promise.all([
     listOpsQueueAssignments(db, OPS_QUEUE_TYPES.QUOTE_APPROVAL, quoteIds).catch((error) => {
       console.error('[admin/quotes] Failed to load queue assignments', error)
       pageWarnings.push('Assignment ownership data is temporarily unavailable.')
@@ -118,7 +118,39 @@ export default async function AdminQuoteQueuePage() {
       pageWarnings.push('Recent quote activity failed to load.')
       return [] as Array<{ id: string; entityId: string | null; action: string; actorRole: string; timestamp: Date }>
     }),
+    quoteIds.length > 0
+      ? db.messageEvent.findMany({
+          where: {
+            templateName: 'customer_quote_ready',
+            OR: quoteIds.map((quoteId) => ({
+              metadata: {
+                path: ['quoteId'],
+                equals: quoteId,
+              },
+            })),
+          },
+          select: {
+            id: true,
+            metadata: true,
+          },
+        }).catch((error) => {
+          console.error('[admin/quotes] Failed to load quote-ready message events', error)
+          pageWarnings.push('Quote notification evidence is temporarily unavailable.')
+          return [] as Array<{ id: string; metadata: unknown }>
+        })
+      : [],
   ])
+
+  const quoteIdsWithCustomerNotification = new Set(
+    quoteReadyMessages
+      .map((event) => {
+        const metadata = event.metadata
+        return metadata && typeof metadata === 'object' && 'quoteId' in metadata
+          ? String((metadata as { quoteId?: unknown }).quoteId ?? '')
+          : ''
+      })
+      .filter(Boolean),
+  )
 
   const auditByQuote = new Map<string, typeof rawAuditLogs>()
   for (const log of rawAuditLogs) {
@@ -179,6 +211,8 @@ export default async function AdminQuoteQueuePage() {
             const claimedByCurrentUser = assignment?.claimedById === admin.id
             const quotePageUrl = `/quotes/${quote.approvalToken}`
             const expired = quote.validUntil ? quote.validUntil < now : false
+            const customerNotNotified =
+              Boolean(quote.approvalWhatsappSentAt) && !quoteIdsWithCustomerNotification.has(quote.id)
 
             return (
               <Card key={quote.id}>
@@ -195,6 +229,9 @@ export default async function AdminQuoteQueuePage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge status={quote.status} type="quote" />
+                      {customerNotNotified ? (
+                        <Badge variant="warning">customer not notified</Badge>
+                      ) : null}
                       <Badge variant={expired ? 'danger' : 'outline'}>
                         {expired ? 'Expired' : 'Awaiting customer'}
                       </Badge>
