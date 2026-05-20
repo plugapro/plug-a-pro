@@ -1088,7 +1088,7 @@ model VoucherBatch {
   // Human-readable name for this print run, e.g. "Pilot Provider Flyer — May 2026"
   name         String
   // Short identifier used in duplicate-redemption checks, e.g. "PILOT_PROVIDER_FLYER"
-  campaignCode String
+  campaignCode String         @unique
   creditAmount Int            @default(1)
   count        Int
   expiresAt    DateTime?
@@ -1099,7 +1099,6 @@ model VoucherBatch {
 
   vouchers     PromoVoucher[]
 
-  @@index([campaignCode])
   @@map("voucher_batches")
 }
 
@@ -1128,6 +1127,8 @@ model PromoVoucher {
   @@index([status])
   @@index([batchId])
   @@index([redeemedByProviderId])
+  @@index([redeemedByMobile])
+  @@index([expiresAt, status])
   @@map("promo_vouchers")
 }
 
