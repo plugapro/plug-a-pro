@@ -1335,6 +1335,45 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
       expect(declineButton).toBeUndefined()
     })
 
+    it('retries once on P2024 connection pool timeout and sends success on second attempt', async () => {
+      let callCount = 0
+      ;(mockDb as any).$transaction = vi.fn().mockImplementation(
+        async (fn: (tx: typeof mockDb) => Promise<unknown>) => {
+          callCount++
+          if (callCount === 1) {
+            throw Object.assign(new Error('connection pool timeout'), { code: 'P2024' })
+          }
+          return fn(mockDb as any)
+        },
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      expect((mockDb as any).$transaction).toHaveBeenCalledTimes(2)
+      expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Availability noted'))
+    })
+
+    it('re-sends only the "I\'m Available" retry button (not "Not Available") when P2024 persists', async () => {
+      ;(mockDb as any).$transaction = vi.fn().mockRejectedValue(
+        Object.assign(new Error('connection pool timeout'), { code: 'P2024' }),
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      expect(mockSendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining("couldn't register your availability"),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'ops_accept:rfp-lead-1', title: "I'm Available" }),
+        ]),
+      )
+      const [, , buttons] = mockSendButtons.mock.calls.find(([p]) => p === PHONE) ?? []
+      const declineButton = (buttons as Array<{ id: string }> | undefined)?.find((b) =>
+        b.id.startsWith('ops_decline:'),
+      )
+      expect(declineButton).toBeUndefined()
+    })
+
     it('treats P2002 unique constraint as concurrent dedup and sends "already noted"', async () => {
       ;(mockDb as any).$transaction = vi.fn().mockRejectedValue(
         Object.assign(new Error('unique constraint'), { code: 'P2002' }),

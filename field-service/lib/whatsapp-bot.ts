@@ -3460,9 +3460,10 @@ async function handleRfpLeadInterest(
         alreadyRegistered = true
         transactionError = null
         break
-      } else if (['P2034', 'P5010'].includes((err as { code?: string }).code ?? '') && attempt === 0) {
-        // P2034 = deadlock / write conflict; P5010 = connection pool timeout.
-        // Prisma explicitly recommends retrying P2034; P5010 warrants the same.
+      } else if (['P2034', 'P5010', 'P2024'].includes((err as { code?: string }).code ?? '') && attempt === 0) {
+        // P2034 = deadlock / write conflict; P5010 = Prisma Data Proxy pool timeout;
+        // P2024 = standard Prisma client connection pool timeout (PgBouncer / Supabase).
+        // Prisma explicitly recommends retrying P2034; the pool errors warrant the same.
         // Wait briefly then let the loop retry once.
         console.warn('[whatsapp-bot] rfp_interest: write_conflict_retry', { traceId, leadId, providerId, code: (err as { code?: string }).code })
         await new Promise((resolve) => setTimeout(resolve, 150))
@@ -3477,6 +3478,7 @@ async function handleRfpLeadInterest(
   if (transactionError !== null) {
     console.error('[whatsapp-bot] rfp_interest: transaction failed', {
       traceId, leadId, providerId,
+      errorCode: (transactionError as { code?: string })?.code ?? 'unknown',
       error: transactionError instanceof Error ? transactionError.message : String(transactionError),
     })
     // Re-send only the retry button — omitting "Not Available" avoids an accidental
