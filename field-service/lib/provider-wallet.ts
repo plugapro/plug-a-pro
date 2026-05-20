@@ -239,6 +239,48 @@ export async function creditPromoCreditsInTransaction(
   return { wallet: updatedWallet, ledgerEntries: [ledgerEntry] }
 }
 
+/**
+ * Credits the provider wallet for a successful voucher redemption.
+ * Uses VOUCHER_REDEMPTION entry type for clear ledger auditability.
+ * creditType is PROMO — voucher credits are non-purchased credits and increment promoCreditBalance.
+ *
+ * MUST be called inside an existing DB transaction.
+ */
+export async function creditVoucherRedemptionInTransaction(
+  tx: WalletTx,
+  providerId: string,
+  amountCredits: number,
+  reference: WalletReference,
+): Promise<WalletMutationResult> {
+  assertPositiveIntegerCredits(amountCredits)
+  assertReference(reference)
+
+  const wallet = await getOrCreateProviderWalletInTx(tx, providerId)
+  assertWalletActive(wallet)
+
+  // Promo credits use the same immutable ledger path as paid credits, but they
+  // stay in their own balance bucket so they cannot be treated as cash value.
+  const updatedWallet = await tx.providerWallet.update({
+    where: { id: wallet.id },
+    data: { promoCreditBalance: { increment: amountCredits } },
+  })
+
+  const ledgerEntry = await createLedgerEntry(tx, {
+    walletId: updatedWallet.id,
+    providerId,
+    entryType: 'VOUCHER_REDEMPTION',
+    creditType: 'PROMO',
+    amountCredits,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
+    balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
+    balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
+    reference,
+  })
+
+  return { wallet: updatedWallet, ledgerEntries: [ledgerEntry] }
+}
+
 export async function debitCreditsForLeadUnlockInTransaction(
   tx: WalletTx,
   providerId: string,
@@ -709,6 +751,7 @@ function ledgerEntryDelta(entryType: string, amountCredits: number): number {
   switch (entryType) {
     case 'TOPUP_CREDIT':
     case 'PROMO_CREDIT':
+    case 'VOUCHER_REDEMPTION':
     case 'LEAD_REFUND_CREDIT':
       return amountCredits
     case 'LEAD_UNLOCK_DEBIT':
