@@ -149,6 +149,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'pilot.completion-check',
     description: 'Enable cron-driven completion-check WhatsApp flow for AUTO_ASSIGN cash-pilot jobs. Sends completion check 2 days after job window; fires review nudges on Yes.',
   },
+  {
+    key: 'admin.vouchers',
+    description: 'Admin voucher batch management — pilot provider credit vouchers',
+  },
 ]
 
 async function main() {

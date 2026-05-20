@@ -16,6 +16,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: '/admin/disputes', label: 'Disputes', icon: 'disputes' as const },
   { href: '/admin/payments', label: 'Payments', icon: 'payments' as const },
   { href: '/admin/provider-credit-payments', label: 'Credit Top-ups', icon: 'payments' as const },
+  { href: '/admin/vouchers', label: 'Vouchers', icon: 'payments' as const },
   { href: '/admin/provider-wallets', label: 'Provider Wallets', icon: 'payments' as const },
   { href: '/admin/lead-unlock-disputes', label: 'Lead Refunds', icon: 'disputes' as const },
   { href: '/admin/reports', label: 'Reports', icon: 'reports' as const },

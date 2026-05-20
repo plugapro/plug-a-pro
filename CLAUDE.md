@@ -48,6 +48,7 @@ This file is the Session 0 audit for the current workspace.
 - `/admin/technicians` → `field-service/app/(admin)/admin/technicians/page.tsx`
 - `/admin/technicians/[id]` → `field-service/app/(admin)/admin/technicians/[id]/page.tsx`
 - `/admin/validation` → `field-service/app/(admin)/admin/validation/page.tsx`
+- `/admin/vouchers` → `field-service/app/(admin)/admin/vouchers/page.tsx`
 
 ### Important route aliases
 - `/admin/providers` is a thin alias that re-exports `../technicians/page.tsx`
@@ -217,6 +218,7 @@ This file is the Session 0 audit for the current workspace.
   - `admin.crud.customers`
   - `admin.crud.providers`
   - `admin.users.v2`
+  - `admin.vouchers`
 
 ### Integrations
 - Transactional messaging
