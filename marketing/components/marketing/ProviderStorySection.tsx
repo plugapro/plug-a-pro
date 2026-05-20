@@ -8,9 +8,9 @@ import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
 
 const providerStoryImages = [
   {
-    src: "/images/provider-story/plumbing-electrical-carpentry.jpg",
-    alt: "Handmade roadside sign advertising plumber, electrician and carpenter services near a building material shop",
-    label: "Plumbing, electrical and carpentry",
+    src: "/images/provider-story/ceiling-drywall-painting.png",
+    alt: "Handmade roadside sign advertising ceiling, drywall and painting services near a building material shop",
+    label: "Ceiling, drywall and painting",
   },
   {
     src: "/images/provider-story/handyman-painting-tiling.jpg",
@@ -57,7 +57,7 @@ export function ProviderStorySection() {
             </h2>
             <div className="space-y-3 text-muted-foreground leading-relaxed text-sm">
               <p>
-                Across our communities, skilled plumbers, electricians, carpenters,
+                Across our communities, skilled plumbers, carpenters,
                 painters, tilers, welders, roofers and handymen are already putting
                 themselves out there. Many still rely on handmade roadside signs,
                 referrals and passing traffic to find work.
