@@ -152,14 +152,20 @@ async function notifyAfterDecision(result: {
           : 'Navigate and update job status from the app',
       }
     ).catch(() => {})
-    const { sendBookingConfirmation } = await import('@/lib/whatsapp')
+    const [{ sendBookingConfirmation }, { getJobRequestAccessUrl }] = await Promise.all([
+      import('@/lib/whatsapp'),
+      import('@/lib/job-request-access'),
+    ])
+    const ticketUrl = result.jobRequestId
+      ? await getJobRequestAccessUrl(result.jobRequestId).catch(() => null)
+      : null
     await sendBookingConfirmation({
       bookingId: result.bookingId,
       customerName: result.customer.name,
       customerPhone,
       serviceName: category,
       scheduledWindow: dateStr,
-      bookingUrl: `${appUrl}/bookings/${result.bookingId}`,
+      bookingUrl: ticketUrl ?? appUrl,
     }).catch(() => {})
   } else {
     await sendText(

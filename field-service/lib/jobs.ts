@@ -141,7 +141,6 @@ async function triggerSideEffects(params: {
   const customer = job.booking.match.jobRequest.customer
   const appUrl = getPublicAppUrl()
   const ticketUrl = appUrl ? await getJobRequestAccessUrl(job.booking.match.jobRequest.id) : null
-  const bookingUrl = appUrl ? `${appUrl}/bookings/${job.bookingId}` : null
 
   try {
     const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
@@ -169,7 +168,7 @@ async function triggerSideEffects(params: {
     }
 
     if (toStatus === 'STARTED') {
-      const trackerUrl = ticketUrl ?? bookingUrl
+      const trackerUrl = ticketUrl
       await sendText({
         to: customer.phone,
         text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\n${trackerUrl ? 'Your job tracker is available below.' : 'Check your booking in the Plug A Pro app for details.'}`,
@@ -194,7 +193,7 @@ async function triggerSideEffects(params: {
         jobId: job.id,
         customerId: job.booking.match.jobRequest.customer.id,
       })
-      const signoffUrl = completionUrl ?? ticketUrl ?? bookingUrl
+      const signoffUrl = completionUrl ?? ticketUrl
       await sendText({
         to: customer.phone,
         text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\n${signoffUrl ? 'Sign-off is available below.' : 'Check your app for the booking details.'}`,
@@ -218,7 +217,7 @@ async function triggerSideEffects(params: {
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
-      invoiceUrl: ticketUrl ?? bookingUrl ?? '',
+      invoiceUrl: ticketUrl ?? (appUrl ?? ''),
       })
     }
   } catch (err) {

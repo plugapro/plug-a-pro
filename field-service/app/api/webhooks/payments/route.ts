@@ -10,6 +10,7 @@ import {
   handlePaymentFailed,
 } from '@/lib/payments'
 import { sendBookingConfirmation } from '@/lib/whatsapp'
+import { getJobRequestAccessUrl } from '@/lib/job-request-access'
 import { db } from '@/lib/db'
 import { getCorrelationId } from '@/lib/correlation'
 
@@ -74,13 +75,14 @@ export async function POST(request: NextRequest) {
           month: 'long',
         })
 
+        const ticketUrl = await getJobRequestAccessUrl(booking.match.jobRequest.id).catch(() => null)
         await sendBookingConfirmation({
           bookingId: booking.id,
           customerName: customer.name,
           customerPhone: customer.phone,
           serviceName: booking.match.jobRequest.category,
           scheduledWindow: `${dateLabel}, ${window}`,
-          bookingUrl: `${process.env.NEXT_PUBLIC_APP_URL}/bookings/${booking.id}`,
+          bookingUrl: ticketUrl ?? (process.env.NEXT_PUBLIC_APP_URL ?? ''),
         })
       }
     } else if (event.type === 'payment.failed') {

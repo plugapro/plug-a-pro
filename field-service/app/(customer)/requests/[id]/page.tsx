@@ -51,6 +51,26 @@ export default async function RequestDetailPage({
   )
   const session = await getSession()
   if (!session || session.role !== 'customer') {
+    // WhatsApp match-found links land on this route with a raw job request ID.
+    // If a valid customerAccessToken exists for this request, redirect to the
+    // tokenized /requests/access/{token} route so the visitor never hits sign-in.
+    const existing = await db.jobRequest.findUnique({
+      where: { id },
+      select: {
+        customerAccessToken: true,
+        customerAccessTokenExpiresAt: true,
+        customerAccessTokenRevokedAt: true,
+      },
+    }).catch(() => null)
+    const now = new Date()
+    if (
+      existing?.customerAccessToken &&
+      !existing.customerAccessTokenRevokedAt &&
+      existing.customerAccessTokenExpiresAt &&
+      existing.customerAccessTokenExpiresAt > now
+    ) {
+      redirect(`/requests/access/${existing.customerAccessToken}`)
+    }
     redirect(`/sign-in?next=${encodeURIComponent(`/requests/${id}`)}`)
   }
 

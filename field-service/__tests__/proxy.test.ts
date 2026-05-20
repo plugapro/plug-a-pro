@@ -429,4 +429,56 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
   })
+
+  // ─── WhatsApp deep-link public paths (added in the deep-link auth fix) ────────
+
+  it('allows unauthenticated access to /requests/* so the page can redirect WhatsApp visitors to the tokenized route', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/requests/clnrz9kg10000qyvl7qox9w1m'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows unauthenticated access to /confirm-completion/* HMAC-token job sign-off', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/confirm-completion/hmac-signed-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows unauthenticated access to /review/* HMAC-token provider review', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/review/hmac-signed-review-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows unauthenticated access to /quotes/* token-gated quote approval', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/quotes/uuid-approval-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps /bookings/* behind OTP login (not a WhatsApp-tokenized route)', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/bookings/booking-id-123'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toContain('/sign-in')
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
 })

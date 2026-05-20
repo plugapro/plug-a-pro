@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasSuccessfulMessageForBooking } from '@/lib/message-events'
 import { sendFollowUp } from '@/lib/whatsapp'
+import { getJobRequestAccessUrl } from '@/lib/job-request-access'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -68,11 +69,12 @@ export async function GET(request: Request) {
         continue
       }
 
+      const ratingUrl = await getJobRequestAccessUrl(booking.match.jobRequest.id).catch(() => null) ?? appUrl
       await sendFollowUp({
         bookingId:     booking.id,
         customerName:  customer.name,
         customerPhone: customer.phone,
-        ratingUrl:     `${appUrl}/bookings/${booking.id}/rate`,
+        ratingUrl,
       })
 
       sent++

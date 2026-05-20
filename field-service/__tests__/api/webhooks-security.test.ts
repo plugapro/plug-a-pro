@@ -52,6 +52,13 @@ vi.mock('@/lib/whatsapp', async (importOriginal) => {
   }
 })
 
+vi.mock('@/lib/job-request-access', () => ({
+  getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/requests/access/test-token'),
+  ensureJobRequestAccessToken: vi.fn().mockResolvedValue({ token: 'test-token', expiresAt: new Date(Date.now() + 86400000) }),
+  resolveJobRequestAccessToken: vi.fn(),
+  resolveJobRequestAccessScope: vi.fn(),
+}))
+
 vi.mock('@/lib/whatsapp-bot', () => ({
   processInboundMessage: vi.fn().mockResolvedValue(undefined),
 }))
@@ -236,6 +243,7 @@ describe('POST /api/webhooks/payments — idempotency', () => {
       scheduledWindow: '09:00–12:00',
       match: {
         jobRequest: {
+          id: 'jr-001',
           category: 'Plumbing',
           customer: { name: 'Alice', phone: '+27821234567' },
         },
@@ -254,6 +262,11 @@ describe('POST /api/webhooks/payments — idempotency', () => {
 
     const { sendBookingConfirmation } = await import('@/lib/whatsapp')
     expect(sendBookingConfirmation).toHaveBeenCalledOnce()
+    expect(sendBookingConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingUrl: expect.stringContaining('/requests/access/'),
+      }),
+    )
   })
 
   it('skips WhatsApp confirmation on duplicate delivery (booking already SCHEDULED)', async () => {

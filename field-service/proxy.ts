@@ -57,6 +57,10 @@ const PUBLIC_PATHS = [
   '/r',                             // short WhatsApp handoff alias — server redirects via token resolver
   '/ticket',                        // public token-gated invoice — server-rendered, no session cookie
   '/client/handoff',                // WhatsApp handoff deep-link — token validates identity
+  '/confirm-completion',            // HMAC-token job sign-off — no session needed; page verifies token
+  '/review',                        // HMAC-token provider review — no session needed; page verifies token
+  '/quotes',                        // token-gated quote approval — no session needed; page verifies approvalToken
+  '/requests',                      // WhatsApp match-found links land here; page redirects unauthenticated visitors to the tokenized /requests/access/{token} route
 ]
 
 const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/
