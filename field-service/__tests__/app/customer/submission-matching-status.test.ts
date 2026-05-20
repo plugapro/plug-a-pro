@@ -98,6 +98,19 @@ describe('CLIENT-06: token request-submitted page', () => {
     expect(source).toContain("destination.screen === 'request_submitted' && !isReviewFirstFlow")
     expect(source).toContain('<Badge variant="brand">Review providers</Badge>')
   })
+
+  it('includes safe app navigation and auth-aware bottom nav on ticket page', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'app/requests/access/[token]/page.tsx'),
+      'utf8',
+    )
+    expect(source).toContain('Back to bookings')
+    expect(source).toContain('Back to home')
+    expect(source).toContain('Your bookings')
+    expect(source).toContain('<BottomNav')
+    expect(source).toContain("authState: isAuthenticated ? 'authenticated' : 'anonymous'")
+    expect(source).toContain('const source = resolveRequestTicketSource')
+  })
 })
 
 // ── Submission notification ───────────────────────────────────────────────────

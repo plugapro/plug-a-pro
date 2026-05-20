@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { CalendarDays, ChevronLeft, CircleUser, Home } from 'lucide-react'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveJobRequestAccessToken } from '@/lib/job-request-access'
 import { buildCustomerRequestTicketViewModel } from '@/lib/customer-request-ticket-view-model'
@@ -9,9 +10,14 @@ import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
+import { BottomNav, type BottomNavItem } from '@/components/shared/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { getSession } from '@/lib/auth'
+import { db } from '@/lib/db'
+import { resolveCustomerForSession } from '@/lib/customer-session'
+import type { BottomNavAuthRole } from '@/lib/bottom-nav-auth'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
@@ -208,6 +214,36 @@ function formatDateTime(value: Date | null) {
   })
 }
 
+const BOTTOM_NAV_ICON_SIZE = 20
+const ticketBottomNavItems: BottomNavItem[] = [
+  { id: 'home', label: 'Home', icon: <Home size={BOTTOM_NAV_ICON_SIZE} />, href: '/' },
+  { id: 'bookings', label: 'Bookings', icon: <CalendarDays size={BOTTOM_NAV_ICON_SIZE} />, href: '/bookings' },
+  { id: 'account', label: 'Account', icon: <CircleUser size={BOTTOM_NAV_ICON_SIZE} />, href: '/profile' },
+]
+
+function resolveRequestTicketSource(input: { view?: string | null; intent?: string | null }): 'pwa' | 'whatsapp' | 'direct' {
+  const normalizedView = (input.view ?? '').trim().toLowerCase()
+  const normalizedIntent = (input.intent ?? '').trim().toLowerCase()
+
+  if (normalizedView.startsWith('wa_') || normalizedIntent.startsWith('wa_')) return 'whatsapp'
+  if (normalizedView.includes('whatsapp') || normalizedIntent.includes('whatsapp')) return 'whatsapp'
+
+  const pwaViewStates = new Set([
+    'request_submitted',
+    'matching_progress',
+    'providers_reviewing',
+    'shortlist',
+    'provider_confirmation',
+    'job_tracking',
+    'matching_status',
+    'cancelled',
+  ])
+  if (pwaViewStates.has(normalizedView) || pwaViewStates.has(normalizedIntent)) return 'pwa'
+  if (normalizedView.length > 0 || normalizedIntent.length > 0) return 'pwa'
+
+  return 'direct'
+}
+
 export default async function TicketAccessPage({
   params,
   searchParams,
@@ -338,9 +374,57 @@ export default async function TicketAccessPage({
         evidenceNote: provider.evidenceNote,
       })
     : []
+  const session = await getSession()
+  const authRole: BottomNavAuthRole = session?.role ?? null
+  let signedInCustomerId: string | null = null
+  if (session) {
+    try {
+      const signedInCustomer = await resolveCustomerForSession(db, session)
+      signedInCustomerId = signedInCustomer?.id ?? null
+    } catch {
+      signedInCustomerId = null
+    }
+  }
+  const isAuthenticated = Boolean(session)
+  const isRequestOwner = Boolean(signedInCustomerId && signedInCustomerId === jobRequest.customerId)
+  const source = resolveRequestTicketSource({
+    view: resolvedSearchParams.view ?? null,
+    intent: resolvedSearchParams.intent ?? null,
+  })
+  const signInHref = `/sign-in?next=${encodeURIComponent(`/requests/access/${token}`)}`
+
+  console.info('[ticket-access] request status page opened', {
+    traceId: ticketVm.traceId,
+    route: '/requests/access/[token]',
+    requestId: jobRequest.id,
+    authState: isAuthenticated ? 'authenticated' : 'anonymous',
+    source,
+    isRequestOwner,
+  })
 
   return (
-    <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
+    <div className="flex min-h-dvh flex-col bg-background">
+      <main className="mx-auto w-full max-w-lg space-y-6 px-4 py-6 pb-[calc(84px+env(safe-area-inset-bottom,0px))]">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link href={isAuthenticated ? '/bookings' : '/'} aria-label={isAuthenticated ? 'Back to bookings' : 'Back to home'}>
+            <ChevronLeft size={16} className="mr-1" />
+            {isAuthenticated ? 'Back to bookings' : 'Back to home'}
+          </Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/">Home</Link>
+        </Button>
+        {isAuthenticated ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/bookings">Your bookings</Link>
+          </Button>
+        ) : (
+          <Button asChild variant="outline" size="sm">
+            <Link href={signInHref}>Sign in to manage</Link>
+          </Button>
+        )}
+      </div>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Plug A Pro ticket</p>
@@ -1128,6 +1212,25 @@ export default async function TicketAccessPage({
           </CardContent>
         </Card>
       )}
+      </main>
+      <BottomNav
+        items={ticketBottomNavItems}
+        authAwareAccount={{
+          accountItemId: 'account',
+          protectedPathPrefixes: ['/bookings', '/profile', '/messages', '/account'],
+          signedOut: { label: 'Sign in', href: signInHref },
+          signedInCustomer: { label: 'Profile', href: '/profile' },
+          signedInProvider: {
+            label: 'Profile',
+            href: authRole === 'provider' && !isRequestOwner ? '/provider/profile' : '/profile',
+          },
+          loading: { label: 'Account', href: '/profile' },
+          initialAuthState: {
+            authenticated: isAuthenticated,
+            role: authRole,
+          },
+        }}
+      />
     </div>
   )
 }
