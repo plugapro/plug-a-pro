@@ -1,11 +1,16 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getJobForClient } from '@/lib/server/client'
+import { getJobForClient, getAuthenticatedCustomerContext } from '@/lib/server/client'
 import { db } from '@/lib/db'
 
+export const dynamic = 'force-dynamic'
+
 export default async function ClientJobInvoicePage({ params }: { params: Promise<{ jobId: string }> }) {
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth) redirect('/sign-in?next=/client')
+
   const { jobId } = await params
-  const job = await getJobForClient(jobId)
+  const job = await getJobForClient(jobId, auth.customer.id)
   if (!job) redirect('/client')
   const booking = job.booking
   const invoice = booking ? await db.invoice.findUnique({ where: { bookingId: booking.id } }) : null

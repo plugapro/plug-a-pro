@@ -710,9 +710,6 @@ function QueueCard({
           </Badge>
           <Badge variant={slaBadgeClass(tone)}>{count} open</Badge>
         </div>
-        <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
-          Queue health: {detail}
-        </div>
       </CardContent>
     </Card>
   )

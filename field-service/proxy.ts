@@ -51,6 +51,9 @@ const PUBLIC_PATHS = [
   '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard
+  '/r',                             // short WhatsApp handoff alias — server redirects via token resolver
+  '/ticket',                        // public token-gated invoice — server-rendered, no session cookie
+  '/client/handoff',                // WhatsApp handoff deep-link — token validates identity
 ]
 
 const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/
@@ -68,10 +71,14 @@ const ADMIN_PATHS = ['/admin']
 // /dispatch  → /admin/dispatch  (and so on for all sub-pages)
 function toAdminInternalPath(pathname: string): string {
   if (pathname === '/') return '/admin'
+  // Leave auth pages and asset paths unchanged — they are root-level pages, not admin sub-pages
   if (
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/admin')
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/sign-in') ||
+    pathname.startsWith('/verify') ||
+    pathname.startsWith('/provider-')
   ) return pathname
   return `/admin${pathname}`
 }
