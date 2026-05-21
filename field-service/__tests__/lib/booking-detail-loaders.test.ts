@@ -171,6 +171,32 @@ describe('booking detail loaders', () => {
     expect(result).toEqual({ ok: false, error: 'missing_related_data' })
   })
 
+  it('returns missing_related_data when job has no bookingId', async () => {
+    mockDb.job.findUnique
+      .mockResolvedValueOnce({ id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED', bookingId: '' })
+      .mockResolvedValueOnce({
+        id: 'job_1',
+        providerId: 'provider_1',
+        status: 'SCHEDULED',
+        bookingId: '',
+        booking: null,
+        statusHistory: [],
+        extras: [],
+        photos: [],
+      } as any)
+
+    const { getProviderJobDetailForViewer } = await import('@/lib/booking-detail-loaders')
+    const result = await getProviderJobDetailForViewer({
+      route: '/provider/jobs/[jobId]',
+      viewerUserId: 'user_1',
+      viewerProviderId: 'provider_1',
+      jobId: 'job_1',
+    })
+
+    expect(result).toEqual({ ok: false, error: 'missing_related_data' })
+    expect(mockDb.booking.findUnique).not.toHaveBeenCalled()
+  })
+
   it('keeps rendering when optional nested data is missing', async () => {
     mockDb.job.findUnique
       .mockResolvedValueOnce({ id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED' })

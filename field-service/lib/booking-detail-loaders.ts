@@ -372,6 +372,35 @@ export async function getProviderJobDetailForViewer(params: {
     // treating the transition to detail as a hard failure.
     let booking: ProviderBookingRow | null = bookingFromInclude ?? null
     if (!booking) {
+      if (!job.bookingId) {
+        logDetailFailure({
+          route: params.route,
+          viewerRole: 'provider',
+          viewerId: params.viewerUserId,
+          viewerProviderId: params.viewerProviderId,
+          id: receivedId,
+          resolvedIdType: resolution.resolvedIdType,
+          resolvedJobId: identity.id,
+          jobStatus: identity.status,
+          reason: 'missing_related_data',
+          stage: 'resolve',
+          durationMs: Date.now() - startedAt,
+        })
+        return { ok: false, error: 'missing_related_data' }
+      }
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.info('[provider-job-detail] booking relationship missing in primary include; retrying booking lookup', {
+          route: params.route,
+          viewerRole: 'provider',
+          viewerId: params.viewerUserId,
+          viewerProviderId: params.viewerProviderId,
+          receivedId,
+          resolvedJobId: job.id,
+          bookingId: job.bookingId,
+        })
+      }
+
       booking = await db.booking.findUnique({
         where: { id: job.bookingId },
         include: providerBookingSelect,
