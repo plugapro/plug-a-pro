@@ -294,7 +294,7 @@ describe('WhatsApp booking lifecycle notifications — wiring assertions (GAP-19
 
 describe('notifyCustomerReviewRequested — WhatsApp wiring', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('calls sendText with the customer phone number on job completion review request', async () => {
@@ -361,7 +361,7 @@ describe('notifyCustomerReviewRequested — WhatsApp wiring', () => {
 
 describe('notifyCustomerPaymentFailed — WhatsApp wiring', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('calls sendText with the customer phone number on payment failure', async () => {
