@@ -64,7 +64,7 @@ const slides = {
   7: {
     filename: "slide-7-rule-isnt-the-discipline.png",
     headline: ["The rule isn't the discipline.", "Measuring whether you follow it", "that's the discipline."],
-    footer: "@EdgeDiscip40626",
+    footer: "@plugapro",
     type: "closing",
   },
 };

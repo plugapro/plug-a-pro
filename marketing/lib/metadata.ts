@@ -14,7 +14,6 @@ export const siteConfig = {
   whatsappNumber: "+27 69 355 2447",
   links: {
     app: "https://app.plugapro.co.za",
-    twitter: "https://x.com/EdgeDiscip40626",
     instagram: "https://www.instagram.com/plugapro/",
     facebook: "https://www.facebook.com/plugapro",
   },
