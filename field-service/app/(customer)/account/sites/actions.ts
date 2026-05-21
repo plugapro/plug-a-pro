@@ -38,6 +38,20 @@ export async function createCustomerSiteAction(data: SiteInput) {
   // Resolve locationNodeId so the booking flow validator can skip the manual region check
   const locationNodeId = await resolveSuburbNodeId(parsed.suburb, parsed.city).catch(() => null)
 
+  // Deduplicate: return existing row if same physical address is already saved
+  const duplicate = await db.customerAddress.findFirst({
+    where: {
+      customerId: customer.id,
+      street:   { equals: parsed.street,   mode: 'insensitive' },
+      suburb:   { equals: parsed.suburb,   mode: 'insensitive' },
+      city:     { equals: parsed.city,     mode: 'insensitive' },
+      province: { equals: parsed.province, mode: 'insensitive' },
+    },
+  })
+  if (duplicate) {
+    return { success: true, site: duplicate }
+  }
+
   // First site becomes the default automatically
   const existingCount = await db.customerAddress.count({
     where: { customerId: customer.id },

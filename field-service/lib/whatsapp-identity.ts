@@ -68,6 +68,20 @@ function displayFirstName(name: string | null | undefined) {
   return name?.trim().split(/\s+/)[0] || undefined
 }
 
+function deduplicateAddresses<T extends { street: string; suburb: string; city: string; province: string }>(
+  addresses: T[],
+): T[] {
+  const seen = new Set<string>()
+  return addresses.filter((addr) => {
+    const key = [addr.street, addr.suburb, addr.city, addr.province]
+      .map((v) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase())
+      .join('|')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 const ACTIVE_PROVIDER_JOB_STATUSES = [
   'SCHEDULED',
   'EN_ROUTE',
@@ -266,7 +280,7 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
     customerFirstName: displayFirstName(customer?.name),
     providerDisplayName: provider?.name ?? application?.name ?? undefined,
     providerFirstName: displayFirstName(provider?.name ?? application?.name),
-    savedAddresses: customer?.addresses ?? [],
+    savedAddresses: deduplicateAddresses(customer?.addresses ?? []),
     providerStatus: provider?.status,
     applicationStatus: application?.status,
     activeJobCount,

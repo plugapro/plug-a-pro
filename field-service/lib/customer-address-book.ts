@@ -92,14 +92,25 @@ function fingerprintAddress(input: {
   postalCode?: string | null
   locationNodeId?: string | null
 }) {
+  // locationNodeId intentionally excluded: null vs a real ID for the same
+  // physical street should not create two distinct entries.
   return [
     normalizedText(input.street),
     normalizedText(input.suburb),
     normalizedText(input.city),
     normalizedText(input.province),
     normalizedText(input.postalCode ?? ''),
-    normalizedText(input.locationNodeId ?? ''),
   ].join('|')
+}
+
+function deduplicateSites(sites: ResolvedCustomerSavedSite[]): ResolvedCustomerSavedSite[] {
+  const seen = new Set<string>()
+  return sites.filter((site) => {
+    const key = fingerprintAddress(site)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function hashNormalizedPhone(phone: string | null | undefined) {
@@ -252,7 +263,7 @@ export async function resolveReusableCustomerSites(params: {
 
   const initial = await fetchReusable()
   if (initial.reusable.length > 0) {
-    return mergeAddressSnapshotFields(initial.reusable, initial.snapshots)
+    return deduplicateSites(mergeAddressSnapshotFields(initial.reusable, initial.snapshots))
   }
 
   const promotable = initial.snapshots.filter((row) => Boolean(row.locationNodeId)).slice(0, limit)
@@ -286,5 +297,5 @@ export async function resolveReusableCustomerSites(params: {
   })
 
   const promoted = await fetchReusable()
-  return mergeAddressSnapshotFields(promoted.reusable, promoted.snapshots)
+  return deduplicateSites(mergeAddressSnapshotFields(promoted.reusable, promoted.snapshots))
 }
