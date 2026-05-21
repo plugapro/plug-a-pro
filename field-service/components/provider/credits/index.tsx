@@ -59,8 +59,55 @@ function PackageRow({ pkg, loading, disabled, onClick }: { pkg: PayatPackage; lo
 }
 
 function ActivityList({ items }: { items: ProviderWalletRecentActivityItem[] }) {
+  const router = useRouter()
   if (items.length === 0) return null
-  return <section className="space-y-3"><div className="font-mono text-[11px] font-bold uppercase tracking-[0.10em] text-[var(--ink-mute)]">Recent wallet activity</div><div className="overflow-hidden rounded-[16px] bg-card shadow-[inset_0_0_0_1px_var(--border)]">{items.map((item) => { const positive = item.delta > 0; return <div key={item.id} className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-3 last:border-b-0"><div className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] text-[15px] font-extrabold ${positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--card-alt)] text-[var(--ink)]'}`}>{positive ? '+' : '-'}</div><div className="min-w-0 flex-1"><div className="truncate text-[13.5px] font-semibold text-[var(--ink)]">{item.title}</div><div className="mt-0.5 truncate font-mono text-[10.5px] text-[var(--ink-soft)]">{item.ref} · {item.when}</div></div><div className={`font-mono text-[13px] font-bold ${positive ? 'text-emerald-600' : 'text-[var(--ink)]'}`}>{item.delta > 0 ? '+' : ''}{item.delta}</div></div> })}</div></section>
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="font-mono text-[11px] font-bold uppercase tracking-[0.10em] text-[var(--ink-mute)]">
+          Recent credit activity
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push('/provider/credits/history')}
+          className="font-mono text-[10.5px] text-[var(--brand-purple)] underline underline-offset-2"
+        >
+          View all
+        </button>
+      </div>
+      <div className="overflow-hidden rounded-[16px] bg-card shadow-[inset_0_0_0_1px_var(--border)]">
+        {items.map((item) => {
+          const positive = item.delta > 0
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => router.push(`/provider/credits/transactions/${encodeURIComponent(item.id)}`)}
+              className="flex w-full items-center gap-3 border-b border-[var(--border)] px-4 py-3 last:border-b-0 hover:bg-[var(--card-alt)] active:bg-[var(--card-alt)]"
+            >
+              <div
+                className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] text-[15px] font-extrabold ${positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--card-alt)] text-[var(--ink)]'}`}
+              >
+                {positive ? '+' : '-'}
+              </div>
+              <div className="min-w-0 flex-1 text-left">
+                <div className="truncate text-[13.5px] font-semibold text-[var(--ink)]">{item.title}</div>
+                <div className="mt-0.5 truncate font-mono text-[10.5px] text-[var(--ink-soft)]">
+                  {item.ref} · {item.when}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <div className={`font-mono text-[13px] font-bold ${positive ? 'text-emerald-600' : 'text-[var(--ink)]'}`}>
+                  {item.delta > 0 ? '+' : ''}{item.delta}
+                </div>
+                <ChevronRight className="size-3.5 text-[var(--ink-soft)]" aria-hidden />
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
 }
 
 function WaitingIndicator() { return <div className="flex items-center justify-center gap-2 rounded-[16px] border border-emerald-500/15 bg-emerald-500/5 px-3 py-2.5"><span aria-hidden className="block size-2 animate-pulse rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(15,157,88,0.12)]" /><span className="text-[12.5px] font-semibold text-emerald-700 dark:text-emerald-400">Waiting for payment</span><span className="font-mono text-[10.5px] text-emerald-700/65 dark:text-emerald-400/65">· checking every 5s</span></div> }
@@ -99,3 +146,139 @@ export function PaymentIntentStatusClient({ intentId, amountCents, creditsToIssu
 }
 
 export function ExpiredPayatIntentScreen() { const router = useRouter(); return <CreditsShell eyebrow="Link expired" title="Create a fresh link" subtitle="Pay@ links are valid for 3 days. This one can no longer be paid at the till." backHref="/provider/credits"><div className="rounded-[24px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[var(--card-alt)] text-[var(--ink-mute)]"><XCircle className="size-8" aria-hidden /></div><div className="mt-4 text-[17px] font-bold text-[var(--ink)]">This Pay@ link expired</div><p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-mute)]">No credits were added. Start a new top-up and use the latest QR or reference.</p></div><Button type="button" size="lg" onClick={() => router.push('/provider/credits#topup')}>Create new Pay@ link</Button></CreditsShell> }
+
+export function HistoryClient({
+  initialItems,
+  initialNextCursor,
+  initialFilter,
+}: {
+  initialItems: ProviderWalletRecentActivityItem[]
+  initialNextCursor: string | null
+  initialFilter: 'all' | 'added' | 'used'
+}) {
+  const router = useRouter()
+  const [items, setItems] = useState<ProviderWalletRecentActivityItem[]>(initialItems)
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor)
+  const [filter, setFilter] = useState<'all' | 'added' | 'used'>(initialFilter)
+  const [loading, setLoading] = useState(false)
+  const [isPendingFilter, startFilterTransition] = useTransition()
+
+  function applyFilter(f: 'all' | 'added' | 'used') {
+    if (f === filter) return
+    setFilter(f)
+    startFilterTransition(async () => {
+      const { getProviderWalletLedgerPage } = await import(
+        '@/app/(provider)/provider/credits/actions'
+      )
+      const result = await getProviderWalletLedgerPage({ filter: f })
+      setItems(result.items)
+      setNextCursor(result.nextCursor)
+    })
+  }
+
+  async function loadMore() {
+    if (!nextCursor || loading) return
+    setLoading(true)
+    try {
+      const { getProviderWalletLedgerPage } = await import(
+        '@/app/(provider)/provider/credits/actions'
+      )
+      const result = await getProviderWalletLedgerPage({ cursor: nextCursor, filter })
+      setItems((prev) => [...prev, ...result.items])
+      setNextCursor(result.nextCursor)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const FILTERS: { key: 'all' | 'added' | 'used'; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'added', label: 'Credits added' },
+    { key: 'used', label: 'Credits used' },
+  ]
+
+  return (
+    <CreditsShell
+      eyebrow="Credit history"
+      title="All credit activity"
+      subtitle="Every credit added or used on your account."
+      backHref="/provider/credits"
+    >
+      <div className="flex gap-2 overflow-x-auto pb-0.5">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => applyFilter(f.key)}
+            disabled={isPendingFilter}
+            className={`shrink-0 rounded-full px-3 py-1.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] transition-colors ${
+              filter === f.key
+                ? 'bg-[var(--brand-purple)] text-white'
+                : 'bg-card text-[var(--ink-mute)] shadow-[inset_0_0_0_1px_var(--border)]'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {items.length === 0 && !isPendingFilter ? (
+        <div className="rounded-[20px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]">
+          <div className="text-[15px] font-semibold text-[var(--ink)]">No credit transactions yet</div>
+          <div className="mt-1 text-[12.5px] text-[var(--ink-mute)]">
+            Credits added or used will appear here.
+          </div>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-[16px] bg-card shadow-[inset_0_0_0_1px_var(--border)]">
+          {items.map((item) => {
+            const positive = item.delta > 0
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() =>
+                  router.push(`/provider/credits/transactions/${encodeURIComponent(item.id)}`)
+                }
+                className="flex w-full items-center gap-3 border-b border-[var(--border)] px-4 py-3 last:border-b-0 hover:bg-[var(--card-alt)] active:bg-[var(--card-alt)]"
+              >
+                <div
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] text-[15px] font-extrabold ${positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--card-alt)] text-[var(--ink)]'}`}
+                >
+                  {positive ? '+' : '-'}
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="truncate text-[13.5px] font-semibold text-[var(--ink)]">{item.title}</div>
+                  <div className="mt-0.5 truncate font-mono text-[10.5px] text-[var(--ink-soft)]">
+                    {item.ref} · {item.when}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <div
+                    className={`font-mono text-[13px] font-bold ${positive ? 'text-emerald-600' : 'text-[var(--ink)]'}`}
+                  >
+                    {item.delta > 0 ? '+' : ''}
+                    {item.delta}
+                  </div>
+                  <ChevronRight className="size-3.5 text-[var(--ink-soft)]" aria-hidden />
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {nextCursor && (
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          loading={loading}
+          onClick={loadMore}
+        >
+          {loading ? 'Loading…' : 'Load more'}
+        </Button>
+      )}
+    </CreditsShell>
+  )
+}
