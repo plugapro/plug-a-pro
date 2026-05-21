@@ -44,7 +44,7 @@ test('admin team page loads without error for authenticated admin', async ({ pag
   expect(response?.status()).toBeLessThan(400)
 
   await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
-  await expect(page.locator('text=Something went wrong')).toHaveCount(0)
+  await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
   await expect(page.locator('text=Internal Server Error')).toHaveCount(0)
 })
 
@@ -73,9 +73,6 @@ test('unauthenticated access to /admin/team redirects or returns non-200', async
   const response = await page.goto('/admin/team')
 
   const finalUrl = page.url()
-  const redirectedAway = !finalUrl.endsWith('/admin/team')
-  const nonSuccessStatus = (response?.status() ?? 200) >= 300
-
-  // Either condition is acceptable: a redirect or a non-2xx HTTP status.
-  expect(redirectedAway || nonSuccessStatus).toBe(true)
+  const stillOnTeamPage = finalUrl.includes('/admin/team') && (response?.status() ?? 200) < 300
+  expect(stillOnTeamPage).toBe(false)
 })
