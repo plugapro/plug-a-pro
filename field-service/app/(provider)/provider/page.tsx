@@ -39,6 +39,10 @@ import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { calculateProviderProfileCompleteness } from '@/lib/provider-pwa-dashboard'
 import { recordAuditLog } from '@/lib/audit'
 import { AUDIT_ENTITY } from '@/lib/audit-entities'
+import {
+  PROVIDER_IN_PROGRESS_JOB_STATUSES,
+  PROVIDER_UPCOMING_JOB_STATUSES,
+} from '@/lib/provider-job-status'
 
 export const metadata = buildMetadata({ title: 'Provider Home', noIndex: true })
 
@@ -114,11 +118,6 @@ export default async function ProviderHomePage() {
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const nextWeek = new Date(today)
-  nextWeek.setDate(nextWeek.getDate() + 7)
-
   const jobInclude = {
     booking: {
       include: {
@@ -149,7 +148,7 @@ export default async function ProviderHomePage() {
     db.job.findMany({
       where: {
         providerId: provider.id,
-        status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
+        status: { in: [...PROVIDER_IN_PROGRESS_JOB_STATUSES] },
       },
       include: jobInclude,
       orderBy: { booking: { scheduledDate: 'asc' } },
@@ -157,8 +156,8 @@ export default async function ProviderHomePage() {
     db.job.findMany({
       where: {
         providerId: provider.id,
-        status: 'SCHEDULED',
-        booking: { scheduledDate: { gte: tomorrow, lt: nextWeek } },
+        status: { in: [...PROVIDER_UPCOMING_JOB_STATUSES] },
+        booking: { scheduledDate: { gte: today } },
       },
       include: jobInclude,
       orderBy: { booking: { scheduledDate: 'asc' } },

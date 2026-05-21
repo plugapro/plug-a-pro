@@ -57,7 +57,13 @@ export default async function JobDetailPage({
     )
   }
 
-  const { job, booking: b, jobRequest, addressDisplay, mapQuery, scheduledDateLabel, customerFirstName } = detail.data
+  const { job, booking: b, addressDisplay, mapQuery, scheduledDateLabel, customerFirstName } = detail.data
+  if (id !== job.id) {
+    // Canonicalize route ids so follow-up actions (status updates/disputes)
+    // always operate on the immutable execution job id.
+    redirect(`/provider/jobs/${job.id}`)
+  }
+
   const disputes = await db.dispute.findMany({
     where: { jobId: job.id },
     orderBy: { createdAt: 'desc' },
@@ -73,10 +79,10 @@ export default async function JobDetailPage({
     if (!activeProvider) redirect('/provider')
 
     const reason = String(formData.get('reason') ?? '').trim()
-    if (reason.length < 10) redirect(`/provider/jobs/${id}`)
+    if (reason.length < 10) redirect(`/provider/jobs/${job.id}`)
 
     const freshJob = await db.job.findUnique({
-      where: { id },
+      where: { id: job.id },
       select: { id: true, providerId: true },
     })
     if (!freshJob || freshJob.providerId !== activeProvider.id) redirect('/provider')
@@ -114,7 +120,7 @@ export default async function JobDetailPage({
       })
     }
 
-    redirect(`/provider/jobs/${id}`)
+    redirect(`/provider/jobs/${job.id}`)
   }
 
   return (

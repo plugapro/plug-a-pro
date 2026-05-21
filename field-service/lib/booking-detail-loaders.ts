@@ -1,7 +1,22 @@
 import { db } from '@/lib/db'
+import { isKnownProviderJobStatus } from '@/lib/provider-job-status'
 import type { Prisma } from '@prisma/client'
 
-type DetailFailureReason = 'not_found' | 'unauthorized' | 'invalid_data' | 'query_failed'
+type DetailFailureReason =
+  | 'not_found'
+  | 'unauthorized'
+  | 'invalid_id'
+  | 'missing_related_data'
+  | 'query_failed'
+  | 'status_not_supported'
+
+type ProviderResolvedIdType =
+  | 'job_id'
+  | 'booking_id'
+  | 'job_request_id'
+  | 'job_ref'
+  | 'lead_id'
+  | 'unknown'
 
 const providerJobInclude = {
   booking: {
@@ -53,10 +68,6 @@ type CustomerBookingRow = Prisma.BookingGetPayload<{ include: typeof customerBoo
 type ProviderJobDetailData = {
   job: ProviderJobRow
   booking: ProviderJobRow['booking']
-  match: ProviderJobRow['booking']['match']
-  jobRequest: ProviderJobRow['booking']['match']['jobRequest']
-  customer: ProviderJobRow['booking']['match']['jobRequest']['customer']
-  address: ProviderJobRow['booking']['match']['jobRequest']['address']
   customerFirstName: string
   addressDisplay: string | null
   mapQuery: string | null
@@ -91,19 +102,56 @@ function initials(value: string) {
   return two.length > 0 ? two.toUpperCase() : 'P'
 }
 
-function firstName(value: string) {
-  const normalized = nonEmpty(value, 'Customer')
+function firstName(value: string | null | undefined) {
+  const normalized = nonEmpty(value ?? null, 'Customer')
   return normalized.split(/\s+/)[0] ?? 'Customer'
 }
 
-function safeDateLabel(date: Date | null, scheduledWindow: string | null) {
-  if (!date || Number.isNaN(date.getTime())) return null
-  const label = date.toLocaleDateString('en-ZA', {
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime())
+}
+
+function formatTime(value: Date | null) {
+  if (!value || !isValidDate(value)) return null
+  return value.toLocaleTimeString('en-ZA', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+function safeDateLabel(params: {
+  scheduledDate: Date | null
+  scheduledWindow: string | null
+  scheduledStartAt: Date | null
+  scheduledEndAt: Date | null
+}) {
+  const baseDate = isValidDate(params.scheduledDate)
+    ? params.scheduledDate
+    : isValidDate(params.scheduledStartAt)
+      ? params.scheduledStartAt
+      : isValidDate(params.scheduledEndAt)
+        ? params.scheduledEndAt
+        : null
+
+  if (!baseDate) return null
+
+  const dateLabel = baseDate.toLocaleDateString('en-ZA', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
   })
-  return scheduledWindow ? `${label} · ${scheduledWindow}` : label
+
+  const explicitWindow = params.scheduledWindow?.trim()
+  if (explicitWindow) return `${dateLabel} · ${explicitWindow}`
+
+  const startLabel = formatTime(params.scheduledStartAt)
+  const endLabel = formatTime(params.scheduledEndAt)
+  if (startLabel && endLabel) return `${dateLabel} · ${startLabel}–${endLabel}`
+  if (startLabel) return `${dateLabel} · From ${startLabel}`
+  if (endLabel) return `${dateLabel} · Until ${endLabel}`
+
+  return dateLabel
 }
 
 function normalizeAddress(address: {
@@ -124,28 +172,79 @@ function logDetailFailure(params: {
   route: string
   viewerRole: 'provider' | 'customer'
   viewerId: string
+  viewerProviderId?: string
   id: string
-  resolvedIdType: 'job_id' | 'booking_id'
+  resolvedIdType: ProviderResolvedIdType | 'booking_id'
+  resolvedJobId?: string
+  jobStatus?: string
   reason: DetailFailureReason
-  stage: 'query' | 'resolve' | 'authorize'
+  stage: 'query' | 'resolve' | 'authorize' | 'validate'
+  durationMs?: number
   error?: unknown
 }) {
   const payload = {
     route: params.route,
     viewerRole: params.viewerRole,
     viewerId: params.viewerId,
+    providerId: params.viewerProviderId,
     id: params.id,
     resolvedIdType: params.resolvedIdType,
+    resolvedJobId: params.resolvedJobId,
+    jobStatus: params.jobStatus,
     reason: params.reason,
     stage: params.stage,
+    durationMs: params.durationMs,
     error: params.error instanceof Error ? params.error.message : params.error ? String(params.error) : undefined,
   }
 
-  if (params.reason === 'query_failed' || params.reason === 'invalid_data') {
-    console.error('[booking-detail-loader] failed', payload)
-  } else {
-    console.warn('[booking-detail-loader] rejected', payload)
+  if (params.reason === 'query_failed' || params.reason === 'missing_related_data') {
+    console.error('[provider-job-detail] failed', payload)
+    return
   }
+
+  if (params.reason === 'not_found' || params.reason === 'unauthorized' || params.reason === 'invalid_id') {
+    console.warn('[provider-job-detail] rejected', payload)
+    return
+  }
+
+  console.error('[provider-job-detail] unsupported', payload)
+}
+
+async function resolveProviderJobIdentifier(candidate: string): Promise<{
+  resolvedIdType: ProviderResolvedIdType
+  jobIdentity: { id: string; providerId: string; status: string } | null
+}> {
+  const byJobId = await db.job.findUnique({
+    where: { id: candidate },
+    select: { id: true, providerId: true, status: true },
+  })
+  if (byJobId) return { resolvedIdType: 'job_id', jobIdentity: byJobId }
+
+  const byBookingId = await db.job.findUnique({
+    where: { bookingId: candidate },
+    select: { id: true, providerId: true, status: true },
+  })
+  if (byBookingId) return { resolvedIdType: 'booking_id', jobIdentity: byBookingId }
+
+  const byJobRequestId = await db.job.findFirst({
+    where: { booking: { match: { jobRequestId: candidate } } },
+    select: { id: true, providerId: true, status: true },
+  })
+  if (byJobRequestId) return { resolvedIdType: 'job_request_id', jobIdentity: byJobRequestId }
+
+  const byJobRef = await db.job.findUnique({
+    where: { jobRef: candidate },
+    select: { id: true, providerId: true, status: true },
+  })
+  if (byJobRef) return { resolvedIdType: 'job_ref', jobIdentity: byJobRef }
+
+  const byLeadId = await db.job.findUnique({
+    where: { selectedLeadInviteId: candidate },
+    select: { id: true, providerId: true, status: true },
+  })
+  if (byLeadId) return { resolvedIdType: 'lead_id', jobIdentity: byLeadId }
+
+  return { resolvedIdType: 'unknown', jobIdentity: null }
 }
 
 export async function getProviderJobDetailForViewer(params: {
@@ -154,71 +253,137 @@ export async function getProviderJobDetailForViewer(params: {
   viewerProviderId: string
   jobId: string
 }): Promise<ProviderJobDetailLoadResult> {
-  try {
-    const job = await db.job.findUnique({
-      where: { id: params.jobId },
-      include: providerJobInclude,
-    })
+  const startedAt = Date.now()
+  const receivedId = params.jobId
 
-    if (!job) {
+  console.info('[provider-job-detail] load_started', {
+    route: params.route,
+    viewerUserId: params.viewerUserId,
+    providerId: params.viewerProviderId,
+    receivedId,
+  })
+
+  const trimmed = receivedId.trim()
+  if (trimmed.length < 3 || trimmed.length > 128) {
+    logDetailFailure({
+      route: params.route,
+      viewerRole: 'provider',
+      viewerId: params.viewerUserId,
+      viewerProviderId: params.viewerProviderId,
+      id: receivedId,
+      resolvedIdType: 'unknown',
+      reason: 'invalid_id',
+      stage: 'resolve',
+      durationMs: Date.now() - startedAt,
+    })
+    return { ok: false, error: 'invalid_id' }
+  }
+
+  try {
+    const resolution = await resolveProviderJobIdentifier(trimmed)
+    const identity = resolution.jobIdentity
+
+    if (!identity) {
       logDetailFailure({
         route: params.route,
         viewerRole: 'provider',
         viewerId: params.viewerUserId,
-        id: params.jobId,
-        resolvedIdType: 'job_id',
+        viewerProviderId: params.viewerProviderId,
+        id: receivedId,
+        resolvedIdType: resolution.resolvedIdType,
         reason: 'not_found',
         stage: 'resolve',
+        durationMs: Date.now() - startedAt,
       })
       return { ok: false, error: 'not_found' }
     }
 
-    if (job.providerId !== params.viewerProviderId) {
+    if (!isKnownProviderJobStatus(identity.status)) {
       logDetailFailure({
         route: params.route,
         viewerRole: 'provider',
         viewerId: params.viewerUserId,
-        id: params.jobId,
-        resolvedIdType: 'job_id',
+        viewerProviderId: params.viewerProviderId,
+        id: receivedId,
+        resolvedIdType: resolution.resolvedIdType,
+        resolvedJobId: identity.id,
+        jobStatus: identity.status,
+        reason: 'status_not_supported',
+        stage: 'validate',
+        durationMs: Date.now() - startedAt,
+      })
+      return { ok: false, error: 'status_not_supported' }
+    }
+
+    if (identity.providerId !== params.viewerProviderId) {
+      logDetailFailure({
+        route: params.route,
+        viewerRole: 'provider',
+        viewerId: params.viewerUserId,
+        viewerProviderId: params.viewerProviderId,
+        id: receivedId,
+        resolvedIdType: resolution.resolvedIdType,
+        resolvedJobId: identity.id,
+        jobStatus: identity.status,
         reason: 'unauthorized',
         stage: 'authorize',
+        durationMs: Date.now() - startedAt,
       })
       return { ok: false, error: 'unauthorized' }
     }
 
-    const booking = job.booking
-    const match = booking?.match
-    const jobRequest = match?.jobRequest
-    const customer = jobRequest?.customer
-    const address = jobRequest?.address ?? null
+    const job = await db.job.findUnique({
+      where: { id: identity.id },
+      include: providerJobInclude,
+    })
 
-    if (!booking || !match || !jobRequest || !customer) {
+    if (!job || !job.booking) {
       logDetailFailure({
         route: params.route,
         viewerRole: 'provider',
         viewerId: params.viewerUserId,
-        id: params.jobId,
-        resolvedIdType: 'job_id',
-        reason: 'invalid_data',
+        viewerProviderId: params.viewerProviderId,
+        id: receivedId,
+        resolvedIdType: resolution.resolvedIdType,
+        resolvedJobId: identity.id,
+        jobStatus: identity.status,
+        reason: 'missing_related_data',
         stage: 'resolve',
+        durationMs: Date.now() - startedAt,
       })
-      return { ok: false, error: 'invalid_data' }
+      return { ok: false, error: 'missing_related_data' }
     }
+
+    const booking = job.booking
+    const customerName = booking.match?.jobRequest?.customer?.name ?? 'Customer'
+    const address = booking.match?.jobRequest?.address ?? null
 
     const addressDisplay = normalizeAddress(address)
     const mapQuery = addressDisplay
-    const scheduledDateLabel = safeDateLabel(booking.scheduledDate ?? null, booking.scheduledWindow ?? null)
+    const scheduledDateLabel = safeDateLabel({
+      scheduledDate: booking.scheduledDate ?? null,
+      scheduledWindow: booking.scheduledWindow ?? null,
+      scheduledStartAt: booking.scheduledStartAt ?? null,
+      scheduledEndAt: booking.scheduledEndAt ?? null,
+    })
+
+    console.info('[provider-job-detail] load_succeeded', {
+      route: params.route,
+      viewerUserId: params.viewerUserId,
+      providerId: params.viewerProviderId,
+      receivedId,
+      resolvedIdType: resolution.resolvedIdType,
+      resolvedJobId: job.id,
+      jobStatus: job.status,
+      durationMs: Date.now() - startedAt,
+    })
 
     return {
       ok: true,
       data: {
         job,
         booking,
-        match,
-        jobRequest,
-        customer,
-        address,
-        customerFirstName: firstName(customer.name),
+        customerFirstName: firstName(customerName),
         addressDisplay,
         mapQuery,
         scheduledDateLabel,
@@ -229,10 +394,12 @@ export async function getProviderJobDetailForViewer(params: {
       route: params.route,
       viewerRole: 'provider',
       viewerId: params.viewerUserId,
-      id: params.jobId,
-      resolvedIdType: 'job_id',
+      viewerProviderId: params.viewerProviderId,
+      id: receivedId,
+      resolvedIdType: 'unknown',
       reason: 'query_failed',
       stage: 'query',
+      durationMs: Date.now() - startedAt,
       error,
     })
     return { ok: false, error: 'query_failed' }
@@ -274,10 +441,10 @@ export async function getCustomerBookingDetailForViewer(params: {
         viewerId: params.viewerUserId,
         id: params.bookingId,
         resolvedIdType: 'booking_id',
-        reason: 'invalid_data',
+        reason: 'missing_related_data',
         stage: 'resolve',
       })
-      return { ok: false, error: 'invalid_data' }
+      return { ok: false, error: 'missing_related_data' }
     }
 
     if (bookingCustomerId !== params.viewerCustomerId) {

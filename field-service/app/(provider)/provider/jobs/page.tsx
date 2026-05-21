@@ -13,6 +13,10 @@ import { buildMetadata } from '@/lib/metadata'
 import { JobCard } from '@/components/shared/JobCard'
 import { SectionLabel } from '@/components/ui/section-label'
 import { ChevronLeft } from 'lucide-react'
+import {
+  PROVIDER_IN_PROGRESS_JOB_STATUSES,
+  PROVIDER_UPCOMING_JOB_STATUSES,
+} from '@/lib/provider-job-status'
 
 export const metadata = buildMetadata({ title: 'My Jobs', noIndex: true })
 
@@ -62,9 +66,6 @@ export default async function ProviderJobsPage({
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-
   const [
     activeJobs,
     upcomingJobs,
@@ -78,8 +79,7 @@ export default async function ProviderJobsPage({
       db.job.findMany({
         where: {
           providerId: provider.id,
-          status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
-          booking: { scheduledDate: { lt: tomorrow } },
+          status: { in: [...PROVIDER_IN_PROGRESS_JOB_STATUSES] },
         },
         include: jobInclude,
         orderBy: { booking: { scheduledDate: 'asc' } },
@@ -87,8 +87,8 @@ export default async function ProviderJobsPage({
       db.job.findMany({
         where: {
           providerId: provider.id,
-          status: 'SCHEDULED',
-          booking: { scheduledDate: { gte: tomorrow } },
+          status: { in: [...PROVIDER_UPCOMING_JOB_STATUSES] },
+          booking: { scheduledDate: { gte: today } },
         },
         include: jobInclude,
         orderBy: { booking: { scheduledDate: 'asc' } },
