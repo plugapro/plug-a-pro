@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Receipt } from 'lucide-react'
@@ -7,7 +8,14 @@ import { AuthShell } from '@/components/shared/auth-shell'
 import { buildMetadata } from '@/lib/metadata'
 import { getProviderWalletLedgerEntry } from '../../actions'
 
-export const metadata = buildMetadata({ title: 'Transaction detail', noIndex: true })
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  return buildMetadata({ title: `Transaction ${id.slice(-8).toUpperCase()}`, noIndex: true })
+}
 
 function DetailRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   if (value === null || value === undefined || value === '') return null
@@ -53,9 +61,10 @@ function formatDateTime(iso: string) {
 export default async function TransactionDetailPage({
   params,
 }: {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }) {
-  const tx = await getProviderWalletLedgerEntry(params.id)
+  const { id } = await params
+  const tx = await getProviderWalletLedgerEntry(id)
   if (!tx) notFound()
 
   const balanceBeforeTotal =
