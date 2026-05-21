@@ -7,7 +7,7 @@ export const siteConfig = {
   legalEntityRegistration: "2014/077326/07",
   tagline: "Reliable Local Services Made Simple",
   description:
-    "Find trusted plumbers, handymen, repair and maintenance providers through Plug A Pro. One simple number handles requests, quotes and updates so you get help without the chase.",
+    "Find rated plumbers, handymen, gardeners and more through Plug A Pro. Get a written quote on WhatsApp and pay your provider on completion.",
   url: "https://plugapro.co.za", // TODO: update with production URL
   accent: "oklch(0.55 0.2 250)",
   ogImage: "/og.png",

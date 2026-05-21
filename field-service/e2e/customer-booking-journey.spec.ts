@@ -23,9 +23,9 @@ test('homepage renders hero section and trust pill', async ({ page }) => {
   const res = await page.goto('/')
   expect(res?.status()).toBeLessThan(400)
 
-  await expect(page.locator('text=Reviewed providers')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('text=Rated by real customers')).toBeVisible({ timeout: 10_000 })
   await expect(
-    page.locator('text=Find trusted help').or(page.locator('text=what needs fixing'))
+    page.locator('text=Skilled help near you').or(page.locator('text=what needs fixing'))
   ).toBeVisible({ timeout: 10_000 })
 
   await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)

@@ -41,9 +41,9 @@ const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
   },
   {
     icon: Star,
-    title: "Trusted reviews",
+    title: "Customer ratings",
     description:
-      "Every completed job builds the provider profile. Customers can see reviews before they accept a quote.",
+      "Every completed job adds to the provider's customer rating. See what others said before you accept a quote.",
   },
 ];
 

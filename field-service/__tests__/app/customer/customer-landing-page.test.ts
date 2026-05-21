@@ -63,7 +63,7 @@ describe('customer mobile landing page', () => {
   it('renders clear customer and provider CTAs', async () => {
     const html = renderToStaticMarkup(await CustomerHomePage())
 
-    expect(html).toContain('Find trusted help, near you.')
+    expect(html).toContain('Skilled help near you.')
     expect(html).toContain('Request')
     expect(html).toContain('Join as provider')
   })

@@ -40,7 +40,7 @@ export function Hero() {
           Local help. Real quotes. On WhatsApp.
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-          Find trusted local help for small jobs. Quoted in writing, on WhatsApp.
+          Skilled local help for small jobs. Written quotes. WhatsApp updates.
         </h1>
         <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
           Tell us what you need and we&apos;ll match you to a nearby service provider.

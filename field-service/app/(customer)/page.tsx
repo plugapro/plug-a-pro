@@ -17,8 +17,8 @@ import { SectionLabel } from '@/components/ui/section-label'
 import { AreaSelector } from '@/components/customer/AreaSelector'
 
 export const metadata = buildMetadata({
-  title: 'Find trusted service providers near you',
-  description: 'Search providers, compare profiles, request service, and get WhatsApp updates.',
+  title: 'Skilled help near you — book local service providers',
+  description: 'Browse rated local providers, get a written quote, and book on WhatsApp.',
 })
 
 // Tiles must stay in sync with PILOT_SKILL_TAGS in lib/service-categories.ts.
@@ -123,19 +123,19 @@ export default async function CustomerHomePage({
           className="inline-flex items-center gap-1.5 h-[26px] px-2.5 rounded-full brand-gradient-soft text-[var(--brand-purple)] text-[11.5px] font-bold tracking-[0.02em] mb-3"
         >
           <ShieldCheck size={13} />
-          Reviewed providers · Pay after the job
+          Rated by real customers · Pay on completion
         </div>
 
         <h1 className="text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-[var(--ink)] [text-wrap:balance]">
           {isLoggedOut
-            ? 'Find trusted help, near you.'
+            ? 'Skilled help near you.'
             : hasProviderRole && !hasCustomerRole
               ? `Hi ${firstName || 'there'} -`
               : `Hi ${firstName || 'there'} -`}
           {!isLoggedOut && <><br />what needs fixing?</>}
         </h1>
         <p className="mt-2 mb-4 text-[14.5px] leading-relaxed text-[var(--ink-mute)] [text-wrap:pretty] max-w-[320px]">
-          Handymen, plumbers, gardeners, tilers and more - rated, reviewed, and tracked end-to-end.
+          Plumbers, handymen, gardeners, tilers and more — rated by customers who booked them.
         </p>
 
         {/* Search bar */}
@@ -229,7 +229,7 @@ export default async function CustomerHomePage({
             { icon: <Sparkles size={18} />, n: 1, title: 'Tell us what you need', desc: 'Pick a category and describe the job.' },
             { icon: <Search size={18} />,   n: 2, title: 'We match providers',   desc: 'Skilled pros in your area get notified.' },
             { icon: <Bell size={18} />,      n: 3, title: 'Approve & track',     desc: 'Updates straight to WhatsApp.' },
-            { icon: <Check size={18} />,     n: 4, title: 'Pay after the job',   desc: 'Rate your provider when it\'s done.' },
+            { icon: <Check size={18} />,     n: 4, title: 'Pay on completion',   desc: 'Pay your provider and rate the job.' },
           ].map(({ icon, n, title, desc }) => (
             <div key={n} className="flex items-start gap-3 px-4 py-[13px]">
               <div
@@ -313,7 +313,7 @@ export default async function CustomerHomePage({
                 Win paying work - without the noise.
               </h2>
               <p className="text-[13px] leading-[1.5] mb-4" style={{ opacity: 0.75 }}>
-                Real leads, transparent fees, and end-to-end job tracking. Apply once, get matched daily.
+                Real leads, transparent fees, and live job tracking. Apply once, get matched daily.
               </p>
               <div className="flex gap-2">
                 <Link
