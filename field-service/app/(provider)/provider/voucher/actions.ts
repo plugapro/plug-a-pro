@@ -46,7 +46,11 @@ export async function redeemVoucherAction(rawCode: string): Promise<RedeemVouche
     }
 
     return { ok: false, message: mapVoucherRedemptionErrorToMessage(result.code) }
-  } catch {
+  } catch (err) {
+    console.error('[voucher] PWA redemption error', {
+      providerId: provider.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
     return { ok: false, message: 'Something went wrong. Please try again.' }
   }
 }

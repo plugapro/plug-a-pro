@@ -1889,7 +1889,11 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
     } else {
       await sendText(ctx.phone, mapVoucherRedemptionErrorToMessage(result.code))
     }
-  } catch {
+  } catch (err) {
+    console.error('[voucher] WhatsApp redemption error', {
+      providerId: provider.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
     await sendText(ctx.phone, 'Something went wrong redeeming your voucher. Please try again or reply *menu* for options.')
   }
 
