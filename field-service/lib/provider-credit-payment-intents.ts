@@ -340,7 +340,7 @@ export async function createPayatTopUpIntent(
   // any service fee that Plug A Pro passes through to cover gateway costs.
   const payAtAmountCents = input.amountCents + (input.feeAmountCents ?? 0)
 
-  const { intent, provider } = await db.$transaction(async (tx) => {
+  const { intent, provider, resolvedPhone } = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
       select: { id: true, phone: true, name: true, email: true },
@@ -404,13 +404,13 @@ export async function createPayatTopUpIntent(
         paymentMethod: 'PAYAT',
         paymentReference,
         status: 'PENDING_PAYMENT',
-        providerCellphone: input.providerCellphone ?? provider.phone,
+        providerCellphone: resolvedPhone,
         expiresAt: payatExpiresAt,
         metadata: toJson(input.metadata),
       },
     })
 
-    return { intent, provider }
+    return { intent, provider, resolvedPhone }
   })
 
   // C-2: If the Pay@ API call fails the intent is already committed as
@@ -423,7 +423,7 @@ export async function createPayatTopUpIntent(
       amountCents: payAtAmountCents,
       description: `Plug A Pro wallet top-up R${Math.round(payAtAmountCents / 100)}`,
       providerName: provider.name ?? 'Provider',
-      providerPhone: provider.phone ?? input.providerCellphone ?? '',
+      providerPhone: resolvedPhone,
       providerEmail: provider.email ?? '',
     })
   } catch (err) {
