@@ -160,7 +160,7 @@ describe('provider credits server actions', () => {
     expect(ledger[0]).toEqual({
       id: 'entry-1',
       occurredAt: '2026-04-29T12:00:00.000Z',
-      label: 'Wallet adjustment',
+      label: 'Credit adjustment',
       detail: 'Ref MIN-NOTE',
       creditType: 'PAID',
       amountCredits: 2,
@@ -317,6 +317,29 @@ describe('provider credits server actions', () => {
       expect(result).toMatchObject({ ok: false, code: 'PAYAT_API_FAILED' })
     })
 
+    it('returns PROVIDER_PHONE_MISSING with an actionable message when the profile has no phone', async () => {
+      const { db } = await arrangeProvider()
+      ;(db.paymentIntent.count as any).mockResolvedValue(0)
+      const { createPayatTopUpIntent, ProviderCreditPaymentIntentError } = await import(
+        '../../lib/provider-credit-payment-intents'
+      )
+      ;(createPayatTopUpIntent as any).mockRejectedValue(
+        new ProviderCreditPaymentIntentError(
+          'PROVIDER_PHONE_MISSING',
+          'A mobile number is required on your provider profile to create a Pay@ payment link.',
+        ),
+      )
+
+      const { createProviderPayatTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
+      const result = await createProviderPayatTopUpIntent(10_000)
+
+      expect(result).toMatchObject({ ok: false, code: 'PROVIDER_PHONE_MISSING' })
+      if (result.ok === false) {
+        expect(result.userMessage).toContain('mobile number')
+        expect(result.userMessage).toContain('profile')
+      }
+    })
+
     it('returns UNKNOWN for unrecognised errors', async () => {
       const { db } = await arrangeProvider()
       ;(db.paymentIntent.count as any).mockResolvedValue(0)
@@ -328,7 +351,7 @@ describe('provider credits server actions', () => {
 
       expect(result).toMatchObject({ ok: false, code: 'UNKNOWN' })
       if (result.ok === false) {
-        expect(result.userMessage).toBe('We couldn’t create your Pay@ reference. Please try again.')
+        expect(result.userMessage).toBe("We couldn’t create your Pay@ reference. Please try again.")
       }
     })
   })
@@ -458,6 +481,7 @@ describe('provider credits server actions', () => {
       referenceType: string,
       referenceId: string,
       metadata: Record<string, unknown> = {},
+      amountCredits = 1,
     ) {
       await arrangeProvider()
       const { getProviderWalletBalance, getProviderWalletLedgerEntries } = await import(
@@ -475,7 +499,7 @@ describe('provider credits server actions', () => {
           id: 'entry-abc',
           entryType,
           creditType: 'PROMO',
-          amountCredits: 1,
+          amountCredits,
           balanceAfterPaidCredits: 2,
           balanceAfterPromoCredits: 1,
           referenceType,
@@ -549,6 +573,22 @@ describe('provider credits server actions', () => {
       expect(wallet.recentActivity[0].title).toBe('Starter credits expired')
       expect(wallet.recentActivity[0].delta).toBe(-1)
     })
+
+    it('WALLET_SUSPENDED shows "Wallet suspended" with delta of 0 (status-only entry)', async () => {
+      await arrangeWalletWithEntry(
+        'WALLET_SUSPENDED',
+        'admin',
+        'admin-case-00000001',
+        {},
+        0,
+      )
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+      expect(wallet.recentActivity[0].title).toBe('Wallet suspended')
+      expect(wallet.recentActivity[0].delta).toBe(0)
+    })
   })
 
   describe('getProviderWalletLedgerEntry', () => {
@@ -600,6 +640,111 @@ describe('provider credits server actions', () => {
         '../../app/(provider)/provider/credits/actions'
       )
       await expect(getProviderWalletLedgerEntry('entry-other')).resolves.toBeNull()
+    })
+
+    it('LEAD_UNLOCK_DEBIT detail includes job category, title, and lead ref from metadata', async () => {
+      const { db } = await arrangeProvider()
+      ;(db as any).walletLedgerEntry = {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'entry-lead',
+          entryType: 'LEAD_UNLOCK_DEBIT',
+          creditType: 'PAID',
+          amountCredits: 1,
+          balanceAfterPaidCredits: 4,
+          balanceAfterPromoCredits: 0,
+          referenceType: 'lead_unlock',
+          referenceId: 'unlock-id-00000099',
+          description: null,
+          source: 'system',
+          createdAt: new Date('2026-05-21T11:00:00.000Z'),
+          metadata: {
+            jobCategory: 'Plumbing',
+            jobTitle: 'Blocked drain',
+            leadRef: 'ABC12345',
+            balanceBeforePaidCredits: 5,
+            balanceBeforePromoCredits: 0,
+          },
+        }),
+      }
+
+      const { getProviderWalletLedgerEntry } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const detail = await getProviderWalletLedgerEntry('entry-lead')
+
+      expect(detail).not.toBeNull()
+      expect(detail!.title).toBe('Lead accepted')
+      expect(detail!.signedAmountCredits).toBe(-1)
+      expect(detail!.relatedJobCategory).toBe('Plumbing')
+      expect(detail!.relatedJobTitle).toBe('Blocked drain')
+      expect(detail!.relatedJobRef).toBe('ABC12345')
+      expect(detail!.balanceBeforePaidCredits).toBe(5)
+      expect(detail!.balanceAfterPaidCredits).toBe(4)
+    })
+
+    it('WALLET_SUSPENDED entry has zero signedAmountCredits and correct title', async () => {
+      const { db } = await arrangeProvider()
+      ;(db as any).walletLedgerEntry = {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'entry-suspended',
+          entryType: 'WALLET_SUSPENDED',
+          creditType: 'PAID',
+          amountCredits: 0,
+          balanceAfterPaidCredits: 5,
+          balanceAfterPromoCredits: 2,
+          referenceType: 'admin',
+          referenceId: 'admin-case-00000001',
+          description: 'Account suspended pending review',
+          source: 'admin',
+          createdAt: new Date('2026-05-21T12:00:00.000Z'),
+          metadata: { balanceBeforePaidCredits: 5, balanceBeforePromoCredits: 2 },
+        }),
+      }
+
+      const { getProviderWalletLedgerEntry } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const detail = await getProviderWalletLedgerEntry('entry-suspended')
+
+      expect(detail).not.toBeNull()
+      expect(detail!.title).toBe('Wallet suspended')
+      expect(detail!.signedAmountCredits).toBe(0)
+      expect(detail!.balanceBeforePaidCredits).toBe(5)
+      expect(detail!.balanceAfterPaidCredits).toBe(5)
+    })
+
+    it('legacy entry with null metadata does not crash and returns null relatedJob fields', async () => {
+      const { db } = await arrangeProvider()
+      ;(db as any).walletLedgerEntry = {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'entry-legacy',
+          entryType: 'LEAD_UNLOCK_DEBIT',
+          creditType: 'PAID',
+          amountCredits: 1,
+          balanceAfterPaidCredits: 2,
+          balanceAfterPromoCredits: 0,
+          referenceType: 'lead',
+          referenceId: 'legacy-ref-00000001',
+          description: null,
+          source: null,
+          createdAt: new Date('2026-05-01T09:00:00.000Z'),
+          metadata: null,
+        }),
+      }
+
+      const { getProviderWalletLedgerEntry } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const detail = await getProviderWalletLedgerEntry('entry-legacy')
+
+      expect(detail).not.toBeNull()
+      expect(detail!.title).toBe('Lead accepted')
+      expect(detail!.signedAmountCredits).toBe(-1)
+      expect(detail!.relatedJobCategory).toBeNull()
+      expect(detail!.relatedJobTitle).toBeNull()
+      expect(detail!.relatedJobRef).toBeNull()
+      expect(detail!.balanceBeforePaidCredits).toBeNull()
+      expect(detail!.balanceBeforePromoCredits).toBeNull()
     })
   })
 

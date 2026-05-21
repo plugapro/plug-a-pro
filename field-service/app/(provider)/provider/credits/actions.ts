@@ -107,7 +107,7 @@ export type NotifyPayatTopUpResult =
     }
   | {
       ok: false
-      code: 'NOT_FOUND' | 'INVALID_STATUS' | 'MISSING_LINK'
+      code: 'NOT_FOUND' | 'INVALID_STATUS' | 'MISSING_LINK' | 'FORBIDDEN'
       message: string
     }
 
@@ -174,7 +174,7 @@ function ledgerLabel(entryType: WalletLedgerEntryType) {
     case 'LEAD_REFUND_CREDIT':
       return 'Lead refund'
     case 'ADMIN_ADJUSTMENT':
-      return 'Wallet adjustment'
+      return 'Credit adjustment'
     case 'PROMO_EXPIRY':
       return 'Starter credits expired'
     case 'PAYMENT_REVERSAL':
@@ -244,6 +244,10 @@ function summarizeActivityLabel(entryType: WalletLedgerEntryType) {
       return 'Lead accepted'
     case 'VOUCHER_REDEMPTION':
       return 'Voucher redeemed'
+    case 'WALLET_SUSPENDED':
+      return 'Wallet suspended'
+    case 'WALLET_REACTIVATED':
+      return 'Wallet reactivated'
     default:
       return 'Credit activity'
   }
@@ -510,7 +514,7 @@ export async function notifyProviderPayatTopUpInitiated(
   if (!actor) {
     return {
       ok: false,
-      code: 'INVALID_STATUS',
+      code: 'FORBIDDEN',
       message: 'You are not authorized to notify this top-up intent.',
     }
   }
@@ -801,6 +805,12 @@ export async function createProviderPayatTopUpIntent(
             code: 'PROVIDER_NOT_FOUND',
             userMessage: 'We could not load your provider profile. Sign in again and retry.',
           }
+        case 'PROVIDER_PHONE_MISSING':
+          return {
+            ok: false,
+            code: 'PROVIDER_PHONE_MISSING',
+            userMessage: 'Your provider profile is missing a mobile number. Please update your profile and try again.',
+          }
         case 'REFERENCE_GENERATION_FAILED':
           return {
             ok: false,
@@ -955,9 +965,18 @@ export async function createProviderTopUpIntentFormAction(formData: FormData) {
   const amountCents = typeof rawAmountCents === 'string'
     ? Number.parseInt(rawAmountCents, 10)
     : Number.NaN
-  const instructions = await createProviderTopUpIntent(amountCents)
 
-  redirect(`/provider/credits?intent=${encodeURIComponent(instructions.intentId)}`)
+  try {
+    const instructions = await createProviderTopUpIntent(amountCents)
+    redirect(`/provider/credits?intent=${encodeURIComponent(instructions.intentId)}`)
+  } catch (error) {
+    // Next.js redirect/notFound signals use throw internally — re-throw them
+    if (error && typeof error === 'object' && 'digest' in error) throw error
+    console.error('[credits] top-up intent creation failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    redirect('/provider/credits?error=topup_failed')
+  }
 }
 
 export type ProviderWalletTransactionDetail = {

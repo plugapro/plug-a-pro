@@ -33,16 +33,17 @@ function DetailRow({ label, value }: { label: string; value: string | number | n
 
 function DeltaBadge({ delta }: { delta: number }) {
   const positive = delta > 0
+  const neutral = delta === 0
   return (
     <div
       className={`inline-flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 font-mono text-[18px] font-extrabold ${
         positive
           ? 'bg-emerald-500/10 text-emerald-600'
-          : 'bg-[var(--card-alt)] text-[var(--ink)]'
+          : 'bg-[var(--card-alt)] text-[var(--ink-mute)]'
       }`}
     >
-      {positive ? '+' : ''}
-      {delta} {Math.abs(delta) === 1 ? 'credit' : 'credits'}
+      {neutral ? null : positive ? '+' : ''}
+      {neutral ? 'No balance change' : `${delta} ${Math.abs(delta) === 1 ? 'credit' : 'credits'}`}
     </div>
   )
 }

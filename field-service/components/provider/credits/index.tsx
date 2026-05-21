@@ -78,6 +78,7 @@ function ActivityList({ items }: { items: ProviderWalletRecentActivityItem[] }) 
       <div className="overflow-hidden rounded-[16px] bg-card shadow-[inset_0_0_0_1px_var(--border)]">
         {items.map((item) => {
           const positive = item.delta > 0
+          const neutral = item.delta === 0
           return (
             <button
               key={item.id}
@@ -86,9 +87,9 @@ function ActivityList({ items }: { items: ProviderWalletRecentActivityItem[] }) 
               className="flex w-full items-center gap-3 border-b border-[var(--border)] px-4 py-3 last:border-b-0 hover:bg-[var(--card-alt)] active:bg-[var(--card-alt)]"
             >
               <div
-                className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] text-[15px] font-extrabold ${positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--card-alt)] text-[var(--ink)]'}`}
+                className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] text-[15px] font-extrabold ${positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--card-alt)] text-[var(--ink-mute)]'}`}
               >
-                {positive ? '+' : '-'}
+                {neutral ? '·' : positive ? '+' : '-'}
               </div>
               <div className="min-w-0 flex-1 text-left">
                 <div className="truncate text-[13.5px] font-semibold text-[var(--ink)]">{item.title}</div>
@@ -97,9 +98,11 @@ function ActivityList({ items }: { items: ProviderWalletRecentActivityItem[] }) 
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                <div className={`font-mono text-[13px] font-bold ${positive ? 'text-emerald-600' : 'text-[var(--ink)]'}`}>
-                  {item.delta > 0 ? '+' : ''}{item.delta}
-                </div>
+                {!neutral && (
+                  <div className={`font-mono text-[13px] font-bold ${positive ? 'text-emerald-600' : 'text-[var(--ink)]'}`}>
+                    {positive ? '+' : ''}{item.delta}
+                  </div>
+                )}
                 <ChevronRight className="size-3.5 text-[var(--ink-soft)]" aria-hidden />
               </div>
             </button>
@@ -162,15 +165,18 @@ export function HistoryClient({
   const [filter, setFilter] = useState<'all' | 'added' | 'used'>(initialFilter)
   const [loading, setLoading] = useState(false)
   const [isPendingFilter, startFilterTransition] = useTransition()
+  const filterSeqRef = useRef(0)
 
   function applyFilter(f: 'all' | 'added' | 'used') {
     if (f === filter) return
     setFilter(f)
+    const seq = ++filterSeqRef.current
     startFilterTransition(async () => {
       const { getProviderWalletLedgerPage } = await import(
         '@/app/(provider)/provider/credits/actions'
       )
       const result = await getProviderWalletLedgerPage({ filter: f })
+      if (filterSeqRef.current !== seq) return
       setItems(result.items)
       setNextCursor(result.nextCursor)
     })
@@ -186,6 +192,8 @@ export function HistoryClient({
       const result = await getProviderWalletLedgerPage({ cursor: nextCursor, filter })
       setItems((prev) => [...prev, ...result.items])
       setNextCursor(result.nextCursor)
+    } catch {
+      toast.error('Could not load more transactions. Try again.')
     } finally {
       setLoading(false)
     }
@@ -233,6 +241,7 @@ export function HistoryClient({
         <div className="overflow-hidden rounded-[16px] bg-card shadow-[inset_0_0_0_1px_var(--border)]">
           {items.map((item) => {
             const positive = item.delta > 0
+            const neutral = item.delta === 0
             return (
               <button
                 key={item.id}
@@ -243,9 +252,9 @@ export function HistoryClient({
                 className="flex w-full items-center gap-3 border-b border-[var(--border)] px-4 py-3 last:border-b-0 hover:bg-[var(--card-alt)] active:bg-[var(--card-alt)]"
               >
                 <div
-                  className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] text-[15px] font-extrabold ${positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--card-alt)] text-[var(--ink)]'}`}
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] text-[15px] font-extrabold ${positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-[var(--card-alt)] text-[var(--ink-mute)]'}`}
                 >
-                  {positive ? '+' : '-'}
+                  {neutral ? '·' : positive ? '+' : '-'}
                 </div>
                 <div className="min-w-0 flex-1 text-left">
                   <div className="truncate text-[13.5px] font-semibold text-[var(--ink)]">{item.title}</div>
@@ -254,12 +263,14 @@ export function HistoryClient({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <div
-                    className={`font-mono text-[13px] font-bold ${positive ? 'text-emerald-600' : 'text-[var(--ink)]'}`}
-                  >
-                    {item.delta > 0 ? '+' : ''}
-                    {item.delta}
-                  </div>
+                  {!neutral && (
+                    <div
+                      className={`font-mono text-[13px] font-bold ${positive ? 'text-emerald-600' : 'text-[var(--ink)]'}`}
+                    >
+                      {positive ? '+' : ''}
+                      {item.delta}
+                    </div>
+                  )}
                   <ChevronRight className="size-3.5 text-[var(--ink-soft)]" aria-hidden />
                 </div>
               </button>
