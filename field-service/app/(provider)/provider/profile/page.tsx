@@ -11,7 +11,7 @@ import { SignOutButton } from '@/components/technician/SignOutButton'
 import { PushSubscribeButton } from '@/components/technician/PushSubscribeButton'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { ActionForm } from '@/components/admin/ui/ActionForm'
-import { FormSubmitButton } from '@/components/ui/form-submit-button'
+import { SubmitButton } from '@/components/admin/ui/SubmitButton'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -296,7 +296,7 @@ export default async function ProviderProfilePage() {
             </div>
           </div>
 
-          <FormSubmitButton className="w-full" pendingLabel="Saving...">Save changes</FormSubmitButton>
+          <SubmitButton className="w-full" pendingLabel="Saving...">Save changes</SubmitButton>
         </ActionForm>
       </div>
 

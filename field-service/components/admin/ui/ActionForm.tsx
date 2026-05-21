@@ -68,6 +68,7 @@ export function ActionForm<T = unknown>({
   const router = useRouter()
   const formRef = React.useRef<HTMLFormElement>(null)
   const [isPending, startTransition] = React.useTransition()
+  const inFlightRef = React.useRef(false)
 
   React.useEffect(() => {
     if (!isPending) return
@@ -83,12 +84,17 @@ export function ActionForm<T = unknown>({
   }, [isPending])
 
   const handleSubmit = (formData: FormData) => {
+    if (inFlightRef.current || isPending) {
+      return
+    }
+
     // Fast-fail when the browser is offline so users get immediate guidance.
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       notify.userError('You are offline. Check your connection and try again.')
       return
     }
 
+    inFlightRef.current = true
     startTransition(async () => {
       try {
         const result = await action(formData)
@@ -114,6 +120,8 @@ export function ActionForm<T = unknown>({
         }
       } catch (err) {
         notify.error(err, mapActionErrorToUserMessage(err, errorFallback ?? 'Could not save changes. Please try again.'))
+      } finally {
+        inFlightRef.current = false
       }
     })
   }
