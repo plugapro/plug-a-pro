@@ -35,16 +35,17 @@ function makeVoucher(overrides: Record<string, unknown> = {}) {
     redemptionCount: 0,
     expiresAt: null,
     redeemedByProviderId: null,
-    batch: { campaignCode: 'PILOT_PROVIDER_FLYER' },
+    batch: { campaignCode: 'PILOT_PROVIDER_FLYER', name: 'Pilot Flyer' },
     ...overrides,
   }
 }
 
-// campaignDuplicate is checked AFTER the atomic updateMany claim (step 5 → then step 4 re-ordered)
+// existingCampaignRecord: null = provider has NOT yet redeemed from this campaign;
+//                         object = provider HAS already redeemed (pre-check triggers rejection).
 function makeTx(
   providerResult: unknown,
   voucherResult: unknown,
-  campaignDuplicate: unknown = null,
+  existingCampaignRecord: unknown = null,
   updateCount = 1,
 ) {
   const creditEntry = { id: 'ledger_1' }
@@ -53,9 +54,11 @@ function makeTx(
     provider: { findUnique: vi.fn().mockResolvedValue(providerResult) },
     promoVoucher: {
       findUnique: vi.fn().mockResolvedValue(voucherResult),
-      findFirst: vi.fn().mockResolvedValue(campaignDuplicate),
       updateMany: vi.fn().mockResolvedValue({ count: updateCount }),
-      update: vi.fn().mockResolvedValue({ id: 'vchr_1' }),
+    },
+    providerCampaignRedemption: {
+      findUnique: vi.fn().mockResolvedValue(existingCampaignRecord),
+      create: vi.fn().mockResolvedValue({ id: 'pcr_1', providerId: 'prov_1', campaignCode: 'PILOT_PROVIDER_FLYER' }),
     },
   }
 }
@@ -70,7 +73,7 @@ describe('redeemVoucher', () => {
     vi.clearAllMocks()
   })
 
-  it('succeeds: approves credit and marks voucher redeemed', async () => {
+  it('succeeds: approves credit, marks voucher redeemed, and records campaign redemption', async () => {
     const tx = makeTx(makeProvider(), makeVoucher())
     setupTransaction(tx)
 
@@ -87,6 +90,14 @@ describe('redeemVoucher', () => {
         data: expect.objectContaining({ status: 'REDEEMED', redeemedByProviderId: 'prov_1' }),
       })
     )
+    expect(tx.providerCampaignRedemption.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        providerId: 'prov_1',
+        campaignCode: 'PILOT_PROVIDER_FLYER',
+        voucherId: 'vchr_1',
+        creditAmount: 1,
+      }),
+    })
     expect(mockCreditFn).toHaveBeenCalledWith(
       tx,
       'prov_1',
@@ -134,7 +145,6 @@ describe('redeemVoucher', () => {
     const tx = makeTx(makeProvider(), null)
     setupTransaction(tx)
 
-    // PAP-7KQ9-M2XD is a valid-format code — DB returns null
     const result = await redeemVoucher('prov_1', 'PAP-7KQ9-ZZZZ')
 
     expect(result.ok).toBe(false)
@@ -187,9 +197,9 @@ describe('redeemVoucher', () => {
     expect(result.code).toBe('VOUCHER_EXPIRED')
   })
 
-  it('rejects: provider already redeemed from same campaign — rolls back the atomic claim', async () => {
-    const existingRedemption = { id: 'vchr_old' }
-    const tx = makeTx(makeProvider(), makeVoucher(), existingRedemption)
+  it('rejects: provider already redeemed from same campaign — pre-check fires before any claim', async () => {
+    const existingRecord = { id: 'pcr_existing' }
+    const tx = makeTx(makeProvider(), makeVoucher(), existingRecord)
     setupTransaction(tx)
 
     const result = await redeemVoucher('prov_1', RAW_CODE)
@@ -197,20 +207,38 @@ describe('redeemVoucher', () => {
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('should fail')
     expect(result.code).toBe('PROVIDER_ALREADY_REDEEMED_CAMPAIGN')
+    expect(result.message).toBe('You have already redeemed a voucher for this campaign.')
 
-    // Atomic claim (updateMany call 1), then conditional rollback (updateMany call 2)
-    expect(tx.promoVoucher.updateMany).toHaveBeenCalledTimes(2)
-    expect(tx.promoVoucher.updateMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ id: 'vchr_1', status: 'REDEEMED', redeemedByProviderId: 'prov_1' }),
-        data: expect.objectContaining({ status: 'ACTIVE' }),
-      })
-    )
-    // Wallet must NOT have been credited
+    // Pre-check fires before any write — no voucher claim should be attempted
+    expect(tx.promoVoucher.updateMany).not.toHaveBeenCalled()
+    expect(tx.providerCampaignRedemption.create).not.toHaveBeenCalled()
     expect(mockCreditFn).not.toHaveBeenCalled()
   })
 
-  it('rejects on race condition: updateMany returns count=0 (concurrent redemption)', async () => {
+  it('rejects via DB unique constraint when concurrent requests both pass the pre-check', async () => {
+    // Two concurrent requests both read existingCampaignRecord=null and both claim a voucher.
+    // The second INSERT into provider_campaign_redemptions raises P2002; the transaction
+    // rolls back automatically (including the voucher claim) and we return PROVIDER_ALREADY_REDEEMED_CAMPAIGN.
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const constraintError = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+      meta: { target: ['providerId', 'campaignCode'] },
+    })
+    tx.providerCampaignRedemption.create.mockRejectedValueOnce(constraintError)
+
+    const result = await redeemVoucher('prov_1', RAW_CODE)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('PROVIDER_ALREADY_REDEEMED_CAMPAIGN')
+    // Claim was attempted but the DB rolls it back; wallet must NOT have been credited
+    expect(tx.promoVoucher.updateMany).toHaveBeenCalledOnce()
+    expect(mockCreditFn).not.toHaveBeenCalled()
+  })
+
+  it('rejects on race condition: updateMany returns count=0 (concurrent same-voucher redemption)', async () => {
     const tx = makeTx(makeProvider(), makeVoucher(), null, 0)
     setupTransaction(tx)
 
@@ -222,6 +250,37 @@ describe('redeemVoucher', () => {
     expect(mockCreditFn).not.toHaveBeenCalled()
   })
 
+  it('succeeds: different provider can redeem from the same campaign', async () => {
+    // Provider 2 has no existing campaign record → should succeed
+    const tx = makeTx(makeProvider({ id: 'prov_2' }), makeVoucher({ id: 'vchr_2' }), null)
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_2', RAW_CODE)
+
+    expect(result.ok).toBe(true)
+    expect(tx.providerCampaignRedemption.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { providerId_campaignCode: { providerId: 'prov_2', campaignCode: 'PILOT_PROVIDER_FLYER' } },
+      })
+    )
+  })
+
+  it('succeeds: same provider can redeem from a different campaign', async () => {
+    // Provider already redeemed CAMPAIGN_A (not mocked here); now redeeming CAMPAIGN_B → no record found → success
+    const voucher2 = makeVoucher({ batch: { campaignCode: 'CAMPAIGN_B', name: 'Campaign B' } })
+    const tx = makeTx(makeProvider(), voucher2, null)
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', RAW_CODE)
+
+    expect(result.ok).toBe(true)
+    expect(tx.providerCampaignRedemption.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { providerId_campaignCode: { providerId: 'prov_1', campaignCode: 'CAMPAIGN_B' } },
+      })
+    )
+  })
+
   it('propagates error when wallet credit throws (transaction rolls back, voucher stays ACTIVE)', async () => {
     const tx = makeTx(makeProvider(), makeVoucher())
     setupTransaction(tx)
@@ -231,17 +290,18 @@ describe('redeemVoucher', () => {
 
     // updateMany was called (atomic claim attempted), wallet threw, transaction auto-rolls back
     expect(tx.promoVoucher.updateMany).toHaveBeenCalled()
+    expect(tx.providerCampaignRedemption.create).toHaveBeenCalled()
   })
 
   it('does not grant credits on any failure path', async () => {
     const paths = [
-      makeTx(null, makeVoucher()),                                                       // no provider
-      makeTx(makeProvider({ active: false }), makeVoucher()),                            // not approved
-      makeTx(makeProvider(), null),                                                      // bad code
-      makeTx(makeProvider(), makeVoucher({ status: 'REDEEMED' })),                      // already redeemed
-      makeTx(makeProvider(), makeVoucher({ status: 'CANCELLED' })),                     // cancelled
-      makeTx(makeProvider(), makeVoucher({ expiresAt: new Date('2020-01-01') })),        // expired
-      makeTx(makeProvider(), makeVoucher(), { id: 'vchr_old' }),                        // campaign duplicate
+      makeTx(null, makeVoucher()),                                                              // no provider
+      makeTx(makeProvider({ active: false }), makeVoucher()),                                  // not approved
+      makeTx(makeProvider(), null),                                                            // bad code
+      makeTx(makeProvider(), makeVoucher({ status: 'REDEEMED' })),                            // already redeemed
+      makeTx(makeProvider(), makeVoucher({ status: 'CANCELLED' })),                           // cancelled
+      makeTx(makeProvider(), makeVoucher({ expiresAt: new Date('2020-01-01') })),              // expired
+      makeTx(makeProvider(), makeVoucher(), { id: 'pcr_existing' }),                          // campaign already redeemed
     ]
 
     for (const tx of paths) {

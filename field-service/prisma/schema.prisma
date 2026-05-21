@@ -300,6 +300,7 @@ model Provider {
   paymentIntents            PaymentIntent[]
   promoAwards               ProviderPromoAward[]
   redeemedVouchers          PromoVoucher[]
+  campaignRedemptions       ProviderCampaignRedemption[]
 
   @@index([active, verified])
   @@index([isTestUser])
@@ -1122,7 +1123,8 @@ model PromoVoucher {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
-  redeemedByProvider   Provider?     @relation(fields: [redeemedByProviderId], references: [id])
+  redeemedByProvider   Provider?                    @relation(fields: [redeemedByProviderId], references: [id])
+  campaignRedemption   ProviderCampaignRedemption?
 
   @@index([status])
   @@index([batchId])
@@ -1130,6 +1132,22 @@ model PromoVoucher {
   @@index([redeemedByMobile])
   @@index([expiresAt, status])
   @@map("promo_vouchers")
+}
+
+model ProviderCampaignRedemption {
+  id           String       @id @default(cuid())
+  providerId   String
+  campaignCode String
+  voucherId    String       @unique
+  creditAmount Int
+  redeemedAt   DateTime     @default(now())
+
+  provider     Provider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  voucher      PromoVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+
+  @@unique([providerId, campaignCode])
+  @@index([campaignCode])
+  @@map("provider_campaign_redemptions")
 }
 
 model ProviderAutoApproveSideEffectMarker {

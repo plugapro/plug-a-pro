@@ -7,12 +7,17 @@ import { creditVoucherRedemptionInTransaction } from './provider-wallet'
  * Shared by the WhatsApp bot and the PWA server action.
  * Do NOT duplicate this logic in either channel — call this function.
  *
- * Transaction safety:
- * - The voucher status is updated via updateMany with a WHERE status='ACTIVE' clause.
- *   If two concurrent requests both read status='ACTIVE' and both attempt updateMany,
- *   only one will get count=1. The other gets count=0 and returns VOUCHER_ALREADY_REDEEMED.
- * - All DB writes (voucher update + ledger entry) happen in a single transaction,
- *   so partial states are impossible.
+ * Campaign uniqueness guarantee (two layers):
+ * 1. Pre-check: a SELECT on provider_campaign_redemptions before any writes gives a fast,
+ *    user-friendly rejection when the provider has already redeemed from this campaign.
+ * 2. DB constraint: UNIQUE(providerId, campaignCode) on provider_campaign_redemptions is the
+ *    authoritative guard. Two concurrent requests that both pass the pre-check will race to
+ *    INSERT; the second receives a P2002 error, the transaction rolls back automatically
+ *    (including the voucher claim), and the caller gets PROVIDER_ALREADY_REDEEMED_CAMPAIGN.
+ *
+ * Voucher-level race condition:
+ * - The voucher status update uses updateMany with WHERE status='ACTIVE'.
+ *   count=0 means a concurrent request already claimed it → VOUCHER_ALREADY_REDEEMED.
  *
  * Security:
  * - rawCode is hashed before lookup. The plaintext never reaches the database.
@@ -67,8 +72,18 @@ export async function redeemVoucher(
       return { ok: false, code: 'VOUCHER_EXPIRED', message: 'That voucher code has expired.' } as const
     }
 
-    // 4. Atomic claim: only succeeds if the voucher is still ACTIVE.
-    //    count=0 means a concurrent request already redeemed it.
+    // 4. Pre-check: fast rejection if this provider already redeemed from this campaign.
+    //    The DB unique constraint (step 6) is the authoritative guard for concurrent races.
+    const existingCampaignRedemption = await tx.providerCampaignRedemption.findUnique({
+      where: { providerId_campaignCode: { providerId, campaignCode: voucher.batch.campaignCode } },
+      select: { id: true },
+    })
+    if (existingCampaignRedemption) {
+      return { ok: false, code: 'PROVIDER_ALREADY_REDEEMED_CAMPAIGN', message: 'You have already redeemed a voucher for this campaign.' } as const
+    }
+
+    // 5. Atomic claim: only succeeds if the voucher is still ACTIVE.
+    //    count=0 means a concurrent request already claimed it.
     const claimed = await tx.promoVoucher.updateMany({
       where: { id: voucher.id, status: 'ACTIVE' },
       data: {
@@ -83,37 +98,20 @@ export async function redeemVoucher(
       return { ok: false, code: 'VOUCHER_ALREADY_REDEEMED', message: 'That voucher has already been redeemed.' } as const
     }
 
-    // 5. One-per-provider-per-campaign guard — checked AFTER the atomic claim so two concurrent
-    //    requests with different codes from the same campaign cannot both slip through step 4
-    //    before either commits. If a duplicate is found here, roll back this voucher claim.
-    const campaignDuplicate = await tx.promoVoucher.findFirst({
-      where: {
-        redeemedByProviderId: providerId,
-        batch: { campaignCode: voucher.batch.campaignCode },
-        status: 'REDEEMED',
-        id: { not: voucher.id },
+    // 6. Lock the campaign slot. The UNIQUE(providerId, campaignCode) constraint makes this the
+    //    database-level safety net for concurrent requests that both passed the pre-check.
+    //    If this INSERT fails with P2002, the transaction rolls back (including step 5) and the
+    //    outer .catch handler converts it to PROVIDER_ALREADY_REDEEMED_CAMPAIGN.
+    await tx.providerCampaignRedemption.create({
+      data: {
+        providerId,
+        campaignCode: voucher.batch.campaignCode,
+        voucherId: voucher.id,
+        creditAmount: voucher.creditAmount,
       },
-      select: { id: true },
     })
-    if (campaignDuplicate) {
-      // Conditional guard prevents overwriting a legitimately-REDEEMED row in a
-      // concurrent three-way race. If the voucher was already rolled back by another
-      // concurrent transaction, updateMany returns count=0 and we still return the
-      // correct error — no data corruption either way.
-      await tx.promoVoucher.updateMany({
-        where: { id: voucher.id, status: 'REDEEMED', redeemedByProviderId: providerId },
-        data: {
-          status: 'ACTIVE',
-          redemptionCount: { decrement: 1 },
-          redeemedByProviderId: null,
-          redeemedByMobile: null,
-          redeemedAt: null,
-        },
-      })
-      return { ok: false, code: 'PROVIDER_ALREADY_REDEEMED_CAMPAIGN', message: 'You have already redeemed a pilot voucher.' } as const
-    }
 
-    // 6. Credit the wallet — must happen in the same transaction
+    // 7. Credit the wallet — must happen in the same transaction
     const walletResult = await creditVoucherRedemptionInTransaction(
       tx,
       providerId,
@@ -134,6 +132,16 @@ export async function redeemVoucher(
     const ledgerEntryId = walletResult.ledgerEntries[0]?.id
     if (ledgerEntryId == null) throw new Error('creditVoucherRedemptionInTransaction returned no ledger entry')
     return { ok: true, creditsAwarded: voucher.creditAmount, ledgerEntryId } as const
+  }).catch((error: unknown) => {
+    // A P2002 on the campaign slot (step 6) means two concurrent requests both passed the
+    // pre-check and both claimed separate vouchers, but only one can hold the campaign slot.
+    // PostgreSQL rolls back this transaction automatically — the voucher claim from step 5 is
+    // undone — and we return the same user-facing error as the pre-check.
+    if (isCampaignSlotConflict(error)) {
+      console.info('[voucher] campaign slot conflict — concurrent duplicate rejected', { providerId })
+      return { ok: false, code: 'PROVIDER_ALREADY_REDEEMED_CAMPAIGN', message: 'You have already redeemed a voucher for this campaign.' } as const
+    }
+    throw error
   })
 
   console.info('[voucher] redemption', {
@@ -143,4 +151,13 @@ export async function redeemVoucher(
   })
 
   return result
+}
+
+/** Returns true when the error is a Prisma P2002 on the provider_campaign_redemptions campaign slot. */
+function isCampaignSlotConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as Record<string, unknown>
+  if (e['code'] !== 'P2002') return false
+  const target = (e['meta'] as Record<string, unknown> | undefined)?.['target']
+  return Array.isArray(target) && (target as string[]).includes('campaignCode')
 }

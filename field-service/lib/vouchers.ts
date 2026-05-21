@@ -69,7 +69,7 @@ export function mapVoucherRedemptionErrorToMessage(code: VoucherRedemptionErrorC
     case 'VOUCHER_MAX_REDEMPTIONS_REACHED':
       return 'That voucher has already been redeemed.'
     case 'PROVIDER_ALREADY_REDEEMED_CAMPAIGN':
-      return 'You have already redeemed a pilot voucher.'
+      return 'You have already redeemed a voucher for this campaign.'
     case 'VOUCHER_EXPIRED':
       return 'That voucher code has expired.'
     case 'VOUCHER_NOT_FOUND':
