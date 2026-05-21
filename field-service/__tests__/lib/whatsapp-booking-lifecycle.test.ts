@@ -184,6 +184,43 @@ describe('WhatsApp booking lifecycle notifications — wiring assertions (GAP-19
     })
   })
 
+  describe('ARRIVED transition', () => {
+    it('calls sendProviderArrived with the customer phone number', async () => {
+      ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        mockJobWithStatus('EN_ROUTE')
+      )
+
+      await transitionJob({
+        jobId: 'job_1',
+        toStatus: 'ARRIVED',
+        actorId: 'provider_1',
+        actorRole: 'provider',
+      })
+
+      expect(mockSendProviderArrived).toHaveBeenCalledOnce()
+      expect(mockSendProviderArrived).toHaveBeenCalledWith(
+        expect.objectContaining({ customerPhone: CUSTOMER_PHONE })
+      )
+    })
+
+    it('includes the provider name in the ARRIVED notification', async () => {
+      ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        mockJobWithStatus('EN_ROUTE')
+      )
+
+      await transitionJob({
+        jobId: 'job_1',
+        toStatus: 'ARRIVED',
+        actorId: 'provider_1',
+        actorRole: 'provider',
+      })
+
+      expect(mockSendProviderArrived).toHaveBeenCalledWith(
+        expect.objectContaining({ providerName: 'Bob Jones' })
+      )
+    })
+  })
+
   describe('STARTED transition', () => {
     it('sends a work-started WhatsApp to the customer phone number', async () => {
       ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
