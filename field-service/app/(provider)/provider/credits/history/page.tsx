@@ -1,10 +1,19 @@
-// ─── Provider: Credits history alias ──────────────────────────────────────────
-// /provider/credits/history redirects to /provider/credits which already renders
-// the full ledger. Keeping both URLs so WhatsApp deep-links and future copy
-// can use the more descriptive path.
+export const dynamic = 'force-dynamic'
 
-import { redirect } from 'next/navigation'
+import { buildMetadata } from '@/lib/metadata'
+import { HistoryClient } from '@/components/provider/credits'
+import { getProviderWalletLedgerPage } from '../actions'
 
-export default function ProviderCreditsHistoryPage() {
-  redirect('/provider/credits')
+export const metadata = buildMetadata({ title: 'Credit history', noIndex: true })
+
+export default async function ProviderCreditsHistoryPage() {
+  const { items, nextCursor } = await getProviderWalletLedgerPage({ filter: 'all' })
+
+  return (
+    <HistoryClient
+      initialItems={items}
+      initialNextCursor={nextCursor}
+      initialFilter="all"
+    />
+  )
 }
