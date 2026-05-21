@@ -96,8 +96,12 @@ export async function redeemVoucher(
       select: { id: true },
     })
     if (campaignDuplicate) {
-      await tx.promoVoucher.update({
-        where: { id: voucher.id },
+      // Conditional guard prevents overwriting a legitimately-REDEEMED row in a
+      // concurrent three-way race. If the voucher was already rolled back by another
+      // concurrent transaction, updateMany returns count=0 and we still return the
+      // correct error — no data corruption either way.
+      await tx.promoVoucher.updateMany({
+        where: { id: voucher.id, status: 'REDEEMED', redeemedByProviderId: providerId },
         data: {
           status: 'ACTIVE',
           redemptionCount: { decrement: 1 },

@@ -56,7 +56,7 @@ describe('provider profile save feedback action', () => {
     const { getSession } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
-    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1' })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
 
     const formData = new FormData()
     formData.set('name', 'Lovemore')
@@ -75,7 +75,7 @@ describe('provider profile save feedback action', () => {
     const { db } = await import('../../lib/db')
     const { syncProviderSkills } = await import('../../lib/provider-skills')
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
-    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1' })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
     ;(syncProviderSkills as any).mockResolvedValue(undefined)
 
     const formData = new FormData()
@@ -94,7 +94,7 @@ describe('provider profile save feedback action', () => {
     const { getSession } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
-    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1' })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
     tx.provider.update.mockRejectedValueOnce(new Error('Unique constraint failed on the fields: (`email`)'))
 
     const formData = new FormData()

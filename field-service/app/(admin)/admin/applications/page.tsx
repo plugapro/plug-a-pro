@@ -156,7 +156,8 @@ function evaluateApplicationCompleteness(application: {
 
 async function approveApplication(formData: FormData) {
   'use server'
-  const id = formData.get('id') as string
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
   const session = await requireAdmin()
 
   const app = await db.providerApplication.findUnique({
@@ -355,7 +356,8 @@ async function approveApplication(formData: FormData) {
 
 async function requestMoreInfo(formData: FormData) {
   'use server'
-  const id = formData.get('id') as string
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
   const reason = String(formData.get('reason') ?? '').trim()
   const session = await requireAdmin()
 
@@ -468,7 +470,8 @@ async function updateCategoryApproval(formData: FormData) {
 
 async function rejectApplication(formData: FormData) {
   'use server'
-  const id = formData.get('id') as string
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
   const reason = (formData.get('reason') as string) || undefined
   const session = await requireAdmin()
 

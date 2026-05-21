@@ -3,6 +3,7 @@
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { syncProviderSkills } from '@/lib/provider-skills'
 
 type ActionResult = { ok: true; message: string } | { ok: false; error: string }
 
@@ -54,11 +55,15 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
         ...(session.providerId ? [{ id: session.providerId }] : []),
       ],
     },
-    select: { id: true },
+    select: { id: true, active: true, status: true },
   })
 
   if (!provider) {
     return { ok: false, error: 'Your session expired. Sign in again to continue.' }
+  }
+
+  if (!provider.active || (provider.status !== 'ACTIVE' && provider.status !== null)) {
+    return { ok: false, error: 'Your account is not currently active. Contact support for help.' }
   }
 
   const name = (formData.get('name') as string | null)?.trim() ?? null
@@ -96,7 +101,6 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
         },
       })
 
-      const { syncProviderSkills } = await import('@/lib/provider-skills')
       await syncProviderSkills(tx, provider.id, skillTags)
 
       if (formData.get('serviceAreasPickerRendered') === '1') {

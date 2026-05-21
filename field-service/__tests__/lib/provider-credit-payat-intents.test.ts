@@ -146,4 +146,69 @@ describe('Pay@ provider credit payment intents', () => {
     expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
     expect(mockCreatePayatPaymentRequest).not.toHaveBeenCalled()
   })
+
+  it('rejects PROVIDER_PHONE_MISSING when provider has no phone and no cellphone fallback', async () => {
+    // Profile-specific failure: provider.phone is null and no providerCellphone provided.
+    // Sending an empty notificationNumber to Pay@ causes the gateway to reject the request.
+    // The validation catches this before creating the intent so the duplicate-intent guard
+    // is not consumed by a request that would fail at the gateway.
+    mockDb.provider.findUnique.mockResolvedValue({
+      ...state.provider,
+      phone: null,
+    })
+    const { createPayatTopUpIntent } = await import('@/lib/provider-credit-payment-intents')
+
+    await expect(
+      createPayatTopUpIntent({
+        providerId: 'provider-1',
+        amountCents: 10_000,
+        providerCellphone: null,
+      }),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_PHONE_MISSING',
+      name: 'ProviderCreditPaymentIntentError',
+    })
+
+    expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
+    expect(mockCreatePayatPaymentRequest).not.toHaveBeenCalled()
+  })
+
+  it('rejects PROVIDER_PHONE_MISSING when providerCellphone is whitespace-only', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      ...state.provider,
+      phone: null,
+    })
+    const { createPayatTopUpIntent } = await import('@/lib/provider-credit-payment-intents')
+
+    await expect(
+      createPayatTopUpIntent({
+        providerId: 'provider-1',
+        amountCents: 10_000,
+        providerCellphone: '   ',
+      }),
+    ).rejects.toMatchObject({ code: 'PROVIDER_PHONE_MISSING' })
+
+    expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
+  })
+
+  it('succeeds when provider.phone is null but providerCellphone fallback is provided', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      ...state.provider,
+      phone: null,
+    })
+    const { createPayatTopUpIntent } = await import('@/lib/provider-credit-payment-intents')
+
+    const result = await createPayatTopUpIntent({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      providerCellphone: '+27829876543',
+    })
+
+    expect(mockDb.paymentIntent.create).toHaveBeenCalledTimes(1)
+    // Phone passed to Pay@ should be the fallback cellphone, not null.
+    expect(mockCreatePayatPaymentRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ providerPhone: '+27829876543' }),
+    )
+    expect(result.payat.paymentLink).toBeTruthy()
+  })
 })

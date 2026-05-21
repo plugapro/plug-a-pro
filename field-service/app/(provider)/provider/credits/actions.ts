@@ -966,17 +966,18 @@ export async function createProviderTopUpIntentFormAction(formData: FormData) {
     ? Number.parseInt(rawAmountCents, 10)
     : Number.NaN
 
+  let intentId: string
   try {
     const instructions = await createProviderTopUpIntent(amountCents)
-    redirect(`/provider/credits?intent=${encodeURIComponent(instructions.intentId)}`)
+    intentId = instructions.intentId
   } catch (error) {
-    // Next.js redirect/notFound signals use throw internally — re-throw them
-    if (error && typeof error === 'object' && 'digest' in error) throw error
     console.error('[credits] top-up intent creation failed', {
       error: error instanceof Error ? error.message : String(error),
     })
     redirect('/provider/credits?error=topup_failed')
   }
+
+  redirect(`/provider/credits?intent=${encodeURIComponent(intentId!)}`)
 }
 
 export type ProviderWalletTransactionDetail = {

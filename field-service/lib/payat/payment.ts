@@ -157,6 +157,17 @@ async function sendPayatPaymentRequest(
   // Amount validation lives in the intent layer (createPayatTopUpIntent) which
   // validates the credit amount before adding any service fee. The payment layer
   // must not re-validate because the final amount includes the fee.
+
+  // Pay@ validates notificationNumber and customerMobileNumber as required fields.
+  // An empty phone bypasses the intent-layer guard only in direct API callers that
+  // skip createPayatTopUpIntent. Log a warning so production logs surface this
+  // before the gateway rejects the request.
+  if (!params.providerPhone) {
+    console.warn('[payat-payment] providerPhone is empty — Pay@ will likely reject the RTP request', {
+      topupId: params.topupId,
+    })
+  }
+
   const token = await getPayatToken()
   const apiBase = requirePayatConfig('PAYAT_API_BASE').replace(/\/$/, '')
   const merchantIdentifier = resolveMerchantIdentifier()

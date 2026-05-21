@@ -54,6 +54,10 @@ export async function saveProviderAvailabilityFromFormAction(formData: FormData)
     return { ok: false, error: 'Your session expired. Sign in again to continue.' }
   }
 
+  if (!provider.active || (provider.status !== 'ACTIVE' && provider.status !== null)) {
+    return { ok: false, error: 'Your account is not currently active. Contact support for help.' }
+  }
+
   const availabilityMode = parseAvailabilityMode(formData.get('availabilityMode'))
   const emergencyAvailable = formData.get('emergencyAvailable') === 'on'
   const sameDayAvailable = formData.get('sameDayAvailable') === 'on'

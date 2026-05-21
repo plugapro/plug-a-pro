@@ -7,7 +7,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { sendQuoteToClient } from '@/lib/whatsapp-bot'
-import { sendQuoteReady, sendCustomerQuoteReadyNotification } from '@/lib/whatsapp'
+import { sendQuoteReady } from '@/lib/whatsapp'
 import { openCase } from '@/lib/cases'
 
 const VALID_FOR_OPTIONS: Record<string, number> = {
@@ -184,21 +184,6 @@ export async function POST(request: NextRequest) {
       console.error('[quotes] Failed to send WhatsApp quote_ready template:', err)
     })
 
-    // CW3 - idempotent quote-ready notification (customer_quote_ready template)
-    sendCustomerQuoteReadyNotification({
-      customerPhone,
-      customerName,
-      providerName: provider.name,
-      serviceName: match.jobRequest.category,
-      amount: totalAmount,
-      estimatedHours: estimatedHours ?? undefined,
-      shortDescription: description,
-      validUntil,
-      quoteId: quote.id,
-      jobRequestId: match.jobRequestId,
-    }).catch((err: unknown) => {
-      console.error('[quotes] Failed to send CW3 quote-ready notification:', err)
-    })
   }
 
   return NextResponse.json({ quoteId: quote.id })

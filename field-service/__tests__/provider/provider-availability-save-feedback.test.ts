@@ -50,6 +50,8 @@ describe('provider availability save feedback action', () => {
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
+      active: true,
+      status: 'ACTIVE',
       availableNow: true,
       technicianAvailability: null,
     })
@@ -73,6 +75,8 @@ describe('provider availability save feedback action', () => {
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
+      active: true,
+      status: 'ACTIVE',
       availableNow: true,
       technicianAvailability: null,
     })
@@ -97,6 +101,8 @@ describe('provider availability save feedback action', () => {
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
+      active: true,
+      status: 'ACTIVE',
       availableNow: true,
       technicianAvailability: {
         pausedAt: null,
@@ -128,6 +134,8 @@ describe('provider availability save feedback action', () => {
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
+      active: true,
+      status: 'ACTIVE',
       availableNow: true,
       technicianAvailability: null,
     })

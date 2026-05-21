@@ -580,7 +580,13 @@ export default async function BookingDetailPage({
                         Issue #{dispute.id.slice(-6).toUpperCase()}
                       </span>
                       <span className="text-[10.5px] uppercase tracking-wide px-2 py-0.5 rounded-full"
-                            style={{ background: 'var(--border)', color: 'var(--ink-mute)' }}>
+                            style={
+                              dispute.status === 'RESOLVED'
+                                ? { background: '#dcfce7', color: '#15803d' }
+                                : dispute.status === 'CLOSED'
+                                ? { background: 'var(--border)', color: 'var(--ink-mute)' }
+                                : { background: '#fef9c3', color: '#92400e' }
+                            }>
                         {dispute.status.replaceAll('_', ' ').toLowerCase()}
                       </span>
                     </div>

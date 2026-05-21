@@ -198,11 +198,11 @@ describe('redeemVoucher', () => {
     if (result.ok) throw new Error('should fail')
     expect(result.code).toBe('PROVIDER_ALREADY_REDEEMED_CAMPAIGN')
 
-    // Claim was made (updateMany), then must be rolled back (update to ACTIVE)
-    expect(tx.promoVoucher.updateMany).toHaveBeenCalled()
-    expect(tx.promoVoucher.update).toHaveBeenCalledWith(
+    // Atomic claim (updateMany call 1), then conditional rollback (updateMany call 2)
+    expect(tx.promoVoucher.updateMany).toHaveBeenCalledTimes(2)
+    expect(tx.promoVoucher.updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        where: { id: 'vchr_1' },
+        where: expect.objectContaining({ id: 'vchr_1', status: 'REDEEMED', redeemedByProviderId: 'prov_1' }),
         data: expect.objectContaining({ status: 'ACTIVE' }),
       })
     )

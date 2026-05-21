@@ -24,6 +24,7 @@ export const MANUAL_EFT_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000]
 type PaymentIntentErrorCode =
   | 'INVALID_AMOUNT'
   | 'PROVIDER_NOT_FOUND'
+  | 'PROVIDER_PHONE_MISSING'
   | 'REFERENCE_GENERATION_FAILED'
   | 'DUPLICATE_INTENT'
 
@@ -268,6 +269,7 @@ export type PayatTopUpFailureCode =
   | 'TOO_MANY_PENDING'
   | 'INVALID_AMOUNT'
   | 'PROVIDER_NOT_FOUND'
+  | 'PROVIDER_PHONE_MISSING'
   | 'REFERENCE_GENERATION_FAILED'
   | 'PAYAT_TOKEN_FAILED'
   | 'PAYAT_API_FAILED'
@@ -348,6 +350,18 @@ export async function createPayatTopUpIntent(
       throw new ProviderCreditPaymentIntentError(
         'PROVIDER_NOT_FOUND',
         'Provider account not found.',
+      )
+    }
+
+    // Pay@ requires a non-empty mobile number for the RTP request (used as
+    // notificationNumber and customerMobileNumber). Validate before creating the
+    // intent so the duplicate-intent guard is not triggered on a request that
+    // would fail at the gateway anyway.
+    const resolvedPhone = provider.phone?.trim() || input.providerCellphone?.trim() || ''
+    if (!resolvedPhone) {
+      throw new ProviderCreditPaymentIntentError(
+        'PROVIDER_PHONE_MISSING',
+        'A mobile number is required on your provider profile to create a Pay@ payment link.',
       )
     }
 
