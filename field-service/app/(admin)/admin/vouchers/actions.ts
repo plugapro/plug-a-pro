@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
+import { requireAdminApi } from '@/lib/auth'
 import { z } from 'zod'
 
 const FLAG = 'admin.vouchers'
@@ -25,6 +26,7 @@ export type VoucherBatchSummary = {
 }
 
 export async function listVoucherBatchesAction(): Promise<VoucherBatchSummary[]> {
+  await requireAdminApi()
   const batches = await db.voucherBatch.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
