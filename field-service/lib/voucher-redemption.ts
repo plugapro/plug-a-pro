@@ -25,7 +25,7 @@ export async function redeemVoucher(
   // Hash before any DB call — raw code must not appear in query logs
   const codeHash = voucherCodeToHash(rawCode)
 
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     // 1. Verify provider exists and is active/approved
     const provider = await tx.provider.findUnique({
       where: { id: providerId },
@@ -109,4 +109,12 @@ export async function redeemVoucher(
     if (ledgerEntryId == null) throw new Error('creditVoucherRedemptionInTransaction returned no ledger entry')
     return { ok: true, creditsAwarded: voucher.creditAmount, ledgerEntryId } as const
   })
+
+  console.info('[voucher] redemption', {
+    providerId,
+    outcome: result.ok ? 'success' : result.code,
+    creditsAwarded: result.ok ? result.creditsAwarded : undefined,
+  })
+
+  return result
 }
