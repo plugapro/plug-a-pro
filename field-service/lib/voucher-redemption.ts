@@ -47,7 +47,7 @@ export async function redeemVoucher(
     // 2. Look up voucher by hash
     const voucher = await tx.promoVoucher.findUnique({
       where: { codeHash },
-      include: { batch: { select: { campaignCode: true } } },
+      include: { batch: { select: { campaignCode: true, name: true } } },
     })
     if (!voucher) {
       return { ok: false, code: 'VOUCHER_NOT_FOUND', message: 'That voucher code is invalid or unavailable.' } as const
@@ -120,7 +120,10 @@ export async function redeemVoucher(
         description: `Voucher redemption — ${voucher.creditAmount} credit`,
         source: 'voucher_redemption',
         createdBy: 'system:voucher',
-        metadata: { campaignCode: voucher.batch.campaignCode },
+        metadata: {
+          campaignCode: voucher.batch.campaignCode,
+          batchName: voucher.batch.name,
+        },
       },
     )
 
