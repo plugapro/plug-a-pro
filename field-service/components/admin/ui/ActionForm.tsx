@@ -28,6 +28,20 @@ interface ActionResult<T = unknown> {
   warning?: string
 }
 
+function mapActionErrorToUserMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase()
+    if (message.includes('network') || message.includes('fetch')) {
+      return 'Could not reach the server. Check your connection and try again.'
+    }
+    if (message.includes('timeout') || message.includes('timed out')) {
+      return 'The request took too long. Please try again.'
+    }
+  }
+
+  return fallback
+}
+
 interface ActionFormProps<T = unknown> {
   action: (formData: FormData) => Promise<ActionResult<T>>
   onSuccess?: (data?: T) => void
@@ -55,7 +69,26 @@ export function ActionForm<T = unknown>({
   const formRef = React.useRef<HTMLFormElement>(null)
   const [isPending, startTransition] = React.useTransition()
 
+  React.useEffect(() => {
+    if (!isPending) return
+
+    // Warn before tab close while a mutation is in-flight to reduce accidental duplicate submissions.
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [isPending])
+
   const handleSubmit = (formData: FormData) => {
+    // Fast-fail when the browser is offline so users get immediate guidance.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      notify.userError('You are offline. Check your connection and try again.')
+      return
+    }
+
     startTransition(async () => {
       try {
         const result = await action(formData)
@@ -77,10 +110,10 @@ export function ActionForm<T = unknown>({
 
           onSuccess?.(result.data)
         } else {
-          notify.userError(result.error ?? errorFallback ?? 'Something went wrong')
+          notify.userError(result.error ?? errorFallback ?? 'Could not save changes. Please try again.')
         }
       } catch (err) {
-        notify.error(err, errorFallback ?? 'Something went wrong')
+        notify.error(err, mapActionErrorToUserMessage(err, errorFallback ?? 'Could not save changes. Please try again.'))
       }
     })
   }

@@ -3,7 +3,6 @@
 
 export const dynamic = 'force-dynamic'
 
-import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
@@ -11,8 +10,7 @@ import { getCities } from '@/lib/location-nodes'
 import { SignOutButton } from '@/components/technician/SignOutButton'
 import { PushSubscribeButton } from '@/components/technician/PushSubscribeButton'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { ActionForm } from '@/components/admin/ui/ActionForm'
 import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ServiceAreaPicker } from '@/components/provider/ServiceAreaPicker'
 import { SkillPicker } from '@/components/provider/SkillPicker'
-import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { updateProviderProfileFromFormAction } from './actions'
 
 export const metadata = buildMetadata({ title: 'My Profile', noIndex: true })
 
@@ -34,150 +32,8 @@ const DAYS = [
   { value: 0, label: 'Sunday' },
 ]
 
-async function updateProfile(formData: FormData) {
-  'use server'
-  const { requireProvider: getSession } = await import('@/lib/auth')
-  const session = await getSession()
-
-  const { db: dbServer } = await import('@/lib/db')
-  const provider = await dbServer.provider.findUnique({
-    where: { userId: session.id },
-  })
-  if (!provider) return
-
-  const name  = (formData.get('name')  as string | null)?.trim()
-  const email = (formData.get('email') as string | null)?.trim()
-  const bio = (formData.get('bio') as string | null)?.trim()
-  const experience = (formData.get('experience') as string | null)?.trim()
-  const evidenceNote = (formData.get('evidenceNote') as string | null)?.trim()
-  const skillTags = formData.getAll('skillTags').map(String)
-  const portfolioUrlsInput = (formData.get('portfolioUrls') as string | null)?.trim() ?? ''
-  const portfolioUrls = portfolioUrlsInput
-    .split('\n')
-    .map((value) => value.trim())
-    .filter(Boolean)
-
-  // Update profile fields
-  if (
-    name ||
-    email !== undefined ||
-    bio !== undefined ||
-    experience !== undefined ||
-    evidenceNote !== undefined ||
-    skillTags.length >= 0 ||
-    portfolioUrlsInput !== undefined
-  ) {
-    const { syncProviderSkills } = await import('@/lib/provider-skills')
-
-    if (skillTags.length === 0) {
-      redirect('/provider/profile?error=skills_required')
-    }
-
-    await dbServer.provider.update({
-      where: { id: provider.id },
-      data: {
-        ...(name  ? { name }  : {}),
-        ...(email !== null && email !== undefined ? { email: email || null } : {}),
-        bio: bio || null,
-        experience: experience || null,
-        evidenceNote: evidenceNote || null,
-        portfolioUrls,
-      },
-    })
-
-    await syncProviderSkills(dbServer, provider.id, skillTags)
-  }
-
-  // Sync structured service areas from picker
-  if (formData.get('serviceAreasPickerRendered') === '1') {
-    const locationNodeIds = formData.getAll('locationNodeIds') as string[]
-
-    // Deactivate structured areas that are no longer in the submitted selection.
-    // When locationNodeIds is empty, this deactivates ALL node-linked areas (correct: provider deselected all).
-    await dbServer.technicianServiceArea.updateMany({
-      where: {
-        providerId: provider.id,
-        locationNodeId: { not: null },
-        ...(locationNodeIds.length > 0 ? { locationNodeId: { notIn: locationNodeIds } } : {}),
-      },
-      data: { active: false },
-    })
-
-    // Upsert submitted service areas
-    if (locationNodeIds.length > 0) {
-      // Load all node data
-      const nodes = await dbServer.locationNode.findMany({
-        where: { id: { in: locationNodeIds }, active: true },
-        select: { id: true, slug: true, label: true, provinceKey: true, cityKey: true, regionKey: true },
-      })
-
-      // Find which IDs already have a row
-      const existingAreas = await dbServer.technicianServiceArea.findMany({
-        where: {
-          providerId: provider.id,
-          locationNodeId: { in: locationNodeIds },
-        },
-        select: { locationNodeId: true },
-      })
-      const existingNodeIds = new Set(existingAreas.map(a => a.locationNodeId).filter(Boolean))
-
-      const toCreate = nodes.filter(n => !existingNodeIds.has(n.id))
-      const toUpdate = nodes.filter(n => existingNodeIds.has(n.id))
-
-      // Reactivate existing rows in bulk
-      if (toUpdate.length > 0) {
-        await dbServer.technicianServiceArea.updateMany({
-          where: {
-            providerId: provider.id,
-            locationNodeId: { in: toUpdate.map(n => n.id) },
-          },
-          data: { active: true },
-        })
-      }
-
-      // Create new rows in bulk
-      if (toCreate.length > 0) {
-        await dbServer.technicianServiceArea.createMany({
-          data: toCreate.map(node => ({
-            providerId: provider.id,
-            locationNodeId: node.id,
-            areaType: 'SUBURB' as const,
-            label: normaliseLocationDisplayName(node.label),
-            provinceKey: node.provinceKey,
-            cityKey: node.cityKey,
-            regionKey: node.regionKey,
-            suburbKey: node.slug.split('__').at(-1) ?? node.slug,
-            active: true,
-          })),
-          skipDuplicates: true,
-        })
-      }
-    }
-  }
-
-  // Upsert schedule for each day
-  for (const day of [0, 1, 2, 3, 4, 5, 6]) {
-    const active    = formData.get(`day_${day}_active`) === 'on'
-    const startTime = (formData.get(`day_${day}_start`) as string | null) ?? '08:00'
-    const endTime   = (formData.get(`day_${day}_end`)   as string | null) ?? '17:00'
-
-    await dbServer.providerSchedule.upsert({
-      where: { providerId_dayOfWeek: { providerId: provider.id, dayOfWeek: day } },
-      create: { providerId: provider.id, dayOfWeek: day, startTime, endTime, active },
-      update: { startTime, endTime, active },
-    })
-  }
-
-  redirect('/provider/profile')
-}
-
-export default async function ProviderProfilePage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ error?: string }>
-}) {
+export default async function ProviderProfilePage() {
   const session = await requireProvider()
-  const resolvedSearchParams = searchParams ? await searchParams : {}
 
   const [provider, cities] = await Promise.all([
     db.provider.findUnique({
@@ -285,18 +141,14 @@ export default async function ProviderProfilePage({
         </div>
       </div>
 
-      {/* Error callout */}
-      {resolvedSearchParams.error === 'skills_required' && (
-        <div className="px-[18px] mb-4">
-          <div className="rounded-[14px] px-4 py-3 text-[13px]"
-               style={{ background: 'rgba(229,72,77,0.08)', boxShadow: 'inset 0 0 0 1px rgba(229,72,77,0.25)', color: '#E5484D' }}>
-            Select at least one skill before saving your profile.
-          </div>
-        </div>
-      )}
-
       <div className="px-[18px]">
-        <form action={updateProfile} className="space-y-4">
+        <ActionForm
+          action={updateProviderProfileFromFormAction}
+          successMessage="Profile updated"
+          errorFallback="Could not save your changes. Please try again."
+          refreshOnSuccess
+          className="space-y-4"
+        >
           {/* Contact info */}
           <div className="rounded-[20px] overflow-hidden" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
             <div className="px-4 pt-4 pb-1">
@@ -444,8 +296,8 @@ export default async function ProviderProfilePage({
             </div>
           </div>
 
-          <FormSubmitButton className="w-full" pendingLabel="Saving…">Save changes</FormSubmitButton>
-        </form>
+          <FormSubmitButton className="w-full" pendingLabel="Saving...">Save changes</FormSubmitButton>
+        </ActionForm>
       </div>
 
       {/* Rating & review history */}

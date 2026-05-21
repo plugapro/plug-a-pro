@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { redeemVoucherAction } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,8 +26,10 @@ export default function VoucherRedemptionPage() {
       const result = await redeemVoucherAction(code)
       if (result.ok) {
         setCode('')
+        toast.success('Voucher redeemed')
         setMessage({ text: result.message, type: 'success' })
       } else {
+        toast.error(result.message)
         setMessage({ text: result.message, type: 'error' })
       }
     })
@@ -59,6 +62,8 @@ export default function VoucherRedemptionPage() {
 
             {message && (
               <p
+                role={message.type === 'error' ? 'alert' : 'status'}
+                aria-live={message.type === 'error' ? 'assertive' : 'polite'}
                 className={
                   message.type === 'success'
                     ? 'text-sm text-green-700'
@@ -70,7 +75,7 @@ export default function VoucherRedemptionPage() {
             )}
 
             <Button type="submit" disabled={isPending || !code.trim()} className="w-full">
-              {isPending ? 'Redeeming…' : 'Redeem Voucher'}
+              {isPending ? 'Redeeming...' : 'Redeem Voucher'}
             </Button>
           </form>
         </CardContent>

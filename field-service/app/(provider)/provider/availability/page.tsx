@@ -1,15 +1,13 @@
 export const dynamic = 'force-dynamic'
 
-import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
-import { recordAuditLog } from '@/lib/audit'
-import { AUDIT_ENTITY } from '@/lib/audit-entities'
-import { ChevronLeft } from 'lucide-react'
+import { ActionForm } from '@/components/admin/ui/ActionForm'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AlertCallout } from '@/components/shared/AlertCallout'
+import { saveProviderAvailabilityFromFormAction } from './actions'
 
 export const metadata = buildMetadata({ title: 'Availability', noIndex: true })
 
@@ -23,120 +21,8 @@ const DAYS = [
   { value: 0, label: 'Sunday' },
 ]
 
-function pauseUntilFromInput(value: string | null) {
-  if (!value) return null
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
-async function saveAvailability(formData: FormData) {
-  'use server'
-
+export default async function ProviderAvailabilityPage() {
   const session = await requireProvider()
-  const provider = await db.provider.findUnique({
-    where: { userId: session.id },
-    include: { technicianAvailability: true },
-  })
-  if (!provider) redirect('/provider')
-
-  const mode = String(formData.get('availabilityMode') ?? 'ALWAYS_AVAILABLE')
-  const availabilityMode = ['ALWAYS_AVAILABLE', 'SCHEDULE', 'PAUSED'].includes(mode)
-    ? mode
-    : 'ALWAYS_AVAILABLE'
-  const emergencyAvailable = formData.get('emergencyAvailable') === 'on'
-  const sameDayAvailable = formData.get('sameDayAvailable') === 'on'
-  const pauseReason = String(formData.get('pauseReason') ?? '').trim() || null
-  const pausedUntil = availabilityMode === 'PAUSED'
-    ? pauseUntilFromInput(formData.get('pausedUntil') as string | null)
-    : null
-  const now = new Date()
-  const isAvailableNow = availabilityMode !== 'PAUSED'
-
-  for (const day of DAYS) {
-    const active = formData.get(`day_${day.value}_active`) === 'on'
-    const startTime = String(formData.get(`day_${day.value}_start`) ?? '08:00')
-    const endTime = String(formData.get(`day_${day.value}_end`) ?? '17:00')
-
-    await db.providerSchedule.upsert({
-      where: { providerId_dayOfWeek: { providerId: provider.id, dayOfWeek: day.value } },
-      create: { providerId: provider.id, dayOfWeek: day.value, startTime, endTime, active },
-      update: { startTime, endTime, active },
-    })
-  }
-
-  await db.provider.update({
-    where: { id: provider.id },
-    data: { availableNow: isAvailableNow },
-  })
-
-  await db.technicianAvailability.upsert({
-    where: { providerId: provider.id },
-    create: {
-      providerId: provider.id,
-      availabilityMode,
-      availabilityState: availabilityMode === 'PAUSED' ? 'PAUSED' : 'AVAILABLE',
-      breakUntil: pausedUntil,
-      pausedAt: availabilityMode === 'PAUSED' ? now : null,
-      pauseReason: availabilityMode === 'PAUSED' ? pauseReason : null,
-      emergencyAvailable,
-      sameDayAvailable,
-      lastUpdatedBy: provider.id,
-      lastUpdatedChannel: 'pwa',
-      notes: pauseReason,
-    },
-    update: {
-      availabilityMode,
-      availabilityState: availabilityMode === 'PAUSED' ? 'PAUSED' : 'AVAILABLE',
-      nextAvailableAt: null,
-      breakUntil: pausedUntil,
-      pausedAt: availabilityMode === 'PAUSED' ? (provider.technicianAvailability?.pausedAt ?? now) : null,
-      pauseReason: availabilityMode === 'PAUSED' ? pauseReason : null,
-      emergencyAvailable,
-      sameDayAvailable,
-      lastUpdatedBy: provider.id,
-      lastUpdatedChannel: 'pwa',
-      notes: pauseReason,
-    },
-  })
-
-  await recordAuditLog({
-    actorId: provider.id,
-    actorRole: 'provider',
-    action: 'provider.availability.updated',
-    entityType: AUDIT_ENTITY.PROVIDER,
-    entityId: provider.id,
-    before: {
-      availableNow: provider.availableNow,
-      availabilityMode: provider.technicianAvailability?.availabilityMode ?? null,
-      availabilityState: provider.technicianAvailability?.availabilityState ?? null,
-      breakUntil: provider.technicianAvailability?.breakUntil ?? null,
-      emergencyAvailable: provider.technicianAvailability?.emergencyAvailable ?? false,
-      sameDayAvailable: provider.technicianAvailability?.sameDayAvailable ?? true,
-    },
-    after: {
-      availableNow: isAvailableNow,
-      availabilityMode,
-      availabilityState: availabilityMode === 'PAUSED' ? 'PAUSED' : 'AVAILABLE',
-      breakUntil: pausedUntil,
-      emergencyAvailable,
-      sameDayAvailable,
-      changedChannel: 'pwa',
-      traceId: crypto.randomUUID().slice(0, 8),
-    },
-  }).catch((error) => {
-    console.error('[provider/availability] audit failed:', error)
-  })
-
-  redirect('/provider/availability?saved=1')
-}
-
-export default async function ProviderAvailabilityPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ saved?: string }>
-}) {
-  const session = await requireProvider()
-  const resolvedSearchParams = searchParams ? await searchParams : {}
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
     include: {
@@ -160,11 +46,6 @@ export default async function ProviderAvailabilityPage({
   const availability = provider.technicianAvailability
   const currentMode = availability?.availabilityMode ?? 'ALWAYS_AVAILABLE'
   const scheduleMap = Object.fromEntries(provider.schedule.map((row) => [row.dayOfWeek, row]))
-  const statusLabel = currentMode === 'PAUSED'
-    ? 'Paused'
-    : currentMode === 'SCHEDULE'
-      ? 'Schedule-based'
-      : 'Available now'
 
   return (
     <div className="min-h-screen pb-32 screen-enter">
@@ -180,15 +61,13 @@ export default async function ProviderAvailabilityPage({
         </p>
       </div>
 
-      {resolvedSearchParams.saved === '1' && (
-        <div className="px-[18px] mb-4">
-          <AlertCallout tone="success">
-            Availability saved. Current status: {statusLabel}.
-          </AlertCallout>
-        </div>
-      )}
-
-      <form action={saveAvailability} className="px-[18px] space-y-4">
+      <ActionForm
+        action={saveProviderAvailabilityFromFormAction}
+        successMessage="Availability saved"
+        errorFallback="Your availability was not saved. Check your connection and try again."
+        refreshOnSuccess
+        className="px-[18px] space-y-4"
+      >
         {/* Lead Availability */}
         <div
           className="rounded-[20px]"
@@ -379,14 +258,10 @@ export default async function ProviderAvailabilityPage({
           </div>
         </div>
 
-        <button
-          type="submit"
-          className="w-full h-[52px] rounded-[14px] font-semibold text-[15px] text-white"
-          style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
-        >
+        <FormSubmitButton className="w-full" pendingLabel="Saving...">
           Save Availability
-        </button>
-      </form>
+        </FormSubmitButton>
+      </ActionForm>
     </div>
   )
 }
