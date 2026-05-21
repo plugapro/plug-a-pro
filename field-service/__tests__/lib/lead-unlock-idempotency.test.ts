@@ -72,6 +72,8 @@ const VALID_LEAD = {
     status: 'OPEN',
     isTestRequest: false,
     cohortName: null,
+    category: 'plumbing',
+    title: 'Leaking tap in bathroom',
     match: null,
   },
 }

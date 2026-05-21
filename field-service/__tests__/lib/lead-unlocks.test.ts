@@ -75,6 +75,8 @@ function makeLead(overrides: Record<string, unknown> = {}) {
       status: 'MATCHING',
       isTestRequest: false,
       cohortName: null,
+      category: 'plumbing',
+      title: 'Leaking tap in bathroom',
       match: null,
     },
     ...overrides,
@@ -188,6 +190,10 @@ describe('lead unlock service', () => {
       amountCredits: 1,
       referenceType: 'lead_unlock',
       referenceId: 'unlock-1',
+      metadata: expect.objectContaining({
+        jobCategory: 'plumbing',
+        jobTitle: 'Leaking tap in bathroom',
+      }),
     })
     expect(state.wallet).toMatchObject({
       paidCreditBalance: 0,
