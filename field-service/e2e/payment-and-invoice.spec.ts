@@ -57,8 +57,8 @@ test('payment webhook endpoint rejects unsigned payloads', async ({ request }) =
   // The webhook handler verifies an HMAC signature from the PSP before
   // processing. An unsigned (or incorrectly signed) payload must not return 200.
   const res = await request.post('/api/webhooks/payments', {
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    data: 'booking_id=test&status=COMPLETE',
+    headers: { 'content-type': 'application/json' },
+    data: JSON.stringify({ booking_id: 'test', status: 'COMPLETE' }),
   })
   // A missing or invalid signature returns 401; any non-200 response is
   // acceptable — we only need to confirm unsigned webhooks are never processed.
@@ -71,10 +71,10 @@ test('invoice PDF is accessible for a completed booking', async ({ request }) =>
   const bookingId = process.env.E2E_BYPASS_BOOKING_ID
   const sessionToken = process.env.E2E_CUSTOMER_SESSION_TOKEN
 
-  test.skip(
-    !bookingId || !sessionToken,
-    'E2E_BYPASS_BOOKING_ID and E2E_CUSTOMER_SESSION_TOKEN not set — skipping completed booking invoice smoke',
-  )
+  if (!bookingId || !sessionToken) {
+    test.skip(true, 'E2E_BYPASS_BOOKING_ID and E2E_CUSTOMER_SESSION_TOKEN not set — skipping completed booking invoice smoke')
+    return
+  }
 
   const res = await request.get(`/api/customer/bookings/${bookingId}/invoice`, {
     headers: {
