@@ -79,6 +79,7 @@ export type ProviderWalletRecentActivityItem = {
   ref: string
   when: string
   delta: number
+  entryType: string
 }
 
 export type PaymentIntentStatusResult =
@@ -163,23 +164,25 @@ async function getAuthenticatedProvider(): Promise<ProviderWalletActor> {
 function ledgerLabel(entryType: WalletLedgerEntryType) {
   switch (entryType) {
     case 'TOPUP_CREDIT':
-      return 'Credit top-up'
+      return 'Credits purchased'
     case 'PROMO_CREDIT':
-      return 'Starter/onboarding credits added'
+      return 'Starter credits added'
+    case 'VOUCHER_REDEMPTION':
+      return 'Voucher redeemed'
     case 'LEAD_UNLOCK_DEBIT':
-      return 'Lead unlock charge'
+      return 'Lead accepted'
     case 'LEAD_REFUND_CREDIT':
-      return 'Lead unlock refund'
+      return 'Lead refund'
     case 'ADMIN_ADJUSTMENT':
       return 'Wallet adjustment'
     case 'PROMO_EXPIRY':
-      // Forward-compatible display label. Promo expiry is not fired until the
-      // expiry job is implemented.
-      return 'Starter/onboarding credits expired'
+      return 'Starter credits expired'
     case 'PAYMENT_REVERSAL':
-      // Forward-compatible display label. Payment reversals are not fired until
-      // bank/gateway reversal handling is implemented.
       return 'Payment reversal'
+    case 'WALLET_SUSPENDED':
+      return 'Wallet suspended'
+    case 'WALLET_REACTIVATED':
+      return 'Wallet reactivated'
     default:
       return String(entryType)
         .split('_')
@@ -226,21 +229,60 @@ function mergePayatDisplayMetadata(
 function summarizeActivityLabel(entryType: WalletLedgerEntryType) {
   switch (entryType) {
     case 'TOPUP_CREDIT':
-      return 'Credit top-up · Pay@'
+      return 'Credits purchased'
     case 'PAYMENT_REVERSAL':
       return 'Payment reversal'
     case 'LEAD_REFUND_CREDIT':
       return 'Lead refund'
     case 'PROMO_CREDIT':
-      return 'Starter credit'
+      return 'Starter credits added'
     case 'ADMIN_ADJUSTMENT':
-      return 'Wallet adjustment'
+      return 'Credit adjustment'
     case 'PROMO_EXPIRY':
-      return 'Starter credit expiry'
+      return 'Starter credits expired'
     case 'LEAD_UNLOCK_DEBIT':
-      return 'Lead unlock'
+      return 'Lead accepted'
+    case 'VOUCHER_REDEMPTION':
+      return 'Voucher redeemed'
     default:
-      return 'Wallet activity'
+      return 'Credit activity'
+  }
+}
+
+function buildRecentActivityRef(
+  entryType: WalletLedgerEntryType,
+  referenceType: string,
+  referenceId: string,
+  metadata: unknown,
+): string {
+  const meta =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>)
+      : {}
+  const short = referenceId
+    .trim()
+    .replace(/[^A-Za-z0-9-]/g, '')
+    .slice(-8)
+    .toUpperCase()
+
+  switch (entryType) {
+    case 'LEAD_UNLOCK_DEBIT':
+    case 'LEAD_REFUND_CREDIT': {
+      const category = typeof meta.jobCategory === 'string' ? meta.jobCategory : null
+      return category ? `${category} · JOB-${short}` : `JOB-${short}`
+    }
+    case 'VOUCHER_REDEMPTION': {
+      const campaign = typeof meta.campaignCode === 'string' ? meta.campaignCode : null
+      return campaign ? `${campaign} · REF-${short}` : `REF-${short}`
+    }
+    case 'TOPUP_CREDIT':
+      return referenceType === 'payment_intent' ? `PAT-${short}` : `PAP-${short}`
+    case 'PROMO_CREDIT': {
+      const awardType = typeof meta.awardType === 'string' ? meta.awardType : null
+      return awardType === 'MOBILE_VERIFIED' ? 'Welcome allocation' : 'PROMO'
+    }
+    default:
+      return `REF-${short}`
   }
 }
 
@@ -341,9 +383,10 @@ export async function getProviderWallet(): Promise<ProviderWallet> {
       return {
         id: entry.id,
         title: summarizeActivityLabel(entry.entryType),
-        ref: summarizeActivityRef(entry.referenceType, entry.referenceId),
+        ref: buildRecentActivityRef(entry.entryType, entry.referenceType, entry.referenceId, entry.metadata),
         when: normalizeWhenString(entry.createdAt.toISOString()),
         delta: signedAmount,
+        entryType: entry.entryType,
       }
     }),
   }
@@ -915,6 +958,148 @@ export async function createProviderTopUpIntentFormAction(formData: FormData) {
   const instructions = await createProviderTopUpIntent(amountCents)
 
   redirect(`/provider/credits?intent=${encodeURIComponent(instructions.intentId)}`)
+}
+
+export type ProviderWalletTransactionDetail = {
+  id: string
+  occurredAt: string
+  title: string
+  description: string | null
+  entryType: string
+  creditType: string
+  signedAmountCredits: number
+  amountCredits: number
+  balanceBeforePaidCredits: number | null
+  balanceBeforePromoCredits: number | null
+  balanceAfterPaidCredits: number
+  balanceAfterPromoCredits: number
+  referenceType: string
+  displayRef: string
+  source: string | null
+  relatedJobCategory: string | null
+  relatedJobTitle: string | null
+  relatedJobRef: string | null
+  relatedVoucherCampaign: string | null
+  relatedVoucherBatchName: string | null
+  relatedPaymentRef: string | null
+}
+
+function readMeta(metadata: unknown): Record<string, unknown> {
+  return metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>)
+    : {}
+}
+
+function metaStr(meta: Record<string, unknown>, key: string): string | null {
+  const v = meta[key]
+  return typeof v === 'string' && v.trim().length > 0 ? v : null
+}
+
+function metaNum(meta: Record<string, unknown>, key: string): number | null {
+  const v = meta[key]
+  return typeof v === 'number' ? v : null
+}
+
+export async function getProviderWalletLedgerEntry(
+  id: string,
+): Promise<ProviderWalletTransactionDetail | null> {
+  const provider = await getAuthenticatedProvider()
+  const entry = await db.walletLedgerEntry.findFirst({
+    where: { id, providerId: provider.id },
+  })
+  if (!entry) return null
+
+  const meta = readMeta(entry.metadata)
+  const debit = isDebit(entry.entryType)
+  const short = entry.referenceId
+    .replace(/[^A-Za-z0-9-]/g, '')
+    .slice(-8)
+    .toUpperCase()
+
+  return {
+    id: entry.id,
+    occurredAt: entry.createdAt.toISOString(),
+    title: ledgerLabel(entry.entryType),
+    description: entry.description ?? null,
+    entryType: entry.entryType,
+    creditType: entry.creditType,
+    signedAmountCredits: debit ? -entry.amountCredits : entry.amountCredits,
+    amountCredits: entry.amountCredits,
+    balanceBeforePaidCredits: metaNum(meta, 'balanceBeforePaidCredits'),
+    balanceBeforePromoCredits: metaNum(meta, 'balanceBeforePromoCredits'),
+    balanceAfterPaidCredits: entry.balanceAfterPaidCredits,
+    balanceAfterPromoCredits: entry.balanceAfterPromoCredits,
+    referenceType: entry.referenceType,
+    displayRef: `REF-${short}`,
+    source: entry.source ?? null,
+    relatedJobCategory: metaStr(meta, 'jobCategory'),
+    relatedJobTitle: metaStr(meta, 'jobTitle'),
+    relatedJobRef: metaStr(meta, 'leadRef'),
+    relatedVoucherCampaign: metaStr(meta, 'campaignCode'),
+    relatedVoucherBatchName: metaStr(meta, 'batchName'),
+    relatedPaymentRef: metaStr(meta, 'paymentReference') ?? metaStr(meta, 'payatReference'),
+  }
+}
+
+export type ProviderWalletLedgerPageResult = {
+  items: ProviderWalletRecentActivityItem[]
+  nextCursor: string | null
+}
+
+const HISTORY_PAGE_SIZE = 25
+
+const DEBIT_ENTRY_TYPES = [
+  'LEAD_UNLOCK_DEBIT',
+  'PROMO_EXPIRY',
+  'PAYMENT_REVERSAL',
+] as const
+
+const CREDIT_ENTRY_TYPES = [
+  'TOPUP_CREDIT',
+  'PROMO_CREDIT',
+  'VOUCHER_REDEMPTION',
+  'LEAD_REFUND_CREDIT',
+  'ADMIN_ADJUSTMENT',
+] as const
+
+export async function getProviderWalletLedgerPage(opts: {
+  cursor?: string
+  filter?: 'all' | 'added' | 'used'
+}): Promise<ProviderWalletLedgerPageResult> {
+  const provider = await getAuthenticatedProvider()
+
+  const entryTypeFilter =
+    opts.filter === 'added'
+      ? { entryType: { in: [...CREDIT_ENTRY_TYPES] } }
+      : opts.filter === 'used'
+        ? { entryType: { in: [...DEBIT_ENTRY_TYPES] } }
+        : {}
+
+  const entries = await db.walletLedgerEntry.findMany({
+    where: { providerId: provider.id, ...entryTypeFilter },
+    orderBy: { createdAt: 'desc' },
+    take: HISTORY_PAGE_SIZE + 1,
+    ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+  })
+
+  const hasMore = entries.length > HISTORY_PAGE_SIZE
+  const page = hasMore ? entries.slice(0, HISTORY_PAGE_SIZE) : entries
+  const nextCursor = hasMore ? (page[page.length - 1]?.id ?? null) : null
+
+  const items: ProviderWalletRecentActivityItem[] = page.map((entry) => {
+    const debit = isDebit(entry.entryType)
+    const signedAmount = debit ? -entry.amountCredits : entry.amountCredits
+    return {
+      id: entry.id,
+      title: summarizeActivityLabel(entry.entryType),
+      ref: buildRecentActivityRef(entry.entryType, entry.referenceType, entry.referenceId, entry.metadata),
+      when: normalizeWhenString(entry.createdAt.toISOString()),
+      delta: signedAmount,
+      entryType: entry.entryType,
+    }
+  })
+
+  return { items, nextCursor }
 }
 
 export async function createProviderCreditTopUpIntentAction(formData: FormData) {
