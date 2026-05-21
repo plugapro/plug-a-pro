@@ -1,3 +1,15 @@
+// ─── Scope note ──────────────────────────────────────────────────────────────
+//
+// These tests cover the business logic guards inside each action's run() closure
+// (last-OWNER, self-modification). They use a transparent crudAction mock that
+// calls run() directly, bypassing crudAction's own session/flag/role checks.
+//
+// The requireRole() call at the action entry point IS wired: see the
+// "rejects when caller is not OWNER" tests below.
+//
+// crudAction's own auth layer (getSession, flag checks) is infrastructure
+// tested separately; the action-level requireRole is the primary guard here.
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
@@ -325,5 +337,36 @@ describe('revokeAdminAction', () => {
     await expect(
       revokeAdminAction({ adminUserId: 'ghost-id' })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+})
+
+// ─── Auth entry-point guard ──────────────────────────────────────────────────
+
+describe('requireRole guard — rejects non-OWNER callers', () => {
+  it('changeRoleAction rejects when requireRole throws UNAUTHORIZED', async () => {
+    mockRequireRole.mockRejectedValueOnce(new Error('UNAUTHORIZED'))
+    const { changeRoleAction } = await import('@/app/(admin)/admin/team/actions')
+    await expect(
+      changeRoleAction({ adminUserId: 'target-admin-id', role: 'ADMIN' })
+    ).rejects.toThrow('UNAUTHORIZED')
+    expect(mockAdminUserFindUnique).not.toHaveBeenCalled()
+  })
+
+  it('deactivateAdminAction rejects when requireRole throws UNAUTHORIZED', async () => {
+    mockRequireRole.mockRejectedValueOnce(new Error('UNAUTHORIZED'))
+    const { deactivateAdminAction } = await import('@/app/(admin)/admin/team/actions')
+    await expect(
+      deactivateAdminAction({ adminUserId: 'target-admin-id' })
+    ).rejects.toThrow('UNAUTHORIZED')
+    expect(mockAdminUserFindUnique).not.toHaveBeenCalled()
+  })
+
+  it('revokeAdminAction rejects when requireRole throws UNAUTHORIZED', async () => {
+    mockRequireRole.mockRejectedValueOnce(new Error('UNAUTHORIZED'))
+    const { revokeAdminAction } = await import('@/app/(admin)/admin/team/actions')
+    await expect(
+      revokeAdminAction({ adminUserId: 'target-admin-id' })
+    ).rejects.toThrow('UNAUTHORIZED')
+    expect(mockAdminUserFindUnique).not.toHaveBeenCalled()
   })
 })
