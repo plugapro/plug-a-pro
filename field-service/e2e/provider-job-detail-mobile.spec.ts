@@ -18,6 +18,19 @@ async function openFirstInProgressJob(page: Page) {
   return href
 }
 
+async function openFirstUpcomingJob(page: Page) {
+  const upcomingSection = page.locator('section').filter({ hasText: /Upcoming/i }).first()
+  await expect(upcomingSection).toBeVisible()
+
+  const firstCard = upcomingSection.locator('a[href^="/provider/jobs/"]').first()
+  await expect(firstCard).toBeVisible()
+  const href = await firstCard.getAttribute('href')
+  await firstCard.click()
+
+  await expect(page.locator('text=Could not load this job right now.')).toHaveCount(0)
+  return href
+}
+
 test('mobile: provider can open in-progress jobs from Home and Jobs without detail loader failure', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'Mobile Chrome', 'Mobile viewport regression only')
   test.skip(!PROVIDER_HOME_URL || !PROVIDER_JOBS_URL, 'E2E_PROVIDER_HOME_URL/E2E_PROVIDER_JOBS_URL not set')
@@ -42,4 +55,23 @@ test('mobile: provider can open in-progress jobs from Home and Jobs without deta
   }
 
   await openFirstInProgressJob(page)
+})
+
+test('mobile: provider can open upcoming/scheduled jobs from Jobs without detail loader failure', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'Mobile Chrome', 'Mobile viewport regression only')
+  test.skip(!PROVIDER_JOBS_URL, 'E2E_PROVIDER_JOBS_URL not set')
+
+  await page.goto(PROVIDER_JOBS_URL!)
+  test.skip(page.url().includes('/provider-sign-in'), 'Provider auth session required for this regression test')
+
+  const upcomingSection = page.locator('section').filter({ hasText: /Upcoming/i }).first()
+  const upcomingCount = await upcomingSection.locator('a[href^="/provider/jobs/"]').count()
+
+  if (upcomingCount === 0) {
+    test.skip(true, 'No upcoming jobs available in seed data')
+  }
+
+  const href = await openFirstUpcomingJob(page)
+  await expect(page.locator('h1')).toContainText(/Job #[a-f0-9]+/i)
+  expect(href).toContain('/provider/jobs/')
 })

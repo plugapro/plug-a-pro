@@ -581,7 +581,7 @@ export default async function BookingDetailPage({
                       </span>
                       <span className="text-[10.5px] uppercase tracking-wide px-2 py-0.5 rounded-full"
                             style={
-                              dispute.status === 'RESOLVED'
+                              dispute.status.startsWith('RESOLVED')
                                 ? { background: '#dcfce7', color: '#15803d' }
                                 : dispute.status === 'CLOSED'
                                 ? { background: 'var(--border)', color: 'var(--ink-mute)' }

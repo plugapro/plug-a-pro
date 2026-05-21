@@ -19,6 +19,11 @@ import { Button } from '@/components/ui/button'
 import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { ChevronLeft } from 'lucide-react'
 import { getProviderJobDetailForViewer } from '@/lib/booking-detail-loaders'
+import {
+  PROVIDER_COMPLETED_JOB_STATUSES,
+  PROVIDER_IN_PROGRESS_JOB_STATUSES,
+  PROVIDER_UPCOMING_JOB_STATUSES,
+} from '@/lib/provider-job-status'
 
 export const metadata = buildMetadata({ title: 'Job Detail', noIndex: true })
 
@@ -69,6 +74,15 @@ export default async function JobDetailPage({
     orderBy: { createdAt: 'desc' },
   })
   const hasOpenDispute = disputes.some((dispute) => ['OPEN', 'UNDER_REVIEW'].includes(dispute.status))
+
+  const serviceName = b.match?.jobRequest?.category ?? 'Service'
+  const canShowCustomerPhone = new Set([
+    ...PROVIDER_UPCOMING_JOB_STATUSES,
+    ...PROVIDER_IN_PROGRESS_JOB_STATUSES,
+    ...PROVIDER_COMPLETED_JOB_STATUSES,
+  ]).has(job.status as (typeof PROVIDER_UPCOMING_JOB_STATUSES)[number])
+
+  const customerPhone = canShowCustomerPhone ? b.match?.jobRequest?.customer?.phone : null
 
   async function raiseDispute(formData: FormData) {
     'use server'
@@ -150,7 +164,19 @@ export default async function JobDetailPage({
           className="rounded-[20px] p-5 space-y-2 text-sm"
           style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
         >
+          <Row label="Service">{serviceName}</Row>
           <Row label="Customer">{customerFirstName}</Row>
+          {customerPhone ? (
+            <Row label="Contact">
+              <a
+                href={`tel:${customerPhone}`}
+                className="underline-offset-4 hover:underline"
+                aria-label={`Call ${customerFirstName}`}
+              >
+                {customerPhone}
+              </a>
+            </Row>
+          ) : null}
           {addressDisplay && (
             <Row label="Address">
               <a

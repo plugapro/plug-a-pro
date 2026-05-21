@@ -7,6 +7,7 @@ const {
   mockCreateManualEftTopUpIntent,
   mockCreatePayatTopUpIntent,
   mockCreatePayfastTopUpIntent,
+  ProviderCreditPaymentIntentErrorMock,
   PayatConfigErrorMock,
   PayatTokenErrorMock,
   PayatApiErrorMock,
@@ -20,6 +21,14 @@ const {
   mockCreateManualEftTopUpIntent: vi.fn(),
   mockCreatePayatTopUpIntent: vi.fn(),
   mockCreatePayfastTopUpIntent: vi.fn(),
+  ProviderCreditPaymentIntentErrorMock: class ProviderCreditPaymentIntentError extends Error {
+    code: string
+    constructor(code: string, message: string) {
+      super(message)
+      this.name = 'ProviderCreditPaymentIntentError'
+      this.code = code
+    }
+  },
   PayatConfigErrorMock: class PayatConfigError extends Error {
     constructor(envVarName: string) {
       super(`${envVarName} must be set`)
@@ -51,12 +60,7 @@ const {
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/provider-credit-payment-intents', () => ({
-  ProviderCreditPaymentIntentError: class ProviderCreditPaymentIntentError extends Error {
-    constructor(public readonly code: string, message: string) {
-      super(message)
-      this.name = 'ProviderCreditPaymentIntentError'
-    }
-  },
+  ProviderCreditPaymentIntentError: ProviderCreditPaymentIntentErrorMock,
   createManualEftTopUpIntent: mockCreateManualEftTopUpIntent,
   createPayatTopUpIntent: mockCreatePayatTopUpIntent,
   createPayfastTopUpIntent: mockCreatePayfastTopUpIntent,
@@ -263,6 +267,52 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     expect(response.status).toBe(502)
     await expect(response.json()).resolves.toMatchObject({
       code: 'PAYAT_API_FAILED',
+    })
+  })
+
+  it('maps provider phone missing to a safe, actionable 400 response', async () => {
+    mockCreatePayatTopUpIntent.mockRejectedValue(
+      new ProviderCreditPaymentIntentErrorMock(
+        'PROVIDER_PHONE_MISSING',
+        'internal detail should not leak',
+      ),
+    )
+
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000 }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'PROVIDER_PHONE_MISSING',
+      error: expect.stringContaining('mobile number'),
+    })
+  })
+
+  it('maps unknown provider intent failures to a generic safe 400 response', async () => {
+    mockCreatePayatTopUpIntent.mockRejectedValue(
+      new ProviderCreditPaymentIntentErrorMock(
+        'SOME_NEW_CODE',
+        'raw internal error',
+      ),
+    )
+
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000 }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'SOME_NEW_CODE',
+      error: 'Could not create top-up payment intent.',
     })
   })
 })

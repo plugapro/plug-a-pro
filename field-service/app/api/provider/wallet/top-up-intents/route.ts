@@ -23,6 +23,31 @@ type CreateTopUpIntentBody = {
 
 const PAYFAST_METHODS = new Set<string>(['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'])
 
+function mapProviderIntentError(error: ProviderCreditPaymentIntentError) {
+  switch (error.code) {
+    case 'PROVIDER_NOT_FOUND':
+      return { status: 403, error: 'Provider not found', code: error.code }
+    case 'INVALID_AMOUNT':
+      return { status: 400, error: 'Top-up amount must be R100, R200, or R500.', code: error.code }
+    case 'PROVIDER_PHONE_MISSING':
+      return {
+        status: 400,
+        error: 'A mobile number is required on your provider profile to create a Pay@ link.',
+        code: error.code,
+      }
+    case 'DUPLICATE_INTENT':
+      return {
+        status: 409,
+        error: 'A pending Pay@ top-up already exists for this amount. Use your active link or wait for it to expire.',
+        code: error.code,
+      }
+    case 'REFERENCE_GENERATION_FAILED':
+      return { status: 500, error: 'Could not generate a payment reference right now. Please try again.', code: error.code }
+    default:
+      return { status: 400, error: 'Could not create top-up payment intent.', code: error.code }
+  }
+}
+
 function parseAmountCents(body: CreateTopUpIntentBody) {
   if (typeof body.amountCents === 'number' && Number.isFinite(body.amountCents)) {
     return body.amountCents
@@ -108,8 +133,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     if (error instanceof ProviderCreditPaymentIntentError) {
-      const status = error.code === 'PROVIDER_NOT_FOUND' ? 403 : 400
-      return NextResponse.json({ error: error.message, code: error.code }, { status })
+      const mapped = mapProviderIntentError(error)
+      return NextResponse.json({ error: mapped.error, code: mapped.code }, { status: mapped.status })
     }
 
     if (error instanceof PayatConfigError) {
