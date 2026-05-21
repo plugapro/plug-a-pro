@@ -129,6 +129,46 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('allows signed provider job alias routes without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const urls = [
+      'http://localhost/provider/jobs/jr-1/execute?token=signed-token',
+      'http://localhost/provider/jobs/jr-1/complete?token=signed-token',
+      'http://localhost/provider/job/signed-token',
+      'http://localhost/provider/lead/signed-token',
+      'http://localhost/provider/handoff/signed-token',
+    ]
+
+    for (const url of urls) {
+      const res = await proxy(new NextRequest(url))
+      expect(res.status).toBe(200)
+      expect(res.headers.get('location')).toBeNull()
+    }
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows unsigned legacy lead routes to render controlled recovery copy without forcing login', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/leads/legacy-lead-id'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps non-canonical nested legacy lead routes protected by login', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/leads/legacy-lead-id/extra'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/sign-in?callbackUrl=%2Fbookings&next=%2Fbookings',
+    )
+  })
+
   it('keeps account-level provider routes behind OTP login', async () => {
     const { proxy } = await import('../proxy')
 

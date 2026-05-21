@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
-    lead: { findUnique: vi.fn() },
+    lead: { findUnique: vi.fn(), findFirst: vi.fn() },
     leadUnlock: { findUnique: vi.fn() },
   },
 }))
@@ -46,6 +46,8 @@ describe('provider lead access tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
+    mockDb.lead.findFirst.mockReset()
+    mockDb.lead.findFirst.mockResolvedValue(null)
     mockDb.leadUnlock.findUnique.mockReset()
     mockDb.leadUnlock.findUnique.mockResolvedValue(null)
     delete process.env.AUTH_SECRET
@@ -93,6 +95,61 @@ describe('provider lead access tokens', () => {
         scopes: expect.arrayContaining(['view_job', 'confirm_arrival', 'contact_customer']),
       },
     })
+  })
+
+  it('builds a scoped accepted-job handover URL from jobRequest + provider', async () => {
+    const { getProviderSignedJobHandoverUrlForJobRequest, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    mockDb.lead.findFirst.mockResolvedValueOnce({
+      id: 'lead-2',
+      providerId: 'provider-1',
+      jobRequestId: 'job-request-2',
+      provider: { phone: '+27820000000' },
+      providerAcceptedAt: new Date('2026-05-21T08:00:00.000Z'),
+      customerSelectedAt: new Date('2026-05-21T07:30:00.000Z'),
+      sentAt: new Date('2026-05-21T07:00:00.000Z'),
+    })
+
+    const url = await getProviderSignedJobHandoverUrlForJobRequest({
+      jobRequestId: 'job-request-2',
+      providerId: 'provider-1',
+    })
+
+    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/provider\/jobs\/job-request-2\/handover\?token=/)
+    const token = decodeURIComponent(url!.split('token=')[1])
+    expect(verifyProviderLeadAccessToken(token)).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-2',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-2',
+      },
+    })
+    expect(mockDb.lead.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: {
+            in: [
+              'CUSTOMER_SELECTED',
+              'PROVIDER_ACCEPTED',
+              'CREDIT_REQUIRED',
+              'CREDIT_APPLIED',
+              'ACCEPTED',
+              'ACCEPTED_LOCKED',
+            ],
+          },
+        }),
+      }),
+    )
+  })
+
+  it('returns null for jobRequest/provider handover URLs when no eligible lead exists', async () => {
+    const { getProviderSignedJobHandoverUrlForJobRequest } = await import('@/lib/provider-lead-access')
+    mockDb.lead.findFirst.mockResolvedValueOnce(null)
+
+    await expect(getProviderSignedJobHandoverUrlForJobRequest({
+      jobRequestId: 'job-request-missing',
+      providerId: 'provider-1',
+    })).resolves.toBeNull()
   })
 
   it('rejects tampered tokens', async () => {

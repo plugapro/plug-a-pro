@@ -65,9 +65,11 @@ const PUBLIC_PATHS = [
                                     // Must remain public so the page-level token-redirect logic can execute.
 ]
 
-const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/
+const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update|execute|complete)$/
+const PUBLIC_SIGNED_PROVIDER_TOKEN_ROUTE = /^\/provider\/(?:handoff|job|lead)\/[^/]+$/
 const PUBLIC_CUSTOMER_HANDOVER_ROUTE = /^\/customer\/requests\/[^/]+\/provider-handover$/
 const PUBLIC_SIGNED_PROVIDER_API_ROUTE = /^\/api\/provider\/leads\/[^/]+\/contact-customer$/
+const PUBLIC_UNSIGNED_LEGACY_LEAD_ROUTE = /^\/leads\/[^/]+$/
 
 // Routes that require provider role
 const PROVIDER_PATHS = ['/provider', '/technician', '/api/provider']
@@ -239,8 +241,10 @@ export async function proxy(request: NextRequest) {
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_SIGNED_JOB_ROUTE.test(pathname)) return true
+  if (PUBLIC_SIGNED_PROVIDER_TOKEN_ROUTE.test(pathname)) return true
   if (PUBLIC_CUSTOMER_HANDOVER_ROUTE.test(pathname)) return true
   if (PUBLIC_SIGNED_PROVIDER_API_ROUTE.test(pathname)) return true
+  if (PUBLIC_UNSIGNED_LEGACY_LEAD_ROUTE.test(pathname)) return true
 
   return PUBLIC_PATHS.some((path) => {
     if (path === '/') return pathname === '/'

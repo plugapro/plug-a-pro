@@ -2990,25 +2990,31 @@ async function handleProviderJobFlow(
     }
 
     // No status change needed (already SCHEDULED); just confirm acceptance.
-    // Prefer a scoped one-job WhatsApp link when this scheduled job originated
-    // from a lead; fall back to the authenticated portal for legacy bookings.
-  const acceptedLeadId = job.booking.match.jobRequest.leads.find((lead) => lead.providerId === job.providerId)?.id
-    const fallbackJobUrl = getPublicAppUrl(`/provider/jobs/${jobId}`)
+    // Send only a signed no-login job link. Never send protected provider URLs
+    // in WhatsApp CTAs.
+    const acceptedLeadId = job.booking.match.jobRequest.leads.find((lead) => lead.providerId === job.providerId)?.id
     const jobUrl = acceptedLeadId
       ? await (await import('./provider-lead-access')).getProviderSignedJobHandoverUrl({
           leadId: acceptedLeadId,
           providerId: job.providerId,
           jobRequestId: job.booking.match.jobRequest.id,
           providerPhone: job.provider.phone,
-        }) ?? fallbackJobUrl
-      : fallbackJobUrl
-    await sendCtaUrl(
-      ctx.phone,
-      `✅ *Job Confirmed!*\n\nYou can manage this job from the link below. No login is needed when a secure job link is available.`,
-      ctaLabelFor('view_job'),
-      jobUrl,
-      { footer: acceptedLeadId ? 'Secure link for this accepted job only.' : 'Sign in may be required for this booking.' }
-    )
+        })
+      : null
+    if (jobUrl) {
+      await sendCtaUrl(
+        ctx.phone,
+        '✅ *Job Confirmed!*\n\nYou can manage this accepted job from the secure link below.',
+        ctaLabelFor('view_job'),
+        jobUrl,
+        { footer: 'Secure link for this accepted job only.' }
+      )
+    } else {
+      await sendText(
+        ctx.phone,
+        "✅ *Job Confirmed!*\n\nWe couldn't generate your secure job link right now. Reply *menu* to continue in WhatsApp and request a fresh job link."
+      )
+    }
     return { nextStep: 'done' }
   }
 
@@ -3137,12 +3143,28 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
     const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
       weekday: 'short', day: 'numeric', month: 'short',
     })
-    await sendCtaUrl(
-      result.provider.phone,
-      `✅ *Booking confirmed — ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
-      ctaLabelFor('view_job'),
-      getPublicAppUrl('/technician')
-    ).catch(() => {})
+    let providerJobUrl: string | null = null
+    if (result.jobRequestId) {
+      providerJobUrl = await (await import('./provider-lead-access')).getProviderSignedJobHandoverUrlForJobRequest({
+        jobRequestId: result.jobRequestId,
+        providerId: result.provider.id,
+        providerPhone: result.provider.phone,
+      }).catch(() => null)
+    }
+    if (providerJobUrl) {
+      await sendCtaUrl(
+        result.provider.phone,
+        `✅ *Booking confirmed — ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen your secure job link to view full details and update status.`,
+        ctaLabelFor('view_job'),
+        providerJobUrl,
+        { footer: 'Secure link for this accepted job only.' }
+      ).catch(() => {})
+    } else {
+      await sendText(
+        result.provider.phone,
+        `✅ *Booking confirmed — ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nReply *menu* to continue in WhatsApp and request your secure job link.`
+      ).catch(() => {})
+    }
     const { sendProviderAssigned } = await import('./whatsapp')
     await sendProviderAssigned({
       bookingId: result.bookingId,

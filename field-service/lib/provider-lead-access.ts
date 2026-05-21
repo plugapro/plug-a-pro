@@ -41,6 +41,15 @@ export const ACCEPTED_JOB_SCOPES: ProviderLeadAccessScope[] = [
   'contact_customer',
 ]
 
+const JOB_HANDOVER_ELIGIBLE_LEAD_STATUSES = [
+  'CUSTOMER_SELECTED',
+  'PROVIDER_ACCEPTED',
+  'CREDIT_REQUIRED',
+  'CREDIT_APPLIED',
+  'ACCEPTED',
+  'ACCEPTED_LOCKED',
+] as const
+
 type ProviderLeadTokenPayload = {
   v: 1
   leadId: string
@@ -257,6 +266,47 @@ export async function getProviderSignedJobHandoverUrlByLeadId(leadId: string) {
     providerId: lead.providerId,
     jobRequestId: lead.jobRequestId,
     providerPhone: lead.provider.phone,
+  })
+}
+
+export async function getProviderSignedJobHandoverUrlForJobRequest(params: {
+  jobRequestId: string
+  providerId: string
+  providerPhone?: string | null
+  expiresAt?: Date
+}) {
+  const lead = await db.lead.findFirst({
+    where: {
+      jobRequestId: params.jobRequestId,
+      providerId: params.providerId,
+      status: {
+        in: [...JOB_HANDOVER_ELIGIBLE_LEAD_STATUSES],
+      },
+    },
+    select: {
+      id: true,
+      providerId: true,
+      jobRequestId: true,
+      provider: { select: { phone: true } },
+      providerAcceptedAt: true,
+      customerSelectedAt: true,
+      sentAt: true,
+    },
+    orderBy: [
+      { providerAcceptedAt: 'desc' },
+      { customerSelectedAt: 'desc' },
+      { sentAt: 'desc' },
+    ],
+  })
+
+  if (!lead) return null
+
+  return getProviderSignedJobHandoverUrl({
+    leadId: lead.id,
+    providerId: lead.providerId,
+    jobRequestId: lead.jobRequestId,
+    providerPhone: params.providerPhone ?? lead.provider.phone,
+    expiresAt: params.expiresAt,
   })
 }
 

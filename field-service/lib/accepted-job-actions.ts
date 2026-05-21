@@ -16,7 +16,7 @@ import {
 } from './provider-lead-access'
 import { ctaLabelFor } from './whatsapp-copy'
 import { transitionJob } from './jobs'
-import { getPublicAppUrl } from './provider-credit-copy'
+import { createReviewUrl } from './review-access'
 
 type AcceptedLeadAction = 'customer_contacted' | 'on_the_way' | 'arrived' | 'started' | 'completed'
 type SaveArrivalErrorCode =
@@ -594,8 +594,10 @@ export async function markJobComplete(params: {
     })
   }
 
-  const appUrl = getPublicAppUrl()
-  const reviewUrl = booking ? `${appUrl}/bookings/${booking.id}/rate` : null
+  const reviewUrl = createReviewUrl({
+    matchId: match.id,
+    reviewerType: 'CUSTOMER',
+  })
 
   const { notifyCustomerReviewRequested } = await import('./client-pwa-submission-notifications')
   await notifyCustomerReviewRequested({
