@@ -27,6 +27,12 @@ async function signIn(page: Page) {
     await page.waitForURL(/\/admin\/?/, { timeout: 15_000 })
     return
   }
+  if (!process.env.E2E_ADMIN_EMAIL || !process.env.E2E_ADMIN_PASSWORD) {
+    throw new Error(
+      'E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD must be set for authenticated admin tests. ' +
+      'Set E2E_ADMIN_SESSION_COOKIE to skip credential-based auth.'
+    )
+  }
   const res = await page.request.post('/api/auth/session', {
     data: { email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD },
   })

@@ -60,9 +60,9 @@ test('payment webhook endpoint rejects unsigned payloads', async ({ request }) =
     headers: { 'content-type': 'application/json' },
     data: JSON.stringify({ booking_id: 'test', status: 'COMPLETE' }),
   })
-  // A missing or invalid signature returns 401; any non-200 response is
-  // acceptable — we only need to confirm unsigned webhooks are never processed.
-  expect(res.status()).not.toBe(200)
+  // The handler returns 401 when the HMAC signature is missing or invalid —
+  // see app/api/webhooks/payments/route.ts, verifyWebhookSignature branch.
+  expect(res.status()).toBe(401)
 })
 
 // ─── Optional smoke — invoice PDF for a completed booking ────────────────────
