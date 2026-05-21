@@ -204,6 +204,42 @@ describe('booking detail loaders', () => {
     }
   })
 
+  it('recovers a scheduled job load when booking relation is missing from the first include', async () => {
+    const bookedJob = makeProviderJobDetailRow({ bookingId: 'booking_1', id: 'job_1' })
+    const fallbackRow = {
+      id: 'job_1',
+      providerId: 'provider_1',
+      status: 'SCHEDULED',
+      bookingId: 'booking_1',
+      booking: null,
+      statusHistory: [],
+      extras: [],
+      photos: [],
+    } as any
+
+    mockDb.job.findUnique.mockImplementation(async (query: any) => {
+      if (query?.select) return { id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED', bookingId: 'booking_1' }
+      return fallbackRow
+    })
+    mockDb.booking.findUnique.mockResolvedValue(bookedJob.booking as any)
+
+    const { getProviderJobDetailForViewer } = await import('@/lib/booking-detail-loaders')
+    const result = await getProviderJobDetailForViewer({
+      route: '/provider/jobs/[jobId]',
+      viewerUserId: 'user_1',
+      viewerProviderId: 'provider_1',
+      jobId: 'job_1',
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.job.booking).toBeTruthy()
+      expect(result.data.job.booking.id).toBe('booking_1')
+      expect(result.data.customerFirstName).toBe('Sarah')
+      expect(result.data.scheduledDateLabel).toContain('00:00')
+    }
+  })
+
   it('formats date safely when scheduledWindow is missing and start time exists', async () => {
     mockDb.job.findUnique
       .mockResolvedValueOnce({ id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED' })

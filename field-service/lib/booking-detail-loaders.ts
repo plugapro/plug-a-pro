@@ -39,6 +39,15 @@ const providerJobInclude = {
   photos: { orderBy: { createdAt: 'asc' } },
 } as const
 
+const providerBookingInclude = providerJobInclude.booking.include
+
+const providerBookingSelect = {
+  match: {
+    include: providerBookingInclude.match.include,
+  },
+  payment: providerBookingInclude.payment,
+} as const
+
 const customerBookingInclude = {
   match: {
     include: {
@@ -64,6 +73,7 @@ const customerBookingInclude = {
 
 type ProviderJobRow = Prisma.JobGetPayload<{ include: typeof providerJobInclude }>
 type CustomerBookingRow = Prisma.BookingGetPayload<{ include: typeof customerBookingInclude }>
+type ProviderBookingRow = Prisma.BookingGetPayload<{ include: typeof providerBookingSelect }>
 
 type ProviderJobDetailData = {
   job: ProviderJobRow
@@ -336,8 +346,39 @@ export async function getProviderJobDetailForViewer(params: {
       where: { id: identity.id },
       include: providerJobInclude,
     })
+    const bookingFromInclude = job?.booking
 
-    if (!job || !job.booking) {
+    if (!job) {
+      // We resolved a matching job row, but it disappeared before detail hydration.
+      // This can happen under eventual consistency; treat it as a safe access denial.
+      logDetailFailure({
+        route: params.route,
+        viewerRole: 'provider',
+        viewerId: params.viewerUserId,
+        viewerProviderId: params.viewerProviderId,
+        id: receivedId,
+        resolvedIdType: resolution.resolvedIdType,
+        resolvedJobId: identity.id,
+        jobStatus: identity.status,
+        reason: 'not_found',
+        stage: 'query',
+        durationMs: Date.now() - startedAt,
+      })
+      return { ok: false, error: 'not_found' }
+    }
+
+    // Some scheduled jobs can arrive with an incomplete nested booking join depending on
+    // the query planner / RLS behavior. Retry the booking row directly before
+    // treating the transition to detail as a hard failure.
+    let booking: ProviderBookingRow | null = bookingFromInclude ?? null
+    if (!booking) {
+      booking = await db.booking.findUnique({
+        where: { id: job.bookingId },
+        include: providerBookingSelect,
+      })
+    }
+
+    if (!booking) {
       logDetailFailure({
         route: params.route,
         viewerRole: 'provider',
@@ -354,9 +395,14 @@ export async function getProviderJobDetailForViewer(params: {
       return { ok: false, error: 'missing_related_data' }
     }
 
-    const booking = job.booking
-    const customerName = booking.match?.jobRequest?.customer?.name ?? 'Customer'
-    const address = booking.match?.jobRequest?.address ?? null
+    const hydratedJob = {
+      ...job,
+      booking,
+    } as ProviderJobRow
+
+    const bookingRow = hydratedJob.booking
+    const customerName = bookingRow.match?.jobRequest?.customer?.name ?? 'Customer'
+    const address = bookingRow.match?.jobRequest?.address ?? null
 
     const addressDisplay = normalizeAddress(address)
     const mapQuery = addressDisplay
@@ -381,8 +427,8 @@ export async function getProviderJobDetailForViewer(params: {
     return {
       ok: true,
       data: {
-        job,
-        booking,
+        job: hydratedJob,
+        booking: bookingRow,
         customerFirstName: firstName(customerName),
         addressDisplay,
         mapQuery,

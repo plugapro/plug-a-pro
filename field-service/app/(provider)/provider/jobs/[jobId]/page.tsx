@@ -4,7 +4,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { notFound, redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
@@ -46,7 +46,16 @@ export default async function JobDetailPage({
   })
 
   if (!detail.ok) {
-    if (detail.error === 'not_found' || detail.error === 'unauthorized') notFound()
+    if (process.env.NODE_ENV !== 'production') {
+      // Keep provider-facing UX consistent while surfacing the exact blocker in local
+      // logs so support can quickly distinguish missing jobs from permission and API issues.
+      console.warn('[provider/jobs] detail load blocked', {
+        route: '/provider/jobs/[jobId]',
+        jobId: id,
+        reason: detail.error,
+      })
+    }
+
     return (
       <div className="min-h-screen px-[18px] pt-[80px] pb-10">
         <div className="rounded-[20px] bg-card p-5 shadow-[inset_0_0_0_1px_var(--border)]">
@@ -76,11 +85,11 @@ export default async function JobDetailPage({
   const hasOpenDispute = disputes.some((dispute) => ['OPEN', 'UNDER_REVIEW'].includes(dispute.status))
 
   const serviceName = b.match?.jobRequest?.category ?? 'Service'
-  const canShowCustomerPhone = new Set([
+  const canShowCustomerPhone = new Set<string>([
     ...PROVIDER_UPCOMING_JOB_STATUSES,
     ...PROVIDER_IN_PROGRESS_JOB_STATUSES,
     ...PROVIDER_COMPLETED_JOB_STATUSES,
-  ]).has(job.status as (typeof PROVIDER_UPCOMING_JOB_STATUSES)[number])
+  ]).has(job.status)
 
   const customerPhone = canShowCustomerPhone ? b.match?.jobRequest?.customer?.phone : null
 
