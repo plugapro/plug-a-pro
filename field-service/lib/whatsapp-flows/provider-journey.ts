@@ -1877,15 +1877,19 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'pj_redeem_voucher_awaiting_code' }
   }
 
-  const result = await redeemVoucher(provider.id, rawCode)
+  try {
+    const result = await redeemVoucher(provider.id, rawCode)
 
-  if (result.ok) {
-    await sendText(
-      ctx.phone,
-      `✅ Voucher redeemed successfully. 1 credit has been added to your account.\n\nReply *credits* to view your balance.`,
-    )
-  } else {
-    await sendText(ctx.phone, mapVoucherRedemptionErrorToMessage(result.code))
+    if (result.ok) {
+      await sendText(
+        ctx.phone,
+        `✅ Voucher redeemed successfully. 1 credit has been added to your account.\n\nReply *credits* to view your balance.`,
+      )
+    } else {
+      await sendText(ctx.phone, mapVoucherRedemptionErrorToMessage(result.code))
+    }
+  } catch {
+    await sendText(ctx.phone, 'Something went wrong redeeming your voucher. Please try again or reply *menu* for options.')
   }
 
   return { nextStep: 'pj_credits' }
