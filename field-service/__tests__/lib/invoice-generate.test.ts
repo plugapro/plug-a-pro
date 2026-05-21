@@ -163,5 +163,8 @@ describe('generateInvoicePdf()', () => {
     await generateInvoicePdf(BOOKING_ID)
 
     expect(mockRenderToBuffer).toHaveBeenCalledTimes(1)
+    const renderedElement = mockRenderToBuffer.mock.calls[0][0]
+    // completedAt is 2026-05-19 → en-ZA locale → '19 May 2026'
+    expect(renderedElement.props.serviceDate).toBe('19 May 2026')
   })
 })
