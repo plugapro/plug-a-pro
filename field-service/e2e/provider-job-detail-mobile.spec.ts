@@ -11,9 +11,11 @@ async function openFirstInProgressJob(page: Page) {
 
   const firstCard = inProgressSection.locator('a[href^="/provider/jobs/"]').first()
   await expect(firstCard).toBeVisible()
+  const href = await firstCard.getAttribute('href')
   await firstCard.click()
 
   await expect(page.locator('text=Could not load this job right now.')).toHaveCount(0)
+  return href
 }
 
 test('mobile: provider can open in-progress jobs from Home and Jobs without detail loader failure', async ({ page }, testInfo) => {
@@ -23,11 +25,21 @@ test('mobile: provider can open in-progress jobs from Home and Jobs without deta
   await page.goto(PROVIDER_HOME_URL!)
   test.skip(page.url().includes('/provider-sign-in'), 'Provider auth session required for this regression test')
 
-  await openFirstInProgressJob(page)
+  const homeInProgressHref = await openFirstInProgressJob(page)
+  expect(homeInProgressHref).toBeTruthy()
 
   await page.goto(PROVIDER_JOBS_URL!)
   const inProgressSection = page.locator('section').filter({ hasText: /In progress/i }).first()
   await expect(inProgressSection.locator('text=Scheduled')).toHaveCount(0)
+  const upcomingSection = page.locator('section').filter({ hasText: /Upcoming/i }).first()
+
+  if (homeInProgressHref) {
+    await expect(upcomingSection.locator(`a[href="${homeInProgressHref}"]`)).toHaveCount(0)
+    await expect(inProgressSection.locator(`a[href="${homeInProgressHref}"]`)).toHaveCount(1)
+    await inProgressSection.locator(`a[href="${homeInProgressHref}"]`).click()
+    await expect(page.locator('text=Could not load this job right now.')).toHaveCount(0)
+    return
+  }
 
   await openFirstInProgressJob(page)
 })
