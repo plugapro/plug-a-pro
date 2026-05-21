@@ -8,12 +8,14 @@ const {
   mockAdminUserUpdate,
   mockAdminUserCreate,
   mockRequireRole,
+  mockRevalidatePath,
 } = vi.hoisted(() => ({
   mockAdminUserFindUnique: vi.fn(),
   mockAdminUserCount: vi.fn(),
   mockAdminUserUpdate: vi.fn(),
   mockAdminUserCreate: vi.fn(),
   mockRequireRole: vi.fn(),
+  mockRevalidatePath: vi.fn(),
 }))
 
 const mockTx = {
@@ -28,7 +30,8 @@ const mockTx = {
 // Transparent pass-through: validates input via schema, calls run(data, mockTx),
 // re-throws any error from run so guard assertions propagate correctly.
 vi.mock('@/lib/crud-action', () => ({
-  crudAction: async ({ run, schema, input }: any) => {
+  crudAction: async ({ run, schema, input }: any) => { // any: CrudActionOptions generics are not needed in the test double
+    // Note: uses schema.parse (throwing) not safeParse; guard tests don't exercise schema validation paths
     const data = schema ? schema.parse(input) : input
     const result = await run(data, mockTx)
     return { ok: true as const, data: result }
@@ -52,7 +55,7 @@ vi.mock('@/lib/auth', () => ({
   })),
 }))
 
-vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('next/cache', () => ({ revalidatePath: mockRevalidatePath }))
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -118,6 +121,7 @@ describe('changeRoleAction', () => {
     expect(mockAdminUserUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'target-admin-id' }, data: { role: 'ADMIN' } }),
     )
+    expect(mockRevalidatePath).toHaveBeenCalledWith('/admin/team')
   })
 
   it('blocks demoting the last OWNER', async () => {
@@ -203,6 +207,7 @@ describe('deactivateAdminAction', () => {
     expect(mockAdminUserUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'target-admin-id' }, data: { active: false } }),
     )
+    expect(mockRevalidatePath).toHaveBeenCalledWith('/admin/team')
   })
 
   it('blocks deactivating the last OWNER', async () => {
@@ -245,6 +250,14 @@ describe('deactivateAdminAction', () => {
       /own account/,
     )
   })
+
+  it('throws NOT_FOUND when admin user does not exist', async () => {
+    const { deactivateAdminAction } = await import('@/app/(admin)/admin/team/actions')
+    mockAdminUserFindUnique.mockResolvedValue(null)
+    await expect(
+      deactivateAdminAction({ adminUserId: 'ghost-id' })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
 })
 
 // ─── revokeAdminAction ────────────────────────────────────────────────────────
@@ -262,11 +275,12 @@ describe('revokeAdminAction', () => {
     expect(mockAdminUserUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'target-admin-id' }, data: { active: false } }),
     )
+    expect(mockRevalidatePath).toHaveBeenCalledWith('/admin/team')
   })
 
   it('blocks revoking the last OWNER', async () => {
     const { revokeAdminAction } = await import('@/app/(admin)/admin/team/actions')
-    mockAdminUserFindUnique.mockResolvedValue({ ...OWNER_RECORD, acceptedAt: new Date() })
+    mockAdminUserFindUnique.mockResolvedValue(OWNER_RECORD)
     mockAdminUserCount.mockResolvedValue(1)
 
     await expectCrudError(
@@ -280,7 +294,6 @@ describe('revokeAdminAction', () => {
     const { revokeAdminAction } = await import('@/app/(admin)/admin/team/actions')
     mockAdminUserFindUnique.mockResolvedValue({
       ...OWNER_RECORD,
-      acceptedAt: new Date(),
       userId: ACTOR.id,
     })
 
@@ -296,7 +309,6 @@ describe('revokeAdminAction', () => {
     mockAdminUserFindUnique.mockResolvedValue({
       ...OWNER_RECORD,
       id: ACTOR.adminUserId,
-      acceptedAt: new Date(),
       userId: 'some-other-supabase-id',
     })
 
@@ -305,5 +317,13 @@ describe('revokeAdminAction', () => {
       'CONFLICT',
       /own account/,
     )
+  })
+
+  it('throws NOT_FOUND when admin user does not exist', async () => {
+    const { revokeAdminAction } = await import('@/app/(admin)/admin/team/actions')
+    mockAdminUserFindUnique.mockResolvedValue(null)
+    await expect(
+      revokeAdminAction({ adminUserId: 'ghost-id' })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 })
