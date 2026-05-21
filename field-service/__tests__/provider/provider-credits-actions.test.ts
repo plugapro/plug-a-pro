@@ -451,4 +451,231 @@ describe('provider credits server actions', () => {
       providerCellphone: '+27821234567',
     })
   })
+
+  describe('activity label and ref formatting', () => {
+    async function arrangeWalletWithEntry(
+      entryType: string,
+      referenceType: string,
+      referenceId: string,
+      metadata: Record<string, unknown> = {},
+    ) {
+      await arrangeProvider()
+      const { getProviderWalletBalance, getProviderWalletLedgerEntries } = await import(
+        '../../lib/provider-wallet'
+      )
+      ;(getProviderWalletBalance as any).mockResolvedValue({
+        providerId: 'provider-1',
+        paidCreditBalance: 2,
+        promoCreditBalance: 1,
+        totalCreditBalance: 3,
+        status: 'ACTIVE',
+      })
+      ;(getProviderWalletLedgerEntries as any).mockResolvedValue([
+        {
+          id: 'entry-abc',
+          entryType,
+          creditType: 'PROMO',
+          amountCredits: 1,
+          balanceAfterPaidCredits: 2,
+          balanceAfterPromoCredits: 1,
+          referenceType,
+          referenceId,
+          createdAt: new Date('2026-05-21T10:00:00.000Z'),
+          metadata,
+        },
+      ])
+    }
+
+    it('VOUCHER_REDEMPTION shows "Voucher redeemed" with campaign in ref', async () => {
+      await arrangeWalletWithEntry(
+        'VOUCHER_REDEMPTION',
+        'voucher',
+        'voucher-id-00000001',
+        { campaignCode: 'PILOT_MAY26', batchName: 'Pilot Flyer May 2026' },
+      )
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+      expect(wallet.recentActivity[0].title).toBe('Voucher redeemed')
+      expect(wallet.recentActivity[0].ref).toContain('PILOT_MAY26')
+      expect(wallet.recentActivity[0].delta).toBe(1)
+      expect(wallet.recentActivity[0].entryType).toBe('VOUCHER_REDEMPTION')
+    })
+
+    it('LEAD_UNLOCK_DEBIT shows "Lead accepted" with category in ref', async () => {
+      await arrangeWalletWithEntry(
+        'LEAD_UNLOCK_DEBIT',
+        'lead_unlock',
+        'unlock-id-00000001',
+        { jobCategory: 'Plumbing', jobTitle: 'Blocked drain', leadRef: '0000001' },
+      )
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+      expect(wallet.recentActivity[0].title).toBe('Lead accepted')
+      expect(wallet.recentActivity[0].ref).toContain('Plumbing')
+      expect(wallet.recentActivity[0].delta).toBe(-1)
+    })
+
+    it('PROMO_CREDIT shows "Starter credits added" with welcome allocation ref', async () => {
+      await arrangeWalletWithEntry(
+        'PROMO_CREDIT',
+        'provider_promo_award',
+        'award-id-00000001',
+        { awardType: 'MOBILE_VERIFIED' },
+      )
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+      expect(wallet.recentActivity[0].title).toBe('Starter credits added')
+      expect(wallet.recentActivity[0].ref).toBe('Welcome allocation')
+      expect(wallet.recentActivity[0].delta).toBe(1)
+    })
+
+    it('PROMO_EXPIRY shows "Starter credits expired" as a debit', async () => {
+      await arrangeWalletWithEntry(
+        'PROMO_EXPIRY',
+        'system',
+        'ref-id-00000001',
+        {},
+      )
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+      expect(wallet.recentActivity[0].title).toBe('Starter credits expired')
+      expect(wallet.recentActivity[0].delta).toBe(-1)
+    })
+  })
+
+  describe('getProviderWalletLedgerEntry', () => {
+    it('returns full transaction detail for the authenticated provider', async () => {
+      const { db } = await arrangeProvider()
+      ;(db as any).walletLedgerEntry = {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'entry-xyz',
+          entryType: 'VOUCHER_REDEMPTION',
+          creditType: 'PROMO',
+          amountCredits: 3,
+          balanceAfterPaidCredits: 0,
+          balanceAfterPromoCredits: 3,
+          referenceType: 'voucher',
+          referenceId: 'voucher-id-00000002',
+          description: 'Voucher redemption — 3 credits',
+          source: 'voucher_redemption',
+          createdAt: new Date('2026-05-21T10:00:00.000Z'),
+          metadata: {
+            campaignCode: 'PILOT_MAY26',
+            batchName: 'Pilot Flyer May 2026',
+            balanceBeforePaidCredits: 0,
+            balanceBeforePromoCredits: 0,
+          },
+        }),
+      }
+
+      const { getProviderWalletLedgerEntry } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const detail = await getProviderWalletLedgerEntry('entry-xyz')
+
+      expect(detail).not.toBeNull()
+      expect(detail!.title).toBe('Voucher redeemed')
+      expect(detail!.signedAmountCredits).toBe(3)
+      expect(detail!.relatedVoucherCampaign).toBe('PILOT_MAY26')
+      expect(detail!.relatedVoucherBatchName).toBe('Pilot Flyer May 2026')
+      expect(detail!.balanceBeforePaidCredits).toBe(0)
+      expect(detail!.balanceAfterPromoCredits).toBe(3)
+    })
+
+    it('returns null when entry does not belong to the authenticated provider', async () => {
+      const { db } = await arrangeProvider()
+      ;(db as any).walletLedgerEntry = {
+        findFirst: vi.fn().mockResolvedValue(null),
+      }
+
+      const { getProviderWalletLedgerEntry } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      await expect(getProviderWalletLedgerEntry('entry-other')).resolves.toBeNull()
+    })
+  })
+
+  describe('getProviderWalletLedgerPage', () => {
+    it('returns first page of items with nextCursor when more exist', async () => {
+      const { db } = await arrangeProvider()
+      const entries = Array.from({ length: 26 }, (_, i) => ({
+        id: `entry-${i}`,
+        entryType: 'LEAD_UNLOCK_DEBIT',
+        creditType: 'PROMO',
+        amountCredits: 1,
+        balanceAfterPaidCredits: 10 - i,
+        balanceAfterPromoCredits: 0,
+        referenceType: 'lead_unlock',
+        referenceId: `unlock-${i}`,
+        createdAt: new Date(`2026-05-21T10:${String(i).padStart(2, '0')}:00.000Z`),
+        metadata: { jobCategory: 'Plumbing' },
+      }))
+      ;(db as any).walletLedgerEntry = {
+        findMany: vi.fn().mockResolvedValue(entries),
+      }
+
+      const { getProviderWalletLedgerPage } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const result = await getProviderWalletLedgerPage({ filter: 'all' })
+
+      expect(result.items).toHaveLength(25)
+      expect(result.nextCursor).toBe('entry-24')
+    })
+
+    it('returns null nextCursor when all items fit in one page', async () => {
+      const { db } = await arrangeProvider()
+      ;(db as any).walletLedgerEntry = {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'entry-0',
+            entryType: 'PROMO_CREDIT',
+            creditType: 'PROMO',
+            amountCredits: 3,
+            balanceAfterPaidCredits: 0,
+            balanceAfterPromoCredits: 3,
+            referenceType: 'provider_promo_award',
+            referenceId: 'award-0',
+            createdAt: new Date('2026-05-21T10:00:00.000Z'),
+            metadata: { awardType: 'MOBILE_VERIFIED' },
+          },
+        ]),
+      }
+
+      const { getProviderWalletLedgerPage } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const result = await getProviderWalletLedgerPage({ filter: 'all' })
+
+      expect(result.items).toHaveLength(1)
+      expect(result.nextCursor).toBeNull()
+    })
+
+    it('passes entryType filter for "used" to the database query', async () => {
+      const { db } = await arrangeProvider()
+      const findMany = vi.fn().mockResolvedValue([])
+      ;(db as any).walletLedgerEntry = { findMany }
+
+      const { getProviderWalletLedgerPage } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      await getProviderWalletLedgerPage({ filter: 'used' })
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            entryType: { in: expect.arrayContaining(['LEAD_UNLOCK_DEBIT']) },
+          }),
+        }),
+      )
+    })
+  })
 })
