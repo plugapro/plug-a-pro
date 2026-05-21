@@ -27,21 +27,26 @@ export type VoucherBatchSummary = {
 
 export async function listVoucherBatchesAction(): Promise<VoucherBatchSummary[]> {
   await requireAdminApi()
-  const batches = await db.voucherBatch.findMany({
-    orderBy: { createdAt: 'desc' },
-    include: {
-      _count: { select: { vouchers: true } },
-      vouchers: {
-        select: { status: true },
-      },
+  const [batches, grouped] = await Promise.all([
+    db.voucherBatch.findMany({ orderBy: { createdAt: 'desc' } }),
+    db.promoVoucher.groupBy({
+      by: ['batchId', 'status'],
+      _count: { id: true },
+    }),
+  ])
+
+  const countsByBatch = grouped.reduce<Record<string, Record<string, number>>>(
+    (acc, row) => {
+      if (!acc[row.batchId]) acc[row.batchId] = {}
+      acc[row.batchId][row.status] = row._count.id
+      return acc
     },
-  })
+    {},
+  )
 
   return batches.map((b) => {
-    const statusCounts = b.vouchers.reduce(
-      (acc, v) => { acc[v.status] = (acc[v.status] ?? 0) + 1; return acc },
-      {} as Record<string, number>,
-    )
+    const s = countsByBatch[b.id] ?? {}
+    const total = Object.values(s).reduce((sum, n) => sum + n, 0)
     return {
       id: b.id,
       name: b.name,
@@ -51,11 +56,11 @@ export async function listVoucherBatchesAction(): Promise<VoucherBatchSummary[]>
       expiresAt: b.expiresAt?.toISOString() ?? null,
       createdAt: b.createdAt.toISOString(),
       stats: {
-        total: b._count.vouchers,
-        active: statusCounts['ACTIVE'] ?? 0,
-        redeemed: statusCounts['REDEEMED'] ?? 0,
-        cancelled: statusCounts['CANCELLED'] ?? 0,
-        expired: statusCounts['EXPIRED'] ?? 0,
+        total,
+        active: s['ACTIVE'] ?? 0,
+        redeemed: s['REDEEMED'] ?? 0,
+        cancelled: s['CANCELLED'] ?? 0,
+        expired: s['EXPIRED'] ?? 0,
       },
     }
   })
@@ -86,6 +91,6 @@ export async function cancelVoucherAction(input: z.infer<typeof CancelVoucherSch
       return updated
     },
   })
-  revalidatePath('/admin/vouchers')
+  if (result.ok) revalidatePath('/admin/vouchers')
   return result
 }

@@ -14,6 +14,7 @@ import {
   MapPin,
   Sparkles,
   Star,
+  Tag,
   ToggleLeft,
   ToggleRight,
   Wallet,
@@ -493,6 +494,7 @@ export default async function ProviderHomePage() {
         <section className="bg-card rounded-[24px] shadow-[inset_0_0_0_1px_var(--border)] overflow-hidden divide-y divide-[var(--border)]">
           {[
             { href: '/provider/credits', icon: <Wallet size={18} />, label: 'Top up / view credits', hue: 'var(--brand-purple)' },
+            { href: '/provider/voucher', icon: <Tag size={18} />, label: 'Redeem voucher code', hue: 'var(--color-teal)' },
             { href: '/provider/earnings', icon: <Coins size={18} />, label: 'Earnings', hue: 'var(--color-teal)' },
             { href: termsUrl, icon: <Clock3 size={18} />, label: 'Credits terms & rules', hue: 'var(--ink-mute)' },
           ].map(({ href, icon, label, hue }) => (

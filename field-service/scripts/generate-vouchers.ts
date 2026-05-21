@@ -88,13 +88,14 @@ await db.$transaction(async (tx) => {
   console.log(`Batch ID: ${batch.id}`)
 })
 
-// Write CSV — raw codes only appear here
+// Write CSV — raw codes only appear here. All fields quoted for RFC 4180 safety.
+const csvQuote = (v: string) => `"${v.replace(/"/g, '""')}"`
 const out = createWriteStream(outFile)
 out.write('code,campaign_name,credit_amount,expires_at,created_at\n')
 const createdAt = new Date().toISOString()
 for (const code of rawCodes) {
   const expires = expiresAt?.toISOString() ?? ''
-  out.write(`${code},${campaignCode},1,${expires},${createdAt}\n`)
+  out.write(`${csvQuote(code)},${csvQuote(campaignCode)},1,${csvQuote(expires)},${csvQuote(createdAt)}\n`)
 }
 out.end()
 

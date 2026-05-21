@@ -1,5 +1,5 @@
 import { db } from './db'
-import { voucherCodeToHash, type VoucherRedemptionResult } from './vouchers'
+import { voucherCodeToHash, VOUCHER_CODE_REGEX, type VoucherRedemptionResult } from './vouchers'
 import { creditVoucherRedemptionInTransaction } from './provider-wallet'
 
 /**
@@ -22,6 +22,12 @@ export async function redeemVoucher(
   providerId: string,
   rawCode: string,
 ): Promise<VoucherRedemptionResult> {
+  // Reject garbage input before any DB call
+  const normalized = rawCode.replace(/\s+/g, '').toUpperCase()
+  if (!VOUCHER_CODE_REGEX.test(normalized)) {
+    return { ok: false, code: 'VOUCHER_NOT_FOUND', message: 'That voucher code is invalid or unavailable.' } as const
+  }
+
   // Hash before any DB call — raw code must not appear in query logs
   const codeHash = voucherCodeToHash(rawCode)
 
@@ -47,34 +53,21 @@ export async function redeemVoucher(
       return { ok: false, code: 'VOUCHER_NOT_FOUND', message: 'That voucher code is invalid or unavailable.' } as const
     }
 
-    // 3. Validate voucher state
+    // 3. Validate voucher state — check CANCELLED before maxRedemptions to avoid information leak
     if (voucher.status === 'REDEEMED') {
       return { ok: false, code: 'VOUCHER_ALREADY_REDEEMED', message: 'That voucher has already been redeemed.' } as const
     }
-    if (voucher.redemptionCount >= voucher.maxRedemptions) {
-      return { ok: false, code: 'VOUCHER_MAX_REDEMPTIONS_REACHED', message: 'That voucher code is no longer available.' } as const
-    }
     if (voucher.status === 'CANCELLED') {
       return { ok: false, code: 'VOUCHER_CANCELLED', message: 'That voucher code is invalid or unavailable.' } as const
+    }
+    if (voucher.redemptionCount >= voucher.maxRedemptions) {
+      return { ok: false, code: 'VOUCHER_MAX_REDEMPTIONS_REACHED', message: 'That voucher code is no longer available.' } as const
     }
     if (voucher.status === 'EXPIRED' || (voucher.expiresAt && voucher.expiresAt < new Date())) {
       return { ok: false, code: 'VOUCHER_EXPIRED', message: 'That voucher code has expired.' } as const
     }
 
-    // 4. One-per-provider per campaign: check if this provider already redeemed any voucher from this campaign
-    const existingRedemption = await tx.promoVoucher.findFirst({
-      where: {
-        redeemedByProviderId: providerId,
-        batch: { campaignCode: voucher.batch.campaignCode },
-        status: 'REDEEMED',
-      },
-      select: { id: true },
-    })
-    if (existingRedemption) {
-      return { ok: false, code: 'PROVIDER_ALREADY_REDEEMED_CAMPAIGN', message: 'You have already redeemed a pilot voucher.' } as const
-    }
-
-    // 5. Atomic claim: only succeeds if the voucher is still ACTIVE.
+    // 4. Atomic claim: only succeeds if the voucher is still ACTIVE.
     //    count=0 means a concurrent request already redeemed it.
     const claimed = await tx.promoVoucher.updateMany({
       where: { id: voucher.id, status: 'ACTIVE' },
@@ -88,6 +81,32 @@ export async function redeemVoucher(
     })
     if (claimed.count === 0) {
       return { ok: false, code: 'VOUCHER_ALREADY_REDEEMED', message: 'That voucher has already been redeemed.' } as const
+    }
+
+    // 5. One-per-provider-per-campaign guard — checked AFTER the atomic claim so two concurrent
+    //    requests with different codes from the same campaign cannot both slip through step 4
+    //    before either commits. If a duplicate is found here, roll back this voucher claim.
+    const campaignDuplicate = await tx.promoVoucher.findFirst({
+      where: {
+        redeemedByProviderId: providerId,
+        batch: { campaignCode: voucher.batch.campaignCode },
+        status: 'REDEEMED',
+        id: { not: voucher.id },
+      },
+      select: { id: true },
+    })
+    if (campaignDuplicate) {
+      await tx.promoVoucher.update({
+        where: { id: voucher.id },
+        data: {
+          status: 'ACTIVE',
+          redemptionCount: { decrement: 1 },
+          redeemedByProviderId: null,
+          redeemedByMobile: null,
+          redeemedAt: null,
+        },
+      })
+      return { ok: false, code: 'PROVIDER_ALREADY_REDEEMED_CAMPAIGN', message: 'You have already redeemed a pilot voucher.' } as const
     }
 
     // 6. Credit the wallet — must happen in the same transaction

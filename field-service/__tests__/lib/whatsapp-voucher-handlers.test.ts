@@ -246,6 +246,18 @@ describe('WhatsApp voucher redemption handlers', () => {
       expect(voucherRedemption.redeemVoucher).not.toHaveBeenCalled()
     })
 
+    it('button tap (undefined text) at awaiting_code → re-prompts → does not call redeemVoucher', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+        makeActiveProvider(),
+      )
+      // Simulate a quick-reply button tap: text is undefined
+      const ctx = { ...makeCtx('pj_redeem_voucher_awaiting_code'), reply: { type: 'text' as const, id: 'some_button', text: undefined, title: undefined } }
+      const result = await handleProviderJourneyFlow(ctx as any)
+
+      expect(result.nextStep).toBe('pj_redeem_voucher_awaiting_code')
+      expect(voucherRedemption.redeemVoucher).not.toHaveBeenCalled()
+    })
+
     it('whitespace-only reply → re-prompts → returns pj_redeem_voucher_awaiting_code', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
         makeActiveProvider(),
@@ -257,11 +269,15 @@ describe('WhatsApp voucher redemption handlers', () => {
       expect(voucherRedemption.redeemVoucher).not.toHaveBeenCalled()
     })
 
-    it('valid code, redeemVoucher returns ok:true → sends success message → returns pj_credits', async () => {
+    it('valid code, redeemVoucher returns ok:true → sends success message with credit count → returns pj_credits', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
         makeActiveProvider(),
       )
-      ;(voucherRedemption.redeemVoucher as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true })
+      ;(voucherRedemption.redeemVoucher as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
+        creditsAwarded: 5,
+        ledgerEntryId: 'l_1',
+      })
 
       const result = await handleProviderJourneyFlow(
         makeCtx('pj_redeem_voucher_awaiting_code', 'PAP-7KQ9-M2XD'),
@@ -271,6 +287,10 @@ describe('WhatsApp voucher redemption handlers', () => {
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
         expect.stringContaining('Voucher redeemed successfully'),
+      )
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('5 credits have been added'),
       )
       expect(result.nextStep).toBe('pj_credits')
     })

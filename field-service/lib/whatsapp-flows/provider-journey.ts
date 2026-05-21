@@ -1881,9 +1881,10 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
     const result = await redeemVoucher(provider.id, rawCode)
 
     if (result.ok) {
+      const n = result.creditsAwarded
       await sendText(
         ctx.phone,
-        `✅ Voucher redeemed successfully. 1 credit has been added to your account.\n\nReply *credits* to view your balance.`,
+        `✅ Voucher redeemed successfully. ${n} credit${n === 1 ? ' has' : 's have'} been added to your account.\n\nReply *credits* to view your balance.`,
       )
     } else {
       await sendText(ctx.phone, mapVoucherRedemptionErrorToMessage(result.code))
