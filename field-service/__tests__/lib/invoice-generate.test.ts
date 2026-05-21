@@ -123,7 +123,12 @@ describe('generateInvoicePdf()', () => {
     expect(mockInvoiceUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { bookingId: BOOKING_ID },
-        create: expect.objectContaining({ pdfUrl: BLOB_URL }),
+        create: expect.objectContaining({
+          bookingId: BOOKING_ID,
+          number: expect.stringMatching(/^PAP-\d{4}-ABC12345$/),
+          pdfUrl: BLOB_URL,
+          totalAmount: 1500,
+        }),
         update: expect.objectContaining({ pdfUrl: BLOB_URL }),
       }),
     )
@@ -164,7 +169,7 @@ describe('generateInvoicePdf()', () => {
 
     expect(mockRenderToBuffer).toHaveBeenCalledTimes(1)
     const renderedElement = mockRenderToBuffer.mock.calls[0][0]
-    // completedAt is 2026-05-19 → en-ZA locale → '19 May 2026'
-    expect(renderedElement.props.serviceDate).toBe('19 May 2026')
+    // completedAt is 2026-05-19 → locale-tolerant match
+    expect(renderedElement.props.serviceDate).toMatch(/19.*May.*2026/)
   })
 })
