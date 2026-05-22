@@ -7,6 +7,7 @@ import { normalizePhone } from '@/lib/utils'
 import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import { normaliseLocationDisplayNames } from '@/lib/location-format'
 import type { KycStatus, ProviderStatus } from '@prisma/client'
+import { autoApproveLowRiskCategories } from '@/lib/provider-categories'
 
 const FLAG = 'admin.crud.providers'
 const OPS_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
@@ -278,6 +279,12 @@ export async function setProviderStatusAction(input: SetStatusInput) {
       return { id: data.providerId }
     },
   })
+
+  // Auto-approve LOW-risk categories when provider transitions to ACTIVE
+  if (result.ok && input.status === 'ACTIVE') {
+    await autoApproveLowRiskCategories(input.providerId)
+  }
+
   revalidatePath('/admin/providers')
   revalidatePath('/admin/technicians')
   revalidatePath(`/admin/providers/${input.providerId}`)
@@ -304,6 +311,12 @@ export async function verifyProviderAction(providerId: string) {
       return { id: providerId }
     },
   })
+
+  // verifyProviderAction always transitions to ACTIVE
+  if (result.ok) {
+    await autoApproveLowRiskCategories(providerId)
+  }
+
   revalidatePath(`/admin/providers/${providerId}`)
   revalidatePath(`/admin/technicians/${providerId}`)
   return result
