@@ -61,12 +61,11 @@ async function fetchToken(): Promise<string> {
   try {
     response = await fetch(tokenUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      },
+      body: new URLSearchParams({ grant_type: 'client_credentials' }),
       signal: AbortSignal.timeout(5_000),
     })
   } catch (error) {
