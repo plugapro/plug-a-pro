@@ -19,7 +19,6 @@ export async function resolveInitialApprovalStatus(
   ])
 
   if (provider?.status === 'ACTIVE' && category?.riskTier === CategoryRiskTier.LOW) {
-    console.log('[provider-categories] auto-approved on upsert', { providerId, categorySlug })
     return 'APPROVED'
   }
   return 'PENDING_REVIEW'
@@ -47,26 +46,27 @@ export async function autoApproveLowRiskCategories(providerId: string): Promise<
   const toApprove = pendingRows.filter((r) => lowRiskSlugs.has(r.categorySlug))
   if (toApprove.length === 0) return
 
-  await db.providerCategory.updateMany({
-    where: { id: { in: toApprove.map((r) => r.id) } },
-    data: { approvalStatus: 'APPROVED' },
-  })
-
-  await db.auditLog.createMany({
-    data: toApprove.map((row) => ({
-      actorId: 'system',
-      actorRole: 'SYSTEM',
-      action: 'provider_category.auto_approved',
-      entityType: 'ProviderCategory',
-      entityId: row.id,
-      after: {
-        approvalStatus: 'APPROVED',
-        reason: 'LOW_RISK_CATEGORY',
-        categorySlug: row.categorySlug,
-        providerId,
-      } as object,
-    })),
-  })
+  await db.$transaction([
+    db.providerCategory.updateMany({
+      where: { id: { in: toApprove.map((r) => r.id) } },
+      data: { approvalStatus: 'APPROVED' },
+    }),
+    db.auditLog.createMany({
+      data: toApprove.map((row) => ({
+        actorId: 'system',
+        actorRole: 'SYSTEM',
+        action: 'provider_category.auto_approved',
+        entityType: 'ProviderCategory',
+        entityId: row.id,
+        after: {
+          approvalStatus: 'APPROVED',
+          reason: 'LOW_RISK_CATEGORY',
+          categorySlug: row.categorySlug,
+          providerId,
+        },
+      })),
+    }),
+  ])
 
   console.log('[provider-categories] auto-approved', {
     providerId,
@@ -91,26 +91,27 @@ export async function autoApproveProvidersForCategory(categorySlug: string): Pro
   })
   if (rows.length === 0) return 0
 
-  await db.providerCategory.updateMany({
-    where: { id: { in: rows.map((r) => r.id) } },
-    data: { approvalStatus: 'APPROVED' },
-  })
-
-  await db.auditLog.createMany({
-    data: rows.map((row) => ({
-      actorId: 'system',
-      actorRole: 'SYSTEM',
-      action: 'provider_category.auto_approved',
-      entityType: 'ProviderCategory',
-      entityId: row.id,
-      after: {
-        approvalStatus: 'APPROVED',
-        reason: 'CATEGORY_RISK_TIER_CHANGED_TO_LOW',
-        categorySlug,
-        providerId: row.providerId,
-      } as object,
-    })),
-  })
+  await db.$transaction([
+    db.providerCategory.updateMany({
+      where: { id: { in: rows.map((r) => r.id) } },
+      data: { approvalStatus: 'APPROVED' },
+    }),
+    db.auditLog.createMany({
+      data: rows.map((row) => ({
+        actorId: 'system',
+        actorRole: 'SYSTEM',
+        action: 'provider_category.auto_approved',
+        entityType: 'ProviderCategory',
+        entityId: row.id,
+        after: {
+          approvalStatus: 'APPROVED',
+          reason: 'CATEGORY_RISK_TIER_CHANGED_TO_LOW',
+          categorySlug,
+          providerId: row.providerId,
+        },
+      })),
+    }),
+  ])
 
   console.log('[provider-categories] bulk auto-approved on tier change', {
     categorySlug,
