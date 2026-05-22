@@ -2162,6 +2162,11 @@ enum ProviderStatus {
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 
+enum CategoryRiskTier {
+  LOW
+  STANDARD
+}
+
 model Category {
   id                  String                        @id @default(cuid())
   slug                String                        @unique
@@ -2171,6 +2176,7 @@ model Category {
   bookingOnAssignment Boolean                       @default(false)
   regulated           Boolean                       @default(false)
   sortOrder           Int                           @default(0)
+  riskTier            CategoryRiskTier              @default(STANDARD)
   createdAt           DateTime                      @default(now())
   updatedAt           DateTime                      @updatedAt
 
