@@ -3,7 +3,6 @@
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
-import { db } from '@/lib/db'
 import { autoApproveProvidersForCategory } from '@/lib/provider-categories'
 import { CategoryRiskTier } from '@prisma/client'
 
@@ -249,11 +248,7 @@ const UpdateCategoryRiskTierSchema = z.object({
 type UpdateRiskTierInput = z.infer<typeof UpdateCategoryRiskTierSchema>
 
 export async function updateCategoryRiskTierAction(input: UpdateRiskTierInput) {
-  // Fetch old tier before the transaction so crudAction can write it to AdminAuditEvent.before
-  const existing = await db.category.findUnique({
-    where: { id: input.categoryId },
-    select: { slug: true, riskTier: true },
-  })
+  let capturedOldTier: string | undefined
 
   const result = await crudAction<UpdateRiskTierInput, { id: string; slug: string; riskTier: string; bulkApproved: number }>({
     entity: 'Category',
@@ -263,7 +258,6 @@ export async function updateCategoryRiskTierAction(input: UpdateRiskTierInput) {
     requiredFlag: 'admin.categories.risk_tier',
     schema: UpdateCategoryRiskTierSchema,
     input,
-    before: existing ? { riskTier: existing.riskTier } : null,
     run: async (data, tx) => {
       const category = await tx.category.findUnique({
         where: { id: data.categoryId },
@@ -272,6 +266,7 @@ export async function updateCategoryRiskTierAction(input: UpdateRiskTierInput) {
       if (!category) {
         throw new CrudActionError('NOT_FOUND', `Category ${data.categoryId} not found.`)
       }
+      capturedOldTier = category.riskTier as string
       if (category.riskTier === data.riskTier) {
         return { id: category.id, slug: category.slug, riskTier: category.riskTier as string, bulkApproved: 0 }
       }
@@ -286,7 +281,7 @@ export async function updateCategoryRiskTierAction(input: UpdateRiskTierInput) {
   })
 
   // Bulk-approve all ACTIVE providers' PENDING_REVIEW rows for this slug when downgrading to LOW
-  if (result.ok && result.data.riskTier === CategoryRiskTier.LOW && existing?.riskTier !== CategoryRiskTier.LOW) {
+  if (result.ok && result.data.riskTier === CategoryRiskTier.LOW && capturedOldTier !== CategoryRiskTier.LOW) {
     const bulkApproved = await autoApproveProvidersForCategory(result.data.slug)
     revalidatePath('/admin/categories')
     return { ...result, data: { ...result.data, bulkApproved } }
