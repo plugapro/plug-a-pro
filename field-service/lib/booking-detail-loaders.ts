@@ -39,6 +39,12 @@ const providerJobInclude = {
   photos: { orderBy: { createdAt: 'asc' } },
 } as const
 
+const providerJobCoreInclude = {
+  statusHistory: { orderBy: { timestamp: 'asc' } },
+  extras: { orderBy: { createdAt: 'desc' } },
+  photos: { orderBy: { createdAt: 'asc' } },
+} as const
+
 const providerBookingInclude = providerJobInclude.booking.include
 
 const providerBookingSelect = {
@@ -72,6 +78,8 @@ const customerBookingInclude = {
 } as const
 
 type ProviderJobRow = Prisma.JobGetPayload<{ include: typeof providerJobInclude }>
+type ProviderJobCoreRow = Prisma.JobGetPayload<{ include: typeof providerJobCoreInclude }>
+type ProviderJobRowOrCore = ProviderJobRow | ProviderJobCoreRow
 type CustomerBookingRow = Prisma.BookingGetPayload<{ include: typeof customerBookingInclude }>
 type ProviderBookingRow = Prisma.BookingGetPayload<{ include: typeof providerBookingSelect }>
 
@@ -342,11 +350,76 @@ export async function getProviderJobDetailForViewer(params: {
       return { ok: false, error: 'unauthorized' }
     }
 
-    const job = await db.job.findUnique({
-      where: { id: identity.id },
-      include: providerJobInclude,
-    })
-    const bookingFromInclude = job?.booking
+    let job: ProviderJobRowOrCore | null = null
+    try {
+      job = await db.job.findUnique({
+        where: { id: identity.id },
+        include: providerJobInclude,
+      })
+    } catch (error) {
+      // Some scheduled jobs can fail deep include hydration even when the base job row exists
+      // (e.g. partial relation cleanup/migration edge-cases).
+      // Retry with the core execution rows first so the page can still render service/contact
+      // details whenever possible.
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[provider-job-detail] primary job hydrate failed, retrying with core row', {
+          route: params.route,
+          viewerRole: 'provider',
+          viewerId: params.viewerUserId,
+          viewerProviderId: params.viewerProviderId,
+          receivedId,
+          jobId: identity.id,
+          error: error instanceof Error ? error.message : error ? String(error) : undefined,
+        })
+      }
+
+      const coreJob = await db.job
+        .findFirst({
+          where: { id: identity.id },
+          include: providerJobCoreInclude,
+        })
+        .catch((coreError: unknown) => {
+          logDetailFailure({
+            route: params.route,
+            viewerRole: 'provider',
+            viewerId: params.viewerUserId,
+            viewerProviderId: params.viewerProviderId,
+            id: receivedId,
+            resolvedIdType: resolution.resolvedIdType,
+            resolvedJobId: identity.id,
+            jobStatus: identity.status,
+            reason: 'query_failed',
+            stage: 'query',
+            durationMs: Date.now() - startedAt,
+            error: coreError,
+          })
+          return null
+        })
+
+      if (!coreJob) {
+        logDetailFailure({
+          route: params.route,
+          viewerRole: 'provider',
+          viewerId: params.viewerUserId,
+          viewerProviderId: params.viewerProviderId,
+          id: receivedId,
+          resolvedIdType: resolution.resolvedIdType,
+          resolvedJobId: identity.id,
+          jobStatus: identity.status,
+          reason: 'not_found',
+          stage: 'query',
+          durationMs: Date.now() - startedAt,
+        })
+        return { ok: false, error: 'not_found' }
+      }
+
+      job = {
+        ...coreJob,
+        booking: null,
+      } as ProviderJobCoreRow
+    }
+
+    const bookingFromInclude = (job as ProviderJobRow | null)?.booking ?? null
 
     if (!job) {
       // We resolved a matching job row, but it disappeared before detail hydration.

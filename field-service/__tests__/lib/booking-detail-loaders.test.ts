@@ -266,6 +266,52 @@ describe('booking detail loaders', () => {
     }
   })
 
+  it('falls back to a core job row when include hydration throws', async () => {
+    mockDb.job.findUnique
+      .mockResolvedValueOnce({ id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED', bookingId: 'booking_1' })
+      .mockRejectedValueOnce(new Error('primary include failed'))
+    mockDb.job.findFirst.mockResolvedValue({
+      id: 'job_1',
+      providerId: 'provider_1',
+      status: 'SCHEDULED',
+      bookingId: 'booking_1',
+      statusHistory: [],
+      extras: [],
+      photos: [],
+    } as any)
+    mockDb.booking.findUnique.mockResolvedValue({
+      id: 'booking_1',
+      scheduledDate: new Date('2026-05-23T00:00:00.000Z'),
+      scheduledWindow: '00:00–04:00',
+      scheduledStartAt: null,
+      scheduledEndAt: null,
+      match: {
+        id: 'match_1',
+        jobRequest: {
+          id: 'request_1',
+          category: 'DIY & Assembly',
+          customer: { id: 'customer_1', name: 'Sarah Sullivan', phone: '+27773923802' },
+          address: { street: '1 Main', suburb: 'Constantia Kloof', city: 'Johannesburg' },
+        },
+      },
+      payment: null,
+    } as any)
+
+    const { getProviderJobDetailForViewer } = await import('@/lib/booking-detail-loaders')
+    const result = await getProviderJobDetailForViewer({
+      route: '/provider/jobs/[jobId]',
+      viewerUserId: 'user_1',
+      viewerProviderId: 'provider_1',
+      jobId: 'job_1',
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.job.id).toBe('job_1')
+      expect(result.data.scheduledDateLabel).toContain('00:00–04:00')
+    }
+  })
+
   it('formats date safely when scheduledWindow is missing and start time exists', async () => {
     mockDb.job.findUnique
       .mockResolvedValueOnce({ id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED' })
