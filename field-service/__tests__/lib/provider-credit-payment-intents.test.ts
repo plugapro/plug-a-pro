@@ -307,10 +307,13 @@ describe('provider credit payment intents', () => {
       createPayatTopUpIntent({ providerId: 'provider-1', amountCents: 10_000 }),
     ).rejects.toBe(payatError)
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('failed_to_mark_intent_failed'),
-      expect.objectContaining({ alert: true, intentId: 'intent-1' }),
+    // Logs are now JSON strings — find the cleanup-failure entry.
+    const alertCall = consoleSpy.mock.calls.find((args) =>
+      typeof args[0] === 'string' && args[0].includes('intent_cleanup_failed'),
     )
+    expect(alertCall).toBeDefined()
+    const parsed = JSON.parse(alertCall![0] as string)
+    expect(parsed).toMatchObject({ event: 'payat.intent_cleanup_failed', alert: true, intentId: 'intent-1' })
 
     consoleSpy.mockRestore()
   })

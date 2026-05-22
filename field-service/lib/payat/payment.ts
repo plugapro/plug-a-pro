@@ -89,25 +89,51 @@ function mapPayatResponse(
   return { reference: fallbackReference, paymentLink: rawLink, sourceReference, requestToPayId }
 }
 
+function maskPhone(phone: string): string {
+  // +27821234567 → +27…4567   (last 4 visible)
+  return phone.length > 4 ? `${phone.slice(0, 3)}…${phone.slice(-4)}` : '***'
+}
+
+function maskEmail(email: string): string {
+  // user@example.com → …@example.com
+  const at = email.indexOf('@')
+  return at > 0 ? `…${email.slice(at)}` : '***'
+}
+
 async function sendPayatPaymentRequest(
   params: PayatPaymentRequest,
   retryOnUnauthorized: boolean,
 ): Promise<PayatPaymentResponse> {
-  // Pay@ validates notificationNumber and customerMobileNumber as required fields.
   if (!params.providerPhone) {
-    console.warn('[payat-payment] providerPhone is empty — Pay@ will likely reject the RTP request', {
+    console.warn(JSON.stringify({
+      event: 'payat.rtp_phone_missing',
       topupId: params.topupId,
-    })
+      msg: 'providerPhone is empty — Pay@ will likely reject the RTP request',
+    }))
   }
 
   const token = await getPayatToken()
   const apiBase = requirePayatConfig('PAYAT_API_BASE').replace(/\/$/, '')
   const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
+  const endpoint = `${apiBase}/integrator/rtp/create/single/${merchantIdentifier}`
+
+  console.info(JSON.stringify({
+    event: 'payat.rtp_request',
+    topupId: params.topupId,
+    amountCents: params.amountCents,
+    description: params.description,
+    phone: maskPhone(params.providerPhone),
+    hasEmail: Boolean(params.providerEmail),
+    email: params.providerEmail ? maskEmail(params.providerEmail) : null,
+    merchantIdentifier,
+    endpoint,
+    retry: !retryOnUnauthorized,
+  }))
 
   let response: Response
   try {
     response = await fetch(
-      `${apiBase}/integrator/rtp/create/single/${merchantIdentifier}`,
+      endpoint,
       {
         method: 'POST',
         headers: {
@@ -135,6 +161,13 @@ async function sendPayatPaymentRequest(
     )
   } catch (error) {
     const errorName = error instanceof Error ? error.name : 'unknown_error'
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(JSON.stringify({
+      event: 'payat.rtp_fetch_threw',
+      topupId: params.topupId,
+      errorName,
+      errorMsg,
+    }))
     throw new PayatApiError(
       'rtp_create_failed',
       undefined,
@@ -143,19 +176,26 @@ async function sendPayatPaymentRequest(
   }
 
   if (response.status === 401 && retryOnUnauthorized) {
+    console.warn(JSON.stringify({
+      event: 'payat.rtp_401_retrying',
+      topupId: params.topupId,
+    }))
     invalidatePayatToken()
     return sendPayatPaymentRequest(params, false)
   }
 
   if (!response.ok) {
-    // Log the HTTP status for diagnosability — never the body (may contain PII).
-    console.error('[payat-payment] rtp_create_failed', { httpStatus: response.status, topupId: params.topupId })
-    if (process.env.NODE_ENV !== 'production') {
-      const body = await response.text()
-      console.debug('[payat-payment] RTP creation failed body (dev only)', body)
-    } else {
-      await response.body?.cancel()
-    }
+    // Read the error body in all environments for diagnosability; body may contain
+    // a Pay@ error code but no PII. Log the body text (not the full JSON) so secrets
+    // are never surfaced even if Pay@ echoes back request fields.
+    const errorBody = await response.text().catch(() => '<unreadable>')
+    console.error(JSON.stringify({
+      event: 'payat.rtp_create_failed',
+      topupId: params.topupId,
+      httpStatus: response.status,
+      // Truncate to 500 chars — enough for the error code, not enough to expose large payloads.
+      errorBody: errorBody.slice(0, 500),
+    }))
     throw new PayatApiError('rtp_create_failed', response.status)
   }
 
@@ -163,10 +203,28 @@ async function sendPayatPaymentRequest(
   try {
     responseData = (await response.json()) as Record<string, unknown>
   } catch {
+    console.error(JSON.stringify({
+      event: 'payat.rtp_response_parse_failed',
+      topupId: params.topupId,
+      httpStatus: response.status,
+    }))
     throw new PayatApiError('rtp_response_invalid')
   }
 
-  return mapPayatResponse(responseData, params.topupId)
+  const result = mapPayatResponse(responseData, params.topupId)
+
+  console.info(JSON.stringify({
+    event: 'payat.rtp_response_ok',
+    topupId: params.topupId,
+    httpStatus: response.status,
+    hasPaymentLink: Boolean(result.paymentLink),
+    hasSourceReference: Boolean(result.sourceReference),
+    hasRequestToPayId: typeof result.requestToPayId === 'number',
+    // Log the response keys present so we can see exactly what Pay@ returned.
+    responseKeys: Object.keys(responseData),
+  }))
+
+  return result
 }
 
 export async function createPayatPaymentRequest(

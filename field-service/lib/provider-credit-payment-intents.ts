@@ -332,7 +332,24 @@ export type CreatePayatTopUpIntentResult = {
 export async function createPayatTopUpIntent(
   input: CreatePayatTopUpIntentInput,
 ): Promise<CreatePayatTopUpIntentResult> {
+  const traceId = randomBytes(4).toString('hex')
+
+  console.info(JSON.stringify({
+    event: 'payat.intent_create_start',
+    traceId,
+    providerId: input.providerId,
+    amountCents: input.amountCents,
+    feeAmountCents: input.feeAmountCents ?? 0,
+    hasCellphoneFallback: Boolean(input.providerCellphone?.trim()),
+  }))
+
   if (!PAYAT_ALLOWED_AMOUNTS_CENTS.has(input.amountCents)) {
+    console.warn(JSON.stringify({
+      event: 'payat.intent_create_blocked',
+      traceId,
+      reason: 'INVALID_AMOUNT',
+      amountCents: input.amountCents,
+    }))
     throw new ProviderCreditPaymentIntentError(
       'INVALID_AMOUNT',
       'Top-up amount must be one of the approved credits packages: R100, R200, or R500.',
@@ -353,11 +370,26 @@ export async function createPayatTopUpIntent(
     })
 
     if (!provider) {
+      console.warn(JSON.stringify({
+        event: 'payat.intent_create_blocked',
+        traceId,
+        reason: 'PROVIDER_NOT_FOUND',
+        providerId: input.providerId,
+      }))
       throw new ProviderCreditPaymentIntentError(
         'PROVIDER_NOT_FOUND',
         'Provider account not found.',
       )
     }
+
+    console.info(JSON.stringify({
+      event: 'payat.provider_resolved',
+      traceId,
+      providerId: provider.id,
+      hasPhone: Boolean(provider.phone?.trim()),
+      hasEmail: Boolean(provider.email?.trim()),
+      phoneSource: provider.phone?.trim() ? 'profile' : input.providerCellphone?.trim() ? 'caller' : 'none',
+    }))
 
     // Pay@ requires a non-empty mobile number for the RTP request (used as
     // notificationNumber and customerMobileNumber). Validate before creating the
@@ -365,6 +397,12 @@ export async function createPayatTopUpIntent(
     // would fail at the gateway anyway.
     const resolvedPhone = provider.phone?.trim() || input.providerCellphone?.trim() || ''
     if (!resolvedPhone) {
+      console.warn(JSON.stringify({
+        event: 'payat.intent_create_blocked',
+        traceId,
+        reason: 'PROVIDER_PHONE_MISSING',
+        providerId: provider.id,
+      }))
       throw new ProviderCreditPaymentIntentError(
         'PROVIDER_PHONE_MISSING',
         'A mobile number is required on your provider profile to create a Pay@ payment link.',
@@ -384,6 +422,14 @@ export async function createPayatTopUpIntent(
       select: { id: true },
     })
     if (existingIntent) {
+      console.warn(JSON.stringify({
+        event: 'payat.intent_create_blocked',
+        traceId,
+        reason: 'DUPLICATE_INTENT',
+        existingIntentId: existingIntent.id,
+        providerId: provider.id,
+        amountCents: input.amountCents,
+      }))
       throw new ProviderCreditPaymentIntentError(
         'DUPLICATE_INTENT',
         'A pending Pay@ top-up for this amount is already active.',
@@ -418,6 +464,16 @@ export async function createPayatTopUpIntent(
       },
     })
 
+    console.info(JSON.stringify({
+      event: 'payat.intent_db_created',
+      traceId,
+      intentId: intent.id,
+      providerId: provider.id,
+      amountCents: input.amountCents,
+      payAtAmountCents,
+      creditsToIssue,
+    }))
+
     return { intent, provider, resolvedPhone }
   })
 
@@ -426,6 +482,12 @@ export async function createPayatTopUpIntent(
   // retries for the full 3-day expiresAt window. Mark it FAILED before throwing.
   let payat: PayatPaymentResponse
   try {
+    console.info(JSON.stringify({
+      event: 'payat.rtp_call_start',
+      traceId,
+      intentId: intent.id,
+      payAtAmountCents,
+    }))
     payat = await createPayatPaymentRequest({
       topupId: intent.id,
       amountCents: payAtAmountCents,
@@ -434,26 +496,38 @@ export async function createPayatTopUpIntent(
       providerPhone: resolvedPhone,
       providerEmail: provider.email ?? '',
     })
+    console.info(JSON.stringify({
+      event: 'payat.rtp_call_ok',
+      traceId,
+      intentId: intent.id,
+      hasPaymentLink: Boolean(payat.paymentLink),
+      hasSourceReference: Boolean(payat.sourceReference),
+    }))
   } catch (err) {
     // Structured log lets ops correlate a provider complaint ("my Pay@ link
     // never appeared") to the specific intent that was abandoned.
-    console.error('[provider-credit-payment-intents] payat_api_failed', {
+    console.error(JSON.stringify({
+      event: 'payat.rtp_call_failed',
+      traceId,
       intentId: intent.id,
       providerId: provider.id,
       amountCents: payAtAmountCents,
-      error: err instanceof Error ? err.message : String(err),
-    })
+      errorName: err instanceof Error ? err.name : 'unknown',
+      errorMsg: err instanceof Error ? err.message : String(err),
+    }))
     await db.paymentIntent.update({
       where: { id: intent.id },
       data: { status: 'FAILED' },
     }).catch((dbErr) => {
       // Intent stays PENDING_PAYMENT — duplicate-intent guard will block retries
       // for the full 3-day window. Requires manual recovery in admin.
-      console.error('[provider-credit-payment-intents] failed_to_mark_intent_failed', {
+      console.error(JSON.stringify({
+        event: 'payat.intent_cleanup_failed',
         alert: true,
+        traceId,
         intentId: intent.id,
         error: dbErr instanceof Error ? dbErr.message : String(dbErr),
-      })
+      }))
     })
     throw err
   }
@@ -474,23 +548,41 @@ export async function createPayatTopUpIntent(
         }),
       },
     })
+    console.info(JSON.stringify({
+      event: 'payat.intent_metadata_updated',
+      traceId,
+      intentId: intent.id,
+    }))
   } catch (updateErr) {
     // Non-fatal: intent is PENDING_PAYMENT and Pay@ has issued the reference.
     // The webhook will still credit the wallet on payment confirmation.
-    console.error('[provider-credit-payment-intents] payat_metadata_update_failed', {
+    console.error(JSON.stringify({
+      event: 'payat.intent_metadata_update_failed',
+      traceId,
       intentId: intent.id,
       providerId: provider.id,
       error: updateErr instanceof Error ? updateErr.message : String(updateErr),
-    })
+    }))
   }
 
   const { notifyProviderPayatTopUpInitiated } = await import('./provider-wallet-notifications')
   notifyProviderPayatTopUpInitiated(intent.id, payat.paymentLink).catch((error: unknown) => {
-    console.error('[provider-credit-payment-intents] Pay@ topup initiated WhatsApp notification failed', {
+    console.error(JSON.stringify({
+      event: 'payat.whatsapp_notify_failed',
+      traceId,
       intentId: intent.id,
-      error,
-    })
+      error: error instanceof Error ? error.message : String(error),
+    }))
   })
+
+  console.info(JSON.stringify({
+    event: 'payat.intent_create_complete',
+    traceId,
+    intentId: intent.id,
+    providerId: provider.id,
+    amountCents: input.amountCents,
+    payAtAmountCents,
+  }))
 
   return { intent, payat, payAtAmountCents }
 }
