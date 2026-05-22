@@ -53,12 +53,13 @@ function getTokenUrl() {
 }
 
 async function fetchToken(): Promise<string> {
+  const tokenUrl = getTokenUrl()
   const clientId = requirePayatEnv('PAYAT_CLIENT_ID')
   const clientSecret = requirePayatEnv('PAYAT_CLIENT_SECRET')
 
   let response: Response
   try {
-    response = await fetch(getTokenUrl(), {
+    response = await fetch(tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

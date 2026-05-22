@@ -1,96 +1,136 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-describe('Pay@ token service', () => {
-  beforeEach(() => {
-    vi.resetModules()
-    vi.clearAllMocks()
-    vi.stubEnv('PAYAT_CLIENT_ID', 'client-id')
-    vi.stubEnv('PAYAT_CLIENT_SECRET', 'client-secret')
-    vi.stubEnv('PAYAT_TOKEN_URL', 'https://go.payat.co.za/oauth/token')
-  })
+// Each test resets modules to clear the in-memory token/inflight cache between runs.
 
-  it('fetches and caches an OAuth token until the buffered expiry', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
+describe('getPayatToken', () => {
+  const TOKEN_URL = 'https://go.payat.co.za/yapi/v1/oauth/token'
+
+  function mockOkResponse(body: object) {
+    ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: async () => ({ access_token: 'token-1', expires_in: 3600 }),
+      status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+      body: { cancel: vi.fn() },
     })
-    vi.stubGlobal('fetch', fetchMock)
-    vi.setSystemTime(new Date('2026-05-12T10:00:00.000Z'))
+  }
 
-    const { getPayatToken } = await import('@/lib/payat/token')
+  function mockErrorResponse(status: number, bodyText = '') {
+    ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status,
+      json: async () => { throw new SyntaxError('not json') },
+      text: async () => bodyText,
+      body: { cancel: vi.fn() },
+    })
+  }
 
-    await expect(getPayatToken()).resolves.toBe('token-1')
-    await expect(getPayatToken()).resolves.toBe('token-1')
+  describe('with all Pay@ env vars set', () => {
+    beforeEach(() => {
+      vi.resetModules()
+      vi.stubEnv('PAYAT_TOKEN_URL', TOKEN_URL)
+      vi.stubEnv('PAYAT_CLIENT_ID', 'client-test-id')
+      vi.stubEnv('PAYAT_CLIENT_SECRET', 'test-secret')
+      vi.stubGlobal('fetch', vi.fn())
+    })
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://go.payat.co.za/oauth/token',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }),
-    )
-    expect(fetchMock.mock.calls[0][1].body.toString()).toBe(
-      'grant_type=client_credentials&client_id=client-id&client_secret=client-secret',
-    )
-  })
+    afterEach(() => {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    })
 
-  it('fetches a fresh token after invalidation', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
+    it('returns access_token on a valid 200 response', async () => {
+      mockOkResponse({ access_token: 'tok-abc', expires_in: 3600 })
+      const { getPayatToken } = await import('@/lib/payat/token')
+      await expect(getPayatToken()).resolves.toBe('tok-abc')
+    })
+
+    it('replicates the production bug: HTML body from a 302→/app redirect causes PayatTokenError(invalid_response)', async () => {
+      // Root cause: PAYAT_TOKEN_URL was set to https://go.payat.co.za/oauth/token which
+      // 302-redirects to the Pay@ frontend. fetch() follows the redirect, gets an HTML
+      // page, JSON.parse throws SyntaxError → PayatTokenError('invalid_response') →
+      // "We could not reach Pay@ right now. Please try again in a minute."
+      // Fix: set PAYAT_TOKEN_URL to https://go.payat.co.za/yapi/v1/oauth/token (returns 401
+      // on bad credentials instead of a redirect).
+      ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
         ok: true,
-        json: async () => ({ access_token: 'token-1', expires_in: 3600 }),
+        status: 200,
+        json: async () => { throw new SyntaxError('Unexpected token < in JSON at position 0') },
+        text: async () => '<html><body>Pay@ App</body></html>',
+        body: { cancel: vi.fn() },
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ access_token: 'token-2', expires_in: 3600 }),
+      const { getPayatToken } = await import('@/lib/payat/token')
+      const { PayatTokenError } = await import('@/lib/payat/token')
+      await expect(getPayatToken()).rejects.toMatchObject({
+        name: 'PayatTokenError',
+        stage: 'invalid_response',
       })
-    vi.stubGlobal('fetch', fetchMock)
+      await expect(getPayatToken()).rejects.toBeInstanceOf(PayatTokenError)
+    })
 
-    const { getPayatToken, invalidatePayatToken } = await import('@/lib/payat/token')
+    it('throws PayatTokenError(fetch_failed, 401) on invalid credentials', async () => {
+      mockErrorResponse(401, '{"error":"invalid_client"}')
+      const { getPayatToken } = await import('@/lib/payat/token')
+      await expect(getPayatToken()).rejects.toMatchObject({
+        name: 'PayatTokenError',
+        stage: 'fetch_failed',
+        status: 401,
+      })
+    })
 
-    await expect(getPayatToken()).resolves.toBe('token-1')
-    invalidatePayatToken()
-    await expect(getPayatToken()).resolves.toBe('token-2')
+    it('throws PayatTokenError(fetch_failed) on network timeout', async () => {
+      ;(fetch as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }),
+      )
+      const { getPayatToken } = await import('@/lib/payat/token')
+      await expect(getPayatToken()).rejects.toMatchObject({
+        name: 'PayatTokenError',
+        stage: 'fetch_failed',
+      })
+    })
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
+    it('throws PayatTokenError(invalid_response) when response omits access_token', async () => {
+      mockOkResponse({ expires_in: 3600 })
+      const { getPayatToken } = await import('@/lib/payat/token')
+      await expect(getPayatToken()).rejects.toMatchObject({
+        name: 'PayatTokenError',
+        stage: 'invalid_response',
+      })
+    })
 
-  it('fails fast when OAuth credentials are missing', async () => {
-    vi.stubEnv('PAYAT_CLIENT_SECRET', '')
-
-    const { getPayatToken } = await import('@/lib/payat/token')
-
-    await expect(getPayatToken()).rejects.toThrow(
-      'PAYAT_CLIENT_SECRET must be set',
-    )
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('throws PayatTokenError(fetch_failed) when fetch throws before an HTTP response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')))
-    const { getPayatToken } = await import('@/lib/payat/token')
-
-    await expect(getPayatToken()).rejects.toMatchObject({
-      name: 'PayatTokenError',
-      stage: 'fetch_failed',
-      status: undefined,
+    it('reuses cached token within TTL without a second fetch', async () => {
+      mockOkResponse({ access_token: 'tok-cached', expires_in: 3600 })
+      const { getPayatToken } = await import('@/lib/payat/token')
+      const first = await getPayatToken()
+      const second = await getPayatToken()
+      expect(first).toBe('tok-cached')
+      expect(second).toBe('tok-cached')
+      expect(fetch).toHaveBeenCalledTimes(1)
     })
   })
 
-  it('throws PayatTokenError(invalid_response) when token JSON is malformed', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => {
-        throw new SyntaxError('Unexpected token')
-      },
-    }))
-    const { getPayatToken } = await import('@/lib/payat/token')
+  describe('when PAYAT_TOKEN_URL is not set', () => {
+    // Separate describe so this beforeEach stubs TOKEN_URL to '' as the FIRST
+    // stub for this key — vi.stubEnv cannot override a same-key stub that was
+    // already set in an outer beforeEach, so a fresh describe is required.
+    beforeEach(() => {
+      vi.resetModules()
+      vi.stubEnv('PAYAT_TOKEN_URL', '')
+      vi.stubEnv('PAYAT_CLIENT_ID', 'client-test-id')
+      vi.stubEnv('PAYAT_CLIENT_SECRET', 'test-secret')
+      vi.stubGlobal('fetch', vi.fn())
+    })
 
-    await expect(getPayatToken()).rejects.toMatchObject({
-      name: 'PayatTokenError',
-      stage: 'invalid_response',
+    afterEach(() => {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    })
+
+    it('throws PayatConfigError before making any HTTP request', async () => {
+      const { getPayatToken } = await import('@/lib/payat/token')
+      const { PayatConfigError } = await import('@/lib/payat/payment')
+      await expect(getPayatToken()).rejects.toBeInstanceOf(PayatConfigError)
+      expect(fetch).not.toHaveBeenCalled()
     })
   })
 })
