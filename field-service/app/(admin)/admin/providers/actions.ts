@@ -282,7 +282,11 @@ export async function setProviderStatusAction(input: SetStatusInput) {
 
   // Auto-approve LOW-risk categories when provider transitions to ACTIVE
   if (result.ok && input.status === 'ACTIVE') {
-    await autoApproveLowRiskCategories(input.providerId)
+    try {
+      await autoApproveLowRiskCategories(input.providerId)
+    } catch (err) {
+      console.error('[providers] autoApproveLowRiskCategories failed', { providerId: input.providerId }, err)
+    }
   }
 
   revalidatePath('/admin/providers')
@@ -314,7 +318,11 @@ export async function verifyProviderAction(providerId: string) {
 
   // verifyProviderAction always transitions to ACTIVE
   if (result.ok) {
-    await autoApproveLowRiskCategories(providerId)
+    try {
+      await autoApproveLowRiskCategories(providerId)
+    } catch (err) {
+      console.error('[providers] autoApproveLowRiskCategories failed', { providerId }, err)
+    }
   }
 
   revalidatePath(`/admin/providers/${providerId}`)
@@ -346,6 +354,15 @@ export async function reactivateProviderAction(providerId: string) {
       return { id: providerId }
     },
   })
+
+  if (result.ok) {
+    try {
+      await autoApproveLowRiskCategories(providerId)
+    } catch (err) {
+      console.error('[providers] autoApproveLowRiskCategories failed', { providerId }, err)
+    }
+  }
+
   revalidatePath('/admin/providers')
   revalidatePath('/admin/technicians')
   revalidatePath(`/admin/providers/${providerId}`)
