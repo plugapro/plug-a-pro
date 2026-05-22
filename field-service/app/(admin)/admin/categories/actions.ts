@@ -282,7 +282,12 @@ export async function updateCategoryRiskTierAction(input: UpdateRiskTierInput) {
 
   // Bulk-approve all ACTIVE providers' PENDING_REVIEW rows for this slug when downgrading to LOW
   if (result.ok && result.data.riskTier === CategoryRiskTier.LOW && capturedOldTier !== CategoryRiskTier.LOW) {
-    const bulkApproved = await autoApproveProvidersForCategory(result.data.slug)
+    let bulkApproved = 0
+    try {
+      bulkApproved = await autoApproveProvidersForCategory(result.data.slug)
+    } catch (err) {
+      console.error('[categories] autoApproveProvidersForCategory failed', { slug: result.data.slug }, err)
+    }
     revalidatePath('/admin/categories')
     return { ...result, data: { ...result.data, bulkApproved } }
   }
