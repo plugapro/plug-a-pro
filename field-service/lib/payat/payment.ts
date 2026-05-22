@@ -14,9 +14,11 @@ export type PayatPaymentRequest = {
 
 export type PayatPaymentResponse = {
   reference: string
-  sourceReference: string
-  requestToPayId: number
-  paymentLink?: string
+  paymentLink: string
+  // sourceReference and requestToPayId are returned by the merchant endpoint only.
+  // The integrator endpoint (/integrator/rtp/create/single/…) does not include them.
+  sourceReference?: string
+  requestToPayId?: number
 }
 
 export class PayatConfigError extends Error {
@@ -66,23 +68,25 @@ function mapPayatResponse(
   data: Record<string, unknown>,
   fallbackReference: string,
 ): PayatPaymentResponse {
-  // sourceReference is the retail till reference — required by the merchant endpoint.
-  const sourceReference = data.sourceReference ?? data.source_reference
-  if (typeof sourceReference !== 'string' || !sourceReference) {
-    throw new PayatApiError('rtp_response_invalid')
-  }
-
-  // requestToPayId is Pay@'s internal integer RTP identifier.
-  const requestToPayId = data.requestToPayId ?? data.request_to_pay_id
-  if (typeof requestToPayId !== 'number' || !Number.isFinite(requestToPayId)) {
-    throw new PayatApiError('rtp_response_invalid')
-  }
-
-  // paymentLink is optional on the merchant endpoint (no redirect checkout).
+  // paymentLink is required on the integrator endpoint — the provider cannot pay without it.
   const rawLink = data.paymentLink ?? data.payment_link ?? data.url ?? data.checkoutUrl
-  const paymentLink = typeof rawLink === 'string' && rawLink ? rawLink : undefined
+  if (typeof rawLink !== 'string' || !rawLink) {
+    throw new PayatApiError('rtp_response_invalid', undefined, 'Pay@ response missing paymentLink')
+  }
 
-  return { reference: fallbackReference, sourceReference, requestToPayId, paymentLink }
+  // sourceReference (retail till reference) and requestToPayId are merchant-endpoint-only fields.
+  // The integrator endpoint may not include them — extract if present, otherwise omit.
+  const sourceReferenceRaw = data.sourceReference ?? data.source_reference
+  const sourceReference =
+    typeof sourceReferenceRaw === 'string' && sourceReferenceRaw ? sourceReferenceRaw : undefined
+
+  const requestToPayIdRaw = data.requestToPayId ?? data.request_to_pay_id
+  const requestToPayId =
+    typeof requestToPayIdRaw === 'number' && Number.isFinite(requestToPayIdRaw)
+      ? requestToPayIdRaw
+      : undefined
+
+  return { reference: fallbackReference, paymentLink: rawLink, sourceReference, requestToPayId }
 }
 
 async function sendPayatPaymentRequest(
@@ -112,7 +116,7 @@ async function sendPayatPaymentRequest(
         },
         body: JSON.stringify({
           clientAccountNumber: generateClientAccountNumber(),
-          // Pay@ YAPI merchant RTP expects amounts as integers in cents.
+          // Pay@ YAPI integrator RTP expects amounts as integers in cents.
           amount: params.amountCents,
           minimumAmount: params.amountCents,
           maximumAmount: params.amountCents,
@@ -122,7 +126,8 @@ async function sendPayatPaymentRequest(
           notificationNumber: params.providerPhone,
           customerNameSurname: params.providerName,
           customerMobileNumber: params.providerPhone,
-          customerEmail: params.providerEmail,
+          // Omit customerEmail when empty — Pay@ rejects requests with an empty string email.
+          ...(params.providerEmail ? { customerEmail: params.providerEmail } : {}),
           daysValid: 3,
         }),
         signal: AbortSignal.timeout(10_000),
@@ -143,7 +148,8 @@ async function sendPayatPaymentRequest(
   }
 
   if (!response.ok) {
-    // Never log the response body — it may contain the provider phone or payment reference.
+    // Log the HTTP status for diagnosability — never the body (may contain PII).
+    console.error('[payat-payment] rtp_create_failed', { httpStatus: response.status, topupId: params.topupId })
     if (process.env.NODE_ENV !== 'production') {
       const body = await response.text()
       console.debug('[payat-payment] RTP creation failed body (dev only)', body)

@@ -281,9 +281,9 @@ export type PayatTopUpResultData = {
   amountCents: number
   creditsToIssue: number
   reference: string
-  sourceReference: string
-  requestToPayId: number
-  paymentLink?: string
+  paymentLink: string
+  sourceReference?: string | null
+  requestToPayId?: number | null
 }
 
 export type ProviderPayatTopUpResponse =

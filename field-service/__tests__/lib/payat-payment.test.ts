@@ -124,7 +124,7 @@ describe('Pay@ merchant RTP payment service', () => {
     })
   })
 
-  it('returns result without paymentLink when Pay@ omits it (paymentLink is optional)', async () => {
+  it('throws rtp_response_invalid when paymentLink is absent (paymentLink is required on integrator endpoint)', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
@@ -133,25 +133,27 @@ describe('Pay@ merchant RTP payment service', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
-    const result = await createPayatPaymentRequest({
-      topupId: 'intent-no-link',
-      amountCents: 10_000,
-      description: 'R100',
-      providerName: 'Provider',
-      providerPhone: '+27821234567',
-      providerEmail: 'p@example.com',
-    })
-
-    expect(result.sourceReference).toBe('PAT-RETAIL-002')
-    expect(result.requestToPayId).toBe(99002)
-    expect(result.paymentLink).toBeUndefined()
+    await expect(
+      createPayatPaymentRequest({
+        topupId: 'intent-no-link',
+        amountCents: 10_000,
+        description: 'R100',
+        providerName: 'Provider',
+        providerPhone: '+27821234567',
+        providerEmail: 'p@example.com',
+      }),
+    ).rejects.toMatchObject({ name: 'PayatApiError', stage: 'rtp_response_invalid' })
   })
 
-  it('accepts Pay@ snake_case aliases (source_reference, request_to_pay_id)', async () => {
+  it('accepts Pay@ snake_case aliases (source_reference, request_to_pay_id) alongside paymentLink', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
-      json: async () => ({ request_to_pay_id: 99003, source_reference: 'PAT-RETAIL-003' }),
+      json: async () => ({
+        request_to_pay_id: 99003,
+        source_reference: 'PAT-RETAIL-003',
+        paymentLink: 'https://go.payat.co.za/pay/snake-case',
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -167,6 +169,7 @@ describe('Pay@ merchant RTP payment service', () => {
 
     expect(result.sourceReference).toBe('PAT-RETAIL-003')
     expect(result.requestToPayId).toBe(99003)
+    expect(result.paymentLink).toBe('https://go.payat.co.za/pay/snake-case')
   })
 
   it('invalidates token and retries once on Pay@ 401', async () => {
@@ -231,46 +234,74 @@ describe('Pay@ merchant RTP payment service', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('throws PayatApiError(rtp_response_invalid) when sourceReference is missing', async () => {
+  it('succeeds with only paymentLink — sourceReference is optional on integrator endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
-      json: async () => ({ requestToPayId: 99004, paymentLink: 'https://go.payat.co.za/pay/abc' }),
+      json: async () => ({ paymentLink: 'https://go.payat.co.za/pay/abc' }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
-    await expect(
-      createPayatPaymentRequest({
-        topupId: 'intent-no-src-ref',
-        amountCents: 10_000,
-        description: 'R100',
-        providerName: 'E',
-        providerPhone: '+27821234567',
-        providerEmail: 'e@e.com',
-      }),
-    ).rejects.toMatchObject({ name: 'PayatApiError', stage: 'rtp_response_invalid' })
+    const result = await createPayatPaymentRequest({
+      topupId: 'intent-no-src-ref',
+      amountCents: 10_000,
+      description: 'R100',
+      providerName: 'E',
+      providerPhone: '+27821234567',
+      providerEmail: 'e@e.com',
+    })
+
+    expect(result.paymentLink).toBe('https://go.payat.co.za/pay/abc')
+    expect(result.sourceReference).toBeUndefined()
+    expect(result.requestToPayId).toBeUndefined()
   })
 
-  it('throws PayatApiError(rtp_response_invalid) when requestToPayId is not a finite number', async () => {
+  it('succeeds with non-numeric requestToPayId — requestToPayId is optional on integrator endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
-      json: async () => ({ requestToPayId: 'rtp-string-id', sourceReference: 'PAT-RETAIL-004' }),
+      json: async () => ({
+        requestToPayId: 'rtp-string-id',
+        paymentLink: 'https://go.payat.co.za/pay/abc2',
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
-    await expect(
-      createPayatPaymentRequest({
-        topupId: 'intent-bad-id',
-        amountCents: 10_000,
-        description: 'R100',
-        providerName: 'F',
-        providerPhone: '+27821234567',
-        providerEmail: 'f@f.com',
-      }),
-    ).rejects.toMatchObject({ name: 'PayatApiError', stage: 'rtp_response_invalid' })
+    const result = await createPayatPaymentRequest({
+      topupId: 'intent-bad-id',
+      amountCents: 10_000,
+      description: 'R100',
+      providerName: 'F',
+      providerPhone: '+27821234567',
+      providerEmail: 'f@f.com',
+    })
+
+    expect(result.paymentLink).toBe('https://go.payat.co.za/pay/abc2')
+    expect(result.requestToPayId).toBeUndefined()
+  })
+
+  it('omits customerEmail from request body when providerEmail is empty', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      status: 201,
+      ok: true,
+      json: async () => validRtpResponse,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
+    await createPayatPaymentRequest({
+      topupId: 'intent-no-email',
+      amountCents: 10_000,
+      description: 'R100',
+      providerName: 'No Email',
+      providerPhone: '+27821234567',
+      providerEmail: '',
+    })
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body).not.toHaveProperty('customerEmail')
   })
 
   it('throws PayatApiError(rtp_create_failed) when Pay@ returns 403', async () => {
