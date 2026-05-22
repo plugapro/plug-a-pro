@@ -71,6 +71,7 @@ export type ProviderWalletPendingIntent = {
   createdAt: string
   expiresAt: string | null
   paymentLink: string | null
+  sourceReference: string | null
 }
 
 export type ProviderWalletRecentActivityItem = {
@@ -92,6 +93,7 @@ export type PaymentIntentStatusResult =
       expiresAt: string | null
       reference: string
       paymentLink: string | null
+      sourceReference: string | null
       amountCents: number
       creditsToIssue: number
     }
@@ -209,21 +211,6 @@ function readMetadataPaymentLink(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
   const candidate = asText((metadata as Record<string, unknown>).paymentLink)
   return candidate && /^https?:\/\//.test(candidate) ? candidate : null
-}
-
-function mergePayatDisplayMetadata(
-  metadata: unknown,
-  payat: { reference: string; paymentLink: string },
-) {
-  const base = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
-    ? metadata as Record<string, unknown>
-    : {}
-
-  return {
-    ...base,
-    payatReference: payat.reference,
-    paymentLink: payat.paymentLink,
-  }
 }
 
 function summarizeActivityLabel(entryType: WalletLedgerEntryType) {
@@ -413,6 +400,7 @@ export async function getProviderPendingIntents(): Promise<ProviderWalletPending
       createdAt: true,
       expiresAt: true,
       metadata: true,
+      sourceReference: true,
     },
     orderBy: { createdAt: 'asc' },
   })
@@ -426,6 +414,7 @@ export async function getProviderPendingIntents(): Promise<ProviderWalletPending
     createdAt: intent.createdAt.toISOString(),
     expiresAt: intent.expiresAt?.toISOString() ?? null,
     paymentLink: readMetadataPaymentLink(intent.metadata),
+    sourceReference: intent.sourceReference ?? null,
   }))
 }
 
@@ -455,6 +444,7 @@ export async function getPaymentIntentStatus(intentId: string): Promise<PaymentI
       expiresAt: true,
       paymentMethod: true,
       metadata: true,
+      sourceReference: true,
     },
   })
 
@@ -496,14 +486,15 @@ export async function getPaymentIntentStatus(intentId: string): Promise<PaymentI
     ok: true,
     status: intent.status,
     creditsIssued: intent.status === 'CREDITED' ? intent.creditsToIssue : undefined,
-      paidAt: asDateString(intent.paidAt),
-      creditedAt: asDateString(intent.creditedAt),
-      expiresAt: asDateString(intent.expiresAt),
-      reference: intent.paymentReference,
-      paymentLink: readMetadataPaymentLink(intent.metadata),
-      amountCents: intent.amountCents,
-      creditsToIssue: intent.creditsToIssue,
-    }
+    paidAt: asDateString(intent.paidAt),
+    creditedAt: asDateString(intent.creditedAt),
+    expiresAt: asDateString(intent.expiresAt),
+    reference: intent.paymentReference,
+    paymentLink: readMetadataPaymentLink(intent.metadata),
+    sourceReference: intent.sourceReference ?? null,
+    amountCents: intent.amountCents,
+    creditsToIssue: intent.creditsToIssue,
+  }
 }
 
 export async function notifyProviderPayatTopUpInitiated(
@@ -742,12 +733,6 @@ export async function createProviderPayatTopUpIntent(
     })
     intentId = result.intent.id
     internalReference = result.intent.paymentReference
-    await db.paymentIntent.update({
-      where: { id: result.intent.id },
-      data: {
-        metadata: mergePayatDisplayMetadata(result.intent.metadata, result.payat),
-      },
-    })
 
     revalidatePath('/provider/credits')
     console.info('[payat] checkout_created', {
@@ -770,6 +755,8 @@ export async function createProviderPayatTopUpIntent(
         amountCents: result.intent.amountCents,
         creditsToIssue: result.intent.creditsToIssue,
         reference: result.payat.reference,
+        sourceReference: result.payat.sourceReference,
+        requestToPayId: result.payat.requestToPayId,
         paymentLink: result.payat.paymentLink,
       },
     }

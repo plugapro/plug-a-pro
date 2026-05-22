@@ -1804,17 +1804,19 @@ async function handleTopUpPayatCreate(
     const totalR = Math.round(result.payAtAmountCents / 100)
     const creditsR = Math.round(amountCents / 100)
     const feeR = Math.round(feeAmountCents / 100)
-    await sendCtaUrl(
-      ctx.phone,
-      `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till. Credits are added automatically once payment is confirmed — usually within a few minutes.`,
-      'Pay now at retailer',
-      result.payat.paymentLink,
-    ).catch((err: unknown) => {
-      console.error('[provider-journey] Pay@ CTA URL send failed (non-fatal)', {
-        intentId: result.intent.id,
-        error: err instanceof Error ? err.message : String(err),
+    if (result.payat.paymentLink) {
+      await sendCtaUrl(
+        ctx.phone,
+        `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till. Credits are added automatically once payment is confirmed — usually within a few minutes.`,
+        'Pay now at retailer',
+        result.payat.paymentLink,
+      ).catch((err: unknown) => {
+        console.error('[provider-journey] Pay@ CTA URL send failed (non-fatal)', {
+          intentId: result.intent.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
       })
-    })
+    }
   } catch (err) {
     const isDuplicate =
       err !== null &&

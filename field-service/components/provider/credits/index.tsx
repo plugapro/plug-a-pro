@@ -164,14 +164,173 @@ export function PendingIntentList({ intents }: { intents: ProviderWalletPendingI
 export function LimitScreen() { const router = useRouter(); return <CreditsShell eyebrow="Limit reached" title="Too many open links" subtitle="You can keep up to 3 Pay@ payments open at once." backHref="/provider/credits"><div className="rounded-[24px] bg-card p-5 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div className="mx-auto flex size-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600"><AlertTriangle className="size-7" aria-hidden /></div><div className="mt-4 text-[17px] font-bold text-[var(--ink)]">Complete an existing Pay@ link first</div><p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-mute)]">This guard prevents duplicate counter payments and keeps wallet crediting traceable.</p></div><Button type="button" size="lg" onClick={() => router.push('/provider/credits/pending')}>View active payment links</Button><Button type="button" variant="outline" size="lg" onClick={() => router.push('/provider/credits')}>Back to credits</Button></CreditsShell> }
 export function SuccessScreen({ creditsIssued, balance, starter, reference }: { creditsIssued: number; balance: number; starter: number; reference: string }) { const router = useRouter(); return <CreditsShell eyebrow="Payment confirmed" title="Credits added" subtitle="Your provider wallet is ready for more job leads." backHref="/provider/credits"><div className="relative overflow-hidden rounded-[24px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div aria-hidden className="absolute left-1/2 top-2 h-32 w-32 -translate-x-1/2 rounded-full blur-2xl" style={{ background: 'radial-gradient(circle, rgba(15,157,88,0.30), transparent 65%)' }} /><div className="relative mx-auto flex size-16 items-center justify-center rounded-full brand-gradient text-white"><CheckCircle2 className="size-8" aria-hidden /></div><div className="relative mt-4 text-[24px] font-extrabold tracking-[-0.02em] text-emerald-600">+{creditsIssued} credits added</div><div className="relative mt-1 font-mono text-[10.5px] text-[var(--ink-soft)]">{reference}</div></div><BalanceHero credits={balance} starter={starter} compact /><Button type="button" size="lg" onClick={() => router.push('/provider/leads')}>Find jobs to accept</Button><Button type="button" variant="outline" size="lg" onClick={() => router.push('/provider/credits')}>Back to wallet</Button></CreditsShell> }
 
-export function PaymentIntentStatusClient({ intentId, amountCents, creditsToIssue, reference, paymentLink, expiresAt, showCreatingFirst = false }: { intentId: string; amountCents: number; creditsToIssue: number; reference: string; paymentLink: string; expiresAt: string | null; showCreatingFirst?: boolean }) {
-  const router = useRouter(); const [phase, setPhase] = useState<'creating' | 'ready'>(showCreatingFirst ? 'creating' : 'ready'); const [whatsAppPending, setWhatsAppPending] = useState(false); const [countdown, setCountdown] = useState(() => timeLeft(expiresAt)); const displayRef = useMemo(() => shortReference(reference), [reference])
-  useEffect(() => { if (phase !== 'creating') return; const timeout = window.setTimeout(() => setPhase('ready'), 1_100); return () => window.clearTimeout(timeout) }, [phase])
-  useEffect(() => { const interval = window.setInterval(() => setCountdown(timeLeft(expiresAt)), 60_000); return () => window.clearInterval(interval) }, [expiresAt])
-  useEffect(() => { if (phase !== 'ready') return; let stopped = false; async function poll() { const startedAt = performance.now(); const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), POLL_REQUEST_TIMEOUT_MS); try { const response = await fetch(`/api/provider/payment-intent/${encodeURIComponent(intentId)}/status`, { cache: 'no-store', signal: controller.signal }); if (!response.ok || stopped) return; const data = await response.json() as PaymentIntentStatusPayload; console.info('[payat] poll_status', { intentId, status: data.status, elapsedMs: Math.round(performance.now() - startedAt) }); if (data.status === 'CREDITED') { stopped = true; router.push(`/provider/credits/success?intentId=${encodeURIComponent(intentId)}`) } if (data.status === 'EXPIRED') { stopped = true; router.push(`/provider/credits/intent/${encodeURIComponent(intentId)}?status=expired`) } if (data.status === 'FAILED') { stopped = true; toast.error("Payment couldn't be confirmed - try again"); router.push('/provider/credits') } } catch (error) { const reason = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'network'; console.warn('[payat] poll_failed', { intentId, reason, elapsedMs: Math.round(performance.now() - startedAt) }) } finally { window.clearTimeout(timeout) } } const interval = window.setInterval(poll, POLL_INTERVAL_MS); void poll(); return () => { stopped = true; window.clearInterval(interval) } }, [intentId, phase, router])
-  async function copyLink() { try { await navigator.clipboard.writeText(paymentLink); toast.success('Pay@ link copied') } catch { toast.error('Could not copy link') } }
-  async function sendWhatsApp() { setWhatsAppPending(true); const result = await notifyProviderPayatTopUpInitiated(intentId); setWhatsAppPending(false); if (result.ok) toast.success('WhatsApp link sent'); else toast.error(result.message) }
-  return <CreditsShell eyebrow="Pay@ payment" title="Show this at the till" subtitle={`${formatAmount(amountCents)} · ${creditsToIssue} credits. Pay cash or card at a Pay@ retailer.`} backHref="/provider/credits"><div className="rounded-[20px] bg-card p-4 shadow-[inset_0_0_0_1px_var(--border)]"><div className="grid grid-cols-2 gap-4"><div><div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">You will pay</div><div className="mt-1 text-[24px] font-extrabold text-[var(--ink)]">{formatAmount(amountCents)}</div><div className="text-[12px] text-[var(--ink-mute)]">{creditsToIssue} credits added</div></div><div className="text-right"><div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">Reference</div><div className="mt-1 font-mono text-[18px] font-bold text-[var(--ink)]">{displayRef}</div><div className="font-mono text-[10.5px] text-[var(--ink-soft)]">expires in {countdown}</div></div></div></div>{phase === 'creating' ? <div className="flex min-h-[310px] flex-col items-center justify-center rounded-[24px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]"><Loader2 className="size-11 animate-spin text-[var(--brand-purple)]" aria-hidden /><div className="mt-4 text-[16px] font-bold text-[var(--ink)]">Creating Pay@ link...</div><div className="mt-2 max-w-[250px] font-mono text-[10.5px] leading-relaxed text-[var(--ink-soft)]">Server is talking to Pay@. Takes about 1-2 seconds.</div></div> : <><div className="rounded-[24px] p-[1px] brand-gradient"><div className="rounded-[23px] bg-white p-5 text-center"><QRCode value={paymentLink} size={200} className="mx-auto h-[200px] w-[200px]" /><div className="mt-4 text-[12px] font-medium text-neutral-500">Builders · Shoprite · Pick n Pay · Checkers · Boxer</div></div></div><div className="grid grid-cols-2 gap-2.5"><Button asChild size="lg" className="h-[50px] rounded-[14px]"><Link href={paymentLink} target="_blank" rel="noreferrer"><ExternalLink className="size-4" aria-hidden />Pay now</Link></Button><Button type="button" variant="whatsapp" size="lg" loading={whatsAppPending} onClick={sendWhatsApp} className="h-[50px] rounded-[14px]"><MessageCircle className="size-4" aria-hidden />WhatsApp link</Button></div><button type="button" onClick={copyLink} className="flex w-full items-center gap-3 rounded-[16px] bg-card p-4 text-left shadow-[inset_0_0_0_1px_var(--border)]"><div className="min-w-0 flex-1"><div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">Or share this link</div><div className="mt-1 truncate font-mono text-[11px] text-[var(--ink)]">{paymentLink}</div></div><Clipboard className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden /></button><WaitingIndicator /><section className="space-y-2.5"><div className="font-mono text-[11px] font-bold uppercase tracking-[0.10em] text-[var(--ink-mute)]">At the till</div><StepRow n={1} title='Say "Pay@ payment"' body="Tell the cashier you want to make a Pay@ payment." /><StepRow n={2} title="Show your phone" body="The cashier scans the QR or types the reference." /><StepRow n={3} title={`Pay ${formatAmount(amountCents)}`} body="Cash or card. Keep your printed slip." /><StepRow n={4} title="Credits land in ~30s" body={`WhatsApp confirms when ${creditsToIssue} credits are added.`} /></section></>}</CreditsShell>
+export function PaymentIntentStatusClient({
+  intentId,
+  amountCents,
+  creditsToIssue,
+  reference,
+  paymentLink,
+  sourceReference,
+  expiresAt,
+  showCreatingFirst = false,
+}: {
+  intentId: string
+  amountCents: number
+  creditsToIssue: number
+  reference: string
+  paymentLink: string | null
+  sourceReference: string | null
+  expiresAt: string | null
+  showCreatingFirst?: boolean
+}) {
+  const router = useRouter()
+  const [phase, setPhase] = useState<'creating' | 'ready'>(showCreatingFirst ? 'creating' : 'ready')
+  const [whatsAppPending, setWhatsAppPending] = useState(false)
+  const [countdown, setCountdown] = useState(() => timeLeft(expiresAt))
+  const displayRef = useMemo(() => shortReference(reference), [reference])
+
+  useEffect(() => {
+    if (phase !== 'creating') return
+    const timeout = window.setTimeout(() => setPhase('ready'), 1_100)
+    return () => window.clearTimeout(timeout)
+  }, [phase])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setCountdown(timeLeft(expiresAt)), 60_000)
+    return () => window.clearInterval(interval)
+  }, [expiresAt])
+
+  useEffect(() => {
+    if (phase !== 'ready') return
+    let stopped = false
+    async function poll() {
+      const startedAt = performance.now()
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), POLL_REQUEST_TIMEOUT_MS)
+      try {
+        const response = await fetch(`/api/provider/payment-intent/${encodeURIComponent(intentId)}/status`, { cache: 'no-store', signal: controller.signal })
+        if (!response.ok || stopped) return
+        const data = await response.json() as PaymentIntentStatusPayload
+        console.info('[payat] poll_status', { intentId, status: data.status, elapsedMs: Math.round(performance.now() - startedAt) })
+        if (data.status === 'CREDITED') { stopped = true; router.push(`/provider/credits/success?intentId=${encodeURIComponent(intentId)}`) }
+        if (data.status === 'EXPIRED') { stopped = true; router.push(`/provider/credits/intent/${encodeURIComponent(intentId)}?status=expired`) }
+        if (data.status === 'FAILED') { stopped = true; toast.error("Payment couldn't be confirmed - try again"); router.push('/provider/credits') }
+      } catch (error) {
+        const reason = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'network'
+        console.warn('[payat] poll_failed', { intentId, reason, elapsedMs: Math.round(performance.now() - startedAt) })
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    }
+    const interval = window.setInterval(poll, POLL_INTERVAL_MS)
+    void poll()
+    return () => { stopped = true; window.clearInterval(interval) }
+  }, [intentId, phase, router])
+
+  async function copySourceRef() {
+    if (!sourceReference) return
+    try { await navigator.clipboard.writeText(sourceReference); toast.success('Reference copied') } catch { toast.error('Could not copy reference') }
+  }
+
+  async function copyLink() {
+    if (!paymentLink) return
+    try { await navigator.clipboard.writeText(paymentLink); toast.success('Pay@ link copied') } catch { toast.error('Could not copy link') }
+  }
+
+  async function sendWhatsApp() {
+    setWhatsAppPending(true)
+    const result = await notifyProviderPayatTopUpInitiated(intentId)
+    setWhatsAppPending(false)
+    if (result.ok) toast.success('WhatsApp link sent'); else toast.error(result.message)
+  }
+
+  return (
+    <CreditsShell eyebrow="Pay@ payment" title="Show this at the till" subtitle={`${formatAmount(amountCents)} · ${creditsToIssue} credits. Pay cash or card at a Pay@ retailer.`} backHref="/provider/credits">
+      <div className="rounded-[20px] bg-card p-4 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">You will pay</div>
+            <div className="mt-1 text-[24px] font-extrabold text-[var(--ink)]">{formatAmount(amountCents)}</div>
+            <div className="text-[12px] text-[var(--ink-mute)]">{creditsToIssue} credits added</div>
+          </div>
+          <div className="text-right">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">Reference</div>
+            <div className="mt-1 font-mono text-[18px] font-bold text-[var(--ink)]">{displayRef}</div>
+            <div className="font-mono text-[10.5px] text-[var(--ink-soft)]">expires in {countdown}</div>
+          </div>
+        </div>
+      </div>
+
+      {phase === 'creating' ? (
+        <div className="flex min-h-[310px] flex-col items-center justify-center rounded-[24px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]">
+          <Loader2 className="size-11 animate-spin text-[var(--brand-purple)]" aria-hidden />
+          <div className="mt-4 text-[16px] font-bold text-[var(--ink)]">Creating Pay@ reference...</div>
+          <div className="mt-2 max-w-[250px] font-mono text-[10.5px] leading-relaxed text-[var(--ink-soft)]">Server is talking to Pay@. Takes about 1–2 seconds.</div>
+        </div>
+      ) : (
+        <>
+          {/* Primary: retail till reference */}
+          {sourceReference ? (
+            <button
+              type="button"
+              onClick={copySourceRef}
+              className="flex w-full items-center gap-3 rounded-[24px] brand-gradient p-[1px] text-left"
+            >
+              <div className="flex w-full items-center gap-3 rounded-[23px] bg-white px-5 py-4">
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-500">Pay@ retail reference</div>
+                  <div className="mt-1 font-mono text-[28px] font-extrabold tracking-[0.04em] text-neutral-900">{sourceReference}</div>
+                  <div className="mt-1 text-[12px] text-neutral-500">Give this number to the cashier at PEP, Shoprite, Pick n Pay, Checkers, Boxer, or Builders.</div>
+                </div>
+                <Clipboard className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden />
+              </div>
+            </button>
+          ) : null}
+
+          {/* Secondary: QR + online link (optional) */}
+          {paymentLink ? (
+            <>
+              <div className="rounded-[24px] p-[1px] brand-gradient">
+                <div className="rounded-[23px] bg-white p-5 text-center">
+                  <QRCode value={paymentLink} size={200} className="mx-auto h-[200px] w-[200px]" />
+                  <div className="mt-4 text-[12px] font-medium text-neutral-500">Or scan to pay online</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <Button asChild size="lg" className="h-[50px] rounded-[14px]">
+                  <Link href={paymentLink} target="_blank" rel="noreferrer"><ExternalLink className="size-4" aria-hidden />Pay online</Link>
+                </Button>
+                <Button type="button" variant="whatsapp" size="lg" loading={whatsAppPending} onClick={sendWhatsApp} className="h-[50px] rounded-[14px]">
+                  <MessageCircle className="size-4" aria-hidden />WhatsApp
+                </Button>
+              </div>
+              <button type="button" onClick={copyLink} className="flex w-full items-center gap-3 rounded-[16px] bg-card p-4 text-left shadow-[inset_0_0_0_1px_var(--border)]">
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">Copy online payment link</div>
+                  <div className="mt-1 truncate font-mono text-[11px] text-[var(--ink)]">{paymentLink}</div>
+                </div>
+                <Clipboard className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden />
+              </button>
+            </>
+          ) : (
+            <Button type="button" variant="whatsapp" size="lg" loading={whatsAppPending} onClick={sendWhatsApp} className="h-[50px] w-full rounded-[14px]">
+              <MessageCircle className="size-4" aria-hidden />Send to WhatsApp
+            </Button>
+          )}
+
+          <WaitingIndicator />
+
+          <section className="space-y-2.5">
+            <div className="font-mono text-[11px] font-bold uppercase tracking-[0.10em] text-[var(--ink-mute)]">At the till</div>
+            <StepRow n={1} title='Say "Pay@ payment"' body="Tell the cashier you want to make a Pay@ payment." />
+            <StepRow n={2} title="Give your reference" body="Read the number above or show the QR code if available." />
+            <StepRow n={3} title={`Pay ${formatAmount(amountCents)}`} body="Cash or card. Keep your printed slip." />
+            <StepRow n={4} title="Credits land in ~30s" body={`WhatsApp confirms when ${creditsToIssue} credits are added.`} />
+          </section>
+        </>
+      )}
+    </CreditsShell>
+  )
 }
 
 export function ExpiredPayatIntentScreen() { const router = useRouter(); return <CreditsShell eyebrow="Link expired" title="Create a fresh link" subtitle="Pay@ links are valid for 3 days. This one can no longer be paid at the till." backHref="/provider/credits"><div className="rounded-[24px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[var(--card-alt)] text-[var(--ink-mute)]"><XCircle className="size-8" aria-hidden /></div><div className="mt-4 text-[17px] font-bold text-[var(--ink)]">This Pay@ link expired</div><p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-mute)]">No credits were added. Start a new top-up and use the latest QR or reference.</p></div><Button type="button" size="lg" onClick={() => router.push('/provider/credits#topup')}>Create new Pay@ link</Button></CreditsShell> }

@@ -460,7 +460,7 @@ export async function notifyProviderPayfastTopUpInitiated(paymentIntentId: strin
 
 export async function notifyProviderPayatTopUpInitiated(
   paymentIntentId: string,
-  paymentLink: string,
+  paymentLink?: string,
 ) {
   const intent = await db.paymentIntent.findUnique({
     where: { id: paymentIntentId },
@@ -483,7 +483,7 @@ export async function notifyProviderPayatTopUpInitiated(
     whatsappTemplate: 'wallet_payat_topup_initiated',
     templateParameters: [amountFormatted, String(intent.creditsToIssue)],
     templateComponents: (() => {
-      const buttonComponent = payatUrlButtonComponent(0, paymentLink)
+      const buttonComponent = paymentLink ? payatUrlButtonComponent(0, paymentLink) : null
       return [
         ...templateBodyComponents([amountFormatted, String(intent.creditsToIssue)]),
         ...(buttonComponent !== null ? [buttonComponent] : []),

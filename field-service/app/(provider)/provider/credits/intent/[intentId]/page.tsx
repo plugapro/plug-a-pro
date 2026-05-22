@@ -33,7 +33,7 @@ export default async function ProviderPayatIntentPage({
     return <ExpiredPayatIntentScreen />
   }
 
-  if (!status.paymentLink) notFound()
+  if (!status.paymentLink && !status.sourceReference) notFound()
 
   return (
     <PaymentIntentStatusClient
@@ -42,6 +42,7 @@ export default async function ProviderPayatIntentPage({
       creditsToIssue={status.creditsToIssue}
       reference={status.reference}
       paymentLink={status.paymentLink}
+      sourceReference={status.sourceReference}
       expiresAt={status.expiresAt}
       showCreatingFirst={resolvedSearchParams.created === '1'}
     />

@@ -997,12 +997,16 @@ model PaymentIntent {
   creditedAt             DateTime?
   expiresAt              DateTime?
   metadata               Json                @default("{}")
+  // Pay@ merchant RTP fields — populated after a successful rtp/create/single call.
+  sourceReference        String?             // retail till reference (numeric, shown to provider at counter)
+  requestToPayId         Int?                // Pay@ internal RTP integer id (for rtp:read / rtp:cancel)
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@index([providerId, createdAt])
   @@index([status, createdAt])
   @@index([bankStatementReference])
+  @@index([sourceReference])
   @@map("payment_intents")
 }
 

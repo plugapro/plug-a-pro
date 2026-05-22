@@ -281,7 +281,9 @@ export type PayatTopUpResultData = {
   amountCents: number
   creditsToIssue: number
   reference: string
-  paymentLink: string
+  sourceReference: string
+  requestToPayId: number
+  paymentLink?: string
 }
 
 export type ProviderPayatTopUpResponse =
@@ -440,7 +442,12 @@ export async function createPayatTopUpIntent(
     await db.paymentIntent.update({
       where: { id: intent.id },
       data: { status: 'FAILED' },
-    }).catch(() => {})
+    }).catch((dbErr) => {
+      console.error('[provider-credit-payment-intents] failed_to_mark_intent_failed', {
+        intentId: intent.id,
+        error: dbErr instanceof Error ? dbErr.message : String(dbErr),
+      })
+    })
     throw err
   }
 
@@ -448,17 +455,20 @@ export async function createPayatTopUpIntent(
     await db.paymentIntent.update({
       where: { id: intent.id },
       data: {
+        sourceReference: payat.sourceReference,
+        requestToPayId: payat.requestToPayId,
         metadata: toJson({
           ...(typeof intent.metadata === 'object' && intent.metadata && !Array.isArray(intent.metadata)
             ? intent.metadata
             : {}),
           payatReference: payat.reference,
-          paymentLink: payat.paymentLink,
+          sourceReference: payat.sourceReference,
+          paymentLink: payat.paymentLink ?? null,
         }),
       },
     })
   } catch (updateErr) {
-    // Non-fatal: intent is PENDING_PAYMENT and Pay@ has issued the link.
+    // Non-fatal: intent is PENDING_PAYMENT and Pay@ has issued the reference.
     // The webhook will still credit the wallet on payment confirmation.
     console.error('[provider-credit-payment-intents] payat_metadata_update_failed', {
       intentId: intent.id,

@@ -1296,17 +1296,19 @@ async function processInboundMessageUnlocked(
         // H-10: Send a direct CTA URL as a delivery guarantee — the template
         // notification from notifyProviderPayatTopUpInitiated may be delayed or
         // fail if the template is pending approval.
-        await sendCtaUrl(
-          phone,
-          `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till.`,
-          'Pay now',
-          result.payat.paymentLink,
-        ).catch((error: unknown) => {
-          console.error('[whatsapp-bot] Pay@ payment link direct sendCtaUrl failed', {
-            intentId: result.intent.id,
-            error,
+        if (result.payat.paymentLink) {
+          await sendCtaUrl(
+            phone,
+            `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till.`,
+            'Pay now',
+            result.payat.paymentLink,
+          ).catch((error: unknown) => {
+            console.error('[whatsapp-bot] Pay@ payment link direct sendCtaUrl failed', {
+              intentId: result.intent.id,
+              error,
+            })
           })
-        })
+        }
       } catch (err: unknown) {
         // H-4: DUPLICATE_INTENT means an active Pay@ link already exists for this
         // amount. Telling the provider to "try again" would loop — give them a
