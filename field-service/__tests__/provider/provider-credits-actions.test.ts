@@ -434,6 +434,22 @@ describe('provider credits server actions', () => {
     })
   })
 
+  it('redirects to /provider/credits?error=topup_failed when createProviderTopUpIntentFormAction throws', async () => {
+    await arrangeProvider()
+    const { createManualEftTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
+    ;(createManualEftTopUpIntent as any).mockRejectedValue(new Error('DB connection lost'))
+
+    const { createProviderTopUpIntentFormAction } = await import(
+      '../../app/(provider)/provider/credits/actions'
+    )
+    const formData = new FormData()
+    formData.set('amountCents', '10000')
+
+    await expect(createProviderTopUpIntentFormAction(formData)).rejects.toThrow(
+      'redirect:/provider/credits?error=topup_failed',
+    )
+  })
+
   it('redirects form submissions to the newly created top-up instructions', async () => {
     await arrangeProvider()
     const { createManualEftTopUpIntent } = await import('../../lib/provider-credit-payment-intents')

@@ -314,6 +314,8 @@ export type CreatePayatTopUpIntentInput = {
   feeAmountCents?: number
   providerCellphone?: string | null
   metadata?: Record<string, unknown>
+  /** Injectable clock for deterministic tests. Defaults to `new Date()`. */
+  now?: Date
 }
 
 export type CreatePayatTopUpIntentResult = {
@@ -391,7 +393,7 @@ export async function createPayatTopUpIntent(
 
     // H-2: expiresAt matches the Pay@ RTP daysValid:3 so the intent does not
     // stay PENDING_PAYMENT indefinitely after the payment link expires.
-    const payatExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+    const payatExpiresAt = new Date((input.now ?? new Date()).getTime() + 3 * 24 * 60 * 60 * 1000)
 
     // The PaymentIntent is created before Pay@ is called so webhook references
     // can use the immutable intent ID and remain idempotent under retries.
@@ -442,18 +444,28 @@ export async function createPayatTopUpIntent(
     throw err
   }
 
-  await db.paymentIntent.update({
-    where: { id: intent.id },
-    data: {
-      metadata: toJson({
-        ...(typeof intent.metadata === 'object' && intent.metadata && !Array.isArray(intent.metadata)
-          ? intent.metadata
-          : {}),
-        payatReference: payat.reference,
-        paymentLink: payat.paymentLink,
-      }),
-    },
-  })
+  try {
+    await db.paymentIntent.update({
+      where: { id: intent.id },
+      data: {
+        metadata: toJson({
+          ...(typeof intent.metadata === 'object' && intent.metadata && !Array.isArray(intent.metadata)
+            ? intent.metadata
+            : {}),
+          payatReference: payat.reference,
+          paymentLink: payat.paymentLink,
+        }),
+      },
+    })
+  } catch (updateErr) {
+    // Non-fatal: intent is PENDING_PAYMENT and Pay@ has issued the link.
+    // The webhook will still credit the wallet on payment confirmation.
+    console.error('[provider-credit-payment-intents] payat_metadata_update_failed', {
+      intentId: intent.id,
+      providerId: provider.id,
+      error: updateErr instanceof Error ? updateErr.message : String(updateErr),
+    })
+  }
 
   const { notifyProviderPayatTopUpInitiated } = await import('./provider-wallet-notifications')
   notifyProviderPayatTopUpInitiated(intent.id, payat.paymentLink).catch((error: unknown) => {

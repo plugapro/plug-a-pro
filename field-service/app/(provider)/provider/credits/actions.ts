@@ -107,7 +107,7 @@ export type NotifyPayatTopUpResult =
     }
   | {
       ok: false
-      code: 'NOT_FOUND' | 'INVALID_STATUS' | 'MISSING_LINK' | 'FORBIDDEN'
+      code: 'NOT_FOUND' | 'INVALID_STATUS' | 'MISSING_LINK' | 'FORBIDDEN' | 'NOTIFY_FAILED'
       message: string
     }
 
@@ -593,7 +593,7 @@ export async function notifyProviderPayatTopUpInitiated(
     })
     return {
       ok: false,
-      code: 'INVALID_STATUS',
+      code: 'NOTIFY_FAILED',
       message: 'Could not send WhatsApp link at the moment.',
     }
   }
@@ -817,6 +817,22 @@ export async function createProviderPayatTopUpIntent(
             code: 'REFERENCE_GENERATION_FAILED',
             userMessage: 'Could not generate a payment reference. Please try again.',
           }
+        default:
+          console.error('[payat] checkout_blocked: unclassified_intent_error', {
+            providerId,
+            walletId,
+            packageId,
+            amountCents,
+            code: err.code,
+            status: 'blocked',
+            environment: payatEnvironment,
+            elapsedMs: Date.now() - startedAt,
+          })
+          return {
+            ok: false,
+            code: 'UNKNOWN' as const,
+            userMessage: "We couldn't create your Pay@ reference. Please try again.",
+          }
       }
     }
     const baseFailureLog = {
@@ -905,7 +921,11 @@ export async function createProviderPayfastTopUpIntent(
     const provider = await getAuthenticatedProvider()
     providerId = provider.id
     const activeIntentCount = await db.paymentIntent.count({
-      where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
+      where: {
+        providerId: provider.id,
+        paymentMethod: { in: ['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'] },
+        status: 'PENDING_PAYMENT',
+      },
     })
     if (activeIntentCount >= 3) {
       // Mirror the Pay@ checkout_blocked log shape so log-based alerts can match
