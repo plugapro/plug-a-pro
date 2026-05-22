@@ -21,6 +21,7 @@
     "db:migrate:prod": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "seed:locations": "tsx scripts/seed-locations.ts",
+    "seed:categories": "tsx scripts/seed-categories.ts",
     "audit:locations": "tsx scripts/audit-locations.ts",
     "export:locations": "tsx scripts/export-locations.ts",
     "db:probe-migrations": "tsx scripts/probe-migration-state.ts",
