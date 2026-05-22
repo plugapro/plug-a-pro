@@ -50,11 +50,11 @@ describe('Pay@ typed errors', () => {
     expect(err.message).toMatch(/503/)
   })
 
-  it('PayatApiError rtp_response_invalid has no status and signals a missing payment link', () => {
+  it('PayatApiError rtp_response_invalid has no status and signals a missing sourceReference', () => {
     const err = new PayatApiError('rtp_response_invalid')
     expect(err.stage).toBe('rtp_response_invalid')
     expect(err.status).toBeUndefined()
-    expect(err.message).toMatch(/paymentLink/)
+    expect(err.message).toMatch(/sourceReference/)
   })
 
   it('PayatApiError accepts an explicit detail override', () => {
