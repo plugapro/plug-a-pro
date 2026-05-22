@@ -35,6 +35,12 @@ export default defineConfig({
     },
   },
   resolve: {
+    // Prefer TypeScript source files over compiled JS when both exist.
+    // Without this, Vite's default order ('.js' before '.ts') causes
+    // lib/whatsapp.js (a legacy prototype stub) to shadow lib/whatsapp.ts
+    // (the real production module), breaking any test that imports
+    // @/lib/whatsapp without an explicit extension.
+    extensions: ['.mts', '.ts', '.tsx', '.mjs', '.js', '.jsx', '.json'],
     alias: {
       '@': path.resolve(__dirname, '.'),
       // server-only throws in non-Next.js environments (Vitest runs in plain Node).

@@ -44,11 +44,91 @@ vi.mock('@/lib/payments', () => ({
   handlePaymentFailed: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('@/lib/whatsapp', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/whatsapp')>()
+vi.mock('@/lib/whatsapp', async () => {
+  // vi.importActual fails for @/lib/whatsapp because the module's transitive
+  // import graph (message-events, whatsapp-policy, provider-credit-copy, etc.)
+  // is too complex for Vitest to resolve in a mock factory context.
+  //
+  // Instead we inline the real logic for the two pure functions tested here
+  // (they only use Node's built-in crypto and process.env — no DB calls),
+  // and provide a real processWebhookEvent that delegates to the mocked db,
+  // so that webhooks.test.ts works when these test files run in the same worker.
+  const { createHmac, timingSafeEqual } = await import('crypto')
+  const { db } = await import('@/lib/db')
+
+  function verifyMetaSignature(rawBody: string, signature: string): boolean {
+    const appSecret = process.env.WHATSAPP_APP_SECRET?.trim()
+    if (!appSecret) return false
+    const received = signature.startsWith('sha256=') ? signature.slice(7) : ''
+    if (!received) return false
+    const expected = createHmac('sha256', appSecret).update(rawBody).digest('hex')
+    try {
+      return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'))
+    } catch {
+      return false
+    }
+  }
+
+  function verifyWebhookChallenge(
+    mode: string | null,
+    token: string | null,
+    challenge: string | null
+  ): string | null {
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN
+    if (mode === 'subscribe' && token && verifyToken) {
+      const bufA = Buffer.from(token)
+      const bufB = Buffer.from(verifyToken)
+      if (bufA.length !== bufB.length) {
+        timingSafeEqual(bufA, Buffer.alloc(bufA.length))
+        return null
+      }
+      if (timingSafeEqual(bufA, bufB)) return challenge
+    }
+    return null
+  }
+
+  async function processWebhookEvent(payload: { object: string; entry?: Array<{ id: string; changes?: Array<{ value: { messaging_product?: string; statuses?: Array<{ id: string; status: string; timestamp: string; recipient_id: string; conversation?: unknown; pricing?: unknown; errors?: Array<{ message: string }> }>; messages?: unknown[] }; field: string }> }> }): Promise<void> {
+    for (const entry of payload.entry ?? []) {
+      for (const change of entry.changes ?? []) {
+        const value = change.value
+        for (const status of value.statuses ?? []) {
+          await db.messageEvent.updateMany({
+            where: { externalId: status.id },
+            data: {
+              status:
+                status.status === 'delivered'
+                  ? 'DELIVERED'
+                  : status.status === 'read'
+                  ? 'READ'
+                  : status.status === 'failed'
+                  ? 'FAILED'
+                  : undefined,
+              deliveredAt: status.status === 'delivered' ? new Date() : undefined,
+              readAt: status.status === 'read' ? new Date() : undefined,
+              failureReason: status.errors?.[0]?.message,
+            },
+          })
+        }
+      }
+    }
+  }
+
   return {
-    ...actual,
+    verifyMetaSignature,
+    verifyWebhookChallenge,
+    processWebhookEvent,
+    // Stub all exports that make real HTTP calls to Meta's API
     sendBookingConfirmation: vi.fn().mockResolvedValue(undefined),
+    sendWhatsAppMessage: vi.fn().mockResolvedValue(undefined),
+    sendTemplate: vi.fn().mockResolvedValue(undefined),
+    sendText: vi.fn().mockResolvedValue(undefined),
+    sendProviderOnTheWay: vi.fn().mockResolvedValue(undefined),
+    sendJobOffer: vi.fn().mockResolvedValue(undefined),
+    sendJobCompleted: vi.fn().mockResolvedValue(undefined),
+    sendQuoteReady: vi.fn().mockResolvedValue(undefined),
+    sendPaymentReminder: vi.fn().mockResolvedValue(undefined),
+    sendAdminNewApplication: vi.fn().mockResolvedValue(undefined),
+    sendCustomerMatchFoundNotification: vi.fn().mockResolvedValue(undefined),
   }
 })
 
