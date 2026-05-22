@@ -95,52 +95,85 @@ export async function GET(request: NextRequest) {
     generateCredentialsResult = { ok: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }
   }
 
-  // ── Step 3: RTP create (test call with placeholder data) ───────────────────
   const base = appUrl.replace(/\/$/, '')
-  let rtpResult: Record<string, unknown>
-  try {
-    const res = await fetch(
-      `${apiBase}/integrator/ecommerce/rtp/create/single/${merchantIdentifier}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+
+  async function callRtp(label: string): Promise<Record<string, unknown>> {
+    try {
+      const res = await fetch(
+        `${apiBase}/integrator/ecommerce/rtp/create/single/${merchantIdentifier}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token!}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clientAccountNumber: generateClientAccountNumber(),
+            amount: '10000',
+            minimumAmount: '10000',
+            maximumAmount: '10000',
+            description: `Plug A Pro credits top-up (diag-${label})`,
+            clientReferenceNumber: `diag-${label}-${Date.now()}`,
+            merchantDisplayName: 'Plug A Pro',
+            notificationNumber: '+27820000000',
+            customerNameSurname: 'Diag Test',
+            customerMobileNumber: '+27820000000',
+            customerEmail: 'diag@plugapro.co.za',
+            daysValid: '3',
+            merchantEcommerceStoreName: 'PLUGAPRO',
+            successReturnUrl: `${base}/provider/credits?topup=success`,
+            failureReturnUrl: `${base}/provider/credits?topup=failed`,
+            cancelReturnUrl: `${base}/provider/credits?topup=cancelled`,
+            lineItems: [{ description: 'Credits top-up', amount: '10000' }],
+            multiPremium: 1,
+          }),
+          signal: AbortSignal.timeout(10_000),
         },
-        body: JSON.stringify({
-          clientAccountNumber: generateClientAccountNumber(),
-          amount: '10000',
-          minimumAmount: '10000',
-          maximumAmount: '10000',
-          description: 'Plug A Pro credits top-up (diagnostic test)',
-          clientReferenceNumber: `diag-${Date.now()}`,
-          merchantDisplayName: 'Plug A Pro',
-          notificationNumber: '+27820000000',
-          customerNameSurname: 'Diag Test',
-          customerMobileNumber: '+27820000000',
-          customerEmail: 'diag@plugapro.co.za',
-          daysValid: '3',
-          merchantEcommerceStoreName: 'PLUGAPRO',
-          successReturnUrl: `${base}/provider/credits?topup=success`,
-          failureReturnUrl: `${base}/provider/credits?topup=failed`,
-          cancelReturnUrl: `${base}/provider/credits?topup=cancelled`,
-          lineItems: [{ description: 'Credits top-up', amount: '10000' }],
-          multiPremium: 1,
-        }),
-        signal: AbortSignal.timeout(10_000),
-      },
-    )
-    // Read the full body regardless — this is a diagnostic, not production.
-    const body = await res.text()
-    rtpResult = {
-      status: res.status,
-      ok: res.ok,
-      // Truncate to 800 chars to avoid leaking excessively large payloads
-      body: body.slice(0, 800),
+      )
+      const body = await res.text()
+      return { status: res.status, ok: res.ok, body: body.slice(0, 800) }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }
     }
-  } catch (err) {
-    rtpResult = { ok: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }
   }
 
-  return NextResponse.json({ env, token: tokenResult, generatecredentials: generateCredentialsResult, rtp: rtpResult })
+  // ── Step 3a: RTP after generatecredentials (current production behaviour) ──
+  const rtpAfterGenCreds = await callRtp('after-gencreds')
+
+  // ── Step 3b: fresh token + RTP with NO generatecredentials call ────────────
+  // Tests whether the merchant is already registered (e.g. via Pay@ portal).
+  // If this returns 200 but step 3a returns 403, we can skip generatecredentials.
+  let freshToken: string | null = null
+  try {
+    const res = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      },
+      body: new URLSearchParams({ grant_type: 'client_credentials' }),
+      signal: AbortSignal.timeout(8_000),
+    })
+    if (res.ok) {
+      const data = await res.json() as Record<string, unknown>
+      freshToken = typeof data.access_token === 'string' ? data.access_token : null
+    }
+  } catch { /* ignore */ }
+
+  let rtpDirectResult: Record<string, unknown>
+  if (freshToken) {
+    // Temporarily swap the token reference so callRtp uses the fresh one
+    token = freshToken
+    rtpDirectResult = await callRtp('direct-no-gencreds')
+  } else {
+    rtpDirectResult = { skipped: 'could not obtain fresh token for direct test' }
+  }
+
+  return NextResponse.json({
+    env,
+    token: tokenResult,
+    generatecredentials: generateCredentialsResult,
+    rtp_after_gencreds: rtpAfterGenCreds,
+    rtp_direct_no_gencreds: rtpDirectResult,
+  })
 }
