@@ -96,6 +96,7 @@ describe('autoApproveLowRiskCategories', () => {
       where: { id: { in: ['pc-1'] } },
       data: { approvalStatus: 'APPROVED' },
     })
+    expect(mockDb.providerCategory.updateMany).toHaveBeenCalledOnce()
   })
 
   it('writes AuditLog entries via $transaction', async () => {
@@ -119,6 +120,7 @@ describe('autoApproveLowRiskCategories', () => {
       actorRole: 'SYSTEM',
       action: 'provider_category.auto_approved',
       entityId: 'pc-1',
+      after: expect.objectContaining({ reason: 'LOW_RISK_CATEGORY', categorySlug: 'garden' }),
     })
   })
 
@@ -156,6 +158,7 @@ describe('autoApproveProvidersForCategory', () => {
 
     const count = await autoApproveProvidersForCategory('garden')
 
+    expect(mockDb.$transaction).toHaveBeenCalledOnce()
     expect(mockDb.providerCategory.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['pc-1', 'pc-2'] } },
       data: { approvalStatus: 'APPROVED' },
