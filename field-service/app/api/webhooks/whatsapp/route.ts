@@ -8,7 +8,7 @@
 
 import type { Prisma } from '@prisma/client'
 import { type NextRequest, NextResponse, after } from 'next/server'
-import { verifyWebhookChallenge, verifyMetaSignature } from '@/lib/whatsapp'
+import { verifyWebhookChallenge, verifyMetaSignature } from '@/lib/webhook-auth'
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
 import { handleReviewFirstProviderNotificationStatus } from '@/lib/review-first'

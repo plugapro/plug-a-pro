@@ -2,7 +2,6 @@
 // Direct integration — no intermediary required.
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages
 
-import { createHmac, timingSafeEqual } from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from './db'
 import { logOutboundMessage } from './message-events'
@@ -1141,53 +1140,9 @@ export async function sendAdminNewApplication(params: {
 
 // ─── Webhook verification ─────────────────────────────────────────────────────
 
-/**
- * Verify the X-Hub-Signature-256 header sent by Meta on every POST webhook.
- * The signature is HMAC-SHA256 of the raw request body, keyed with WHATSAPP_APP_SECRET.
- *
- * Returns false (and rejects the request) when:
- *  - WHATSAPP_APP_SECRET is not configured
- *  - The header is missing or malformed
- *  - The computed HMAC does not match
- */
-export function verifyMetaSignature(rawBody: string, signature: string): boolean {
-  const appSecret = process.env.WHATSAPP_APP_SECRET?.trim()
-  if (!appSecret) {
-    console.error('[whatsapp] WHATSAPP_APP_SECRET not configured — rejecting webhook')
-    return false
-  }
-
-  const received = signature.startsWith('sha256=') ? signature.slice(7) : ''
-  if (!received) return false
-
-  const expected = createHmac('sha256', appSecret).update(rawBody).digest('hex')
-
-  try {
-    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'))
-  } catch {
-    return false
-  }
-}
-
-/** Verify the hub.verify_token during webhook setup */
-export function verifyWebhookChallenge(
-  mode: string | null,
-  token: string | null,
-  challenge: string | null
-): string | null {
-  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN
-  if (mode === 'subscribe' && token && verifyToken) {
-    const bufA = Buffer.from(token)
-    const bufB = Buffer.from(verifyToken)
-    if (bufA.length !== bufB.length) {
-      // Lengths differ — fail but avoid early exit to prevent timing oracle
-      timingSafeEqual(bufA, Buffer.alloc(bufA.length))
-      return null
-    }
-    if (timingSafeEqual(bufA, bufB)) return challenge
-  }
-  return null
-}
+// verifyMetaSignature and verifyWebhookChallenge live in webhook-auth.ts
+// (pure crypto — no DB, no HTTP) so tests can use vi.importActual() safely.
+export { verifyMetaSignature, verifyWebhookChallenge } from './webhook-auth'
 
 /**
  * @deprecated Use app/api/webhooks/whatsapp/route.ts directly — it has deduplication,

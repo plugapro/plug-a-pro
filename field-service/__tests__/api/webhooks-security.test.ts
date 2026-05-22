@@ -45,47 +45,13 @@ vi.mock('@/lib/payments', () => ({
 }))
 
 vi.mock('@/lib/whatsapp', async () => {
-  // vi.importActual fails for @/lib/whatsapp because the module's transitive
-  // import graph (message-events, whatsapp-policy, provider-credit-copy, etc.)
-  // is too complex for Vitest to resolve in a mock factory context.
-  //
-  // Instead we inline the real logic for the two pure functions tested here
-  // (they only use Node's built-in crypto and process.env — no DB calls),
-  // and provide a real processWebhookEvent that delegates to the mocked db,
-  // so that webhooks.test.ts works when these test files run in the same worker.
-  const { createHmac, timingSafeEqual } = await import('crypto')
+  // verifyMetaSignature and verifyWebhookChallenge are pure crypto helpers that
+  // now live in webhook-auth.ts. vi.importActual() resolves that lightweight
+  // module without pulling in the full whatsapp.ts dependency graph.
+  const { verifyMetaSignature, verifyWebhookChallenge } = await vi.importActual<
+    typeof import('@/lib/webhook-auth')
+  >('@/lib/webhook-auth')
   const { db } = await import('@/lib/db')
-
-  function verifyMetaSignature(rawBody: string, signature: string): boolean {
-    const appSecret = process.env.WHATSAPP_APP_SECRET?.trim()
-    if (!appSecret) return false
-    const received = signature.startsWith('sha256=') ? signature.slice(7) : ''
-    if (!received) return false
-    const expected = createHmac('sha256', appSecret).update(rawBody).digest('hex')
-    try {
-      return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'))
-    } catch {
-      return false
-    }
-  }
-
-  function verifyWebhookChallenge(
-    mode: string | null,
-    token: string | null,
-    challenge: string | null
-  ): string | null {
-    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN
-    if (mode === 'subscribe' && token && verifyToken) {
-      const bufA = Buffer.from(token)
-      const bufB = Buffer.from(verifyToken)
-      if (bufA.length !== bufB.length) {
-        timingSafeEqual(bufA, Buffer.alloc(bufA.length))
-        return null
-      }
-      if (timingSafeEqual(bufA, bufB)) return challenge
-    }
-    return null
-  }
 
   async function processWebhookEvent(payload: { object: string; entry?: Array<{ id: string; changes?: Array<{ value: { messaging_product?: string; statuses?: Array<{ id: string; status: string; timestamp: string; recipient_id: string; conversation?: unknown; pricing?: unknown; errors?: Array<{ message: string }> }>; messages?: unknown[] }; field: string }> }> }): Promise<void> {
     for (const entry of payload.entry ?? []) {
@@ -145,7 +111,7 @@ vi.mock('@/lib/whatsapp-bot', () => ({
 
 // ─── Meta signature verification ─────────────────────────────────────────────
 
-import { verifyMetaSignature } from '@/lib/whatsapp'
+import { verifyMetaSignature } from '@/lib/webhook-auth'
 
 function makeMetaSig(body: string, secret: string): string {
   return 'sha256=' + createHmac('sha256', secret).update(body).digest('hex')

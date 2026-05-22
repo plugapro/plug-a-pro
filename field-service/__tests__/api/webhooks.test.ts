@@ -28,7 +28,7 @@ vi.mock('@/lib/whatsapp-bot', () => ({
 
 // ─── WhatsApp webhook challenge verification ──────────────────────────────────
 
-import { verifyWebhookChallenge } from '@/lib/whatsapp'
+import { verifyWebhookChallenge } from '@/lib/webhook-auth'
 
 describe('verifyWebhookChallenge', () => {
   beforeEach(() => {
