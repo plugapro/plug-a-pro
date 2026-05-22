@@ -32,6 +32,7 @@ import {
   RESTRICTED_SKILL_NOTICE,
   resolveServiceCategoryTag,
 } from '../service-categories'
+import { resolveInitialApprovalStatus } from '../provider-categories'
 import {
   getHighRiskServiceRequirements,
   getServiceComplianceRequirement,
@@ -2419,17 +2420,23 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         },
       })
 
-      const providerCategoryRows = submitData.skills.map((skill) => ({
-        certificationRequired: Boolean(getServiceComplianceRequirement(skill).certificationRequiredForApproval),
-        certificationStatus: getServiceComplianceRequirement(skill).certificationRecommended
-          ? (uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []).length > 0 ? 'SUBMITTED' : 'REQUESTED')
-          : 'NOT_REQUIRED',
-        providerId,
-        categorySlug: resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
-        yearsExperience: yearsExperienceFromLabel(ctx.data.experience),
-        skillLevel: skillLevelFromExperienceLabel(ctx.data.experience),
-        approvalStatus: 'PENDING_REVIEW',
-      }))
+      const providerCategoryRows = await Promise.all(
+        submitData.skills.map(async (skill) => {
+          const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
+          const approvalStatus = await resolveInitialApprovalStatus(providerId, categorySlug)
+          return {
+            certificationRequired: Boolean(getServiceComplianceRequirement(skill).certificationRequiredForApproval),
+            certificationStatus: getServiceComplianceRequirement(skill).certificationRecommended
+              ? (uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []).length > 0 ? 'SUBMITTED' : 'REQUESTED')
+              : 'NOT_REQUIRED',
+            providerId,
+            categorySlug,
+            yearsExperience: yearsExperienceFromLabel(ctx.data.experience),
+            skillLevel: skillLevelFromExperienceLabel(ctx.data.experience),
+            approvalStatus,
+          }
+        })
+      )
 
       if (providerCategoryRows.length > 0) {
         await (tx as any).providerCategory?.createMany?.({

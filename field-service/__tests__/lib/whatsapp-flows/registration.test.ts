@@ -83,6 +83,10 @@ vi.mock('@/lib/provider-record', () => ({
   syncProviderRecord: vi.fn().mockResolvedValue('provider_created'),
 }))
 
+vi.mock('@/lib/provider-categories', () => ({
+  resolveInitialApprovalStatus: vi.fn().mockResolvedValue('PENDING_REVIEW'),
+}))
+
 vi.mock('@/lib/matching/customer-recontact', () => ({
   checkJobsForNewProviderAvailability: vi.fn().mockResolvedValue({
     dispatchedOpenJobs: 0,
