@@ -53,6 +53,7 @@ const PUBLIC_PATHS = [
   '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
   '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
+  '/api/debug',                     // key-protected diagnostic endpoints — handlers enforce their own key check
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard
   '/r',                             // short WhatsApp handoff alias — server redirects via token resolver
