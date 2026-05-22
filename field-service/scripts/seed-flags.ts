@@ -66,6 +66,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     description: 'Enable DB-backed category config mutations on the Categories admin page.',
   },
   {
+    key: 'admin.categories.risk_tier',
+    description: 'Enable riskTier column and inline LOW/STANDARD selector on the Categories admin page.',
+  },
+  {
     key: 'admin.users.v2',
     description: 'Enable DB-backed AdminUser team management (invite, role change, deactivate).',
   },

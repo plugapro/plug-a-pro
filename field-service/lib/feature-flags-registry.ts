@@ -80,6 +80,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'admin.categories.risk_tier': {
+    description: 'Enable riskTier column and inline LOW/STANDARD selector on the Categories admin page.',
+    owner: 'ops',
+    defaultValue: false,
+  },
   'admin.crud.messages': {
     description: 'Enable failed message retry mutations on the Messages admin page.',
     owner: 'ops',
