@@ -53,20 +53,19 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  silent: true,
-  telemetry: false,
-  // Disable the tunnel rewrite — without it Sentry adds a rewrite with an
-  // undefined path that causes Vercel's modifyConfig step to throw
-  // TypeError: The "path" argument must be of type string.
-  tunnelRoute: undefined,
-  // Skip source map upload when credentials aren't configured
-  sourcemaps: {
-    disable: !process.env.SENTRY_AUTH_TOKEN,
-  },
-  // Disable Vercel Cron instrumentation (not used)
-  automaticVercelMonitors: false,
-})
+// Only wrap with Sentry's Next.js plugin when a DSN is configured.
+// Without a DSN the plugin has nothing to instrument, and its config
+// modifications can cause Vercel's modifyConfig hook to throw when
+// org/project/authToken are absent (seen with @sentry/nextjs@10.x).
+const sentryDsn = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN
+
+export default sentryDsn
+  ? withSentryConfig(nextConfig, {
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      silent: true,
+      telemetry: false,
+      sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+    })
+  : nextConfig
