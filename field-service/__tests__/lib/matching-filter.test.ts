@@ -610,3 +610,78 @@ describe('filterEligibleProviders — near-miss bucket', () => {
     }
   })
 })
+
+describe('filterEligibleProviders — category slug normalisation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupDefaultBatchMocks()
+  })
+
+  // requiredSkillTags set explicitly to decouple skill check from category-based fallback
+  function makeGardenJob() {
+    return { ...makeJobRequest(), category: 'Garden & Landscaping', requiredSkillTags: ['garden'] }
+  }
+  function makeDiyJob() {
+    return { ...makeJobRequest(), category: 'DIY & Assembly', requiredSkillTags: ['diy'] }
+  }
+
+  it('queries provider_categories with the resolved tag, not the raw display-name slug', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([])
+    mockDb.technicianSkill.findMany.mockResolvedValue([{ providerId: 'p1', skillTag: 'garden' }])
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([]) // timedOutRows
+      .mockResolvedValueOnce([]) // declinedLeadRows
+      .mockResolvedValueOnce([]) // dailyJobRows
+
+    await filterEligibleProviders([makeCandidate({ skills: ['garden'] })], makeGardenJob())
+
+    expect(mockDb.providerCategory.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ categorySlug: 'garden' }),
+      }),
+    )
+  })
+
+  it('blocks provider whose garden category is PENDING_REVIEW for a Garden & Landscaping job', async () => {
+    // Simulates real DB: only returns the row when the resolved slug ('garden') is used
+    mockDb.providerCategory.findMany.mockImplementation(async ({ where }: any) =>
+      where.categorySlug === 'garden'
+        ? [{ providerId: 'p1', approvalStatus: 'PENDING_REVIEW' }]
+        : [],
+    )
+    mockDb.technicianSkill.findMany.mockResolvedValue([{ providerId: 'p1', skillTag: 'garden' }])
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([]) // timedOutRows
+      .mockResolvedValueOnce([]) // declinedLeadRows
+      .mockResolvedValueOnce([]) // dailyJobRows
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate({ skills: ['garden'] })],
+      makeGardenJob(),
+    )
+
+    expect(eligible).toHaveLength(0)
+    const filtered = filteredOut.find((f) => f.providerId === 'p1')
+    expect(filtered?.filteredReasonCodes).toContain('CATEGORY_NOT_APPROVED')
+  })
+
+  it('passes provider with APPROVED diy category for a DIY & Assembly job', async () => {
+    mockDb.providerCategory.findMany.mockImplementation(async ({ where }: any) =>
+      where.categorySlug === 'diy'
+        ? [{ providerId: 'p1', approvalStatus: 'APPROVED' }]
+        : [],
+    )
+    mockDb.technicianSkill.findMany.mockResolvedValue([{ providerId: 'p1', skillTag: 'diy' }])
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([]) // timedOutRows
+      .mockResolvedValueOnce([]) // declinedLeadRows
+      .mockResolvedValueOnce([]) // dailyJobRows
+
+    const { eligible } = await filterEligibleProviders(
+      [makeCandidate({ skills: ['diy'] })],
+      makeDiyJob(),
+    )
+
+    expect(eligible).toHaveLength(1)
+  })
+})

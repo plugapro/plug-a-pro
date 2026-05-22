@@ -8,6 +8,7 @@
 
 import { db } from '@/lib/db'
 import { resolveCategoryRequirements } from '@/lib/category-config'
+import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { MATCHING_CONFIG } from './config'
 import { pointFallsWithinRadius } from './geography'
 import {
@@ -387,7 +388,10 @@ export async function filterEligibleProviders(
         select: { providerId: true, label: true, category: true, active: true },
       }) as Promise<Array<{ providerId: string } & AdminEquipRow>>,
       db.providerCategory.findMany({
-        where: { providerId: { in: providerIds }, categorySlug: normalizedCategory },
+        where: {
+          providerId: { in: providerIds },
+          categorySlug: resolveServiceCategoryTag(normalizedCategory) ?? normalizedCategory,
+        },
         select: { providerId: true, approvalStatus: true },
       }) as Promise<Array<{ providerId: string } & ProviderCategoryRow>>,
     ])
