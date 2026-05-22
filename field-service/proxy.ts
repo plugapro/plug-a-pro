@@ -25,6 +25,7 @@ import { checkWorkerPortalAccess, logWorkerPortalDecision } from '@/lib/worker-p
 const PUBLIC_PATHS = [
   '/',
   '/sign-in',              // customer phone OTP entry
+  '/admin-sign-in',        // admin shared-credential login
   '/login',                // customer auth alias → server-redirects to /sign-in
   '/verify',               // customer OTP verification + identity link
   '/sign-up',              // customer sign-up route
@@ -261,9 +262,9 @@ function redirectToSignIn(
   // Preserve route ownership on redirects:
   // customer routes always return to /sign-in,
   // provider routes always return to /provider-sign-in,
-  // admin routes always return to /sign-in.
+  // admin routes always return to /admin-sign-in.
   if (effectivePath.startsWith('/provider') || effectivePath.startsWith('/technician')) destination = '/provider-sign-in'
-  if (effectivePath.startsWith('/admin')) destination = '/sign-in'
+  if (effectivePath.startsWith('/admin')) destination = '/admin-sign-in'
 
   const callbackCandidate = request.nextUrl.pathname + request.nextUrl.search
   const adminDomainCallbackCandidate = effectivePath + request.nextUrl.search
@@ -271,7 +272,7 @@ function redirectToSignIn(
   let callbackPath = callbackCandidate
   if (destination === '/provider-sign-in') {
     callbackPath = getSafeProviderNextPath(callbackCandidate, '/provider/jobs')
-  } else if (destination === '/sign-in' && effectivePath.startsWith('/admin')) {
+  } else if (destination === '/admin-sign-in' && effectivePath.startsWith('/admin')) {
     callbackPath = getSafeAdminNextPath(
       isAdminDomain ? adminDomainCallbackCandidate : callbackCandidate,
       '/admin',

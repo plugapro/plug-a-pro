@@ -167,8 +167,8 @@ export async function requireAdmin(): Promise<AdminAuthUser> {
   if (actor) return actor
 
   const session = await getSession()
-  if (!session) redirect('/sign-in')
-  redirect('/sign-in?error=unauthorized')
+  if (!session) redirect('/admin-sign-in')
+  redirect('/admin-sign-in?error=unauthorized')
 }
 
 /** Call in API route handlers — returns 401 JSON if the caller has no active admin access. */

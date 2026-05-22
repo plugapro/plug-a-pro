@@ -89,7 +89,7 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'http://localhost/sign-in?callbackUrl=%2Fadmin%2Fteam&next=%2Fadmin%2Fteam'
+      'http://localhost/admin-sign-in?callbackUrl=%2Fadmin%2Fteam&next=%2Fadmin%2Fteam'
     )
   })
 
@@ -115,7 +115,7 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'http://localhost/sign-in?callbackUrl=%2Fadmin%2Fproviders&next=%2Fadmin%2Fproviders',
+      'http://localhost/admin-sign-in?callbackUrl=%2Fadmin%2Fproviders&next=%2Fadmin%2Fproviders',
     )
   })
 
@@ -393,7 +393,7 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'https://admin.plugapro.co.za/sign-in?callbackUrl=%2Fadmin%2Fdispatch&next=%2Fadmin%2Fdispatch',
+      'https://admin.plugapro.co.za/admin-sign-in?callbackUrl=%2Fadmin%2Fdispatch&next=%2Fadmin%2Fdispatch',
     )
   })
 
@@ -406,7 +406,7 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'https://admin.plugapro.co.za/sign-in?callbackUrl=%2Fadmin%2Fcustomers&next=%2Fadmin%2Fcustomers',
+      'https://admin.plugapro.co.za/admin-sign-in?callbackUrl=%2Fadmin%2Fcustomers&next=%2Fadmin%2Fcustomers',
     )
   })
 
@@ -414,6 +414,16 @@ describe('proxy admin access', () => {
     const { proxy } = await import('../proxy')
 
     const res = await proxy(new NextRequest('https://admin.plugapro.co.za/sign-in'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps /admin-sign-in public on admin domain', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/admin-sign-in?next=%2Fadmin'))
 
     expect(res.status).toBe(200)
     expect(res.headers.get('location')).toBeNull()
