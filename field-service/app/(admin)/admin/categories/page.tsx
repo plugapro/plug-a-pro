@@ -11,6 +11,7 @@ export const metadata = buildMetadata({ title: 'Categories', noIndex: true })
 export default async function CategoriesPage() {
   const actor = await requireAdmin()
   const crudEnabled = await isEnabled('admin.crud.categories', { userId: actor.id })
+  const riskTierEnabled = await isEnabled('admin.categories.risk_tier', { userId: actor.id })
   const categories = await listCategoriesForAdmin()
 
   return (
@@ -22,7 +23,7 @@ export default async function CategoriesPage() {
         </p>
       </div>
 
-      <CategoriesClient categories={categories} crudEnabled={crudEnabled} />
+      <CategoriesClient categories={categories} crudEnabled={crudEnabled} riskTierEnabled={riskTierEnabled} />
     </div>
   )
 }

@@ -10,17 +10,26 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { DestructiveConfirmDialog } from '@/components/admin/crud'
+import { ConfirmDialog, DestructiveConfirmDialog } from '@/components/admin/crud'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { CategoryAdminRecord } from '@/lib/category-config'
 import {
   createCategoryAction,
   deleteCategoryAction,
   updateCategoryAction,
+  updateCategoryRiskTierAction,
 } from './actions'
 
 type Props = {
   categories: CategoryAdminRecord[]
   crudEnabled: boolean
+  riskTierEnabled: boolean
 }
 
 type CategoryDraft = {
@@ -64,7 +73,7 @@ const EMPTY_DRAFT: CategoryDraft = {
   requiredVehicleTypes: '',
 }
 
-export function CategoriesClient({ categories, crudEnabled }: Props) {
+export function CategoriesClient({ categories, crudEnabled, riskTierEnabled }: Props) {
   const router = useRouter()
   const [creating, startCreateTransition] = React.useTransition()
   const [newDraft, setNewDraft] = React.useState<CategoryDraft>(EMPTY_DRAFT)
@@ -106,6 +115,7 @@ export function CategoriesClient({ categories, crudEnabled }: Props) {
             key={category.id}
             category={category}
             crudEnabled={crudEnabled}
+            riskTierEnabled={riskTierEnabled}
           />
         ))}
       </div>
@@ -113,12 +123,91 @@ export function CategoriesClient({ categories, crudEnabled }: Props) {
   )
 }
 
+function RiskTierCell({
+  categoryId,
+  currentTier,
+  crudEnabled,
+}: {
+  categoryId: string
+  currentTier: 'LOW' | 'STANDARD'
+  crudEnabled: boolean
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = React.useTransition()
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
+  const [pendingTier, setPendingTier] = React.useState<'LOW' | 'STANDARD' | null>(null)
+
+  const applyChange = (tier: 'LOW' | 'STANDARD') => {
+    startTransition(async () => {
+      try {
+        const result = await updateCategoryRiskTierAction({ categoryId, riskTier: tier })
+        if (result.data.bulkApproved > 0) {
+          toast.success(`Risk tier set to LOW. ${result.data.bulkApproved} provider category row(s) auto-approved.`)
+        } else {
+          toast.success('Risk tier updated.')
+        }
+        router.refresh()
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to update risk tier.')
+      }
+    })
+  }
+
+  const handleChange = (value: string) => {
+    const tier = value as 'LOW' | 'STANDARD'
+    if (tier === currentTier) return
+    if (tier === 'LOW') {
+      setPendingTier('LOW')
+      setConfirmOpen(true)
+      return
+    }
+    applyChange('STANDARD')
+  }
+
+  if (!crudEnabled) {
+    return (
+      <span className="text-xs text-muted-foreground font-mono px-1">
+        {currentTier}
+      </span>
+    )
+  }
+
+  return (
+    <>
+      <Select value={currentTier} onValueChange={handleChange} disabled={pending}>
+        <SelectTrigger className="h-6 w-28 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="STANDARD">STANDARD</SelectItem>
+          <SelectItem value="LOW">LOW</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Change to LOW risk?"
+        description="Changing this category to LOW risk will auto-approve it for all currently active providers awaiting review. This takes effect immediately."
+        confirmLabel="Yes, set to LOW"
+        variant="destructive"
+        onConfirm={() => {
+          setConfirmOpen(false)
+          if (pendingTier) applyChange(pendingTier)
+        }}
+      />
+    </>
+  )
+}
+
 function CategoryCard({
   category,
   crudEnabled,
+  riskTierEnabled,
 }: {
   category: CategoryAdminRecord
   crudEnabled: boolean
+  riskTierEnabled: boolean
 }) {
   const router = useRouter()
   const [draft, setDraft] = React.useState<CategoryDraft>(() => draftFromCategory(category))
@@ -172,12 +261,19 @@ function CategoryCard({
         submitLabel="Save changes"
         loading={saving}
         badges={(
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant={category.active ? 'secondary' : 'outline'} className="rounded-full">
               {category.active ? 'Active' : 'Inactive'}
             </Badge>
             {category.regulated && (
               <Badge variant="outline" className="rounded-full">Regulated</Badge>
+            )}
+            {riskTierEnabled && (
+              <RiskTierCell
+                categoryId={category.id}
+                currentTier={category.riskTier}
+                crudEnabled={crudEnabled}
+              />
             )}
           </div>
         )}
