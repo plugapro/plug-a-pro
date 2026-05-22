@@ -1,9 +1,21 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const DIAG_KEY = 'pap-diag-20260522-x9k'
+
+function redact(val: string | undefined, prefixLen = 10) {
+  if (!val) return '(MISSING)'
+  return `${val.slice(0, prefixLen)}... (${val.length} chars)`
+}
+
+function generateClientAccountNumber() {
+  const hex = randomBytes(7).toString('hex')
+  const num = BigInt('0x' + hex) % BigInt('100000000000000')
+  return num.toString().padStart(14, '0')
+}
 
 export async function GET(request: NextRequest) {
   if (request.nextUrl.searchParams.get('key') !== DIAG_KEY) {
@@ -13,22 +25,26 @@ export async function GET(request: NextRequest) {
   const tokenUrl = process.env.PAYAT_TOKEN_URL?.trim() ?? ''
   const clientId = process.env.PAYAT_CLIENT_ID?.trim() ?? ''
   const clientSecret = process.env.PAYAT_CLIENT_SECRET?.trim() ?? ''
-  const merchantId = process.env.PAYAT_MERCHANT_IDENTIFIER?.trim() ?? process.env.PAYAT_MERCHANT_ID?.trim() ?? ''
+  const merchantIdentifier = process.env.PAYAT_MERCHANT_IDENTIFIER?.trim() ?? ''
+  const merchantId = process.env.PAYAT_MERCHANT_ID?.trim() ?? ''
+  const apiBase = (process.env.PAYAT_API_BASE?.trim() ?? '').replace(/\/$/, '')
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? ''
 
   const env = {
     PAYAT_TOKEN_URL: tokenUrl || '(MISSING)',
-    PAYAT_CLIENT_ID: clientId ? `${clientId.slice(0, 10)}... (${clientId.length} chars)` : '(MISSING)',
+    PAYAT_API_BASE: apiBase || '(MISSING)',
+    PAYAT_CLIENT_ID: redact(clientId),
     PAYAT_CLIENT_SECRET: clientSecret ? `SET (${clientSecret.length} chars)` : '(MISSING)',
-    PAYAT_MERCHANT_IDENTIFIER: merchantId ? `${merchantId.slice(0, 6)}... (${merchantId.length} chars)` : '(MISSING)',
+    PAYAT_MERCHANT_IDENTIFIER: redact(merchantIdentifier, 6),
+    PAYAT_MERCHANT_ID: redact(merchantId, 6),
+    NEXT_PUBLIC_APP_URL: appUrl || '(MISSING)',
   }
 
-  if (!tokenUrl || !clientId || !clientSecret) {
-    return NextResponse.json({ ok: false, reason: 'missing_env', env })
-  }
-
-  let basicResult: Record<string, unknown>
+  // ── Step 1: token ──────────────────────────────────────────────────────────
+  let token: string | null = null
+  let tokenResult: Record<string, unknown>
   try {
-    const response = await fetch(tokenUrl, {
+    const res = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -37,36 +53,94 @@ export async function GET(request: NextRequest) {
       body: new URLSearchParams({ grant_type: 'client_credentials' }),
       signal: AbortSignal.timeout(8_000),
     })
-
-    if (response.ok) {
-      const data = await response.json() as Record<string, unknown>
-      basicResult = {
-        status: response.status,
-        ok: true,
-        hasToken: typeof data.access_token === 'string' && data.access_token.length > 0,
-        tokenLength: typeof data.access_token === 'string' ? data.access_token.length : 0,
-        expiresIn: data.expires_in,
-      }
+    if (res.ok) {
+      const data = await res.json() as Record<string, unknown>
+      token = typeof data.access_token === 'string' ? data.access_token : null
+      tokenResult = { status: res.status, ok: true, hasToken: !!token, tokenLength: token?.length ?? 0, expiresIn: data.expires_in }
     } else {
-      const body = await response.text()
-      basicResult = {
-        status: response.status,
-        ok: false,
-        responseHeaders: {
-          'www-authenticate': response.headers.get('www-authenticate'),
-          'content-type': response.headers.get('content-type'),
-        },
-        // Body is safe to echo here — this is a dev diagnostic and the token
-        // endpoint error body never contains credentials.
-        body: body.slice(0, 400),
-      }
+      const body = await res.text()
+      tokenResult = { status: res.status, ok: false, body: body.slice(0, 300) }
     }
   } catch (err) {
-    basicResult = {
-      ok: false,
-      error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
-    }
+    tokenResult = { ok: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }
   }
 
-  return NextResponse.json({ env, basic: basicResult })
+  if (!token) {
+    return NextResponse.json({ env, token: tokenResult, generatecredentials: 'skipped (no token)', rtp: 'skipped (no token)' })
+  }
+
+  if (!apiBase) {
+    return NextResponse.json({ env, token: tokenResult, generatecredentials: 'skipped (PAYAT_API_BASE missing)', rtp: 'skipped (PAYAT_API_BASE missing)' })
+  }
+
+  // ── Step 2: generatecredentials (idempotent registration) ─────────────────
+  let generateCredentialsResult: Record<string, unknown>
+  try {
+    const res = await fetch(`${apiBase}/integrator/ecommerce/generatecredentials`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ merchantIdentifier, merchantId }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    const body = await res.text()
+    generateCredentialsResult = {
+      status: res.status,
+      ok: res.ok || res.status === 409,
+      body: body.slice(0, 400),
+    }
+  } catch (err) {
+    generateCredentialsResult = { ok: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }
+  }
+
+  // ── Step 3: RTP create (test call with placeholder data) ───────────────────
+  const base = appUrl.replace(/\/$/, '')
+  let rtpResult: Record<string, unknown>
+  try {
+    const res = await fetch(
+      `${apiBase}/integrator/ecommerce/rtp/create/single/${merchantIdentifier}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientAccountNumber: generateClientAccountNumber(),
+          amount: '10000',
+          minimumAmount: '10000',
+          maximumAmount: '10000',
+          description: 'Plug A Pro credits top-up (diagnostic test)',
+          clientReferenceNumber: `diag-${Date.now()}`,
+          merchantDisplayName: 'Plug A Pro',
+          notificationNumber: '+27820000000',
+          customerNameSurname: 'Diag Test',
+          customerMobileNumber: '+27820000000',
+          customerEmail: 'diag@plugapro.co.za',
+          daysValid: '3',
+          merchantEcommerceStoreName: 'PLUGAPRO',
+          successReturnUrl: `${base}/provider/credits?topup=success`,
+          failureReturnUrl: `${base}/provider/credits?topup=failed`,
+          cancelReturnUrl: `${base}/provider/credits?topup=cancelled`,
+          lineItems: [{ description: 'Credits top-up', amount: '10000' }],
+          multiPremium: 1,
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    )
+    // Read the full body regardless — this is a diagnostic, not production.
+    const body = await res.text()
+    rtpResult = {
+      status: res.status,
+      ok: res.ok,
+      // Truncate to 800 chars to avoid leaking excessively large payloads
+      body: body.slice(0, 800),
+    }
+  } catch (err) {
+    rtpResult = { ok: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }
+  }
+
+  return NextResponse.json({ env, token: tokenResult, generatecredentials: generateCredentialsResult, rtp: rtpResult })
 }
