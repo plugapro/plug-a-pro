@@ -31,24 +31,20 @@ enum CategoryRiskTier {
 }
 ```
 
-### New model
+### Additive field on existing model
+
+`Category` already exists at `schema.prisma:2161` with `id @id @default(cuid())`, `slug @unique`, and relations to `ProviderCategory`, `CategoryRequiredCertification`, `CategoryRequiredEquipment`, `CategoryRequiredVehicleType`, and `ProviderRate`. Do NOT redefine this model. Add one field via an additive migration:
 
 ```prisma
-model Category {
-  slug      String            @id
-  label     String
-  riskTier  CategoryRiskTier  @default(STANDARD)
-  active    Boolean           @default(true)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-
-  @@map("categories")
-}
+// Inside existing Category model — additive only
+riskTier  CategoryRiskTier  @default(STANDARD)
 ```
 
-`slug` is the primary key and natural join key with `ProviderCategory.categorySlug`. No FK constraint is added in this migration — existing `ProviderCategory` rows predate this model; the FK can be added once the data is clean.
+`ProviderCategory` already has a `categoryId String?` FK to `Category.id` (nullable, set-null on delete) and a separate `categorySlug String` denormalized field. The risk-tier lookup uses `categorySlug` → `Category.slug` (which is `@unique`), not the FK, to preserve compatibility with rows where `categoryId` is null.
 
-`riskTier` defaults to `STANDARD`. Any category slug not present in the seed list is treated as STANDARD until ops explicitly sets it.
+**Slug immutability constraint:** `categorySlug` is the join key between `provider_categories` and `categories`. The existing `updateCategory` admin action (`categories/actions.ts:157`) permits slug changes today. This must be locked: after a `Category` row is created, its `slug` is immutable. The `updateCategory` action must reject any change to `slug` if `provider_categories` rows exist for it. This is enforced in the service layer, not via a DB constraint.
+
+`riskTier` defaults to `STANDARD`. Any category slug not in the seed list is STANDARD until ops sets it explicitly.
 
 ---
 
@@ -63,13 +59,14 @@ Called inside the provider approval action, after the status transition to `ACTI
 1. Query all `provider_categories` rows for this provider where `approvalStatus = PENDING_REVIEW`.
 2. For each row, look up `categories.riskTier` by `categorySlug`.
 3. Batch-update any LOW-risk rows to `APPROVED`.
-4. For each updated row, write an `AdminAuditEvent`:
+4. For each updated row, write an `AuditLog` entry (not `AdminAuditEvent` — system events have no real `adminId` FK):
    ```
    actorId:    'system'
-   action:     'AUTO_APPROVED'
+   actorRole:  'SYSTEM'
+   action:     'provider_category.auto_approved'
    entityType: 'ProviderCategory'
    entityId:   row.id
-   metadata:   { reason: 'LOW_RISK_CATEGORY', categorySlug, providerId }
+   after:      { approvalStatus: 'APPROVED', reason: 'LOW_RISK_CATEGORY', categorySlug }
    ```
 5. Emit structured log:
    ```
@@ -94,13 +91,14 @@ Called inside `updateCategoryRiskTierAction` when ops changes a category from ST
 
 1. Find all `provider_categories` rows where `categorySlug = slug` and `approvalStatus = PENDING_REVIEW` and `provider.status = ACTIVE`.
 2. Batch-update those rows to `APPROVED`.
-3. For each updated row, write an `AdminAuditEvent`:
+3. For each updated row, write an `AuditLog` entry:
    ```
    actorId:    'system'
-   action:     'AUTO_APPROVED'
+   actorRole:  'SYSTEM'
+   action:     'provider_category.auto_approved'
    entityType: 'ProviderCategory'
    entityId:   row.id
-   metadata:   { reason: 'CATEGORY_RISK_TIER_CHANGED_TO_LOW', categorySlug, providerId: row.providerId }
+   after:      { approvalStatus: 'APPROVED', reason: 'CATEGORY_RISK_TIER_CHANGED_TO_LOW', categorySlug, providerId: row.providerId }
    ```
 4. Emit structured log:
    ```
@@ -112,10 +110,14 @@ This is intentionally separate from `autoApproveLowRiskCategories` — it operat
 
 ### Call sites
 
+All three `resolveInitialApprovalStatus` call sites must route through the centralised function — no inline PENDING_REVIEW defaults may remain after this feature ships.
+
 | Location | Function called |
 |---|---|
 | `app/(admin)/admin/providers/actions.ts` — approval action | `autoApproveLowRiskCategories` after status update |
-| Any `provider_categories` create/upsert path | `resolveInitialApprovalStatus` — result passed as `approvalStatus` |
+| `lib/whatsapp-flows/registration.ts:2422` — provider self-registration | `resolveInitialApprovalStatus` — result passed as `approvalStatus` |
+| `lib/provider-applications.ts:105` — application processing | `resolveInitialApprovalStatus` — result passed as `approvalStatus` |
+| `app/(admin)/admin/applications/page.tsx:281` — admin application approval | `resolveInitialApprovalStatus` — result passed as `approvalStatus` |
 | `updateCategoryRiskTierAction` — STANDARD → LOW change | `autoApproveProvidersForCategory(slug)` |
 
 ---
@@ -147,7 +149,16 @@ Inline `<Select>` with options `STANDARD` and `LOW`. Saves via server action on 
 **Access gate:** OWNER role only.
 
 ### Feature flag
-`admin.categories.risk-tier` — gates the riskTier column and inline select in the UI. The service-layer auto-approval logic is not gated; it activates as soon as `Category` rows with `LOW` tiers exist in the DB.
+`admin.categories.risk_tier` — gates the riskTier column and inline select in the UI. Must be registered in `lib/feature-flags-registry.ts` under the `Admin CRUD surfaces` section before use. The service-layer auto-approval logic is not gated; it activates as soon as `Category` rows with `LOW` tiers exist in the DB.
+
+```ts
+// lib/feature-flags-registry.ts — add to Admin CRUD surfaces section
+'admin.categories.risk_tier': {
+  description: 'Enable riskTier column and inline LOW/STANDARD selector on the Categories admin page.',
+  owner: 'ops',
+  defaultValue: false,
+},
+```
 
 ---
 
@@ -173,7 +184,14 @@ Ops can adjust any tier via the admin UI after seeding. Any slug introduced afte
 
 ## Audit Trail
 
-Every auto-approval — whether triggered by provider approval or by a late-added category — writes an `AdminAuditEvent` with `actorId: 'system'`. Ops changing a risk tier writes an `AdminAuditEvent` with `{ before, after }` in metadata. Both paths emit a structured `console.log` for log aggregation.
+| Event | Table | Actor |
+|---|---|---|
+| Auto-approval on provider approval | `AuditLog` | `actorId: 'system', actorRole: 'SYSTEM'` |
+| Auto-approval on late category upsert | `AuditLog` | `actorId: 'system', actorRole: 'SYSTEM'` |
+| Bulk auto-approval on tier change | `AuditLog` | `actorId: 'system', actorRole: 'SYSTEM'` |
+| Ops changes riskTier via admin UI | `AdminAuditEvent` (via `crudAction()`) | real `adminId` FK |
+
+`AdminAuditEvent` requires a non-nullable `adminId` FK to `AdminUser` and cannot be used for system-triggered writes. `AuditLog` has `actorId String` and `actorRole String` with no FK constraint — it is the correct table for all system-initiated events. Both tables emit a structured `console.log` for log aggregation.
 
 ---
 
