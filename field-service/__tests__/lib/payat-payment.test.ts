@@ -23,6 +23,7 @@ describe('Pay@ merchant RTP payment service', () => {
     vi.resetModules()
     vi.clearAllMocks()
     vi.stubEnv('PAYAT_API_BASE', BASE)
+    vi.stubEnv('PAYAT_MERCHANT_IDENTIFIER', 'plug-a-pro')
     mockGetPayatToken.mockResolvedValue('test-bearer-token')
   })
 
@@ -45,7 +46,7 @@ describe('Pay@ merchant RTP payment service', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/merchant/rtp/create/single`)
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/integrator/rtp/create/single/plug-a-pro`)
     expect(fetchMock.mock.calls.every((c: unknown[]) =>
       !String(c[0]).includes('generatecredentials'),
     )).toBe(true)
@@ -70,7 +71,7 @@ describe('Pay@ merchant RTP payment service', () => {
     })
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe(`${BASE}/merchant/rtp/create/single`)
+    expect(url).toBe(`${BASE}/integrator/rtp/create/single/plug-a-pro`)
     expect((init as RequestInit).method).toBe('POST')
     expect((init as RequestInit & { headers: Record<string, string> }).headers['Authorization']).toBe('Bearer test-bearer-token')
     expect((init as RequestInit & { headers: Record<string, string> }).headers['Content-Type']).toBe('application/json')
@@ -209,6 +210,24 @@ describe('Pay@ merchant RTP payment service', () => {
         providerEmail: 'd@d.com',
       }),
     ).rejects.toThrow('PAYAT_API_BASE')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('throws PayatConfigError when PAYAT_MERCHANT_IDENTIFIER is missing', async () => {
+    vi.stubEnv('PAYAT_MERCHANT_IDENTIFIER', '')
+    vi.stubGlobal('fetch', vi.fn())
+
+    const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
+    await expect(
+      createPayatPaymentRequest({
+        topupId: 'intent-no-merchant-id',
+        amountCents: 10_000,
+        description: 'R100',
+        providerName: 'D',
+        providerPhone: '+27821234567',
+        providerEmail: 'd@d.com',
+      }),
+    ).rejects.toThrow('PAYAT_MERCHANT_IDENTIFIER')
     expect(fetch).not.toHaveBeenCalled()
   })
 

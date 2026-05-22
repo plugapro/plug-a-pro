@@ -98,11 +98,12 @@ async function sendPayatPaymentRequest(
 
   const token = await getPayatToken()
   const apiBase = requirePayatConfig('PAYAT_API_BASE').replace(/\/$/, '')
+  const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
 
   let response: Response
   try {
     response = await fetch(
-      `${apiBase}/merchant/rtp/create/single`,
+      `${apiBase}/integrator/rtp/create/single/${merchantIdentifier}`,
       {
         method: 'POST',
         headers: {

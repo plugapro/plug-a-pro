@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
   const clientId = process.env.PAYAT_CLIENT_ID?.trim() ?? ''
   const clientSecret = process.env.PAYAT_CLIENT_SECRET?.trim() ?? ''
   const apiBase = (process.env.PAYAT_API_BASE?.trim() ?? '').replace(/\/$/, '')
+  const merchantIdentifier = process.env.PAYAT_MERCHANT_IDENTIFIER?.trim() ?? ''
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? ''
 
   const env = {
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     PAYAT_API_BASE: apiBase || '(MISSING)',
     PAYAT_CLIENT_ID: redact(clientId),
     PAYAT_CLIENT_SECRET: clientSecret ? `SET (${clientSecret.length} chars)` : '(MISSING)',
+    PAYAT_MERCHANT_IDENTIFIER: merchantIdentifier || '(MISSING)',
     NEXT_PUBLIC_APP_URL: appUrl || '(MISSING)',
   }
 
@@ -77,11 +79,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ env, token: tokenResult, rtp: 'skipped (PAYAT_API_BASE missing)' })
   }
 
-  // ── Step 2: RTP create via /merchant/rtp/create/single (production flow) ──
+  // ── Step 2: RTP create via /integrator/rtp/create/single/{id} (production flow) ──
   // This is the exact endpoint and payload shape the production app uses.
   // Scope required: rtp:create:single
   let rtpResult: Record<string, unknown>
-  const rtpEndpoint = `${apiBase}/merchant/rtp/create/single`
+  const rtpEndpoint = `${apiBase}/integrator/rtp/create/single/${merchantIdentifier}`
   try {
     const res = await fetch(rtpEndpoint, {
       method: 'POST',
