@@ -7,9 +7,8 @@
  * Run after deploying the add_category_risk_tier migration:
  *   npx tsx scripts/seed-categories.ts
  */
-import { PrismaClient, CategoryRiskTier } from '@prisma/client'
-
-const db = new PrismaClient()
+import { CategoryRiskTier } from '@prisma/client'
+import { db } from '../lib/db'
 
 const CATEGORIES: Array<{ slug: string; label: string; riskTier: CategoryRiskTier }> = [
   { slug: 'cleaning',     label: 'Cleaning',                riskTier: CategoryRiskTier.LOW },
@@ -42,4 +41,3 @@ async function main() {
 
 main()
   .catch((err) => { console.error(err); process.exit(1) })
-  .finally(() => db.$disconnect())
