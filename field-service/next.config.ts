@@ -53,8 +53,20 @@ const nextConfig: NextConfig = {
   },
 }
 
-const sentryOptions = {
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
   silent: true,
-}
-
-export default withSentryConfig(nextConfig, sentryOptions)
+  telemetry: false,
+  // Disable the tunnel rewrite — without it Sentry adds a rewrite with an
+  // undefined path that causes Vercel's modifyConfig step to throw
+  // TypeError: The "path" argument must be of type string.
+  tunnelRoute: undefined,
+  // Skip source map upload when credentials aren't configured
+  sourcemaps: {
+    disable: !process.env.SENTRY_AUTH_TOKEN,
+  },
+  // Disable Vercel Cron instrumentation (not used)
+  automaticVercelMonitors: false,
+})
