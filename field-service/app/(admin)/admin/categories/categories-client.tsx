@@ -135,7 +135,6 @@ function RiskTierCell({
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [confirmOpen, setConfirmOpen] = React.useState(false)
-  const [pendingTier, setPendingTier] = React.useState<'LOW' | 'STANDARD' | null>(null)
 
   const applyChange = (tier: 'LOW' | 'STANDARD') => {
     startTransition(async () => {
@@ -157,7 +156,6 @@ function RiskTierCell({
     const tier = value as 'LOW' | 'STANDARD'
     if (tier === currentTier) return
     if (tier === 'LOW') {
-      setPendingTier('LOW')
       setConfirmOpen(true)
       return
     }
@@ -193,7 +191,7 @@ function RiskTierCell({
         variant="destructive"
         onConfirm={() => {
           setConfirmOpen(false)
-          if (pendingTier) applyChange(pendingTier)
+          applyChange('LOW')
         }}
       />
     </>
