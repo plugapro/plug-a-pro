@@ -6,6 +6,7 @@ const {
   mockCategoryCreate,
   mockCategoryUpdate,
   mockCategoryDelete,
+  mockProviderCategoryCount,
   mockRevalidatePath,
 } = vi.hoisted(() => ({
   mockCrudAction: vi.fn(),
@@ -13,6 +14,7 @@ const {
   mockCategoryCreate: vi.fn(),
   mockCategoryUpdate: vi.fn(),
   mockCategoryDelete: vi.fn(),
+  mockProviderCategoryCount: vi.fn(),
   mockRevalidatePath: vi.fn(),
 }))
 
@@ -38,6 +40,9 @@ vi.mock('@/lib/crud-action', () => ({
 beforeEach(() => {
   vi.clearAllMocks()
 
+  // Default: no provider_category rows linked (immutability guard passes through)
+  mockProviderCategoryCount.mockResolvedValue(0)
+
   mockCrudAction.mockImplementation(async (opts: {
     input: unknown
     run: (input: any, tx: {
@@ -47,6 +52,9 @@ beforeEach(() => {
         update: typeof mockCategoryUpdate
         delete: typeof mockCategoryDelete
       }
+      providerCategory: {
+        count: typeof mockProviderCategoryCount
+      }
     }) => Promise<unknown>
   }) => {
     const tx = {
@@ -55,6 +63,9 @@ beforeEach(() => {
         create: mockCategoryCreate,
         update: mockCategoryUpdate,
         delete: mockCategoryDelete,
+      },
+      providerCategory: {
+        count: mockProviderCategoryCount,
       },
     }
 

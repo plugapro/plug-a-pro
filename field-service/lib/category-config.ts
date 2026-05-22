@@ -18,6 +18,7 @@ export type CategoryAdminRecord = {
   bookingOnAssignment: boolean
   regulated: boolean
   sortOrder: number
+  riskTier: 'LOW' | 'STANDARD'
   requiredCertifications: Array<{ code: string }>
   requiredEquipment: Array<{ tag: string }>
   requiredVehicleTypes: Array<{ vehicleType: string }>
@@ -108,6 +109,7 @@ export async function listCategoriesForAdmin(): Promise<CategoryAdminRecord[]> {
         bookingOnAssignment: true,
         regulated: true,
         sortOrder: true,
+        riskTier: true,
         requiredCertifications: { select: { code: true }, orderBy: { code: 'asc' } },
         requiredEquipment: { select: { tag: true }, orderBy: { tag: 'asc' } },
         requiredVehicleTypes: { select: { vehicleType: true }, orderBy: { vehicleType: 'asc' } },
@@ -133,6 +135,7 @@ export async function listCategoriesForAdmin(): Promise<CategoryAdminRecord[]> {
     bookingOnAssignment: policy.bookingOnAssignment,
     regulated: policy.regulated,
     sortOrder: index,
+    riskTier: 'STANDARD' as const,
     requiredCertifications: policy.requiredCertificationCodes.map((code) => ({ code })),
     requiredEquipment: policy.requiredEquipmentTags.map((tag) => ({ tag })),
     requiredVehicleTypes: policy.requiredVehicleTypes.map((vehicleType) => ({ vehicleType })),
