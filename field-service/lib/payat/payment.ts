@@ -152,8 +152,9 @@ async function sendPayatPaymentRequest(
           notificationNumber: params.providerPhone,
           customerNameSurname: params.providerName,
           customerMobileNumber: params.providerPhone,
-          // Omit customerEmail when empty — Pay@ rejects requests with an empty string email.
-          ...(params.providerEmail ? { customerEmail: params.providerEmail } : {}),
+          // Always include customerEmail (even empty string). The integrator endpoint
+          // returns non-2xx when customerEmail is absent entirely.
+          customerEmail: params.providerEmail,
           daysValid: 3,
         }),
         signal: AbortSignal.timeout(10_000),

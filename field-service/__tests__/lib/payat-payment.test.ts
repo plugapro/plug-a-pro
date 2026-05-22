@@ -282,7 +282,7 @@ describe('Pay@ merchant RTP payment service', () => {
     expect(result.requestToPayId).toBeUndefined()
   })
 
-  it('omits customerEmail from request body when providerEmail is empty', async () => {
+  it('sends customerEmail in request body even when providerEmail is empty string', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
@@ -301,7 +301,8 @@ describe('Pay@ merchant RTP payment service', () => {
     })
 
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-    expect(body).not.toHaveProperty('customerEmail')
+    // Always send customerEmail — integrator endpoint rejects when the field is absent entirely.
+    expect(body).toHaveProperty('customerEmail', '')
   })
 
   it('throws PayatApiError(rtp_create_failed) when Pay@ returns 403', async () => {
