@@ -281,7 +281,7 @@ async function approveApplication(formData: FormData) {
       const providerCategoryRows = app.skills.map((skill) => ({
         providerId,
         categorySlug: resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
-        approvalStatus: 'APPROVED',
+        approvalStatus: 'PENDING_REVIEW',
       }))
 
       if (providerCategoryRows.length > 0) {
@@ -289,13 +289,8 @@ async function approveApplication(formData: FormData) {
           data: providerCategoryRows,
           skipDuplicates: true,
         })
-        await tx.providerCategory.updateMany({
-          where: {
-            providerId,
-            categorySlug: { in: providerCategoryRows.map((row) => row.categorySlug) },
-          },
-          data: { approvalStatus: 'APPROVED' },
-        })
+        // Removed the updateMany that forced APPROVED — autoApproveLowRiskCategories
+        // promotes LOW-risk rows after this transaction completes.
       }
 
       await releaseOpsQueueItem(tx as typeof db, {
@@ -347,6 +342,13 @@ async function approveApplication(formData: FormData) {
     const { checkJobsForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
     await checkJobsForNewProviderAvailability(approvedProviderId).catch((error) => {
       console.error('[applications] new-provider availability check failed:', error)
+    })
+  }
+
+  if (approvedProviderId) {
+    const { autoApproveLowRiskCategories } = await import('@/lib/provider-categories')
+    await autoApproveLowRiskCategories(approvedProviderId).catch((error) => {
+      console.error('[applications] autoApproveLowRiskCategories failed', { providerId: approvedProviderId }, error)
     })
   }
 
