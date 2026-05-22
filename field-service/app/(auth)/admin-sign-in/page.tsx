@@ -62,65 +62,67 @@ export default function AdminSignInPage() {
       title="Sign in to the ops dashboard"
       subtitle="Use your admin email and password to continue."
     >
-      <form action={formAction} className="flex flex-col gap-[16px]">
-        <input type="hidden" name="next" value={callbackTarget} />
+      <div className="mx-auto w-full max-w-[420px]">
+        <form action={formAction} className="flex flex-col gap-[16px]">
+          <input type="hidden" name="next" value={callbackTarget} />
 
-        <div>
-          <label htmlFor="email" className="block text-[13px] font-semibold text-[var(--ink)] mb-1.5 tracking-[-0.01em]">
-            Work email
-          </label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            required
-            autoComplete="email"
+          <div>
+            <label htmlFor="email" className="block text-[13px] font-semibold text-[var(--ink)] mb-1.5 tracking-[-0.01em]">
+              Work email
+            </label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              disabled={pending}
+              defaultValue={state.status === 'error' ? state.email ?? '' : ''}
+              placeholder="name@company.com"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-[13px] font-semibold text-[var(--ink)] mb-1.5 tracking-[-0.01em]">
+              Password
+            </label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              disabled={pending}
+              minLength={6}
+              placeholder="••••••••"
+            />
+          </div>
+
+          {errorMessage && (
+            <p className="rounded-[12px] border border-[var(--danger)]/40 bg-[var(--tone-danger-bg)] px-3 py-2 text-[13px] text-[var(--danger)]">
+              {errorMessage}
+            </p>
+          )}
+
+          <Button
+            type="submit"
+            fullWidth
+            size="md"
+            variant={pending ? 'secondary' : 'default'}
             disabled={pending}
-            defaultValue={state.status === 'error' ? state.email ?? '' : ''}
-            placeholder="name@company.com"
-          />
-        </div>
+          >
+            {pending ? 'Signing you in…' : 'Sign in'}
+            {!pending && <ArrowRight size={18} />}
+          </Button>
+        </form>
 
-        <div>
-          <label htmlFor="password" className="block text-[13px] font-semibold text-[var(--ink)] mb-1.5 tracking-[-0.01em]">
-            Password
-          </label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            autoComplete="current-password"
-            disabled={pending}
-            minLength={6}
-            placeholder="••••••••"
-          />
-        </div>
-
-        {errorMessage && (
-          <p className="rounded-[12px] border border-[var(--danger)]/40 bg-[var(--tone-danger-bg)] px-3 py-2 text-[13px] text-[var(--danger)]">
-            {errorMessage}
-          </p>
-        )}
-
-        <Button
-          type="submit"
-          fullWidth
-          size="md"
-          variant={pending ? 'secondary' : 'default'}
-          disabled={pending}
-        >
-          {pending ? 'Signing you in…' : 'Sign in'}
-          {!pending && <ArrowRight size={18} />}
-        </Button>
-      </form>
-
-      <p className="mt-6 text-center text-[13px] text-[var(--ink-mute)]">
-        Not an ops user?{' '}
-        <Link href="/sign-in" className="text-[var(--brand-purple)] font-semibold">
-          Open customer sign-in
-        </Link>
-      </p>
+        <p className="mt-6 text-center text-[13px] text-[var(--ink-mute)]">
+          Not an ops user?{' '}
+          <Link href="/sign-in" className="text-[var(--brand-purple)] font-semibold">
+            Open customer sign-in
+          </Link>
+        </p>
+      </div>
     </AuthShell>
   )
 }
