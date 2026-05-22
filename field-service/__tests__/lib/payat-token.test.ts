@@ -107,6 +107,38 @@ describe('getPayatToken', () => {
       expect(second).toBe('tok-cached')
       expect(fetch).toHaveBeenCalledTimes(1)
     })
+
+    it('T-3a: concurrent cold-start calls coalesce onto one fetch (thundering-herd protection)', async () => {
+      let resolveFetch!: () => void
+      const latch = new Promise<void>((resolve) => { resolveFetch = resolve })
+      ;(fetch as ReturnType<typeof vi.fn>).mockImplementation(() =>
+        latch.then(() => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: 'tok-coalesced', expires_in: 3600 }),
+          body: { cancel: vi.fn() },
+        }))
+      )
+      const { getPayatToken } = await import('@/lib/payat/token')
+      const [p1, p2, p3] = [getPayatToken(), getPayatToken(), getPayatToken()]
+      resolveFetch()
+      const results = await Promise.all([p1, p2, p3])
+      expect(results).toEqual(['tok-coalesced', 'tok-coalesced', 'tok-coalesced'])
+      expect(fetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('T-3b: invalidatePayatToken clears inflight so the next call fetches a fresh token', async () => {
+      mockOkResponse({ access_token: 'tok-v1', expires_in: 3600 })
+      const { getPayatToken, invalidatePayatToken } = await import('@/lib/payat/token')
+      await getPayatToken()
+      expect(fetch).toHaveBeenCalledTimes(1)
+
+      mockOkResponse({ access_token: 'tok-v2', expires_in: 3600 })
+      invalidatePayatToken()
+      const result = await getPayatToken()
+      expect(result).toBe('tok-v2')
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
   })
 
   describe('when PAYAT_TOKEN_URL is not set', () => {

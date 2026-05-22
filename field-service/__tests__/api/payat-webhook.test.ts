@@ -47,9 +47,11 @@ describe('POST /api/payat/webhook', () => {
     mockDb.paymentIntent.findUnique.mockResolvedValue({
       id: 'intent-payat-1',
       amountCents: 10_000,
+      providerId: 'provider-1',
       status: 'PENDING_PAYMENT',
       creditedAt: null,
       paymentMethod: 'PAYAT',
+      metadata: null,
     })
     mockDb.paymentIntent.findFirst.mockResolvedValue(null)
     mockDb.paymentIntent.update.mockResolvedValue({})
@@ -213,6 +215,7 @@ describe('POST /api/payat/webhook', () => {
       status: 'FAILED',
       creditedAt: null,
       paymentMethod: 'PAYAT',
+      metadata: null,
     })
 
     const { POST } = await import('@/app/api/payat/webhook/route')
@@ -221,6 +224,94 @@ describe('POST /api/payat/webhook', () => {
     expect(res.status).toBe(200)
     expect(mockDb.paymentIntent.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'ITN_RECEIVED' }) }),
+    )
+    expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
+
+  it('T-4: CANCELLED webhook marks intent FAILED; subsequent PAID does not credit wallet', async () => {
+    const { POST } = await import('@/app/api/payat/webhook/route')
+
+    // First: CANCELLED arrives and marks the intent FAILED via updateMany
+    const cancelRes = await POST(request({ reference: 'intent-payat-1', status: 'CANCELLED', amount: 10_000 }))
+    expect(cancelRes.status).toBe(200)
+    expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
+    )
+
+    // Simulate DB now returning the intent as FAILED
+    mockDb.paymentIntent.findUnique.mockResolvedValue({
+      id: 'intent-payat-1',
+      amountCents: 10_000,
+      providerId: 'provider-1',
+      status: 'FAILED',
+      creditedAt: null,
+      paymentMethod: 'PAYAT',
+      metadata: null,
+    })
+
+    // Delayed PAID arrives — must be ignored
+    const paidRes = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }))
+    expect(paidRes.status).toBe(200)
+    expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
+
+  it('T-5: rejects base64 signature that decodes to wrong byte length', async () => {
+    // "not-32-bytes" base64-encodes to a 9-byte buffer — not a valid SHA-256 HMAC
+    const shortBase64 = Buffer.from('not-32-bytes').toString('base64')
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }, shortBase64))
+    expect(res.status).toBe(401)
+    expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
+
+  it('T-6: skips secondary paymentReference lookup when clientReferenceNumber is present (even non-UUID)', async () => {
+    // clientReferenceNumber is present so usedClientRef=true — secondary findFirst must not fire
+    mockDb.paymentIntent.findUnique.mockResolvedValue(null)
+
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    const res = await POST(request({ clientReferenceNumber: 'PAT-NOT-A-UUID', status: 'PAID', amount: 10_000 }))
+
+    expect(res.status).toBe(200)
+    expect(mockDb.paymentIntent.findFirst).not.toHaveBeenCalled()
+    expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
+
+  it('C-2: uses payAtAmountCents from metadata for amount comparison when fee is present', async () => {
+    // Intent was created with a R7 counter fee: amountCents=10000, payAtAmountCents=10700
+    mockDb.paymentIntent.findUnique.mockResolvedValue({
+      id: 'intent-payat-1',
+      amountCents: 10_000,
+      providerId: 'provider-1',
+      status: 'PENDING_PAYMENT',
+      creditedAt: null,
+      paymentMethod: 'PAYAT',
+      metadata: { payAtAmountCents: 10_700 },
+    })
+
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    // Pay@ reports the fee-inclusive amount — should match
+    const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_700 }))
+    expect(res.status).toBe(200)
+    expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
+  })
+
+  it('C-2: rejects payment when amount matches credit value but not the fee-inclusive payAtAmountCents', async () => {
+    mockDb.paymentIntent.findUnique.mockResolvedValue({
+      id: 'intent-payat-1',
+      amountCents: 10_000,
+      providerId: 'provider-1',
+      status: 'PENDING_PAYMENT',
+      creditedAt: null,
+      paymentMethod: 'PAYAT',
+      metadata: { payAtAmountCents: 10_700 },
+    })
+
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    // Pay@ reports 10000 but we expected 10700 — amount mismatch, mark FAILED
+    const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }))
+    expect(res.status).toBe(200)
+    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
     )
     expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
   })

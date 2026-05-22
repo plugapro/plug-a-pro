@@ -265,4 +265,64 @@ describe('provider credit payment intents', () => {
     expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
     expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
   })
+
+  it('T-1: adds feeAmountCents to amountCents and sends fee-inclusive total to Pay@', async () => {
+    const result = await createPayatTopUpIntent({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      feeAmountCents: 700,
+    })
+
+    expect(mockCreatePayatPaymentRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountCents: 10_700,
+        description: 'Plug A Pro wallet top-up R107',
+      }),
+    )
+    expect(result.payAtAmountCents).toBe(10_700)
+    // intent.amountCents holds the credit amount (what goes into the wallet), not the gross
+    expect(result.intent.amountCents).toBe(10_000)
+  })
+
+  it('T-1: stores payAtAmountCents in intent metadata at creation time', async () => {
+    await createPayatTopUpIntent({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      feeAmountCents: 700,
+    })
+
+    const createCall = mockDb.paymentIntent.create.mock.calls[0]?.[0]
+    expect(createCall?.data?.metadata).toMatchObject({ payAtAmountCents: 10_700 })
+  })
+
+  it('T-2: re-throws Pay@ error when cleanup also fails, logs alert', async () => {
+    const payatError = new Error('Pay@ unavailable')
+    const dbError = new Error('DB connection lost')
+    mockCreatePayatPaymentRequest.mockRejectedValue(payatError)
+    mockDb.paymentIntent.update.mockRejectedValue(dbError)
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(
+      createPayatTopUpIntent({ providerId: 'provider-1', amountCents: 10_000 }),
+    ).rejects.toBe(payatError)
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('failed_to_mark_intent_failed'),
+      expect.objectContaining({ alert: true, intentId: 'intent-1' }),
+    )
+
+    consoleSpy.mockRestore()
+  })
+
+  it('T-7: blocks a second PENDING_PAYMENT Pay@ intent for the same provider+amount', async () => {
+    mockDb.paymentIntent.findFirst.mockResolvedValue({ id: 'intent-existing' })
+
+    await expect(
+      createPayatTopUpIntent({ providerId: 'provider-1', amountCents: 10_000 }),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_INTENT' } satisfies Partial<ProviderCreditPaymentIntentError>)
+
+    expect(mockCreatePayatPaymentRequest).not.toHaveBeenCalled()
+    expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
+  })
 })

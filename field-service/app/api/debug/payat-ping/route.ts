@@ -4,8 +4,6 @@ import { randomBytes } from 'crypto'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const DIAG_KEY = 'pap-diag-20260522-x9k'
-
 function redact(val: string | undefined, prefixLen = 8) {
   if (!val) return '(MISSING)'
   return `${val.slice(0, prefixLen)}... (${val.length} chars)`
@@ -18,7 +16,8 @@ function generateClientAccountNumber() {
 }
 
 export async function GET(request: NextRequest) {
-  if (request.nextUrl.searchParams.get('key') !== DIAG_KEY) {
+  const diagKey = process.env.PAYAT_DIAG_KEY?.trim()
+  if (!diagKey || request.nextUrl.searchParams.get('key') !== diagKey) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 

@@ -125,4 +125,7 @@ export async function getPayatToken(): Promise<string> {
 
 export function invalidatePayatToken() {
   cache = null
+  // Clear the in-flight promise so the next caller kicks off a fresh token fetch
+  // rather than awaiting a response that will be rejected (expired/revoked token).
+  inflight = null
 }

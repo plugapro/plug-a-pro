@@ -66,7 +66,9 @@ function decodeSignature(signature: string) {
 
   try {
     const base64 = Buffer.from(signature, 'base64')
-    if (base64.length > 0) return base64
+    // A SHA-256 HMAC is always 32 bytes. Reject anything that decodes to a
+    // different length — it is either garbage or a wrong encoding.
+    if (base64.length === 32) return base64
   } catch {
     return null
   }
@@ -89,16 +91,27 @@ function normalisePayload(payload: PayatWebhookPayload) {
 
   const status = typeof payload.status === 'string' ? payload.status.trim().toUpperCase() : ''
 
-  // Pay@ gateway variants differ on amount units (rands vs cents). Parse as float
-  // and normalise to cents: values below the minimum package are treated as rands.
+  // The integrator endpoint sends amounts in cents. Parse as float first because
+  // some Pay@ gateway variants send amounts as strings or in rands.
   const rawAmount = typeof payload.amount === 'number'
     ? payload.amount
     : typeof payload.amount === 'string'
       ? parseFloat(payload.amount)
       : Number.NaN
-  const amount = Number.isFinite(rawAmount)
-    ? rawAmount < MIN_PACKAGE_CENTS ? Math.round(rawAmount * 100) : Math.round(rawAmount)
-    : Number.NaN
+  let amount: number = Number.NaN
+  if (Number.isFinite(rawAmount)) {
+    if (rawAmount < MIN_PACKAGE_CENTS) {
+      // Value is below the minimum package threshold — treat as rands and convert.
+      // Log so gateway config differences can be detected and fixed proactively.
+      console.warn('[payat-webhook] amount below minimum-cents threshold — treating as rands', {
+        rawAmount,
+        convertedCents: Math.round(rawAmount * 100),
+      })
+      amount = Math.round(rawAmount * 100)
+    } else {
+      amount = Math.round(rawAmount)
+    }
+  }
 
   const gatewayReference = typeof payload.transactionId === 'string'
     ? payload.transactionId
@@ -117,7 +130,7 @@ export async function POST(request: NextRequest) {
     secret = requireWebhookSecret()
   } catch {
     console.error('[payat-webhook] misconfiguration: PAYAT_WEBHOOK_SECRET not set')
-    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 })
   }
 
   const rawBody = await request.text()
@@ -174,6 +187,7 @@ export async function POST(request: NextRequest) {
       status: true,
       creditedAt: true,
       paymentMethod: true,
+      metadata: true,
     },
   })
 
@@ -189,6 +203,7 @@ export async function POST(request: NextRequest) {
         status: true,
         creditedAt: true,
         paymentMethod: true,
+        metadata: true,
       },
     })
   }
@@ -214,12 +229,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
-  if (!Number.isFinite(payload.amount) || payload.amount !== intent.amountCents) {
+  // If payAtAmountCents was stored in metadata at intent creation (fee-inclusive amount
+  // sent to Pay@), compare against that. Fallback to amountCents for pre-fee intents.
+  const rawMeta = intent.metadata
+  const storedPayAtCents =
+    typeof rawMeta === 'object' && rawMeta !== null && !Array.isArray(rawMeta) &&
+    typeof (rawMeta as Record<string, unknown>).payAtAmountCents === 'number' &&
+    Number.isFinite((rawMeta as Record<string, unknown>).payAtAmountCents as number)
+      ? (rawMeta as Record<string, unknown>).payAtAmountCents as number
+      : null
+  const expectedAmountCents = storedPayAtCents ?? intent.amountCents
+
+  if (!Number.isFinite(payload.amount) || payload.amount !== expectedAmountCents) {
     console.error('[payat-webhook] amount mismatch; marking intent failed', {
       alert: true,
       intentId: intent.id,
       providerId: intent.providerId,
-      expectedCents: intent.amountCents,
+      expectedCents: expectedAmountCents,
       receivedCents: payload.amount,
       gatewayStatus: payload.status,
     })

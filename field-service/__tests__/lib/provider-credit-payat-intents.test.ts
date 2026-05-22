@@ -101,6 +101,7 @@ describe('Pay@ provider credit payment intents', () => {
       where: { id: 'intent-payat-1' },
       data: {
         metadata: {
+          payAtAmountCents: 10_000, // stored at intent creation, preserved in post-Pay@ merge
           payatReference: 'intent-payat-1',
           paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
         },

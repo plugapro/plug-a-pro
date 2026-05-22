@@ -342,6 +342,8 @@ export async function createPayatTopUpIntent(
   const creditsToIssue = creditsForAmount(input.amountCents)
   // payAtAmountCents is what the provider pays at the counter — credit value plus
   // any service fee that Plug A Pro passes through to cover gateway costs.
+  // NOTE: PAYAT_MERCHANT_FEE_FIXED_CENTS exists in env but is not yet read here;
+  // callers must pass feeAmountCents explicitly until fee auto-wiring is added.
   const payAtAmountCents = input.amountCents + (input.feeAmountCents ?? 0)
 
   const { intent, provider, resolvedPhone } = await db.$transaction(async (tx) => {
@@ -399,6 +401,8 @@ export async function createPayatTopUpIntent(
 
     // The PaymentIntent is created before Pay@ is called so webhook references
     // can use the immutable intent ID and remain idempotent under retries.
+    // payAtAmountCents is stored in metadata so the webhook can compare the
+    // fee-inclusive amount (what Pay@ will report) instead of the credit amount.
     const intent = await tx.paymentIntent.create({
       data: {
         providerId: provider.id,
@@ -410,7 +414,7 @@ export async function createPayatTopUpIntent(
         status: 'PENDING_PAYMENT',
         providerCellphone: resolvedPhone,
         expiresAt: payatExpiresAt,
-        metadata: toJson(input.metadata),
+        metadata: toJson({ ...(input.metadata ?? {}), payAtAmountCents }),
       },
     })
 
@@ -443,7 +447,10 @@ export async function createPayatTopUpIntent(
       where: { id: intent.id },
       data: { status: 'FAILED' },
     }).catch((dbErr) => {
+      // Intent stays PENDING_PAYMENT — duplicate-intent guard will block retries
+      // for the full 3-day window. Requires manual recovery in admin.
       console.error('[provider-credit-payment-intents] failed_to_mark_intent_failed', {
+        alert: true,
         intentId: intent.id,
         error: dbErr instanceof Error ? dbErr.message : String(dbErr),
       })
