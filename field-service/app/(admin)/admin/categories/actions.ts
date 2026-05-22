@@ -140,10 +140,23 @@ export async function updateCategoryAction(input: UpdateCategoryInput) {
     run: async (data, tx) => {
       const category = await tx.category.findUnique({
         where: { id: data.categoryId },
-        select: { id: true },
+        select: { id: true, slug: true },
       })
       if (!category) {
         throw new CrudActionError('NOT_FOUND', `Category ${data.categoryId} not found.`)
+      }
+
+      // Guard: slug is immutable once provider_categories rows reference it
+      if (data.slug !== category.slug) {
+        const linkedRows = await tx.providerCategory.count({
+          where: { categorySlug: category.slug },
+        })
+        if (linkedRows > 0) {
+          throw new CrudActionError(
+            'CONFLICT',
+            `Slug "${category.slug}" cannot be changed — ${linkedRows} provider category row(s) reference it.`,
+          )
+        }
       }
 
       const duplicate = await tx.category.findUnique({
