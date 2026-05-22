@@ -35,13 +35,33 @@ const providerJobInclude = {
     },
   },
   statusHistory: { orderBy: { timestamp: 'asc' } },
-  extras: { orderBy: { createdAt: 'desc' } },
+  extras: {
+    // Select only stable columns so detail hydration still works on environments
+    // where newer optional columns (e.g. expiresAt) are not yet present.
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      description: true,
+      amount: true,
+      status: true,
+      createdAt: true,
+    },
+  },
   photos: { orderBy: { createdAt: 'asc' } },
 } as const
 
 const providerJobCoreInclude = {
   statusHistory: { orderBy: { timestamp: 'asc' } },
-  extras: { orderBy: { createdAt: 'desc' } },
+  extras: {
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      description: true,
+      amount: true,
+      status: true,
+      createdAt: true,
+    },
+  },
   photos: { orderBy: { createdAt: 'asc' } },
 } as const
 
@@ -373,12 +393,14 @@ export async function getProviderJobDetailForViewer(params: {
         })
       }
 
+      let coreQueryFailed = false
       const coreJob = await db.job
         .findFirst({
           where: { id: identity.id },
           include: providerJobCoreInclude,
         })
         .catch((coreError: unknown) => {
+          coreQueryFailed = true
           logDetailFailure({
             route: params.route,
             viewerRole: 'provider',
@@ -397,6 +419,9 @@ export async function getProviderJobDetailForViewer(params: {
         })
 
       if (!coreJob) {
+        if (coreQueryFailed) {
+          return { ok: false, error: 'query_failed' }
+        }
         logDetailFailure({
           route: params.route,
           viewerRole: 'provider',

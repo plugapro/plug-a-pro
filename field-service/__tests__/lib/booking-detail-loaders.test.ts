@@ -312,6 +312,23 @@ describe('booking detail loaders', () => {
     }
   })
 
+  it('returns query_failed when both primary and core hydration queries fail', async () => {
+    mockDb.job.findUnique
+      .mockResolvedValueOnce({ id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED', bookingId: 'booking_1' })
+      .mockRejectedValueOnce(new Error('primary include failed'))
+    mockDb.job.findFirst.mockRejectedValueOnce(new Error('core include failed'))
+
+    const { getProviderJobDetailForViewer } = await import('@/lib/booking-detail-loaders')
+    const result = await getProviderJobDetailForViewer({
+      route: '/provider/jobs/[jobId]',
+      viewerUserId: 'user_1',
+      viewerProviderId: 'provider_1',
+      jobId: 'job_1',
+    })
+
+    expect(result).toEqual({ ok: false, error: 'query_failed' })
+  })
+
   it('formats date safely when scheduledWindow is missing and start time exists', async () => {
     mockDb.job.findUnique
       .mockResolvedValueOnce({ id: 'job_1', providerId: 'provider_1', status: 'SCHEDULED' })
