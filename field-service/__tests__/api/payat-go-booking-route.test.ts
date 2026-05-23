@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { mockGetSession, mockDb, mockCreateBookingPaymentRequest } = vi.hoisted(() => ({
+const {
+  mockGetSession,
+  mockDb,
+  mockCreateBookingPaymentRequest,
+  mockCheckPayAtGoLimit,
+} = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockDb: {
     booking: {
@@ -9,6 +14,7 @@ const { mockGetSession, mockDb, mockCreateBookingPaymentRequest } = vi.hoisted((
     },
   },
   mockCreateBookingPaymentRequest: vi.fn(),
+  mockCheckPayAtGoLimit: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
@@ -22,6 +28,11 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/payat-go', () => ({
   createPayAtGoBookingPaymentRequest: mockCreateBookingPaymentRequest,
   mapPayAtGoErrorToUserMessage: () => 'We could not start the payment request. Please try again.',
+  mapPayAtGoErrorToHttpStatus: () => 502,
+}))
+
+vi.mock('@/lib/rate-limit', () => ({
+  checkPayAtGoLimit: mockCheckPayAtGoLimit,
 }))
 
 describe('POST /api/payat-go/booking/[bookingId]', () => {
@@ -29,6 +40,68 @@ describe('POST /api/payat-go/booking/[bookingId]', () => {
     vi.resetModules()
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue({ id: 'customer-1', role: 'customer' })
+    mockCheckPayAtGoLimit.mockResolvedValue({ ok: true })
+  })
+
+  it('returns 401 when session is missing', async () => {
+    mockGetSession.mockResolvedValue(null)
+
+    const { POST } = await import('@/app/api/payat-go/booking/[bookingId]/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/payat-go/booking/booking-1', {
+        method: 'POST',
+        body: JSON.stringify({}),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      { params: Promise.resolve({ bookingId: 'booking-1' }) },
+    )
+
+    expect(response.status).toBe(401)
+    expect(mockCreateBookingPaymentRequest).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 when booking does not belong to the customer', async () => {
+    mockDb.booking.findUnique.mockResolvedValue({
+      match: { jobRequest: { customerId: 'customer-2' } },
+    })
+
+    const { POST } = await import('@/app/api/payat-go/booking/[bookingId]/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/payat-go/booking/booking-1', {
+        method: 'POST',
+        body: JSON.stringify({}),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      { params: Promise.resolve({ bookingId: 'booking-1' }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(mockCreateBookingPaymentRequest).not.toHaveBeenCalled()
+  })
+
+  it('returns 429 when create endpoint is rate-limited', async () => {
+    mockDb.booking.findUnique.mockResolvedValue({
+      match: { jobRequest: { customerId: 'customer-1' } },
+    })
+    mockCheckPayAtGoLimit.mockResolvedValue({
+      ok: false,
+      code: 'rate_limited',
+      retryAfterMs: 2000,
+    })
+
+    const { POST } = await import('@/app/api/payat-go/booking/[bookingId]/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/payat-go/booking/booking-1', {
+        method: 'POST',
+        body: JSON.stringify({}),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      { params: Promise.resolve({ bookingId: 'booking-1' }) },
+    )
+
+    expect(response.status).toBe(429)
+    expect(mockCreateBookingPaymentRequest).not.toHaveBeenCalled()
+    expect(response.headers.get('Retry-After')).toBe('2')
   })
 
   it('rejects tampered amount when request amount differs from server booking amount', async () => {

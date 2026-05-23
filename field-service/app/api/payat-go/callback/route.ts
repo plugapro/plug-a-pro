@@ -1,8 +1,11 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import {
+  mapPayAtGoErrorToHttpStatus,
   refreshPayAtGoBookingPaymentStatusByClientAccountNumber,
   mapPayAtGoErrorToUserMessage,
 } from '@/lib/payat-go'
+import { checkPayAtGoLimit } from '@/lib/rate-limit'
 
 type PayAtGoCallbackPayload = {
   accountNumber?: unknown
@@ -22,14 +25,16 @@ function hasValidCallbackSecret(request: NextRequest, expected: string): boolean
   const secretHeader = request.headers.get('x-payat-go-secret')
     ?? request.headers.get('x-callback-secret')
 
-  if (secretHeader && secretHeader === expected) return true
-
-  const authorization = request.headers.get('authorization')
-  if (authorization?.startsWith('Bearer ')) {
-    return authorization.slice('Bearer '.length).trim() === expected
-  }
+  if (secretHeader && safeSecretEquals(secretHeader, expected)) return true
 
   return false
+}
+
+function safeSecretEquals(received: string, expected: string): boolean {
+  const receivedBuffer = Buffer.from(received, 'utf8')
+  const expectedBuffer = Buffer.from(expected, 'utf8')
+  if (receivedBuffer.length !== expectedBuffer.length) return false
+  return timingSafeEqual(receivedBuffer, expectedBuffer)
 }
 
 function extractClientAccountNumber(payload: PayAtGoCallbackPayload): string | null {
@@ -76,6 +81,26 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const callbackLimit = await checkPayAtGoLimit({
+    operation: 'callback',
+    identifier: `client_account_number:${clientAccountNumber}`,
+  })
+  if (!callbackLimit.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(callbackLimit.retryAfterMs / 1000))
+    return NextResponse.json(
+      {
+        error:
+          callbackLimit.code === 'limiter_unavailable'
+            ? 'Service temporarily unavailable.'
+            : 'Too many requests.',
+      },
+      {
+        status: callbackLimit.code === 'limiter_unavailable' ? 503 : 429,
+        headers: { 'Retry-After': String(retryAfterSeconds) },
+      },
+    )
+  }
+
   try {
     const result = await refreshPayAtGoBookingPaymentStatusByClientAccountNumber(
       clientAccountNumber,
@@ -83,18 +108,23 @@ export async function POST(request: NextRequest) {
     )
 
     if (!result) {
+      console.warn(JSON.stringify({
+        event: 'payat_go.callback_ignored_unknown_reference',
+        providerClientAccountNumber: clientAccountNumber,
+      }))
       return NextResponse.json({ received: true, ignored: 'unknown_reference' })
     }
 
-    return NextResponse.json({
-      received: true,
+    console.info(JSON.stringify({
+      event: 'payat_go.callback_processed',
       bookingId: result.bookingId,
       paymentId: result.paymentId,
       status: result.status,
       rawProviderStatus: result.rawProviderStatus,
-      paidAt: result.paidAt,
       providerClientAccountNumber: result.providerClientAccountNumber,
-    })
+    }))
+
+    return NextResponse.json({ received: true })
   } catch (error) {
     console.error(JSON.stringify({
       event: 'payat_go.callback_processing_failed',
@@ -103,7 +133,7 @@ export async function POST(request: NextRequest) {
     }))
     return NextResponse.json(
       { error: mapPayAtGoErrorToUserMessage(error) },
-      { status: 502 },
+      { status: mapPayAtGoErrorToHttpStatus(error) },
     )
   }
 }

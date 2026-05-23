@@ -1,8 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { checkPayAtGoLimit } from '@/lib/rate-limit'
 import {
   createPayAtGoBookingPaymentRequest,
+  mapPayAtGoErrorToHttpStatus,
   mapPayAtGoErrorToUserMessage,
   type InternalPayAtGoStatus,
 } from '@/lib/payat-go'
@@ -51,6 +53,18 @@ export async function POST(
   const allowed = await canAccessBooking(bookingId, session.id, session.role)
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const createLimit = await checkPayAtGoLimit({
+    operation: 'create',
+    identifier: `booking:${bookingId}:user:${session.id}`,
+  })
+  if (!createLimit.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(createLimit.retryAfterMs / 1000))
+    return NextResponse.json(
+      { error: createLimit.code === 'limiter_unavailable' ? 'Service temporarily unavailable.' : 'Too many requests.' },
+      { status: createLimit.code === 'limiter_unavailable' ? 503 : 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
+    )
   }
 
   const body = await request.json().catch(() => ({})) as {
@@ -145,9 +159,15 @@ export async function POST(
       { status: result.reusedExisting ? 200 : 201 },
     )
   } catch (error) {
+    console.error(JSON.stringify({
+      event: 'payat_go.create_failed',
+      route: '/api/payat-go/booking/[bookingId]',
+      bookingId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    }))
     return NextResponse.json(
       { error: mapPayAtGoErrorToUserMessage(error) },
-      { status: 502 },
+      { status: mapPayAtGoErrorToHttpStatus(error) },
     )
   }
 }

@@ -533,6 +533,8 @@ export function parseWebhookEvent(rawBody: string): PaymentEvent {
 }
 
 export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
+  let requiresManualFollowUp = false
+
   await db.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { bookingId: event.bookingId },
@@ -555,6 +557,11 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
       },
     })
 
+    if (fromStatus === 'CANCELLED' || fromStatus === 'COMPLETED') {
+      requiresManualFollowUp = true
+      return
+    }
+
     await tx.booking.update({
       where: { id: event.bookingId },
       data: { status: 'SCHEDULED' },
@@ -569,6 +576,25 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
         actorRole: 'system',
         notes: `Payment confirmed (${event.pspReference})`,
       },
+    })
+  })
+
+  if (!requiresManualFollowUp) return
+
+  console.warn('[payments] payment succeeded after terminal booking state; queued follow-up', {
+    bookingId: event.bookingId,
+    pspReference: event.pspReference,
+  })
+  await claimOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    entityId: event.bookingId,
+    claimedById: 'system:payment-success-late',
+    claimedByRole: 'system',
+    claimedByLabel: 'System (late payment)',
+  }).catch((err: unknown) => {
+    console.error('[payments] failed to enqueue late-payment follow-up', {
+      bookingId: event.bookingId,
+      error: err,
     })
   })
 }

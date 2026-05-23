@@ -10,6 +10,8 @@ describe('Pay@Go client', () => {
     vi.stubEnv('PAYAT_GO_CLIENT_SECRET', 'client-secret')
     vi.stubEnv('PAYAT_GO_GRANT_TYPE', 'client_credentials')
     vi.stubEnv('PAYAT_GO_SCOPES', 'rtp:create:single rtp:cancel:single rtp:read')
+    vi.stubEnv('PAYAT_GO_RETRY_MAX_ATTEMPTS', '3')
+    vi.stubEnv('PAYAT_GO_RETRY_BASE_DELAY_MS', '1')
   })
 
   afterEach(() => {
@@ -197,5 +199,80 @@ describe('Pay@Go client', () => {
     const status = await readPayAtGoSingleRtp(created.clientAccountNumber)
 
     expect(status.internalStatus).toBe('PAID')
+  })
+
+  it('retries token acquisition on transient provider errors', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        headers: new Headers(),
+        text: async () => 'temporarily unavailable',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ access_token: 'token-1', expires_in: 3600 }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        headers: new Headers(),
+        text: async () => JSON.stringify({
+          requestToPayId: 3003,
+          sourceReference: 'PAT-3003',
+          paymentLink: 'https://pay/3003',
+        }),
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { createPayAtGoSingleRtp } = await import('@/lib/payat-go/client')
+    const result = await createPayAtGoSingleRtp({
+      clientReferenceNumber: 'BOOKING-REF-3003',
+      amountCents: 30000,
+      customerNameSurname: 'Customer Retry',
+    })
+
+    expect(result.requestToPayId).toBe(3003)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('retries RTP read on transient status responses', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ access_token: 'token-1', expires_in: 3600 }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        headers: new Headers(),
+        text: async () => 'gateway timeout',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: async () => JSON.stringify({
+          accountState: 'PAYMENT_OUTSTANDING',
+          amount: 10000,
+          amountPaid: 0,
+          paymentLink: 'https://pay/1001',
+        }),
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { readPayAtGoSingleRtp } = await import('@/lib/payat-go/client')
+    const result = await readPayAtGoSingleRtp('12345678901234')
+
+    expect(result.internalStatus).toBe('SENT')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })

@@ -11,6 +11,10 @@ type LimiterKey =
   | 'providerSendCodePublicByIpPhone'
   | 'providerLookupByPhone'
   | 'providerLookupByIp'
+  | 'payatGoCreateByBookingUser'
+  | 'payatGoStatusByBookingUser'
+  | 'payatGoCancelByBookingUser'
+  | 'payatGoCallbackByReference'
 
 type RateLimitDecision =
   | { ok: true }
@@ -58,6 +62,26 @@ function configs(): Record<LimiterKey, LimitConfig> {
     providerLookupByIp: {
       name: 'providerLookupByIp',
       limit: envInt('PROVIDER_LOOKUP_LIMIT_PER_IP_HOUR', 60),
+      windowSec: HOUR,
+    },
+    payatGoCreateByBookingUser: {
+      name: 'payatGoCreateByBookingUser',
+      limit: envInt('PAYAT_GO_CREATE_LIMIT_PER_BOOKING_USER_HOUR', 12),
+      windowSec: HOUR,
+    },
+    payatGoStatusByBookingUser: {
+      name: 'payatGoStatusByBookingUser',
+      limit: envInt('PAYAT_GO_STATUS_LIMIT_PER_BOOKING_USER_HOUR', 120),
+      windowSec: HOUR,
+    },
+    payatGoCancelByBookingUser: {
+      name: 'payatGoCancelByBookingUser',
+      limit: envInt('PAYAT_GO_CANCEL_LIMIT_PER_BOOKING_USER_HOUR', 20),
+      windowSec: HOUR,
+    },
+    payatGoCallbackByReference: {
+      name: 'payatGoCallbackByReference',
+      limit: envInt('PAYAT_GO_CALLBACK_LIMIT_PER_REFERENCE_HOUR', 120),
       windowSec: HOUR,
     },
   }
@@ -282,6 +306,36 @@ export async function checkOtpVerifyLimit(params: {
       retryAfterMs: decision.retryAfterMs,
     }
   }
+  return { ok: true }
+}
+
+export type CheckPayAtGoLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'rate_limited' | 'limiter_unavailable'; retryAfterMs: number }
+
+type PayAtGoOperation = 'create' | 'status' | 'cancel' | 'callback'
+
+const PAYAT_GO_LIMIT_KEY_BY_OPERATION: Record<PayAtGoOperation, LimiterKey> = {
+  create: 'payatGoCreateByBookingUser',
+  status: 'payatGoStatusByBookingUser',
+  cancel: 'payatGoCancelByBookingUser',
+  callback: 'payatGoCallbackByReference',
+}
+
+export async function checkPayAtGoLimit(params: {
+  operation: PayAtGoOperation
+  identifier: string
+}): Promise<CheckPayAtGoLimitResult> {
+  const limiterKey = PAYAT_GO_LIMIT_KEY_BY_OPERATION[params.operation]
+  const decision = await consume(limiterKey, params.identifier)
+  if (!decision.ok) {
+    return {
+      ok: false,
+      code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'rate_limited',
+      retryAfterMs: decision.retryAfterMs,
+    }
+  }
+
   return { ok: true }
 }
 

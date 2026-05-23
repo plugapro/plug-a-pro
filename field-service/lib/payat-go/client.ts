@@ -42,6 +42,7 @@ type MockRtpEntry = {
 const mockRtpStore = new Map<string, MockRtpEntry>()
 let tokenCache: TokenCache | null = null
 let tokenInflight: Promise<string> | null = null
+const PAYAT_GO_RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504])
 
 function parseBoolean(value: string | undefined, defaultValue = false) {
   if (value == null) return defaultValue
@@ -127,6 +128,49 @@ function sanitizeProviderErrorBody(raw: string): string {
   return raw.slice(0, 500)
 }
 
+function getRetryMaxAttempts(): number {
+  const raw = Number.parseInt(process.env.PAYAT_GO_RETRY_MAX_ATTEMPTS ?? '', 10)
+  if (!Number.isFinite(raw)) return 3
+  return Math.min(Math.max(raw, 1), 5)
+}
+
+function getRetryBaseDelayMs(): number {
+  const raw = Number.parseInt(process.env.PAYAT_GO_RETRY_BASE_DELAY_MS ?? '', 10)
+  if (!Number.isFinite(raw)) return 200
+  return Math.min(Math.max(raw, 50), 5000)
+}
+
+function parseRetryAfterMs(response: Response): number | null {
+  const retryAfter = response.headers.get('retry-after')?.trim()
+  if (!retryAfter) return null
+  const seconds = Number.parseInt(retryAfter, 10)
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000
+
+  const date = new Date(retryAfter)
+  if (Number.isNaN(date.getTime())) return null
+  return Math.max(0, date.getTime() - Date.now())
+}
+
+function shouldRetryStatus(status: number): boolean {
+  return PAYAT_GO_RETRYABLE_STATUSES.has(status)
+}
+
+function jitterDelayMs(baseDelayMs: number): number {
+  const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(baseDelayMs * 0.25)))
+  return baseDelayMs + jitter
+}
+
+function computeRetryDelayMs(params: { attempt: number; response?: Response }): number {
+  const fromHeader = params.response ? parseRetryAfterMs(params.response) : null
+  if (fromHeader != null) return Math.min(fromHeader, 15_000)
+  const base = getRetryBaseDelayMs()
+  return Math.min(jitterDelayMs(base * (2 ** (params.attempt - 1))), 15_000)
+}
+
+async function sleepMs(delayMs: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, delayMs))
+}
+
 function parseProviderJson(rawBody: string, context: string): Record<string, unknown> {
   if (!rawBody) return {}
   try {
@@ -137,51 +181,83 @@ function parseProviderJson(rawBody: string, context: string): Record<string, unk
 }
 
 async function fetchAccessToken(config: PayAtGoConfig): Promise<string> {
-  let response: Response
-  try {
-    response = await fetch(config.tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: config.grantType,
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-        scope: config.scopes.join(' '),
-      }),
-      signal: AbortSignal.timeout(8_000),
-    })
-  } catch (error) {
-    const reason = error instanceof Error ? `${error.name}: ${error.message}` : 'unknown_error'
-    throw new PayAtGoNetworkError(`Pay@Go token request failed: ${reason}`)
+  const maxAttempts = getRetryMaxAttempts()
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let response: Response
+    try {
+      response = await fetch(config.tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: config.grantType,
+          client_id: config.clientId,
+          client_secret: config.clientSecret,
+          scope: config.scopes.join(' '),
+        }),
+        signal: AbortSignal.timeout(8_000),
+      })
+    } catch (error) {
+      if (attempt < maxAttempts) {
+        const delayMs = computeRetryDelayMs({ attempt })
+        console.warn(JSON.stringify({
+          event: 'payat_go.client_retry',
+          operation: 'oauth_token',
+          attempt,
+          delayMs,
+          reason: error instanceof Error ? error.name : 'unknown_error',
+        }))
+        await sleepMs(delayMs)
+        continue
+      }
+
+      const reason = error instanceof Error ? `${error.name}: ${error.message}` : 'unknown_error'
+      throw new PayAtGoNetworkError(`Pay@Go token request failed: ${reason}`)
+    }
+
+    if (!response.ok) {
+      if (shouldRetryStatus(response.status) && attempt < maxAttempts) {
+        const delayMs = computeRetryDelayMs({ attempt, response })
+        console.warn(JSON.stringify({
+          event: 'payat_go.client_retry',
+          operation: 'oauth_token',
+          attempt,
+          delayMs,
+          statusCode: response.status,
+          reason: 'http_status_retryable',
+        }))
+        await sleepMs(delayMs)
+        continue
+      }
+
+      const body = sanitizeProviderErrorBody(await response.text().catch(() => ''))
+      throw new PayAtGoAuthError(
+        `Pay@Go authentication failed with HTTP ${response.status}${body ? ` (${body})` : ''}`,
+      )
+    }
+
+    let payload: { access_token?: string; expires_in?: number }
+    try {
+      payload = await response.json() as { access_token?: string; expires_in?: number }
+    } catch {
+      throw new PayAtGoAuthError('Pay@Go token response was not valid JSON.')
+    }
+
+    if (!payload.access_token || !Number.isFinite(payload.expires_in)) {
+      throw new PayAtGoAuthError('Pay@Go token response is missing access_token or expires_in.')
+    }
+
+    tokenCache = {
+      token: payload.access_token,
+      // Refresh one minute early to avoid near-expiry race conditions.
+      expiresAt: Date.now() + Math.max((Number(payload.expires_in) - 60) * 1000, 10_000),
+    }
+
+    return tokenCache.token
   }
 
-  if (!response.ok) {
-    const body = sanitizeProviderErrorBody(await response.text().catch(() => ''))
-    throw new PayAtGoAuthError(
-      `Pay@Go authentication failed with HTTP ${response.status}${body ? ` (${body})` : ''}`,
-    )
-  }
-
-  let payload: { access_token?: string; expires_in?: number }
-  try {
-    payload = await response.json() as { access_token?: string; expires_in?: number }
-  } catch {
-    throw new PayAtGoAuthError('Pay@Go token response was not valid JSON.')
-  }
-
-  if (!payload.access_token || !Number.isFinite(payload.expires_in)) {
-    throw new PayAtGoAuthError('Pay@Go token response is missing access_token or expires_in.')
-  }
-
-  tokenCache = {
-    token: payload.access_token,
-    // Refresh one minute early to avoid near-expiry race conditions.
-    expiresAt: Date.now() + Math.max((Number(payload.expires_in) - 60) * 1000, 10_000),
-  }
-
-  return tokenCache.token
+  throw new PayAtGoNetworkError('Pay@Go token request exhausted retry attempts.')
 }
 
 async function getAccessToken(config: PayAtGoConfig): Promise<string> {
@@ -202,31 +278,65 @@ async function payAtGoFetch(
   config: PayAtGoConfig,
   path: string,
   init: RequestInit,
-  retryUnauthorized = true,
 ): Promise<Response> {
-  const token = await getAccessToken(config)
+  const maxAttempts = getRetryMaxAttempts()
+  let unauthorizedRetried = false
 
-  let response: Response
-  try {
-    response = await fetch(`${config.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        ...(init.headers ?? {}),
-        Authorization: `Bearer ${token}`,
-      },
-      signal: AbortSignal.timeout(10_000),
-    })
-  } catch (error) {
-    const reason = error instanceof Error ? `${error.name}: ${error.message}` : 'unknown_error'
-    throw new PayAtGoNetworkError(`Pay@Go request failed before response: ${reason}`)
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const token = await getAccessToken(config)
+
+    let response: Response
+    try {
+      response = await fetch(`${config.baseUrl}${path}`, {
+        ...init,
+        headers: {
+          ...(init.headers ?? {}),
+          Authorization: `Bearer ${token}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      })
+    } catch (error) {
+      if (attempt < maxAttempts) {
+        const delayMs = computeRetryDelayMs({ attempt })
+        console.warn(JSON.stringify({
+          event: 'payat_go.client_retry',
+          operation: path,
+          attempt,
+          delayMs,
+          reason: error instanceof Error ? error.name : 'unknown_error',
+        }))
+        await sleepMs(delayMs)
+        continue
+      }
+
+      const reason = error instanceof Error ? `${error.name}: ${error.message}` : 'unknown_error'
+      throw new PayAtGoNetworkError(`Pay@Go request failed before response: ${reason}`)
+    }
+
+    if (response.status === 401 && !unauthorizedRetried) {
+      unauthorizedRetried = true
+      invalidatePayAtGoTokenCache()
+      continue
+    }
+
+    if (shouldRetryStatus(response.status) && attempt < maxAttempts) {
+      const delayMs = computeRetryDelayMs({ attempt, response })
+      console.warn(JSON.stringify({
+        event: 'payat_go.client_retry',
+        operation: path,
+        attempt,
+        delayMs,
+        statusCode: response.status,
+        reason: 'http_status_retryable',
+      }))
+      await sleepMs(delayMs)
+      continue
+    }
+
+    return response
   }
 
-  if (response.status === 401 && retryUnauthorized) {
-    invalidatePayAtGoTokenCache()
-    return payAtGoFetch(config, path, init, false)
-  }
-
-  return response
+  throw new PayAtGoNetworkError(`Pay@Go request exhausted retry attempts for ${path}.`)
 }
 
 function parseInternalStatusAsProviderState(status: InternalPayAtGoStatus): string {

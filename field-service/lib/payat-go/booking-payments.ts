@@ -11,7 +11,9 @@ import {
   setPayAtGoMockStatus,
 } from './client'
 import {
+  PayAtGoAuthError,
   PayAtGoConfigurationError,
+  PayAtGoNetworkError,
   PayAtGoProviderError,
   PayAtGoValidationError,
 } from './errors'
@@ -824,4 +826,20 @@ export function mapPayAtGoErrorToUserMessage(error: unknown): string {
     return 'We could not start the payment request. Please try again.'
   }
   return 'We could not start the payment request. Please try again.'
+}
+
+export function mapPayAtGoErrorToHttpStatus(error: unknown): number {
+  if (error instanceof PayAtGoValidationError) {
+    if (error.message.toLowerCase().includes('not found')) return 404
+    return 400
+  }
+  if (error instanceof PayAtGoConfigurationError) return 503
+  if (error instanceof PayAtGoNetworkError) return 503
+  if (error instanceof PayAtGoAuthError) return 502
+  if (error instanceof PayAtGoProviderError) {
+    if (error.status === 404) return 409
+    if (error.status && error.status >= 500) return 502
+    return 502
+  }
+  return 502
 }

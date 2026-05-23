@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { checkPayAtGoLimit } from '@/lib/rate-limit'
 import {
+  mapPayAtGoErrorToHttpStatus,
   refreshPayAtGoBookingPaymentStatus,
   mapPayAtGoErrorToUserMessage,
   type InternalPayAtGoStatus,
@@ -63,6 +65,18 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  const statusLimit = await checkPayAtGoLimit({
+    operation: 'status',
+    identifier: `booking:${bookingId}:user:${session.id}`,
+  })
+  if (!statusLimit.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(statusLimit.retryAfterMs / 1000))
+    return NextResponse.json(
+      { error: statusLimit.code === 'limiter_unavailable' ? 'Service temporarily unavailable.' : 'Too many requests.' },
+      { status: statusLimit.code === 'limiter_unavailable' ? 503 : 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
+    )
+  }
+
   const mockStatus = parseMockStatus(request.nextUrl.searchParams.get('mockStatus'))
   const mockModeEnabled = process.env.PAYAT_GO_MOCK_MODE?.trim().toLowerCase() === 'true'
   const isProdEnv = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
@@ -93,9 +107,15 @@ export async function GET(
       polled: true,
     })
   } catch (error) {
+    console.error(JSON.stringify({
+      event: 'payat_go.status_refresh_failed',
+      route: '/api/payat-go/booking/[bookingId]/status',
+      bookingId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    }))
     return NextResponse.json(
       { error: mapPayAtGoErrorToUserMessage(error) },
-      { status: 502 },
+      { status: mapPayAtGoErrorToHttpStatus(error) },
     )
   }
 }

@@ -1,8 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { checkPayAtGoLimit } from '@/lib/rate-limit'
 import {
   cancelPayAtGoBookingPaymentRequest,
+  mapPayAtGoErrorToHttpStatus,
   mapPayAtGoErrorToUserMessage,
 } from '@/lib/payat-go'
 
@@ -44,6 +46,26 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  const cancelLimit = await checkPayAtGoLimit({
+    operation: 'cancel',
+    identifier: `booking:${bookingId}:user:${session.id}`,
+  })
+  if (!cancelLimit.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(cancelLimit.retryAfterMs / 1000))
+    return NextResponse.json(
+      {
+        error:
+          cancelLimit.code === 'limiter_unavailable'
+            ? 'Service temporarily unavailable.'
+            : 'Too many requests.',
+      },
+      {
+        status: cancelLimit.code === 'limiter_unavailable' ? 503 : 429,
+        headers: { 'Retry-After': String(retryAfterSeconds) },
+      },
+    )
+  }
+
   try {
     const result = await cancelPayAtGoBookingPaymentRequest(bookingId)
 
@@ -58,9 +80,15 @@ export async function POST(
       message: 'This payment request was cancelled.',
     })
   } catch (error) {
+    console.error(JSON.stringify({
+      event: 'payat_go.cancel_failed',
+      route: '/api/payat-go/booking/[bookingId]/cancel',
+      bookingId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    }))
     return NextResponse.json(
       { error: mapPayAtGoErrorToUserMessage(error) },
-      { status: 502 },
+      { status: mapPayAtGoErrorToHttpStatus(error) },
     )
   }
 }
