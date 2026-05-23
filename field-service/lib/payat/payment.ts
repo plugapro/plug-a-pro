@@ -100,6 +100,11 @@ function maskEmail(email: string): string {
   return at > 0 ? `…${email.slice(at)}` : '***'
 }
 
+function maskMerchantIdentifier(identifier: string): string {
+  if (identifier.length <= 4) return '***'
+  return `${identifier.slice(0, 2)}***${identifier.slice(-2)}`
+}
+
 async function sendPayatPaymentRequest(
   params: PayatPaymentRequest,
   retryOnUnauthorized: boolean,
@@ -116,6 +121,15 @@ async function sendPayatPaymentRequest(
   const apiBase = requirePayatConfig('PAYAT_API_BASE').replace(/\/$/, '')
   const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
   const endpoint = `${apiBase}/integrator/rtp/create/single/${merchantIdentifier}`
+
+  // TEMP DIAGNOSTIC (remove after config validation): confirms exact runtime target.
+  console.warn(JSON.stringify({
+    event: 'payat.runtime_target',
+    topupId: params.topupId,
+    endpoint,
+    merchantIdentifierMasked: maskMerchantIdentifier(merchantIdentifier),
+    retry: !retryOnUnauthorized,
+  }))
 
   console.info(JSON.stringify({
     event: 'payat.rtp_request',
