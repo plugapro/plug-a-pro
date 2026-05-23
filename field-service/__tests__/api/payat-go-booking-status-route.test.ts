@@ -1,0 +1,76 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NextRequest } from 'next/server'
+
+const { mockGetSession, mockDb, mockRefreshBookingPaymentStatus } = vi.hoisted(() => ({
+  mockGetSession: vi.fn(),
+  mockDb: {
+    booking: {
+      findUnique: vi.fn(),
+    },
+  },
+  mockRefreshBookingPaymentStatus: vi.fn(),
+}))
+
+vi.mock('@/lib/auth', () => ({
+  getSession: mockGetSession,
+}))
+
+vi.mock('@/lib/db', () => ({
+  db: mockDb,
+}))
+
+vi.mock('@/lib/payat-go', () => ({
+  refreshPayAtGoBookingPaymentStatus: mockRefreshBookingPaymentStatus,
+  mapPayAtGoErrorToUserMessage: () => 'Payment is still pending.',
+}))
+
+describe('GET /api/payat-go/booking/[bookingId]/status', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    vi.unstubAllEnvs()
+  })
+
+  it('rejects mockStatus for non-admin users even when mock mode is enabled', async () => {
+    vi.stubEnv('PAYAT_GO_MOCK_MODE', 'true')
+    mockGetSession.mockResolvedValue({ id: 'customer-1', role: 'customer' })
+    mockDb.booking.findUnique.mockResolvedValue({
+      match: { jobRequest: { customerId: 'customer-1' } },
+    })
+
+    const { GET } = await import('@/app/api/payat-go/booking/[bookingId]/status/route')
+    const response = await GET(
+      new NextRequest('http://localhost/api/payat-go/booking/booking-1/status?mockStatus=PAID'),
+      { params: Promise.resolve({ bookingId: 'booking-1' }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(mockRefreshBookingPaymentStatus).not.toHaveBeenCalled()
+  })
+
+  it('allows admin to use mockStatus in mock mode outside production', async () => {
+    vi.stubEnv('PAYAT_GO_MOCK_MODE', 'true')
+    vi.stubEnv('NODE_ENV', 'test')
+    mockGetSession.mockResolvedValue({ id: 'admin-1', role: 'admin' })
+
+    mockRefreshBookingPaymentStatus.mockResolvedValue({
+      bookingId: 'booking-1',
+      paymentId: 'payment-1',
+      status: 'PAID',
+      rawProviderStatus: 'PAYMENT_COMPLETED',
+      paidAt: new Date('2026-05-23T10:00:00.000Z'),
+      expiresAt: new Date('2026-05-26T10:00:00.000Z'),
+      amountPaidCents: 25050,
+      providerClientAccountNumber: '12345678901234',
+    })
+
+    const { GET } = await import('@/app/api/payat-go/booking/[bookingId]/status/route')
+    const response = await GET(
+      new NextRequest('http://localhost/api/payat-go/booking/booking-1/status?mockStatus=PAID'),
+      { params: Promise.resolve({ bookingId: 'booking-1' }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockRefreshBookingPaymentStatus).toHaveBeenCalledWith('booking-1', { mockStatus: 'PAID' })
+  })
+})
