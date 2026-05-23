@@ -65,8 +65,17 @@ export async function GET(
 
   const mockStatus = parseMockStatus(request.nextUrl.searchParams.get('mockStatus'))
   const mockModeEnabled = process.env.PAYAT_GO_MOCK_MODE?.trim().toLowerCase() === 'true'
-  if (mockStatus && !mockModeEnabled) {
-    return NextResponse.json({ error: 'mockStatus is available only in mock mode.' }, { status: 400 })
+  const isProdEnv = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
+  if (mockStatus) {
+    if (!mockModeEnabled) {
+      return NextResponse.json({ error: 'mockStatus is available only in mock mode.' }, { status: 400 })
+    }
+    if (isProdEnv) {
+      return NextResponse.json({ error: 'mockStatus is disabled in production.' }, { status: 403 })
+    }
+    if (session.role !== 'admin') {
+      return NextResponse.json({ error: 'mockStatus is available to admin users only.' }, { status: 403 })
+    }
   }
 
   try {

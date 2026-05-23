@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -169,11 +170,7 @@ describe('Pay@Go booking payments service', () => {
 
   it('marks payment as paid on provider paid status and does not duplicate success side effects', async () => {
     const callbackPayload = '{"event":"same"}'
-    let callbackHash = 0
-    for (let i = 0; i < callbackPayload.length; i += 1) {
-      callbackHash = (callbackHash << 5) - callbackHash + callbackPayload.charCodeAt(i)
-      callbackHash |= 0
-    }
+    const callbackHash = createHash('sha256').update(callbackPayload).digest('hex')
 
     const paymentRecord = {
       id: 'payment-1',
@@ -234,7 +231,7 @@ describe('Pay@Go booking payments service', () => {
       metadata: {
         providerInternalStatus: 'PAID',
         providerStatus: 'PAYMENT_COMPLETED',
-        webhookLastEventHash: String(callbackHash),
+        webhookLastEventHash: callbackHash,
       },
       paidAt: new Date('2026-05-23T10:00:00.000Z'),
     })
@@ -369,5 +366,151 @@ describe('Pay@Go booking payments service', () => {
       name: 'PayAtGoValidationError',
     })
     expect(mockCancelPayAtGoSingleRtp).not.toHaveBeenCalled()
+  })
+
+  it('rejects create when booking payment is already settled', async () => {
+    mockDb.booking.findUnique.mockResolvedValue({
+      id: 'booking-1',
+      match: {
+        jobRequest: {
+          category: 'Plumbing',
+          customer: {
+            name: 'Customer One',
+            phone: '+27831234567',
+          },
+        },
+      },
+      payment: {
+        id: 'payment-paid',
+        bookingId: 'booking-1',
+        status: 'PAID',
+        collectionMode: 'PLATFORM_CHECKOUT',
+        amount: 100,
+        currency: 'ZAR',
+        pspProvider: 'payat_go',
+        pspReference: '123',
+        pspCheckoutId: '12345678901234',
+        checkoutUrl: 'https://pay/1',
+        metadata: { providerInternalStatus: 'PAID' },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        paidAt: new Date(),
+        failureReason: null,
+        refundedAmount: null,
+        refundedAt: null,
+      },
+    })
+
+    const { createPayAtGoBookingPaymentRequest } = await import('@/lib/payat-go/booking-payments')
+
+    await expect(
+      createPayAtGoBookingPaymentRequest({
+        bookingId: 'booking-1',
+        amountCents: 10000,
+        currency: 'ZAR',
+        customerName: 'Customer One',
+        customerMobile: '+27831234567',
+        description: 'Booking payment',
+      }),
+    ).rejects.toMatchObject({ name: 'PayAtGoValidationError' })
+    expect(mockCreatePayAtGoSingleRtp).not.toHaveBeenCalled()
+  })
+
+  it('does not downgrade an already paid payment when provider later reports failed/cancelled', async () => {
+    const paymentRecord = {
+      id: 'payment-1',
+      bookingId: 'booking-1',
+      status: 'PAID',
+      collectionMode: 'PLATFORM_CHECKOUT',
+      amount: 100,
+      currency: 'ZAR',
+      pspProvider: 'payat_go',
+      pspReference: '123',
+      pspCheckoutId: '12345678901234',
+      checkoutUrl: 'https://pay/1',
+      metadata: {
+        providerInternalStatus: 'PAID',
+        providerStatus: 'PAYMENT_COMPLETED',
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      paidAt: new Date('2026-05-23T10:00:00.000Z'),
+      failureReason: null,
+      refundedAmount: null,
+      refundedAt: null,
+    }
+    mockDb.payment.findUnique.mockResolvedValue(paymentRecord)
+    mockReadPayAtGoSingleRtp.mockResolvedValue({
+      clientAccountNumber: '12345678901234',
+      requestToPayId: 123,
+      sourceReference: 'PAT-001',
+      paymentLink: 'https://pay/1',
+      accountState: 'PAYMENT_CANCELLED',
+      internalStatus: 'CANCELLED',
+      amountCents: 10000,
+      amountPaidCents: 0,
+      paidAt: null,
+      expiresAt: new Date('2026-05-26T10:00:00.000Z'),
+      raw: { accountState: 'PAYMENT_CANCELLED' },
+    })
+    mockDb.payment.update.mockResolvedValue({})
+    mockDb.payment.findUniqueOrThrow.mockResolvedValue(paymentRecord)
+
+    const { refreshPayAtGoBookingPaymentStatus } = await import('@/lib/payat-go/booking-payments')
+    const result = await refreshPayAtGoBookingPaymentStatus('booking-1')
+
+    expect(result.status).toBe('PAID')
+    expect(mockHandlePaymentFailed).not.toHaveBeenCalled()
+  })
+
+  it('marks payment failed when provider paid amount does not match expected booking amount', async () => {
+    const paymentRecord = {
+      id: 'payment-1',
+      bookingId: 'booking-1',
+      status: 'PENDING',
+      collectionMode: 'PLATFORM_CHECKOUT',
+      amount: 100,
+      currency: 'ZAR',
+      pspProvider: 'payat_go',
+      pspReference: '123',
+      pspCheckoutId: '12345678901234',
+      checkoutUrl: 'https://pay/1',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      paidAt: null,
+      failureReason: null,
+      refundedAmount: null,
+      refundedAt: null,
+    }
+    mockDb.payment.findUnique.mockResolvedValue(paymentRecord)
+    mockReadPayAtGoSingleRtp.mockResolvedValue({
+      clientAccountNumber: '12345678901234',
+      requestToPayId: 123,
+      sourceReference: 'PAT-001',
+      paymentLink: 'https://pay/1',
+      accountState: 'PAYMENT_COMPLETED',
+      internalStatus: 'PAID',
+      amountCents: 100,
+      amountPaidCents: 100,
+      paidAt: new Date('2026-05-23T10:00:00.000Z'),
+      expiresAt: new Date('2026-05-26T10:00:00.000Z'),
+      raw: { accountState: 'PAYMENT_COMPLETED' },
+    })
+    mockDb.payment.update.mockResolvedValue({})
+    mockDb.payment.findUniqueOrThrow.mockResolvedValue({
+      ...paymentRecord,
+      status: 'FAILED',
+      metadata: {
+        providerInternalStatus: 'FAILED',
+        providerStatus: 'PAYMENT_COMPLETED',
+      },
+    })
+
+    const { refreshPayAtGoBookingPaymentStatus } = await import('@/lib/payat-go/booking-payments')
+    const result = await refreshPayAtGoBookingPaymentStatus('booking-1')
+
+    expect(result.status).toBe('FAILED')
+    expect(mockHandlePaymentSuccess).not.toHaveBeenCalled()
   })
 })

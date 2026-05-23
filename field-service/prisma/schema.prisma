@@ -950,6 +950,7 @@ model Payment {
 
   @@index([status, createdAt])
   @@index([bookingId])
+  @@index([pspProvider, pspCheckoutId])
   @@map("payments")
 }
 
