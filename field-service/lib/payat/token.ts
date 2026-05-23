@@ -52,10 +52,18 @@ function getTokenUrl() {
   return value
 }
 
+function getPayatScopes() {
+  return process.env.PAYAT_SCOPES?.trim() || 'rtp:create:single'
+}
+
 async function fetchToken(): Promise<string> {
   const tokenUrl = getTokenUrl()
   const clientId = requirePayatEnv('PAYAT_CLIENT_ID')
   const clientSecret = requirePayatEnv('PAYAT_CLIENT_SECRET')
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    scope: getPayatScopes(),
+  })
 
   let response: Response
   try {
@@ -65,7 +73,7 @@ async function fetchToken(): Promise<string> {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
       },
-      body: new URLSearchParams({ grant_type: 'client_credentials' }),
+      body,
       signal: AbortSignal.timeout(5_000),
     })
   } catch (error) {

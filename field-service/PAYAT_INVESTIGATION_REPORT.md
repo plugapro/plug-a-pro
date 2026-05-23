@@ -1,6 +1,6 @@
 # PayAt Integration Investigation Report
 
-Last updated: 2026-05-23 16:30 SAST
+Last updated: 2026-05-23 16:45 SAST
 
 ## Objective
 
@@ -66,6 +66,10 @@ If token acquisition and minimal RTP create both succeed, then config/auth/endpo
 - F-028: Server-runtime diagnostic confirms RTP create against `POST /integrator/rtp/create/single/{merchantIdentifier}` fails with HTTP 403 and an empty body.
 - F-029: The diagnostic key was pasted into chat and should be removed or rotated after this investigation step.
 - F-030: A local variant probe using `.vercel/.env.production.local` returned `invalid_client` for all token variants, while the deployed runtime token request succeeds. The local Vercel env file is therefore not equivalent to active production runtime and cannot prove the PayAt failure.
+- F-031: Production variant diagnostic confirmed the unscoped token returns HTTP 403 on Integrator RTP create.
+- F-032: Production variant diagnostic confirmed an explicit `scope=rtp:create:single` token returns `scope=rtp:create:single`.
+- F-033: Production variant diagnostic confirmed the same Integrator RTP create endpoint succeeds with HTTP 200 when using the scoped token.
+- F-034: Production variant diagnostic also confirmed the Merchant RTP endpoint succeeds with the scoped token, but endpoint switching is not required because the current Integrator endpoint succeeds after scope is requested.
 
 ## Assumptions
 
@@ -91,6 +95,8 @@ If token acquisition and minimal RTP create both succeed, then config/auth/endpo
 - C-013: The active failure boundary is the PayAt RTP create authorization step: OAuth succeeds, but Integrator RTP create returns HTTP 403.
 - C-014: Do not patch request payload parsing or frontend flow yet; those layers are downstream of the current confirmed 403 boundary.
 - C-015: Further disproof tests must run in deployed runtime, not from the local `.vercel/.env.production.local` file.
+- C-016: Root cause confirmed: the legacy Pay@ token request omitted the required `scope=rtp:create:single`, producing a token that authenticates but is not authorized for RTP create.
+- C-017: The smallest correct patch is to include `scope=rtp:create:single` in `lib/payat/token.ts`, with an optional `PAYAT_SCOPES` override for future scope changes.
 
 ## Phase 1 Artifacts
 
@@ -102,12 +108,9 @@ If token acquisition and minimal RTP create both succeed, then config/auth/endpo
 
 ## Next Required Phase
 
-Phase 3 has produced a server-runtime result: token acquisition succeeds, RTP create returns HTTP 403.
+Phase 3 has produced a server-runtime result and a disproof result:
 
-Next required disproof test before patching:
+- Unscoped token: OAuth succeeds, RTP create returns HTTP 403.
+- Scoped token with `rtp:create:single`: OAuth succeeds, Integrator RTP create succeeds.
 
-1. Test whether the same credentials are authorized for Merchant RTP create (`POST /merchant/rtp/create/single`) without the merchant identifier path.
-2. Test whether adding explicit OAuth scope `rtp:create:single` changes the Integrator RTP create result.
-3. If both still return 403, escalate to PayAt support with the redacted evidence and ask them to confirm whether the OAuth client is enabled for Integrator RTP create for the merchant identifier.
-
-No application payment logic should be changed before these tests distinguish wrong credential mode/scope from PSP-side merchant enablement.
+Patch is now allowed under the investigation rules because the scoped-token test confirms the causal divergence.

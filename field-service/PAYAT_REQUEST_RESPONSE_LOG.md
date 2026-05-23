@@ -275,6 +275,102 @@ Interpretation:
 
 This local probe is not valid for proving the production PayAt failure because it contradicts the deployed runtime diagnostic, where the same logical token step succeeds with HTTP 200. Therefore, `.vercel/.env.production.local` is stale or not equivalent to the active production runtime. Further variant tests must run inside the deployed Vercel runtime or with freshly supplied credentials.
 
+### E-021: Runtime Variant Diagnostic Deployment
+
+Source: Vercel production deployment inspection.
+
+Redacted evidence:
+
+```text
+Commit: ee6c404
+Deployment URL: plug-a-gr6y79ovz-[team].vercel.app
+Deployment id: dpl_CdYFtmWy1PhqK9udk4GRqre6yCyM
+Target: production
+Status: Ready
+Aliases:
+- https://app.plugapro.co.za
+- https://admin.plugapro.co.za
+```
+
+Diagnostic route change:
+
+```text
+GET /api/debug/payat-ping?key=[REDACTED]&variants=1
+```
+
+The route now keeps the original baseline Integrator RTP diagnostic and adds:
+
+- `basic_scope_integrator`: token request includes `scope=rtp:create:single`, then retries Integrator RTP create.
+- `basic_scope_merchant_endpoint`: uses the scoped token against `POST /merchant/rtp/create/single`.
+
+Interpretation:
+
+The next user-run diagnostic can now disprove or support the remaining mode/scope hypotheses without changing production payment logic.
+
+### E-022: Runtime Variant Diagnostic Result
+
+Source: user-run production diagnostic with `variants=1`, after deployment `dpl_CdYFtmWy1PhqK9udk4GRqre6yCyM`.
+
+Redacted response summary:
+
+```json
+{
+  "token": {
+    "status": 200,
+    "ok": true,
+    "scope": "(not returned)"
+  },
+  "rtp": {
+    "endpoint": "https://go.payat.co.za/yapi/v1/integrator/rtp/create/single/[MERCHANT_IDENTIFIER_REDACTED]",
+    "status": 403,
+    "ok": false,
+    "body": ""
+  },
+  "variants": [
+    {
+      "name": "basic_scope_integrator",
+      "token": {
+        "status": 200,
+        "ok": true,
+        "scope": "rtp:create:single"
+      },
+      "rtp": {
+        "endpoint": "https://go.payat.co.za/yapi/v1/integrator/rtp/create/single/[MERCHANT_IDENTIFIER_REDACTED]",
+        "status": 200,
+        "ok": true,
+        "body": "{\"requestToPayId\":326652,\"sourceReference\":\"[REDACTED]\",\"paymentLink\":\"https://payat.io/qr/[REDACTED]\"}"
+      }
+    },
+    {
+      "name": "basic_scope_merchant_endpoint",
+      "token": {
+        "status": 200,
+        "ok": true,
+        "scope": "rtp:create:single"
+      },
+      "rtp": {
+        "endpoint": "https://go.payat.co.za/yapi/v1/merchant/rtp/create/single",
+        "status": 200,
+        "ok": true,
+        "body": "{\"requestToPayId\":326653,\"sourceReference\":\"[REDACTED]\",\"paymentLink\":\"https://payat.io/qr/[REDACTED]\"}"
+      }
+    }
+  ]
+}
+```
+
+Interpretation:
+
+This confirms the root cause for the provider-credit Pay@ failure:
+
+```text
+The legacy Pay@ OAuth token request omitted the required `scope=rtp:create:single`.
+PayAt still returned an access token, but that unscoped token received HTTP 403 on RTP create.
+When the same credentials requested `scope=rtp:create:single`, Integrator RTP create succeeded.
+```
+
+The Merchant endpoint also succeeded with a scoped token, but that does not require switching endpoint mode because the current Integrator endpoint also succeeds once scoped.
+
 ## Missing Evidence
 
 - No current PayAt OAuth token response has been captured from the deployed app runtime.

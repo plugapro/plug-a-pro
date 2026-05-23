@@ -91,6 +91,7 @@ No `/api/payat-go/booking/*` request was found in the same log window.
 | `PAYAT_TOKEN_URL` | `lib/payat/token.ts` | Production pull: `https://go.payat.co.za/yapi/oauth/token` | Matches Swagger token URL. |
 | `PAYAT_CLIENT_ID` | `lib/payat/token.ts` | Listed in Vercel; empty in pulled file | Secret redacted/unavailable locally; runtime value unconfirmed. |
 | `PAYAT_CLIENT_SECRET` | `lib/payat/token.ts` | Listed in Vercel; empty in pulled file | Secret redacted/unavailable locally; runtime value unconfirmed. |
+| `PAYAT_SCOPES` | `lib/payat/token.ts` | Optional | Defaults to `rtp:create:single`; production diagnostic proved RTP create requires this scope. |
 | `PAYAT_API_BASE` | `lib/payat/payment.ts` | Listed in Vercel; empty in pulled file | Runtime value unconfirmed; expected Swagger server is `https://go.payat.co.za/yapi/v1`. |
 | `PAYAT_MERCHANT_IDENTIFIER` | `lib/payat/payment.ts` | Production pull: present, 10 chars | Value is merchant-sensitive; do not print raw. |
 | `PAYAT_MERCHANT_ID` | config/docs | Production/Preview/Development: present | Not observed in current legacy RTP client code path. |

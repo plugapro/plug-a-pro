@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Each test resets modules to clear the in-memory token/inflight cache between runs.
 
 describe('getPayatToken', () => {
-  const TOKEN_URL = 'https://go.payat.co.za/yapi/v1/oauth/token'
+  const TOKEN_URL = 'https://go.payat.co.za/yapi/oauth/token'
 
   function mockOkResponse(body: object) {
     ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -45,12 +45,34 @@ describe('getPayatToken', () => {
       await expect(getPayatToken()).resolves.toBe('tok-abc')
     })
 
+    it('requests the RTP create scope required by Pay@ before calling RTP create', async () => {
+      mockOkResponse({ access_token: 'tok-scoped', expires_in: 3600 })
+      const { getPayatToken } = await import('@/lib/payat/token')
+      await expect(getPayatToken()).resolves.toBe('tok-scoped')
+
+      const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      const body = (init as RequestInit).body as URLSearchParams
+      expect(body.get('grant_type')).toBe('client_credentials')
+      expect(body.get('scope')).toBe('rtp:create:single')
+    })
+
+    it('uses PAYAT_SCOPES when explicitly configured', async () => {
+      vi.stubEnv('PAYAT_SCOPES', 'rtp:create:single rtp:read')
+      mockOkResponse({ access_token: 'tok-scoped-env', expires_in: 3600 })
+      const { getPayatToken } = await import('@/lib/payat/token')
+      await expect(getPayatToken()).resolves.toBe('tok-scoped-env')
+
+      const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+      const body = (init as RequestInit).body as URLSearchParams
+      expect(body.get('scope')).toBe('rtp:create:single rtp:read')
+    })
+
     it('replicates the production bug: HTML body from a 302→/app redirect causes PayatTokenError(invalid_response)', async () => {
       // Root cause: PAYAT_TOKEN_URL was set to https://go.payat.co.za/oauth/token which
       // 302-redirects to the Pay@ frontend. fetch() follows the redirect, gets an HTML
       // page, JSON.parse throws SyntaxError → PayatTokenError('invalid_response') →
       // "We could not reach Pay@ right now. Please try again in a minute."
-      // Fix: set PAYAT_TOKEN_URL to https://go.payat.co.za/yapi/v1/oauth/token (returns 401
+      // Fix: set PAYAT_TOKEN_URL to https://go.payat.co.za/yapi/oauth/token (returns 401
       // on bad credentials instead of a redirect).
       ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
         ok: true,
