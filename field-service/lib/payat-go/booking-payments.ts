@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { Prisma, type Payment } from '@prisma/client'
 import { db } from '@/lib/db'
 import { handlePaymentFailed, handlePaymentSuccess } from '@/lib/payments'
@@ -185,12 +186,17 @@ function statusToPaymentFailureReason(status: InternalPayAtGoStatus): string | n
 }
 
 function hashCallbackPayload(value: string): string {
-  let hash = 0
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(i)
-    hash |= 0
-  }
-  return String(hash)
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function isTerminalSuccessPaymentStatus(status: Payment['status']): boolean {
+  return status === 'PAID' || status === 'REFUNDED' || status === 'PARTIALLY_REFUNDED'
+}
+
+function isPaymentAmountMismatch(payment: Payment, providerAmountCents: number | null): boolean {
+  if (!Number.isInteger(providerAmountCents) || providerAmountCents == null) return false
+  const expectedAmountCents = Math.round(Number(payment.amount) * 100)
+  return providerAmountCents !== expectedAmountCents
 }
 
 async function loadBookingPaymentContext(bookingId: string) {
@@ -232,6 +238,10 @@ export async function createPayAtGoBookingPaymentRequest(
 
   const booking = await loadBookingPaymentContext(input.bookingId)
   const existing = booking.payment
+
+  if (existing && isTerminalSuccessPaymentStatus(existing.status)) {
+    throw new PayAtGoValidationError('This booking payment has already been settled.')
+  }
 
   if (existing && existing.pspProvider === 'payat_go') {
     const existingStatus = toInternalStatusFromPayment(existing)
@@ -495,6 +505,55 @@ async function applyProviderStatusToPayment(
   const currentInternalStatus = metadata.providerInternalStatus ?? toInternalStatusFromPayment(payment)
 
   if (provider.internalStatus === 'PAID') {
+    const effectivePaidAmountCents = provider.amountPaidCents ?? provider.amountCents
+    if (isPaymentAmountMismatch(payment, effectivePaidAmountCents)) {
+      const expectedAmountCents = Math.round(Number(payment.amount) * 100)
+      const reason = 'Paid amount does not match the expected booking amount.'
+      nextMetadata = {
+        ...nextMetadata,
+        providerInternalStatus: 'FAILED',
+        providerFailureReason: reason,
+      }
+      nextMetadata = appendProviderEvent(nextMetadata, {
+        at: now.toISOString(),
+        action: 'PAYMENT_AMOUNT_MISMATCH',
+        source,
+        expectedAmountCents,
+        providerAmountCents: effectivePaidAmountCents,
+        providerStatus: provider.accountState,
+      })
+
+      await db.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'FAILED',
+          failureReason: reason,
+          metadata: toJsonValue(nextMetadata),
+        },
+      })
+
+      console.warn(JSON.stringify({
+        event: 'payat_go.payment_amount_mismatch',
+        bookingId,
+        paymentId,
+        providerClientAccountNumber: provider.clientAccountNumber,
+        expectedAmountCents,
+        providerAmountCents: effectivePaidAmountCents,
+      }))
+      const latest = await db.payment.findUniqueOrThrow({ where: { id: paymentId } })
+      const latestMetadata = readMetadata(latest.metadata)
+      return {
+        paymentId,
+        bookingId,
+        status: latestMetadata.providerInternalStatus ?? toInternalStatusFromPayment(latest),
+        rawProviderStatus: latestMetadata.providerStatus ?? provider.accountState,
+        paidAt: latest.paidAt,
+        expiresAt: latestMetadata.providerExpiredAt ? new Date(latestMetadata.providerExpiredAt) : provider.expiresAt,
+        amountPaidCents: provider.amountPaidCents,
+        providerClientAccountNumber: provider.clientAccountNumber,
+      }
+    }
+
     if (payment.status !== 'PAID' && currentInternalStatus !== 'PAID') {
       await handlePaymentSuccess({
         type: 'payment.success',
@@ -544,6 +603,40 @@ async function applyProviderStatusToPayment(
     provider.internalStatus === 'CANCELLED' ||
     provider.internalStatus === 'EXPIRED'
   ) {
+    if (isTerminalSuccessPaymentStatus(payment.status) || currentInternalStatus === 'PAID') {
+      nextMetadata = {
+        ...nextMetadata,
+        providerInternalStatus: currentInternalStatus,
+      }
+      nextMetadata = appendProviderEvent(nextMetadata, {
+        at: now.toISOString(),
+        action: 'PAYMENT_TERMINAL_SUCCESS_PRESERVED',
+        source,
+        internalStatus: provider.internalStatus,
+        providerStatus: provider.accountState,
+      })
+
+      await db.payment.update({
+        where: { id: paymentId },
+        data: {
+          metadata: toJsonValue(nextMetadata),
+        },
+      })
+
+      const latest = await db.payment.findUniqueOrThrow({ where: { id: paymentId } })
+      const latestMetadata = readMetadata(latest.metadata)
+      return {
+        paymentId,
+        bookingId,
+        status: latestMetadata.providerInternalStatus ?? toInternalStatusFromPayment(latest),
+        rawProviderStatus: latestMetadata.providerStatus ?? provider.accountState,
+        paidAt: latest.paidAt,
+        expiresAt: latestMetadata.providerExpiredAt ? new Date(latestMetadata.providerExpiredAt) : provider.expiresAt,
+        amountPaidCents: provider.amountPaidCents,
+        providerClientAccountNumber: provider.clientAccountNumber,
+      }
+    }
+
     const reason = statusToPaymentFailureReason(provider.internalStatus)
     const shouldTriggerFailureSideEffects = payment.status !== 'FAILED'
     nextMetadata = {
