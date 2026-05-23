@@ -21,6 +21,7 @@ type PayAtGoConfig = {
   mockMode: boolean
   baseUrl: string
   tokenUrl: string
+  merchantIdentifier: string
   clientId: string
   clientSecret: string
   grantType: string
@@ -78,6 +79,7 @@ function getPayAtGoConfig(): PayAtGoConfig {
   const enabled = parseBoolean(process.env.PAYAT_GO_ENABLED, false)
   const mockMode = parseBoolean(process.env.PAYAT_GO_MOCK_MODE, false)
   const baseUrl = requireEnv('PAYAT_GO_BASE_URL').replace(/\/$/, '')
+  const merchantIdentifier = requireEnv('PAYAT_GO_MERCHANT_IDENTIFIER')
   const clientId = requireEnv('PAYAT_GO_CLIENT_ID')
   const clientSecret = requireEnv('PAYAT_GO_CLIENT_SECRET')
   const grantType = process.env.PAYAT_GO_GRANT_TYPE?.trim() || 'client_credentials'
@@ -100,6 +102,7 @@ function getPayAtGoConfig(): PayAtGoConfig {
     mockMode,
     baseUrl,
     tokenUrl: resolveTokenUrl(baseUrl),
+    merchantIdentifier,
     clientId,
     clientSecret,
     grantType,
@@ -469,11 +472,15 @@ export async function createPayAtGoSingleRtp(
     daysValid: input.daysValid ?? 3,
   }
 
-  const response = await payAtGoFetch(config, '/merchant/rtp/create/single', {
+  const response = await payAtGoFetch(
+    config,
+    `/integrator/rtp/create/single/${config.merchantIdentifier}`,
+    {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(requestBody),
-  })
+    },
+  )
 
   const rawBody = await response.text().catch(() => '')
 
@@ -557,7 +564,7 @@ export async function readPayAtGoSingleRtp(
 
   const response = await payAtGoFetch(
     config,
-    `/merchant/rtp/read/${clientAccountNumber}`,
+    `/integrator/rtp/read/${config.merchantIdentifier}/${clientAccountNumber}`,
     { method: 'GET' },
   )
 
@@ -619,7 +626,7 @@ export async function cancelPayAtGoSingleRtp(
 
   const response = await payAtGoFetch(
     config,
-    `/merchant/rtp/cancel/single/${clientAccountNumber}`,
+    `/integrator/rtp/cancel/single/${config.merchantIdentifier}/${clientAccountNumber}`,
     { method: 'PUT' },
   )
 

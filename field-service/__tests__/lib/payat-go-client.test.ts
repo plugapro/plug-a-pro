@@ -6,6 +6,7 @@ describe('Pay@Go client', () => {
     vi.stubEnv('PAYAT_GO_ENABLED', 'true')
     vi.stubEnv('PAYAT_GO_MOCK_MODE', 'false')
     vi.stubEnv('PAYAT_GO_BASE_URL', 'https://go.payat.co.za/yapi/v1')
+    vi.stubEnv('PAYAT_GO_MERCHANT_IDENTIFIER', 'plug-a-pro')
     vi.stubEnv('PAYAT_GO_CLIENT_ID', 'client-id')
     vi.stubEnv('PAYAT_GO_CLIENT_SECRET', 'client-secret')
     vi.stubEnv('PAYAT_GO_GRANT_TYPE', 'client_credentials')
@@ -63,6 +64,8 @@ describe('Pay@Go client', () => {
     // 1 token call + 2 provider API calls
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(fetchMock.mock.calls[0][0]).toBe('https://go.payat.co.za/yapi/oauth/token')
+    expect(fetchMock.mock.calls[1][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/create/single/plug-a-pro')
+    expect(fetchMock.mock.calls[2][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/read/plug-a-pro/12345678901234')
     const tokenCallInit = fetchMock.mock.calls[0][1] as RequestInit
     const tokenBody = String(tokenCallInit.body)
     expect(tokenCallInit.method).toBe('POST')
@@ -104,6 +107,7 @@ describe('Pay@Go client', () => {
     expect(result.sourceReference).toBe('PAT-2002')
     expect(result.paymentLink).toBe('https://pay/2002')
     expect(result.internalStatus).toBe('SENT')
+    expect(fetchMock.mock.calls[1][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/create/single/plug-a-pro')
   })
 
   it('throws provider error when create request fails', async () => {
@@ -130,6 +134,7 @@ describe('Pay@Go client', () => {
         customerNameSurname: 'Customer Three',
       }),
     ).rejects.toMatchObject({ name: 'PayAtGoProviderError', status: 422 })
+    expect(fetchMock.mock.calls[1][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/create/single/plug-a-pro')
   })
 
   it('reads RTP status and maps provider status', async () => {
@@ -160,6 +165,7 @@ describe('Pay@Go client', () => {
     expect(result.internalStatus).toBe('PAID')
     expect(result.amountPaidCents).toBe(10000)
     expect(result.paidAt).toBeInstanceOf(Date)
+    expect(fetchMock.mock.calls[1][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/read/plug-a-pro/12345678901234')
   })
 
   it('cancels RTP successfully', async () => {
@@ -183,6 +189,7 @@ describe('Pay@Go client', () => {
 
     expect(result.internalStatus).toBe('CANCELLED')
     expect(result.message).toBe('Request cancelled.')
+    expect(fetchMock.mock.calls[1][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/cancel/single/plug-a-pro/12345678901234')
   })
 
   it('supports mock mode status simulation', async () => {
@@ -199,6 +206,23 @@ describe('Pay@Go client', () => {
     const status = await readPayAtGoSingleRtp(created.clientAccountNumber)
 
     expect(status.internalStatus).toBe('PAID')
+  })
+
+  it('fails fast when PAYAT_GO_MERCHANT_IDENTIFIER is missing', async () => {
+    vi.stubEnv('PAYAT_GO_MERCHANT_IDENTIFIER', '')
+
+    const { createPayAtGoSingleRtp } = await import('@/lib/payat-go/client')
+
+    await expect(
+      createPayAtGoSingleRtp({
+        clientReferenceNumber: 'BOOKING-REF-NO-MERCHANT',
+        amountCents: 10000,
+        customerNameSurname: 'Missing Merchant',
+      }),
+    ).rejects.toMatchObject({
+      name: 'PayAtGoConfigurationError',
+      key: 'PAYAT_GO_MERCHANT_IDENTIFIER',
+    })
   })
 
   it('retries token acquisition on transient provider errors', async () => {
@@ -238,6 +262,7 @@ describe('Pay@Go client', () => {
 
     expect(result.requestToPayId).toBe(3003)
     expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[2][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/create/single/plug-a-pro')
   })
 
   it('retries RTP read on transient status responses', async () => {
@@ -274,5 +299,7 @@ describe('Pay@Go client', () => {
 
     expect(result.internalStatus).toBe('SENT')
     expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[1][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/read/plug-a-pro/12345678901234')
+    expect(fetchMock.mock.calls[2][0]).toBe('https://go.payat.co.za/yapi/v1/integrator/rtp/read/plug-a-pro/12345678901234')
   })
 })
