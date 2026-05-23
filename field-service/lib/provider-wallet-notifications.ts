@@ -4,6 +4,7 @@ import type { TemplateName } from './messaging-templates'
 import { getManualEftBankAccountInstructions } from './provider-credit-payment-intents'
 import { sendTemplate } from './whatsapp'
 import type { WhatsAppComponent } from './whatsapp'
+import { sendCtaUrl } from './whatsapp-interactive'
 import { normaliseLocationDisplayName } from './location-format'
 import { PROVIDER_CREDITS_PRICE_LINE, getWorkerPortalUrl } from './provider-credit-copy'
 
@@ -19,6 +20,15 @@ type NotificationPayload = {
   idempotencyKey: string
   metadata: Record<string, unknown>
   customerId?: string | null
+}
+
+type NotificationRecordPayload = Pick<NotificationPayload, 'templateName' | 'body' | 'idempotencyKey' | 'metadata' | 'customerId'> & {
+  to: string
+}
+
+type CtaUrlNotificationPayload = Omit<NotificationPayload, 'whatsappTemplate' | 'templateParameters' | 'templateComponents'> & {
+  buttonText: string
+  url: string
 }
 
 type LeadUnlockNotificationContext = {
@@ -224,7 +234,7 @@ function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppCo
     // H-5: Return null so the caller omits the button entirely rather than
     // passing the raw unparseable string as a WhatsApp URL suffix (which would
     // be appended to the template base URL and produce a broken link).
-    console.error('[provider-wallet-notifications] invalid Pay@ payment link URL — omitting button component', { paymentLink })
+    console.error('[provider-wallet-notifications] invalid Pay@ payment link URL — omitting button component')
     return null
   }
   if (url.hostname !== 'go.payat.co.za') {
@@ -234,13 +244,23 @@ function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppCo
   return templateUrlButtonComponent(index, suffix)
 }
 
+function shouldSendPayatLinkAsExactCtaUrl(paymentLink: string | undefined): paymentLink is string {
+  if (!paymentLink) return false
+  try {
+    const url = new URL(paymentLink)
+    return url.hostname !== 'go.payat.co.za'
+  } catch {
+    return false
+  }
+}
+
 function noExtraNotes(description?: string | null) {
   if (!description?.trim()) return 'No extra notes'
   // WhatsApp template parameters cannot contain newlines or tabs
   return description.replace(/[\r\n\t]+/g, ' ').replace(/\s{5,}/g, '    ').trim()
 }
 
-async function hasSentNotification(payload: NotificationPayload) {
+async function hasSentNotification(payload: { idempotencyKey: string }) {
   const existing = await db.messageEvent.findFirst({
     where: {
       idempotencyKey: payload.idempotencyKey,
@@ -252,7 +272,7 @@ async function hasSentNotification(payload: NotificationPayload) {
   return Boolean(existing)
 }
 
-async function recordFailedNotification(payload: NotificationPayload, failureReason: string) {
+async function recordFailedNotification(payload: NotificationRecordPayload, failureReason: string) {
   await db.messageEvent.create({
     data: {
       customerId: payload.customerId ?? undefined,
@@ -300,6 +320,41 @@ async function sendNotification(payload: NotificationPayload) {
   } catch (error) {
     const failureReason = error instanceof Error ? error.message : String(error)
     console.error('[provider-wallet-notifications] WhatsApp send failed', {
+      templateName: payload.templateName,
+      idempotencyKey: payload.idempotencyKey,
+      error: failureReason,
+    })
+    await recordFailedNotification(payload, failureReason)
+    return { sent: false, skipped: 'failed' as const }
+  }
+}
+
+async function sendCtaUrlNotification(payload: CtaUrlNotificationPayload) {
+  if (await hasSentNotification(payload)) return { sent: false, skipped: 'duplicate' as const }
+
+  try {
+    const externalId = await sendCtaUrl(payload.to, payload.body, payload.buttonText, payload.url)
+
+    await db.messageEvent.create({
+      data: {
+        customerId: payload.customerId ?? undefined,
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: payload.templateName,
+        body: payload.body,
+        to: payload.to,
+        externalId,
+        idempotencyKey: payload.idempotencyKey,
+        status: 'SENT',
+        sentAt: new Date(),
+        metadata: (payload.metadata ?? {}) as Prisma.InputJsonValue,
+      },
+    })
+
+    return { sent: true, externalId }
+  } catch (error) {
+    const failureReason = error instanceof Error ? error.message : String(error)
+    console.error('[provider-wallet-notifications] WhatsApp CTA URL send failed', {
       templateName: payload.templateName,
       idempotencyKey: payload.idempotencyKey,
       error: failureReason,
@@ -476,6 +531,36 @@ export async function notifyProviderPayatTopUpInitiated(
   if (intent.status !== 'PENDING_PAYMENT') return
 
   const amountFormatted = formatZarFromCents(intent.amountCents)
+  const body = buildPayatTopUpInitiatedMessage({
+    amountFormatted,
+    creditsToIssue: intent.creditsToIssue,
+  })
+  const idempotencyKey = `wallet:payat_topup_initiated:${intent.id}`
+  const metadata = {
+    providerId: intent.providerId,
+    paymentIntentId: intent.id,
+    paymentReference: intent.paymentReference,
+    paymentMethod: intent.paymentMethod,
+    paymentLinkDelivered: true,
+    amountCents: intent.amountCents,
+    creditsToIssue: intent.creditsToIssue,
+  }
+
+  if (shouldSendPayatLinkAsExactCtaUrl(paymentLink)) {
+    await sendCtaUrlNotification({
+      to: phone,
+      templateName: 'wallet:payat_topup_initiated',
+      body,
+      buttonText: 'Pay now',
+      url: paymentLink,
+      idempotencyKey,
+      metadata: {
+        ...metadata,
+        paymentLinkDeliveryMode: 'cta_url',
+      },
+    })
+    return
+  }
 
   await sendNotification({
     to: phone,
@@ -489,19 +574,11 @@ export async function notifyProviderPayatTopUpInitiated(
         ...(buttonComponent !== null ? [buttonComponent] : []),
       ]
     })(),
-    body: buildPayatTopUpInitiatedMessage({
-      amountFormatted,
-      creditsToIssue: intent.creditsToIssue,
-    }),
-    idempotencyKey: `wallet:payat_topup_initiated:${intent.id}`,
+    body,
+    idempotencyKey,
     metadata: {
-      providerId: intent.providerId,
-      paymentIntentId: intent.id,
-      paymentReference: intent.paymentReference,
-      paymentMethod: intent.paymentMethod,
-      paymentLinkDelivered: true,
-      amountCents: intent.amountCents,
-      creditsToIssue: intent.creditsToIssue,
+      ...metadata,
+      paymentLinkDeliveryMode: paymentLink ? 'template_url_button' : 'none',
     },
   })
 }
