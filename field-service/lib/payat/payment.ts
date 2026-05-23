@@ -105,6 +105,25 @@ function maskMerchantIdentifier(identifier: string): string {
   return `${identifier.slice(0, 2)}***${identifier.slice(-2)}`
 }
 
+async function readResponseBodySafely(response: Response): Promise<string> {
+  const withText = response as Response & { text?: () => Promise<string> }
+  if (typeof withText.text === 'function') {
+    return withText.text().catch(() => '<unreadable>')
+  }
+
+  const withJson = response as Response & { json?: () => Promise<unknown> }
+  if (typeof withJson.json === 'function') {
+    try {
+      const payload = await withJson.json()
+      return JSON.stringify(payload)
+    } catch {
+      return '<unreadable>'
+    }
+  }
+
+  return '<unreadable>'
+}
+
 async function sendPayatPaymentRequest(
   params: PayatPaymentRequest,
   retryOnUnauthorized: boolean,
@@ -190,6 +209,27 @@ async function sendPayatPaymentRequest(
     )
   }
 
+  const responseContentType =
+    typeof (response as { headers?: { get?: (name: string) => string | null } }).headers?.get ===
+      'function'
+      ? response.headers.get('content-type')
+      : null
+  const responseBody = await readResponseBodySafely(response)
+  const responseBodyPreview = responseBody.slice(0, 800)
+
+  // TEMP DIAGNOSTIC (remove after production validation): capture the exact
+  // HTTP outcome from Pay@ for each RTP create attempt.
+  console.warn(JSON.stringify({
+    event: 'payat.rtp_fetch_outcome',
+    topupId: params.topupId,
+    endpoint,
+    httpStatus: response.status,
+    ok: response.ok,
+    contentType: responseContentType,
+    bodyPreview: responseBodyPreview,
+    retry: !retryOnUnauthorized,
+  }))
+
   if (response.status === 401 && retryOnUnauthorized) {
     console.warn(JSON.stringify({
       event: 'payat.rtp_401_retrying',
@@ -200,28 +240,25 @@ async function sendPayatPaymentRequest(
   }
 
   if (!response.ok) {
-    // Read the error body in all environments for diagnosability; body may contain
-    // a Pay@ error code but no PII. Log the body text (not the full JSON) so secrets
-    // are never surfaced even if Pay@ echoes back request fields.
-    const errorBody = await response.text().catch(() => '<unreadable>')
     console.error(JSON.stringify({
       event: 'payat.rtp_create_failed',
       topupId: params.topupId,
       httpStatus: response.status,
       // Truncate to 500 chars — enough for the error code, not enough to expose large payloads.
-      errorBody: errorBody.slice(0, 500),
+      errorBody: responseBody.slice(0, 500),
     }))
     throw new PayatApiError('rtp_create_failed', response.status)
   }
 
   let responseData: Record<string, unknown>
   try {
-    responseData = (await response.json()) as Record<string, unknown>
+    responseData = JSON.parse(responseBody) as Record<string, unknown>
   } catch {
     console.error(JSON.stringify({
       event: 'payat.rtp_response_parse_failed',
       topupId: params.topupId,
       httpStatus: response.status,
+      bodyPreview: responseBodyPreview,
     }))
     throw new PayatApiError('rtp_response_invalid')
   }
