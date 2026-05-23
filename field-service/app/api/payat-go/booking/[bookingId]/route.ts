@@ -60,24 +60,22 @@ export async function POST(
     description?: unknown
   }
 
-  const amountCents = typeof body.amountCents === 'number' ? Math.round(body.amountCents) : NaN
+  const requestedAmountCents = typeof body.amountCents === 'number' ? Math.round(body.amountCents) : null
   const customerEmail = typeof body.customerEmail === 'string' ? body.customerEmail : null
   const customerMobile = typeof body.customerMobile === 'string' ? body.customerMobile : null
   const description = typeof body.description === 'string' && body.description.trim().length > 0
     ? body.description.trim()
     : `Plug A Pro booking ${bookingId.slice(-8).toUpperCase()} payment`
 
-  if (!Number.isInteger(amountCents) || amountCents <= 0) {
-    return NextResponse.json(
-      { error: 'Amount must be a positive integer in cents.' },
-      { status: 400 },
-    )
-  }
-
   try {
     const booking = await db.booking.findUnique({
       where: { id: bookingId },
       select: {
+        quote: {
+          select: {
+            amount: true,
+          },
+        },
         match: {
           select: {
             jobRequest: {
@@ -98,6 +96,21 @@ export async function POST(
 
     if (!booking?.match) {
       return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
+    }
+
+    const amountCents = Math.round(Number(booking.quote.amount) * 100)
+    if (!Number.isInteger(amountCents) || amountCents <= 0) {
+      return NextResponse.json(
+        { error: 'Booking amount is invalid for payment request.' },
+        { status: 409 },
+      )
+    }
+
+    if (requestedAmountCents !== null && requestedAmountCents !== amountCents) {
+      return NextResponse.json(
+        { error: 'Payment amount mismatch. Please refresh and try again.' },
+        { status: 409 },
+      )
     }
 
     const customer = booking.match.jobRequest.customer
