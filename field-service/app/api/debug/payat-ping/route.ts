@@ -20,6 +20,10 @@ function redactEndpoint(endpoint: string, merchantIdentifier: string) {
     : endpoint
 }
 
+function getPayatScopes() {
+  return process.env.PAYAT_SCOPES?.trim() || 'rtp:create:single'
+}
+
 function generateClientAccountNumber() {
   const hex = randomBytes(7).toString('hex')
   const num = BigInt('0x' + hex) % BigInt('100000000000000')
@@ -149,7 +153,12 @@ export async function GET(request: NextRequest) {
   let token: string | null = null
   let tokenResult: Record<string, unknown>
   try {
-    const tokenResponse = await requestPayatToken({ tokenUrl, clientId, clientSecret })
+    const tokenResponse = await requestPayatToken({
+      tokenUrl,
+      clientId,
+      clientSecret,
+      scope: getPayatScopes(),
+    })
     token = tokenResponse.token
     tokenResult = tokenResponse.result
   } catch (err) {
@@ -187,11 +196,27 @@ export async function GET(request: NextRequest) {
   if (request.nextUrl.searchParams.get('variants') === '1') {
     const variants: Record<string, unknown>[] = []
 
+    const unscopedToken = await requestPayatToken({ tokenUrl, clientId, clientSecret })
+    const unscopedEntry: Record<string, unknown> = {
+      name: 'basic_no_scope_integrator',
+      token: unscopedToken.result,
+      rtp: 'skipped (no token)',
+    }
+    if (unscopedToken.token) {
+      unscopedEntry.rtp = await createRtp({
+        endpoint: rtpEndpoint,
+        token: unscopedToken.token,
+        merchantIdentifier,
+        suffix: 'noscope',
+      })
+    }
+    variants.push(unscopedEntry)
+
     const scopedToken = await requestPayatToken({
       tokenUrl,
       clientId,
       clientSecret,
-      scope: 'rtp:create:single',
+      scope: getPayatScopes(),
     })
     const scopedEntry: Record<string, unknown> = {
       name: 'basic_scope_integrator',

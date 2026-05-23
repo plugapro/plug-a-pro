@@ -298,8 +298,9 @@ Diagnostic route change:
 GET /api/debug/payat-ping?key=[REDACTED]&variants=1
 ```
 
-The route now keeps the original baseline Integrator RTP diagnostic and adds:
+The route now mirrors the production token-scope fix in its baseline request and adds:
 
+- `basic_no_scope_integrator`: preserves the old failing control case for comparison.
 - `basic_scope_integrator`: token request includes `scope=rtp:create:single`, then retries Integrator RTP create.
 - `basic_scope_merchant_endpoint`: uses the scoped token against `POST /merchant/rtp/create/single`.
 
