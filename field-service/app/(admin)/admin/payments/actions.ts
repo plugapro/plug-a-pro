@@ -130,6 +130,7 @@ const PayAtGoActionSchema = z.object({
 
 const REFUND_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
 const CLAIM_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
+const PAYAT_GO_ACTION_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
 
 export async function issueRefundAction(formData: FormData) {
   const { requireAdmin } = await import('@/lib/auth')
@@ -218,8 +219,6 @@ export async function issueRefundAction(formData: FormData) {
 
 export async function refreshPayAtGoPaymentFromFormAction(formData: FormData) {
   try {
-    const { requireAdmin } = await import('@/lib/auth')
-    await requireAdmin()
     const parsed = PayAtGoActionSchema.safeParse({
       paymentId: String(formData.get('paymentId') ?? ''),
     })
@@ -236,13 +235,30 @@ export async function refreshPayAtGoPaymentFromFormAction(formData: FormData) {
       return { ok: false as const, error: 'Pay@Go payment request not found.' }
     }
 
-    const { refreshPayAtGoBookingPaymentStatus } = await import('@/lib/payat-go')
-    const result = await refreshPayAtGoBookingPaymentStatus(payment.bookingId)
+    const result = await crudAction({
+      entity: AUDIT_ENTITY.PAYMENT,
+      entityId: payment.id,
+      action: 'payment.payat_go.refresh',
+      requiredRole: [...PAYAT_GO_ACTION_ROLES],
+      requiredFlag: FLAG,
+      schema: PayAtGoActionSchema,
+      input: { paymentId: payment.id },
+      before: payment,
+      run: async () => {
+        const { refreshPayAtGoBookingPaymentStatus } = await import('@/lib/payat-go')
+        const refreshed = await refreshPayAtGoBookingPaymentStatus(payment.bookingId)
+        return {
+          id: payment.id,
+          status: refreshed.status,
+          rawProviderStatus: refreshed.rawProviderStatus,
+        }
+      },
+    })
     revalidatePath('/admin/payments')
 
     return {
       ok: true as const,
-      message: `Refreshed Pay@Go status: ${result.status}`,
+      message: `Refreshed Pay@Go status: ${result.data.status}`,
     }
   } catch (error) {
     return {
@@ -254,8 +270,6 @@ export async function refreshPayAtGoPaymentFromFormAction(formData: FormData) {
 
 export async function cancelPayAtGoPaymentFromFormAction(formData: FormData) {
   try {
-    const { requireAdmin } = await import('@/lib/auth')
-    await requireAdmin()
     const parsed = PayAtGoActionSchema.safeParse({
       paymentId: String(formData.get('paymentId') ?? ''),
     })
@@ -272,8 +286,25 @@ export async function cancelPayAtGoPaymentFromFormAction(formData: FormData) {
       return { ok: false as const, error: 'Pay@Go payment request not found.' }
     }
 
-    const { cancelPayAtGoBookingPaymentRequest } = await import('@/lib/payat-go')
-    await cancelPayAtGoBookingPaymentRequest(payment.bookingId)
+    await crudAction({
+      entity: AUDIT_ENTITY.PAYMENT,
+      entityId: payment.id,
+      action: 'payment.payat_go.cancel',
+      requiredRole: [...PAYAT_GO_ACTION_ROLES],
+      requiredFlag: FLAG,
+      schema: PayAtGoActionSchema,
+      input: { paymentId: payment.id },
+      before: payment,
+      run: async () => {
+        const { cancelPayAtGoBookingPaymentRequest } = await import('@/lib/payat-go')
+        const cancelled = await cancelPayAtGoBookingPaymentRequest(payment.bookingId)
+        return {
+          id: payment.id,
+          status: cancelled.status,
+          rawProviderStatus: cancelled.rawProviderStatus,
+        }
+      },
+    })
     revalidatePath('/admin/payments')
 
     return {
