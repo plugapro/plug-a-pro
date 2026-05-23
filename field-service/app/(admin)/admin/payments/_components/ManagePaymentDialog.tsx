@@ -17,6 +17,8 @@ import { ActionForm, SubmitButton } from '@/components/admin/ui'
 // installed in components/ui/. Using Dialog instead — install shadcn Sheet and
 // rename this component in a follow-up before Phase 2 ships.
 import {
+  cancelPayAtGoPaymentFromFormAction,
+  refreshPayAtGoPaymentFromFormAction,
   issueRefundFromFormAction,
   reconcilePaymentFromFormAction,
   writeOffPaymentFromFormAction,
@@ -26,6 +28,7 @@ type ManagePaymentDialogProps = {
   paymentId: string
   amount: number
   status: string
+  pspProvider?: string | null
   adminRole: string
   disabled?: boolean
 }
@@ -34,6 +37,7 @@ export function ManagePaymentDialog({
   paymentId,
   amount,
   status,
+  pspProvider,
   adminRole,
   disabled = false,
 }: ManagePaymentDialogProps) {
@@ -41,6 +45,8 @@ export function ManagePaymentDialog({
   const canRefund = status === 'PAID' || status === 'PARTIALLY_REFUNDED'
   const canReconcile = status === 'PENDING' || status === 'AUTHORISED'
   const canWriteOff = status === 'PENDING' || status === 'FAILED'
+  const isPayAtGo = pspProvider === 'payat_go'
+  const canCancelPayAtGo = isPayAtGo && (status === 'PENDING' || status === 'AUTHORISED')
 
   return (
     <Dialog>
@@ -79,6 +85,37 @@ export function ManagePaymentDialog({
           </div>
 
           <div className="rounded-xl border bg-card px-3 py-3">
+            {isPayAtGo ? (
+              <div className="mb-3 rounded-lg border bg-muted/40 px-3 py-3">
+                <p className="text-sm font-medium">Pay@Go controls</p>
+                <p className="text-xs text-muted-foreground">
+                  Refresh provider status or cancel an unpaid Pay@Go RTP request.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <ActionForm
+                    action={refreshPayAtGoPaymentFromFormAction}
+                    successMessage="Pay@Go status refreshed"
+                    refreshOnSuccess
+                  >
+                    <input type="hidden" name="paymentId" value={paymentId} />
+                    <SubmitButton size="sm" variant="outline" disabled={disabled}>
+                      Refresh status
+                    </SubmitButton>
+                  </ActionForm>
+                  <ActionForm
+                    action={cancelPayAtGoPaymentFromFormAction}
+                    successMessage="Pay@Go request cancelled"
+                    refreshOnSuccess
+                  >
+                    <input type="hidden" name="paymentId" value={paymentId} />
+                    <SubmitButton size="sm" variant="outline" disabled={disabled || !canCancelPayAtGo}>
+                      Cancel request
+                    </SubmitButton>
+                  </ActionForm>
+                </div>
+              </div>
+            ) : null}
+
             <ActionForm
               action={issueRefundFromFormAction}
               successMessage="Refund processed"

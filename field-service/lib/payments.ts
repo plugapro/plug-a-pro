@@ -11,6 +11,7 @@
 import { db } from './db'
 import { OPS_QUEUE_TYPES, claimOpsQueueItem } from './ops-queue'
 import { notifyCustomerPaymentFailed } from './client-pwa-submission-notifications'
+import { createPayAtGoBookingPaymentRequest } from './payat-go'
 
 export type PaymentCollectionMode = 'bypass' | 'checkout'
 
@@ -343,6 +344,70 @@ class PayFastProvider implements PspProvider {
   }
 }
 
+// ─── Provider: Pay@Go RTP (South Africa) ────────────────────────────────────
+// OpenAPI: https://go.payat.co.za/yapi/swagger-ui/index.html
+// This provider creates RTP links and stores provider references in Payment.
+
+class PayAtGoProvider implements PspProvider {
+  async createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
+    const booking = await db.booking.findUnique({
+      where: { id: params.bookingId },
+      select: {
+        match: {
+          select: {
+            jobRequest: {
+              select: {
+                customer: { select: { name: true, phone: true } },
+              },
+            },
+          },
+        },
+      },
+    })
+
+    const customerName = booking?.match?.jobRequest.customer.name ?? 'Customer'
+    const customerPhone = params.customerPhone ?? booking?.match?.jobRequest.customer.phone
+
+    const request = await createPayAtGoBookingPaymentRequest({
+      bookingId: params.bookingId,
+      amountCents: params.amount,
+      currency: params.currency,
+      customerName,
+      customerMobile: customerPhone,
+      customerEmail: params.customerEmail,
+      description: params.description,
+    })
+
+    if (!request.paymentLink) {
+      throw new Error('Pay@Go did not return a payment link for this request.')
+    }
+
+    return {
+      id: request.providerClientAccountNumber,
+      url: request.paymentLink,
+      expiresAt: request.expiresAt ?? undefined,
+    }
+  }
+
+  verifyWebhook(_rawBody: string, _signature: string): boolean {
+    // Pay@Go callbacks are handled by /api/payat-go/callback, not this generic PSP webhook route.
+    return false
+  }
+
+  parseWebhookEvent(_rawBody: string): PaymentEvent {
+    throw new Error('Pay@Go webhook parsing is not supported on /api/webhooks/payments.')
+  }
+
+  async createRefund(pspReference: string, _amountCents: number): Promise<RefundResult> {
+    // Pay@Go RTP cancellation is supported before payment completes; post-settlement
+    // refunds are handled operationally outside this API integration for now.
+    return {
+      success: false,
+      refundReference: pspReference,
+    }
+  }
+}
+
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
 function getProvider(): PspProvider {
@@ -352,6 +417,8 @@ function getProvider(): PspProvider {
       return new PayFastProvider()
     case 'peach':
       return new PeachPaymentsProvider()
+    case 'payat_go':
+      return new PayAtGoProvider()
     default:
       throw new Error(`Unknown PSP provider: ${provider}. Set PSP_PROVIDER env var.`)
   }

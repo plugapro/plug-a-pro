@@ -21,6 +21,13 @@ const VALID_STATUSES: JobStatus[] = [
   'CALLBACK_REQUIRED',
 ]
 
+const PAYMENT_REQUIRED_STATUSES = new Set<JobStatus>([
+  'EN_ROUTE',
+  'ARRIVED',
+  'STARTED',
+  'PENDING_COMPLETION_CONFIRMATION',
+])
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -49,9 +56,37 @@ export async function POST(
     return NextResponse.json({ error: 'Provider not found' }, { status: 403 })
   }
 
-  const job = await db.job.findUnique({ where: { id: jobId } })
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    include: {
+      booking: {
+        include: {
+          payment: {
+            select: {
+              status: true,
+              collectionMode: true,
+              pspProvider: true,
+            },
+          },
+        },
+      },
+    },
+  })
   if (!job || job.providerId !== provider.id) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+  }
+
+  const payment = job.booking?.payment
+  if (
+    PAYMENT_REQUIRED_STATUSES.has(toStatus) &&
+    payment?.collectionMode === 'PLATFORM_CHECKOUT' &&
+    payment?.pspProvider === 'payat_go' &&
+    payment.status !== 'PAID'
+  ) {
+    return NextResponse.json(
+      { error: 'Payment is still pending.' },
+      { status: 409 },
+    )
   }
 
   try {

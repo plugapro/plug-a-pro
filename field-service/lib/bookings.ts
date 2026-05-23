@@ -200,6 +200,23 @@ export async function cancelBookingLifecycle(params: {
     }
   }
 
+  if (
+    booking.payment &&
+    booking.payment.pspProvider === 'payat_go' &&
+    (booking.payment.status === 'PENDING' || booking.payment.status === 'AUTHORISED')
+  ) {
+    try {
+      const { cancelPayAtGoBookingPaymentRequest } = await import('./payat-go')
+      await cancelPayAtGoBookingPaymentRequest(booking.id)
+    } catch (error) {
+      console.warn('[bookings] Pay@Go cancellation after booking cancellation failed', {
+        bookingId: booking.id,
+        paymentId: booking.payment.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   const { sendBookingCancelled } = await import('./whatsapp')
   await sendBookingCancelled({
     bookingId: booking.id,

@@ -241,6 +241,18 @@ export default async function PaymentsPage({
               const jobTitle = p.booking.match?.jobRequest.title ?? '—'
               const assignment = assignments.get(p.id)
               const claimedByCurrentUser = assignment?.claimedById === admin.id
+              const payAtMeta =
+                typeof p.metadata === 'object' && p.metadata && !Array.isArray(p.metadata)
+                  ? p.metadata as Record<string, unknown>
+                  : null
+              const payAtReference =
+                typeof payAtMeta?.providerSourceReference === 'string'
+                  ? payAtMeta.providerSourceReference
+                  : null
+              const payAtLastChecked =
+                typeof payAtMeta?.providerLastCheckedAt === 'string'
+                  ? payAtMeta.providerLastCheckedAt
+                  : null
               return (
                 <tr key={p.id} className="hover:bg-muted/30">
                   <td className="px-4 py-3 font-mono text-xs">{p.id.slice(-8).toUpperCase()}</td>
@@ -270,11 +282,22 @@ export default async function PaymentsPage({
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                     {p.pspReference ? p.pspReference.slice(-12) : '—'}
+                    {payAtReference ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">Pay@ ref: {payAtReference}</p>
+                    ) : null}
+                    {p.pspCheckoutId ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">Account: {p.pspCheckoutId}</p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {p.paidAt
                       ? p.paidAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
                       : '—'}
+                    {payAtLastChecked ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Last check: {new Date(payAtLastChecked).toLocaleString('en-ZA')}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'}>
@@ -302,6 +325,7 @@ export default async function PaymentsPage({
                         paymentId={p.id}
                         amount={Number(p.amount)}
                         status={p.status}
+                        pspProvider={p.pspProvider}
                         adminRole={admin.adminRole}
                         disabled={!crudEnabled}
                       />

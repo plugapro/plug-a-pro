@@ -124,6 +124,10 @@ const QueueSchema = z.object({
   paymentId: z.string().min(1),
 })
 
+const PayAtGoActionSchema = z.object({
+  paymentId: z.string().min(1),
+})
+
 const REFUND_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
 const CLAIM_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
 
@@ -209,6 +213,78 @@ export async function issueRefundAction(formData: FormData) {
     }
     console.error('[admin/payments] Refund failed:', err)
     redirect('/admin/payments?message=refund_failed')
+  }
+}
+
+export async function refreshPayAtGoPaymentFromFormAction(formData: FormData) {
+  try {
+    const { requireAdmin } = await import('@/lib/auth')
+    await requireAdmin()
+    const parsed = PayAtGoActionSchema.safeParse({
+      paymentId: String(formData.get('paymentId') ?? ''),
+    })
+    if (!parsed.success) {
+      return { ok: false as const, error: 'Invalid payment request.' }
+    }
+
+    const payment = await db.payment.findUnique({
+      where: { id: parsed.data.paymentId },
+      select: { id: true, bookingId: true, pspProvider: true },
+    })
+
+    if (!payment || payment.pspProvider !== 'payat_go') {
+      return { ok: false as const, error: 'Pay@Go payment request not found.' }
+    }
+
+    const { refreshPayAtGoBookingPaymentStatus } = await import('@/lib/payat-go')
+    const result = await refreshPayAtGoBookingPaymentStatus(payment.bookingId)
+    revalidatePath('/admin/payments')
+
+    return {
+      ok: true as const,
+      message: `Refreshed Pay@Go status: ${result.status}`,
+    }
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : 'Could not refresh Pay@Go status.',
+    }
+  }
+}
+
+export async function cancelPayAtGoPaymentFromFormAction(formData: FormData) {
+  try {
+    const { requireAdmin } = await import('@/lib/auth')
+    await requireAdmin()
+    const parsed = PayAtGoActionSchema.safeParse({
+      paymentId: String(formData.get('paymentId') ?? ''),
+    })
+    if (!parsed.success) {
+      return { ok: false as const, error: 'Invalid payment request.' }
+    }
+
+    const payment = await db.payment.findUnique({
+      where: { id: parsed.data.paymentId },
+      select: { id: true, bookingId: true, pspProvider: true },
+    })
+
+    if (!payment || payment.pspProvider !== 'payat_go') {
+      return { ok: false as const, error: 'Pay@Go payment request not found.' }
+    }
+
+    const { cancelPayAtGoBookingPaymentRequest } = await import('@/lib/payat-go')
+    await cancelPayAtGoBookingPaymentRequest(payment.bookingId)
+    revalidatePath('/admin/payments')
+
+    return {
+      ok: true as const,
+      message: 'This payment request was cancelled.',
+    }
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : 'Could not cancel Pay@Go payment request.',
+    }
   }
 }
 
