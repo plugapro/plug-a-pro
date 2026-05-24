@@ -89,6 +89,40 @@ describe('provider lead access tokens', () => {
     })
   })
 
+  it('still builds a signed lead access URL when token registry persistence fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const registryError = new Error('simulated registry write outage')
+    mockDb.providerLeadAccessToken.create.mockRejectedValueOnce(registryError)
+    const { getProviderLeadAccessUrl, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+    const url = await getProviderLeadAccessUrl({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//)
+    const token = decodeURIComponent(url!.split('/leads/access/')[1])
+    expect(verifyProviderLeadAccessToken(token)).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jti: expect.any(String),
+      },
+    })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledTimes(1)
+    expect(consoleError).toHaveBeenCalledWith(
+      '[provider-lead-access] token registry persistence failed',
+      expect.objectContaining({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jti: expect.any(String),
+        error: 'simulated registry write outage',
+      }),
+    )
+    const serializedErrorLog = JSON.stringify(consoleError.mock.calls)
+    expect(serializedErrorLog).not.toContain(token)
+    expect(serializedErrorLog).not.toContain('tokenHash')
+    consoleError.mockRestore()
+  })
+
   it('builds a scoped accepted-job handover URL', async () => {
     const { getProviderSignedJobHandoverUrl, hashSignedToken, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
 
@@ -123,6 +157,47 @@ describe('provider lead access tokens', () => {
         expiresAt: new Date(verified.payload!.exp * 1000),
       },
     })
+  })
+
+  it('still builds a scoped accepted-job handover URL when token registry persistence fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const registryError = new Error('simulated registry write outage')
+    mockDb.providerLeadAccessToken.create.mockRejectedValueOnce(registryError)
+    const { getProviderSignedJobHandoverUrl, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+    const url = await getProviderSignedJobHandoverUrl({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'job-request-1',
+      providerPhone: '+27820000000',
+    })
+
+    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/provider\/jobs\/job-request-1\/handover\?token=/)
+    const token = decodeURIComponent(url!.split('token=')[1])
+    expect(verifyProviderLeadAccessToken(token)).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-1',
+        jti: expect.any(String),
+      },
+    })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledTimes(1)
+    expect(consoleError).toHaveBeenCalledWith(
+      '[provider-lead-access] token registry persistence failed',
+      expect.objectContaining({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-1',
+        jti: expect.any(String),
+        error: 'simulated registry write outage',
+      }),
+    )
+    const serializedErrorLog = JSON.stringify(consoleError.mock.calls)
+    expect(serializedErrorLog).not.toContain(token)
+    expect(serializedErrorLog).not.toContain('tokenHash')
+    consoleError.mockRestore()
   })
 
   it('defaults direct token creation to lead-response scopes and a jti when scopes are omitted', async () => {

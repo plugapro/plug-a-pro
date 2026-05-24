@@ -213,17 +213,30 @@ async function persistProviderLeadAccessTokenIssue(issue: ProviderLeadAccessToke
     throw new Error('Provider lead access token issue is missing jti')
   }
 
-  await db.providerLeadAccessToken.create({
-    data: {
+  try {
+    await db.providerLeadAccessToken.create({
+      data: {
+        jti: issue.payload.jti,
+        tokenHash: hashSignedToken(issue.token),
+        leadId: issue.payload.leadId,
+        providerId: issue.payload.providerId,
+        jobRequestId: issue.payload.jobRequestId,
+        scopes: issue.payload.scopes ?? [],
+        expiresAt: new Date(issue.payload.exp * 1000),
+      },
+    })
+  } catch (error) {
+    // Registry rows are metadata for later audit/revocation; a transient write failure must not block issued signed links.
+    console.error('[provider-lead-access] token registry persistence failed', {
       jti: issue.payload.jti,
-      tokenHash: hashSignedToken(issue.token),
       leadId: issue.payload.leadId,
       providerId: issue.payload.providerId,
       jobRequestId: issue.payload.jobRequestId,
       scopes: issue.payload.scopes ?? [],
-      expiresAt: new Date(issue.payload.exp * 1000),
-    },
-  })
+      expiresAt: new Date(issue.payload.exp * 1000).toISOString(),
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 export function providerLeadTokenAllowsScope(

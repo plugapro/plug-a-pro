@@ -439,7 +439,10 @@ describe('POST /api/auth/provider/send-code', () => {
       where: { phone: normalized },
       select: { id: true, userId: true, phone: true, active: true, verified: true, status: true },
     })
-    expect(signInWithOtp).toHaveBeenCalledWith({ phone: normalized })
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: normalized,
+      options: { shouldCreateUser: false },
+    })
   })
 
   it('returns INVALID_MOBILE_NUMBER before provider lookup for malformed numbers', async () => {
@@ -655,7 +658,10 @@ describe('POST /api/auth/provider/send-code', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ ok: true, phone: '+27821234567' })
-    expect(signInWithOtp).toHaveBeenCalledWith({ phone: '+27821234567' })
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: '+27821234567',
+      options: { shouldCreateUser: false },
+    })
     if (storedPhone !== e164) {
       expect(db.provider.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { phone: '+27821234567' } }),

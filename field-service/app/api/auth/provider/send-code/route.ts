@@ -26,6 +26,28 @@ type ProviderOtpBotCheck = {
   website?: string
 }
 
+type ProviderLookupLogResult =
+  | 'not_called'
+  | 'not_found'
+  | 'pending_application'
+  | 'db_error'
+  | 'found_active'
+  | 'found_not_approved'
+  | 'found_inactive'
+  | 'unknown'
+
+function otpStartPayload(params: {
+  traceId: string
+  phone: string
+}) {
+  return NextResponse.json({
+    ok: true,
+    nextStep: 'verify_otp',
+    phone: params.phone,
+    traceId: params.traceId,
+  })
+}
+
 function reasonFor(code: DiagnosticCode) {
   switch (code) {
     case 'INVALID_MOBILE_NUMBER':
@@ -354,6 +376,19 @@ function classifyOtpError(error: unknown): DiagnosticCode {
   return 'OTP_DELIVERY_FAILED'
 }
 
+function isSupabaseAuthUserMissingError(error: unknown) {
+  const lower = safeErrorMessage(error).toLowerCase()
+  return (
+    lower.includes('user not found') ||
+    lower.includes('user_not_found') ||
+    lower.includes('no user found') ||
+    lower.includes('user does not exist') ||
+    lower.includes('signup is disabled') ||
+    lower.includes('signups are disabled') ||
+    lower.includes('signups not allowed')
+  )
+}
+
 async function withOtpTimeout<T>(operation: Promise<T>): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
 
@@ -380,6 +415,7 @@ export async function POST(request: NextRequest) {
   let providerId: string | undefined
   let otpProviderCalled = false
   let otpSetupStarted = false
+  let providerLookupResult: ProviderLookupLogResult = 'not_called'
 
   try {
     const body = await request.json().catch(() => ({})) as {
@@ -399,7 +435,7 @@ export async function POST(request: NextRequest) {
         reason: botCheck.reason,
         phoneMasked: maskPhone(rawPhone),
         countryCode,
-        providerLookupResult: 'not_called',
+        providerLookupResult,
         otpProviderCalled,
         timestamp: timestamp(),
         step: STEP,
@@ -420,7 +456,7 @@ export async function POST(request: NextRequest) {
         trace_id: traceId,
         phoneMasked: maskPhone(rawPhone),
         countryCode: normalized.countryCode,
-        providerLookupResult: 'not_called',
+        providerLookupResult,
         otpProviderCalled,
         safeErrorMessage: normalized.reason,
         timestamp: timestamp(),
@@ -495,11 +531,12 @@ export async function POST(request: NextRequest) {
       const lookupResult = await findProviderForOtpLogin(phone, rawPhone, db)
       if (!lookupResult.found) {
         const hasPendingApp = Boolean(lookupResult.pendingApplicationId)
+        providerLookupResult = hasPendingApp ? 'pending_application' : 'not_found'
         console.warn('[provider-send-code] provider not found', {
           trace_id: traceId,
           phoneMasked: maskPhone(phone),
           countryCode,
-          providerLookupResult: hasPendingApp ? 'pending_application' : 'not_found',
+          providerLookupResult,
           pendingApplicationId: lookupResult.pendingApplicationId ?? null,
           pendingApplicationStatus: lookupResult.pendingApplicationStatus ?? null,
           providerId: null,
@@ -510,13 +547,15 @@ export async function POST(request: NextRequest) {
         provider = null
       } else {
         provider = lookupResult.provider
+        providerLookupResult = 'found_active'
       }
     } catch (dbError) {
+      providerLookupResult = 'db_error'
       console.error('[provider-send-code] provider lookup failed', {
         trace_id: traceId,
         phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'db_error',
+        providerLookupResult,
         otpProviderCalled,
         safeErrorMessage: safeLogErrorMessage(dbError, [rawPhone, phone]),
         stack: safeLogErrorStack(dbError, [rawPhone, phone]),
@@ -537,11 +576,12 @@ export async function POST(request: NextRequest) {
       const access = checkWorkerPortalAccess(provider)
 
       if (!access.ok) {
+        providerLookupResult = access.code === 'WORKER_NOT_APPROVED' ? 'found_not_approved' : 'found_inactive'
         console.warn('[provider-send-code] provider account state deferred until OTP verification', {
           trace_id: traceId,
           phoneMasked: maskPhone(phone),
           countryCode,
-          providerLookupResult: access.code === 'WORKER_NOT_APPROVED' ? 'found_not_approved' : 'found_inactive',
+          providerLookupResult,
           providerId,
           active: provider.active,
           providerStatus: provider.status,
@@ -588,7 +628,7 @@ export async function POST(request: NextRequest) {
         providerId,
         phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'found_active',
+        providerLookupResult,
         otpProviderCalled,
         otpProviderStatus: 'not_configured',
         timestamp: timestamp(),
@@ -606,7 +646,12 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
     otpProviderCalled = true
-    const response = await withOtpTimeout(supabase.auth.signInWithOtp({ phone }))
+    const response = await withOtpTimeout(
+      supabase.auth.signInWithOtp({
+        phone,
+        options: { shouldCreateUser: false },
+      }),
+    )
 
     if (!response || typeof response !== 'object' || !('error' in response)) {
       console.error('[provider-send-code] OTP provider bad response', {
@@ -614,7 +659,7 @@ export async function POST(request: NextRequest) {
         providerId,
         phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'found_active',
+        providerLookupResult,
         otpProviderCalled,
         otpProviderStatus: 'bad_response',
         safeErrorMessage: 'OTP provider did not return an object with an error field.',
@@ -634,13 +679,29 @@ export async function POST(request: NextRequest) {
     const { error } = response as { error?: unknown }
 
     if (error) {
+      if (isSupabaseAuthUserMissingError(error)) {
+        console.warn('[provider-send-code] OTP auth user missing; returned uniform start response', {
+          trace_id: traceId,
+          providerId,
+          phoneMasked: maskPhone(phone),
+          countryCode,
+          providerLookupResult,
+          otpProviderCalled,
+          otpProviderStatus: 'auth_user_missing',
+          safeErrorMessage: safeLogErrorMessage(error, [rawPhone, phone]),
+          timestamp: timestamp(),
+          step: STEP,
+        })
+        return otpStartPayload({ traceId, phone })
+      }
+
       const code = classifyOtpError(error)
       console.error('[provider-send-code] OTP send failed', {
         trace_id: traceId,
         providerId,
         phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'found_active',
+        providerLookupResult,
         otpProviderCalled,
         otpProviderStatus: code,
         code,
@@ -664,14 +725,30 @@ export async function POST(request: NextRequest) {
       providerId,
       phoneMasked: maskPhone(phone),
       countryCode,
-      providerLookupResult: 'found_active',
+      providerLookupResult,
       otpProviderCalled,
       otpProviderStatus: 'sent',
       timestamp: timestamp(),
       step: STEP,
     })
-    return NextResponse.json({ ok: true, nextStep: 'verify_otp', phone, traceId })
+    return otpStartPayload({ traceId, phone })
   } catch (error) {
+    if (otpProviderCalled && isSupabaseAuthUserMissingError(error)) {
+      console.warn('[provider-send-code] OTP auth user missing after provider exception; returned uniform start response', {
+        trace_id: traceId,
+        providerId,
+        phoneMasked: maskPhone(phone || rawPhone),
+        countryCode,
+        providerLookupResult,
+        otpProviderCalled,
+        otpProviderStatus: 'auth_user_missing',
+        safeErrorMessage: safeLogErrorMessage(error, [rawPhone, phone]),
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      return otpStartPayload({ traceId, phone: phone || rawPhone })
+    }
+
     const code = otpProviderCalled
       ? classifyOtpError(error)
       : otpSetupStarted
@@ -682,7 +759,7 @@ export async function POST(request: NextRequest) {
       providerId,
       phoneMasked: maskPhone(phone || rawPhone),
       countryCode,
-      providerLookupResult: providerId ? 'found' : 'unknown',
+      providerLookupResult: providerLookupResult === 'not_called' ? 'unknown' : providerLookupResult,
       otpProviderCalled,
       otpProviderStatus: otpProviderCalled ? code : 'not_called_or_unknown',
       safeErrorMessage: safeLogErrorMessage(error, [rawPhone, phone]),

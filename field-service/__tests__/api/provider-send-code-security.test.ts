@@ -228,7 +228,65 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
       phone: NORMALIZED_PHONE,
       traceId,
     })
-    expect(signInWithOtp).toHaveBeenCalledWith({ phone: NORMALIZED_PHONE })
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: NORMALIZED_PHONE,
+      options: { shouldCreateUser: false },
+    })
+  })
+
+  it('disables Supabase auth user creation for provider OTP sends', async () => {
+    const traceId = 'provider_security_no_auth_signup'
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null })
+    mocks.db.provider.findUnique.mockResolvedValue({
+      id: 'prov-active',
+      userId: null,
+      phone: NORMALIZED_PHONE,
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+    })
+    mocks.createClient.mockReturnValue({ auth: { signInWithOtp } })
+
+    const res = await postProviderSendCode({
+      phone: RAW_PHONE,
+      traceId,
+      botCheck: validBotCheck(),
+    })
+
+    expect(res.status).toBe(200)
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: NORMALIZED_PHONE,
+      options: { shouldCreateUser: false },
+    })
+  })
+
+  it('keeps unknown provider Supabase user-not-found failures indistinguishable from OTP start', async () => {
+    const traceId = 'provider_security_unknown_supabase_user'
+    const signInWithOtp = vi.fn().mockResolvedValue({
+      error: new Error('User not found'),
+    })
+    mocks.db.provider.findUnique.mockResolvedValue(null)
+    mocks.createClient.mockReturnValue({ auth: { signInWithOtp } })
+
+    const res = await postProviderSendCode({
+      phone: RAW_PHONE,
+      traceId,
+      botCheck: validBotCheck(),
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({
+      ok: true,
+      nextStep: 'verify_otp',
+      phone: NORMALIZED_PHONE,
+      traceId,
+    })
+    expect(body.error).toBeUndefined()
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: NORMALIZED_PHONE,
+      options: { shouldCreateUser: false },
+    })
   })
 
   it('does not leak phone values or DB internals when provider lookup fails', async () => {
@@ -337,7 +395,10 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
       message: "We couldn't send the code right now. Please try again shortly.",
       traceId,
     })
-    expect(signInWithOtp).toHaveBeenCalledWith({ phone: NORMALIZED_PHONE })
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: NORMALIZED_PHONE,
+      options: { shouldCreateUser: false },
+    })
 
     const serializedBody = expectSerializedValueNotToContainPhones(body, [RAW_PHONE, NORMALIZED_PHONE])
     expect(serializedBody).not.toContain('provider-secret')

@@ -80,32 +80,89 @@ function isLaterStatement(left: TableEvent, right: TableEvent) {
 function hasLaterIntrospectiveRlsSweep(migrations: MigrationFile[], created: TableEvent) {
   return migrations.some((migration, migrationIndex) => {
     if (migrationIndex < created.migrationIndex) return false
-    if (migrationIndex === created.migrationIndex && !INTROSPECTIVE_RLS_SWEEP.test(migration.sql.slice(created.offset))) {
-      return false
-    }
-    return migrationIndex > created.migrationIndex || INTROSPECTIVE_RLS_SWEEP.test(migration.sql.slice(created.offset))
+
+    const sqlAfterCreate = migrationIndex === created.migrationIndex ? migration.sql.slice(created.offset) : migration.sql
+    return INTROSPECTIVE_RLS_SWEEP.test(sqlAfterCreate)
   })
+}
+
+function collectMissingRlsTables(migrations: MigrationFile[]) {
+  const createdTables = collectTableEvents(migrations, CREATE_PUBLIC_TABLE)
+  const enabledTables = collectTableEvents(migrations, ENABLE_PUBLIC_RLS)
+
+  return createdTables
+    .filter((event) => event.migration > RLS_BASELINE_MIGRATION)
+    .filter((event) => event.table !== PRISMA_MIGRATIONS_TABLE)
+    // CREATE TABLE IF NOT EXISTS can create a fresh unprotected table in drifted databases,
+    // so every post-baseline create statement needs a later RLS enable statement.
+    .filter((created) => {
+      const explicitEnable = enabledTables.some((enabled) => {
+        return enabled.table === created.table && isLaterStatement(enabled, created)
+      })
+      return !(explicitEnable || hasLaterIntrospectiveRlsSweep(migrations, created))
+    })
+    .map((event) => `${event.table} (created in ${event.migration})`)
 }
 
 describe('RLS migration coverage', () => {
   it('enables RLS after every public table created after the RLS baseline', () => {
     const migrations = loadMigrations()
-    const createdTables = collectTableEvents(migrations, CREATE_PUBLIC_TABLE)
-    const enabledTables = collectTableEvents(migrations, ENABLE_PUBLIC_RLS)
-
-    const missingRls = createdTables
-      .filter((event) => event.migration > RLS_BASELINE_MIGRATION)
-      .filter((event) => event.table !== PRISMA_MIGRATIONS_TABLE)
-      // CREATE TABLE IF NOT EXISTS can create a fresh unprotected table in drifted databases,
-      // so every post-baseline create statement needs a later RLS enable statement.
-      .filter((created) => {
-        const explicitEnable = enabledTables.some((enabled) => {
-          return enabled.table === created.table && isLaterStatement(enabled, created)
-        })
-        return !(explicitEnable || hasLaterIntrospectiveRlsSweep(migrations, created))
-      })
-      .map((event) => `${event.table} (created in ${event.migration})`)
+    const missingRls = collectMissingRlsTables(migrations)
 
     expect(missingRls).toEqual([])
+  })
+
+  it('reports a table created after the baseline when a later unrelated migration has no RLS sweep', () => {
+    const migrations: MigrationFile[] = [
+      {
+        name: RLS_BASELINE_MIGRATION,
+        sql: 'ALTER TABLE public.existing_table ENABLE ROW LEVEL SECURITY;',
+      },
+      {
+        name: '20260422000000_create_unprotected_customer_notes',
+        sql: 'CREATE TABLE public.customer_notes (id uuid PRIMARY KEY);',
+      },
+      {
+        name: '20260423000000_add_unrelated_index',
+        sql: 'CREATE INDEX customer_notes_created_at_idx ON public.customer_notes (id);',
+      },
+    ]
+
+    expect(collectMissingRlsTables(migrations)).toEqual([
+      'customer_notes (created in 20260422000000_create_unprotected_customer_notes)',
+    ])
+  })
+
+  it('accepts a table created after the baseline when a later migration has the introspective RLS sweep', () => {
+    const migrations: MigrationFile[] = [
+      {
+        name: RLS_BASELINE_MIGRATION,
+        sql: 'ALTER TABLE public.existing_table ENABLE ROW LEVEL SECURITY;',
+      },
+      {
+        name: '20260422000000_create_unprotected_customer_notes',
+        sql: 'CREATE TABLE public.customer_notes (id uuid PRIMARY KEY);',
+      },
+      {
+        name: '20260423000000_enable_missing_rls',
+        sql: `
+          DO $$
+          DECLARE
+            table_record record;
+          BEGIN
+            FOR table_record IN
+              SELECT relname
+              FROM pg_class
+              WHERE relrowsecurity = false
+                AND relname <> '_prisma_migrations'
+            LOOP
+              EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_record.relname);
+            END LOOP;
+          END $$;
+        `,
+      },
+    ]
+
+    expect(collectMissingRlsTables(migrations)).toEqual([])
   })
 })
