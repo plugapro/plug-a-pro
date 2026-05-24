@@ -75,7 +75,7 @@ const USER_STATUS_LABELS: Record<HealthStatus, string> = {
   degraded: 'Slower than usual',
   down: 'Currently unavailable',
   unknown: 'Checking status…',
-  not_monitored: 'Running smoothly',
+  not_monitored: 'Not separately monitored',
 }
 
 // User-friendly headline labels
@@ -84,6 +84,7 @@ function headlineFor(status: HealthStatus): string {
     case 'operational': return 'Everything is running'
     case 'degraded': return 'Some things are slower than usual'
     case 'down': return "We're experiencing an issue"
+    case 'not_monitored': return 'Some checks are not monitored yet'
     default: return 'Checking platform status…'
   }
 }
@@ -98,9 +99,8 @@ function formatDate(value: string) {
   })
 }
 
-// Treat not_monitored as operational on the public page - don't expose monitoring gaps
 function publicStatus(status: HealthStatus): HealthStatus {
-  return status === 'not_monitored' ? 'operational' : status
+  return status
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -187,8 +187,9 @@ function StatusIcon({ status, className = 'size-4' }: { status: HealthStatus; cl
   const cls = T[tone(status)]
   switch (status) {
     case 'operational':
-    case 'not_monitored':
       return <CheckCircle2 className={`${className} ${cls.fg}`} />
+    case 'not_monitored':
+      return <HelpCircle className={`${className} ${cls.fg}`} />
     case 'degraded':
       return <AlertTriangle className={`${className} ${cls.fg}`} />
     case 'down':

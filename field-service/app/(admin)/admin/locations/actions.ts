@@ -104,7 +104,7 @@ export async function deactivateLocationNodeAction(id: string) {
   return result
 }
 
-export async function deleteLocationNodeAction(id: string) {
+export async function deleteLocationNodeAction(id: string, options: { allowSoftDelete?: boolean } = {}) {
   try {
     const result = await crudAction<{ id: string }, { id: string; softDeleted?: boolean }>({
       entity: 'LocationNode',
@@ -122,7 +122,7 @@ export async function deleteLocationNodeAction(id: string) {
     return result
   } catch (err) {
     if (err instanceof CrudActionError) throw err
-    if (err instanceof LocationNodeInUseError) {
+    if (err instanceof LocationNodeInUseError && options.allowSoftDelete !== false) {
       // Node is referenced - soft-delete instead
       const result = await crudAction<{ id: string }, { id: string; softDeleted: boolean }>({
         entity: 'LocationNode',

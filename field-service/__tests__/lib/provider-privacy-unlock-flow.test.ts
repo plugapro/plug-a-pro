@@ -206,7 +206,7 @@ describe('provider privacy unlock flow (Step 10)', () => {
       status: 'SENT', // not accepted
       sentAt: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
-      provider: { id: 'provider-1', name: 'Sipho', phone: '+27820000000', active: true, status: 'ACTIVE' },
+      provider: { id: 'provider-1', name: 'Sipho', phone: '+27820000000', active: true, verified: true, status: 'ACTIVE' },
       unlock: null,
       jobRequest: {
         id: 'jr-1',

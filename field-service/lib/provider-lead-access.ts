@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'crypto'
 import { db } from './db'
+import { checkPhaseOneLeadDetailEligibility } from './provider-lead-eligibility'
 import { previewNotes } from './provider-lead-detail'
 import { getProviderLeadPublicAppUrl } from './provider-credit-copy'
 import { maskPhone } from './support-diagnostics'
@@ -65,6 +66,7 @@ type ProviderLeadAccessInvalidReason =
   | 'SIGNING_SECRET_MISSING'
   | 'LEAD_NOT_FOUND'
   | 'PROVIDER_NOT_ACTIVE'
+  | 'PROVIDER_NOT_APPROVED'
   | 'PROVIDER_MISMATCH'
   | 'JOB_REQUEST_MISMATCH'
   | 'PROVIDER_PHONE_MISMATCH'
@@ -338,7 +340,7 @@ export async function resolveProviderLeadAccessToken(
       status: true,
       sentAt: true,
       expiresAt: true,
-      provider: { select: { id: true, name: true, phone: true, active: true, status: true } },
+      provider: { select: { id: true, name: true, phone: true, active: true, verified: true, status: true } },
       jobRequest: {
         select: {
           id: true,
@@ -435,19 +437,21 @@ export async function resolveProviderLeadAccessToken(
     }
   }
 
-  if (!lead.provider.active || lead.provider.status !== 'ACTIVE') {
+  const eligibility = checkPhaseOneLeadDetailEligibility(lead.provider)
+  if (!eligibility.ok) {
     console.warn('[provider-lead-access] token invalid: scope mismatch or inactive provider', {
       traceId,
       leadFound: true,
       providerId: verified.payload.providerId,
       jobRequestId: verified.payload.jobRequestId ?? null,
+      providerEligibilityCode: eligibility.code,
     })
     return {
       status: 'invalid' as const,
       lead: null,
       payload: verified.payload,
       traceId,
-      reason: 'PROVIDER_NOT_ACTIVE' as const,
+      reason: eligibility.code,
     }
   }
 

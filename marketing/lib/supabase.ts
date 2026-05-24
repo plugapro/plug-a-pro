@@ -1,6 +1,7 @@
 // lib/supabase.ts
 // SERVER-ONLY. Never import this from client components.
 // Uses service role key — never exposed to the browser.
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";

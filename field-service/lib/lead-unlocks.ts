@@ -5,6 +5,7 @@ import {
   debitCreditsForLeadUnlockInTransaction,
   type WalletMutationResult,
 } from './provider-wallet'
+import { checkPhaseOneLeadDetailEligibility } from './provider-lead-eligibility'
 
 export const LEAD_UNLOCK_COST_CREDITS = 1
 
@@ -78,19 +79,20 @@ function assertProviderCanUnlock(provider: {
   verified: boolean
   status: string
 }) {
-  if (!provider.active || provider.status === 'SUSPENDED' || provider.status === 'ARCHIVED' || provider.status === 'BANNED') {
+  const eligibility = checkPhaseOneLeadDetailEligibility(provider)
+  if (eligibility.ok) return
+
+  if (eligibility.code === 'PROVIDER_NOT_ACTIVE') {
     throw new LeadUnlockError(
       'PROVIDER_NOT_ACTIVE',
       'Your provider profile is not active, so you cannot unlock leads right now.',
     )
   }
 
-  if (!provider.verified || provider.status !== 'ACTIVE') {
-    throw new LeadUnlockError(
-      'PROVIDER_NOT_APPROVED',
-      'Your provider application must be approved before you can unlock leads.',
-    )
-  }
+  throw new LeadUnlockError(
+    'PROVIDER_NOT_APPROVED',
+    'Your provider application must be approved before you can unlock leads.',
+  )
 }
 
 function mapWalletError(error: unknown): never {

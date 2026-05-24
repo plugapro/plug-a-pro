@@ -329,9 +329,10 @@ describe('provider credit payment admin actions', () => {
       expect(call[0]).toMatchObject({
         requiredFlag: 'admin.crud.payments',
       })
-      expect(call[0].requiredRole).toEqual(['OPS', 'FINANCE', 'ADMIN', 'OWNER'])
+      expect(call[0].requiredRole).toEqual(['FINANCE', 'ADMIN', 'OWNER'])
       expect(call[0].excludedRole).toEqual(['TRUST'])
       expect(call[0].requiredRole).not.toContain('TRUST')
+      expect(call[0].requiredRole).not.toContain('OPS')
     }
   })
 

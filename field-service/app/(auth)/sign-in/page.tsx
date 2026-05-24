@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { AuthShell } from '@/components/shared/auth-shell'
 import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
-import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
@@ -67,12 +66,6 @@ export default function SignInPage() {
     }
 
     try {
-      const exists = await phoneExistsForSignIn(normalized.e164, 'customer')
-      if (!exists) {
-        router.push(`/sign-up?phone=${encodeURIComponent(normalized.e164)}&next=${encodeURIComponent(next)}`)
-        return
-      }
-
       const supabase = getSupabaseClient()
       const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalized.e164 })
 

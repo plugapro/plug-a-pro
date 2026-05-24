@@ -33,6 +33,9 @@ const PUBLIC_PATHS = [
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
   '/provider/terms',       // provider credit rules are linked before login/application
+  '/track',                // public customer tracking landing pages
+  '/for-providers',        // public provider acquisition page
+  '/credit-terms',         // public provider credit terms page
   '/provider-public-profile', // signed Review Providers First profile links are read-only and public
   '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
   '/technician-verify',    // legacy — server-redirects to /provider-verify
@@ -54,7 +57,8 @@ const PUBLIC_PATHS = [
   '/api/auth/hooks',                // Supabase Auth webhook hooks (send-sms, etc.) — signature-verified, no session cookie
   '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
-  '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
+  '/api/track',                     // public tracking API; handler validates tracking identifiers
+  '/api/locations/search',          // public location search used before booking/auth
   '/api/debug',                     // key-protected diagnostic endpoints — handlers enforce their own key check
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard

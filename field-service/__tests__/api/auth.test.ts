@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { resetRateLimitForTests } from '@/lib/rate-limit'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -272,9 +274,9 @@ describe('DELETE /api/auth/session', () => {
   })
 })
 
-// ─── /api/auth/phone-exists ───────────────────────────────────────────────────
+// ─── Customer phone enumeration ───────────────────────────────────────────────
 
-describe('POST /api/auth/phone-exists', () => {
+describe('customer sign-in phone enumeration controls', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
 
@@ -283,7 +285,16 @@ describe('POST /api/auth/phone-exists', () => {
     ;(db.provider.findUnique as any).mockResolvedValue(null)
   })
 
-  it('returns exists=true when a customer phone exists', async () => {
+  it('customer sign-in starts OTP directly instead of calling the phone-exists oracle', () => {
+    const source = readFileSync(join(process.cwd(), 'app/(auth)/sign-in/page.tsx'), 'utf8')
+
+    expect(source).not.toContain('phoneExistsForSignIn')
+    expect(source).not.toContain('/api/auth/phone-exists')
+    expect(source).not.toContain('/sign-up?phone=')
+    expect(source).toContain('signInWithOtp({ phone: normalized.e164 })')
+  })
+
+  it('neutralizes /api/auth/phone-exists without querying customer or provider tables', async () => {
     const { db } = await import('@/lib/db')
     ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust-1' })
 
@@ -295,73 +306,17 @@ describe('POST /api/auth/phone-exists', () => {
     })
 
     const res = await POST(req)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ exists: true })
-    expect(db.customer.findUnique).toHaveBeenCalledWith({
-      where: { phone: '+27821234567' },
-      select: { id: true },
+    const body = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(body).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+      message: 'Not found',
     })
-  })
-
-  it('returns exists=false when a customer phone is unknown', async () => {
-    const { POST } = await import('../../app/api/auth/phone-exists/route')
-    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
-      method: 'POST',
-      body: JSON.stringify({ phone: '+27821234567', role: 'customer' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    const res = await POST(req)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ exists: false })
-  })
-
-  it('returns exists=true only for active providers', async () => {
-    const { db } = await import('@/lib/db')
-    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true })
-
-    const { POST } = await import('../../app/api/auth/phone-exists/route')
-    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
-      method: 'POST',
-      body: JSON.stringify({ phone: '27821234567', role: 'provider' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    const res = await POST(req)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ exists: true })
-    expect(db.provider.findUnique).toHaveBeenCalledWith({
-      where: { phone: '+27821234567' },
-      select: { id: true, active: true },
-    })
-  })
-
-  it('returns exists=false for inactive providers', async () => {
-    const { db } = await import('@/lib/db')
-    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: false })
-
-    const { POST } = await import('../../app/api/auth/phone-exists/route')
-    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
-      method: 'POST',
-      body: JSON.stringify({ phone: '+27821234567', role: 'provider' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    const res = await POST(req)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ exists: false })
-  })
-
-  it('rejects invalid lookup requests', async () => {
-    const { POST } = await import('../../app/api/auth/phone-exists/route')
-    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
-      method: 'POST',
-      body: JSON.stringify({ phone: 'abc', role: 'customer' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    const res = await POST(req)
-    expect(res.status).toBe(400)
+    expect(body).not.toHaveProperty('exists')
+    expect(db.customer.findUnique).not.toHaveBeenCalled()
+    expect(db.provider.findUnique).not.toHaveBeenCalled()
   })
 })
 
@@ -491,7 +446,7 @@ describe('POST /api/auth/provider/send-code', () => {
     })
 
     const firstRes = await POST(firstReq)
-    expect(firstRes.status).toBe(404)
+    expect(firstRes.status).toBe(200)
     expect(db.provider.findUnique).toHaveBeenCalled()
 
     vi.clearAllMocks()
@@ -529,7 +484,7 @@ describe('POST /api/auth/provider/send-code', () => {
     })
 
     const firstRes = await POST(firstReq)
-    expect(firstRes.status).toBe(404)
+    expect(firstRes.status).toBe(200)
     expect(db.provider.findUnique).toHaveBeenCalled()
 
     vi.clearAllMocks()
@@ -582,7 +537,7 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(createClient).not.toHaveBeenCalled()
   })
 
-  it('returns WORKER_NOT_FOUND with a trace ID for unknown provider phones', async () => {
+  it('returns the generic OTP-start response for unknown provider phones', async () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
@@ -593,20 +548,14 @@ describe('POST /api/auth/provider/send-code', () => {
     const res = await POST(req)
     const body = await res.json()
 
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(200)
     expect(body).toMatchObject({
-      ok: false,
-      code: 'WORKER_NOT_FOUND',
-      message: "We couldn't find a provider account for this number. If you're trying to view your customer bookings, sign in as a customer instead.",
+      ok: true,
+      nextStep: 'verify_otp',
+      phone: '+27821234567',
     })
-    expect(body.error).toMatchObject({
-      code: 'WORKER_NOT_FOUND',
-      title: 'Provider account not found.',
-      step: 'Worker portal send-code',
-      mobileChecked: '+27821234567',
-      phoneMasked: '082****567',
-    })
-    expect(body.error.traceId).toMatch(/^auth_/)
+    expect(body.traceId).toMatch(/^auth_/)
+    expect(body).not.toHaveProperty('error')
   })
 
   it.each([
@@ -720,11 +669,11 @@ describe('POST /api/auth/provider/send-code', () => {
       code: 'WORKER_NOT_APPROVED',
       title: 'Application still under review.',
       providerId: id,
-      mobileChecked: '+27821234567',
+      phoneMasked: '082****567',
     })
   })
 
-  it('returns WORKER_INACTIVE for suspended provider accounts', async () => {
+  it('returns the generic OTP-start response for suspended provider accounts', async () => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findUnique as any).mockResolvedValue({
       id: 'prov-suspended',
@@ -742,13 +691,71 @@ describe('POST /api/auth/provider/send-code', () => {
     const res = await POST(req)
     const body = await res.json()
 
-    expect(res.status).toBe(423)
-    expect(body.error).toMatchObject({
-      code: 'WORKER_INACTIVE',
-      title: 'Provider account inactive.',
-      providerId: 'prov-suspended',
-      mobileChecked: '+27821234567',
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({
+      ok: true,
+      nextStep: 'verify_otp',
+      phone: '+27821234567',
     })
+    expect(body).not.toHaveProperty('error')
+  })
+
+  it('logs only masked phone identifiers for provider OTP start decisions', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    try {
+      const { POST } = await import('../../app/api/auth/provider/send-code/route')
+      const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+        method: 'POST',
+        body: JSON.stringify({ phone: '0821234567', traceId: 'trace_masked_log' }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      const res = await POST(req)
+      expect(res.status).toBe(200)
+
+      const entries = [...warnSpy.mock.calls, ...errorSpy.mock.calls, ...infoSpy.mock.calls]
+        .filter((entry) => entry[1] && typeof entry[1] === 'object')
+      expect(entries.length).toBeGreaterThan(0)
+
+      for (const [, details] of entries) {
+        expect(details).not.toHaveProperty('rawPhone')
+        expect(details).not.toHaveProperty('normalizedPhone')
+        expect(JSON.stringify(details)).not.toContain('0821234567')
+        expect(JSON.stringify(details)).not.toContain('+27821234567')
+      }
+
+      expect(entries.some(([, details]) => JSON.stringify(details).includes('082****567'))).toBe(true)
+    } finally {
+      warnSpy.mockRestore()
+      errorSpy.mockRestore()
+      infoSpy.mockRestore()
+    }
+  })
+
+  it('does not expose raw phone or internal database errors in provider OTP responses', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockRejectedValue(new Error('connection refused for +27821234567'))
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0821234567', traceId: 'trace_db_error' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+    const serialized = JSON.stringify(body)
+
+    expect(res.status).toBe(503)
+    expect(serialized).not.toContain('0821234567')
+    expect(serialized).not.toContain('+27821234567')
+    expect(serialized).not.toContain('connection refused')
+    expect(body.error).not.toHaveProperty('mobileChecked')
+    expect(body.error.phoneMasked).toBe('082****567')
   })
 
   it('returns OTP_DELIVERY_FAILED when Supabase OTP delivery fails', async () => {

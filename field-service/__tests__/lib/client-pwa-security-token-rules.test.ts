@@ -61,7 +61,7 @@ function makeProviderLead(overrides: Record<string, unknown> = {}) {
     status: 'SENT',
     sentAt: new Date(),
     expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000),
-    provider: { id: 'prov-1', name: 'Sipho Pro', phone: '+27821111111', active: true, status: 'ACTIVE' },
+    provider: { id: 'prov-1', name: 'Sipho Pro', phone: '+27821111111', active: true, verified: true, status: 'ACTIVE' },
     unlock: null,
     jobRequest: {
       id: 'jr-1',

@@ -158,6 +158,35 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it.each([
+    '/track',
+    '/track/JR-123',
+    '/api/track',
+    '/api/track/JR-123',
+    '/for-providers',
+    '/credit-terms',
+    '/api/locations/search?q=Roodepoort',
+  ])('allows unauthenticated access to public baseline route %s', async (path) => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest(`http://localhost${path}`))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('does not expose the customer phone existence oracle as a public route', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/auth/phone-exists'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/sign-in?callbackUrl=%2Fbookings&next=%2Fbookings',
+    )
+  })
+
   it('keeps non-canonical nested legacy lead routes protected by login', async () => {
     const { proxy } = await import('../proxy')
 

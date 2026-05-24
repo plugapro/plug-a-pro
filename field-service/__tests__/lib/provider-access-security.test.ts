@@ -30,7 +30,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     status: 'SENT',
     sentAt: new Date('2026-05-01T10:00:00.000Z'),
     expiresAt: new Date('2026-05-04T10:00:00.000Z'),
-    provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, status: 'ACTIVE' },
+    provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, verified: true, status: 'ACTIVE' },
     unlock: null,
     jobRequest: {
       id: 'jr-1',
@@ -82,7 +82,7 @@ describe('secure token scope — cross-provider access prevention', () => {
     })
     // DB provider has a different phone
     mockDb.lead.findUnique.mockResolvedValueOnce(
-      makeLead({ provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, status: 'ACTIVE' } }),
+      makeLead({ provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, verified: true, status: 'ACTIVE' } }),
     )
 
     const resolved = await resolveProviderLeadAccessToken(token)
@@ -205,7 +205,7 @@ describe('customer PII gating — pre/post acceptance', () => {
         id: 'lead-2',
         providerId: 'provider-2',
         status: 'ACCEPTED',
-        provider: { id: 'provider-2', name: 'Other Pro', phone: '+27829000000', active: true, status: 'ACTIVE' },
+        provider: { id: 'provider-2', name: 'Other Pro', phone: '+27829000000', active: true, verified: true, status: 'ACTIVE' },
       }),
     )
     mockDb.leadUnlock.findUnique.mockResolvedValueOnce({

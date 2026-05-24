@@ -18,6 +18,7 @@ import {
 
 const STEP = 'Worker portal send-code'
 const OTP_TIMEOUT_MS = 10_000
+const GENERIC_OTP_START_MESSAGE = 'If this number belongs to an eligible provider account, a login code has been sent.'
 
 function reasonFor(code: DiagnosticCode) {
   switch (code) {
@@ -110,6 +111,37 @@ function statusFor(code: DiagnosticCode) {
   }
 }
 
+function sanitizeLogErrorMessage(error: unknown, phones: Array<string | undefined>) {
+  let message = safeErrorMessage(error)
+  for (const phone of phones) {
+    if (phone) message = message.replaceAll(phone, maskPhone(phone) ?? '[phone]')
+  }
+  return message.replace(/\+?\d[\d\s().-]{7,}\d/g, (match) => maskPhone(match) ?? '[phone]')
+}
+
+function sanitizeLogStack(error: unknown, phones: Array<string | undefined>) {
+  if (!(error instanceof Error) || !error.stack) return undefined
+  let stack = error.stack
+  for (const phone of phones) {
+    if (phone) stack = stack.replaceAll(phone, maskPhone(phone) ?? '[phone]')
+  }
+  return stack.replace(/\+?\d[\d\s().-]{7,}\d/g, (match) => maskPhone(match) ?? '[phone]')
+}
+
+function phoneLogFields(phone: string | null | undefined) {
+  return { phoneMasked: maskPhone(phone) }
+}
+
+function genericOtpStartResponse(params: { phone: string; traceId: string }) {
+  return NextResponse.json({
+    ok: true,
+    nextStep: 'verify_otp',
+    phone: params.phone,
+    traceId: params.traceId,
+    message: GENERIC_OTP_START_MESSAGE,
+  })
+}
+
 function errorPayload(params: {
   code: DiagnosticCode
   traceId: string
@@ -118,10 +150,6 @@ function errorPayload(params: {
   providerId?: string
   status: number
 }) {
-  const checkedPhone = params.phone && /^\+\d{10,15}$/.test(params.phone)
-    ? params.phone
-    : undefined
-
   const message = reasonFor(params.code)
   return NextResponse.json(
     {
@@ -136,7 +164,6 @@ function errorPayload(params: {
         step: STEP,
         traceId: params.traceId,
         time: timestamp(),
-        mobileChecked: checkedPhone,
         phoneMasked: maskPhone(params.phone),
         countryCode: params.countryCode,
         providerId: params.providerId,
@@ -264,8 +291,7 @@ export async function POST(request: NextRequest) {
     if (!normalized.ok) {
       console.warn('[provider-send-code] invalid phone', {
         trace_id: traceId,
-        rawPhone,
-        normalizedPhone: null,
+        ...phoneLogFields(rawPhone),
         countryCode: normalized.countryCode,
         providerLookupResult: 'not_called',
         otpProviderCalled,
@@ -297,7 +323,7 @@ export async function POST(request: NextRequest) {
     if (!publicRateCheck.ok) {
       console.warn('[provider-send-code] public pre-lookup rate limited', {
         trace_id: traceId,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         rateLimitReason: publicRateCheck.code,
         timestamp: timestamp(),
@@ -321,7 +347,7 @@ export async function POST(request: NextRequest) {
     if (!lookupRateCheck.ok) {
       console.warn('[provider-send-code] lookup rate limited', {
         trace_id: traceId,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         rateLimitReason: lookupRateCheck.code,
         timestamp: timestamp(),
@@ -344,8 +370,7 @@ export async function POST(request: NextRequest) {
         const hasPendingApp = Boolean(lookupResult.pendingApplicationId)
         console.warn('[provider-send-code] provider not found', {
           trace_id: traceId,
-          rawPhone,
-          normalizedPhone: phone,
+          ...phoneLogFields(phone),
           countryCode,
           providerLookupResult: hasPendingApp ? 'pending_application' : 'not_found',
           pendingApplicationId: lookupResult.pendingApplicationId ?? null,
@@ -358,19 +383,18 @@ export async function POST(request: NextRequest) {
         if (hasPendingApp) {
           return errorPayload({ code: 'WORKER_NOT_APPROVED', traceId, phone, countryCode, status: statusFor('WORKER_NOT_APPROVED') })
         }
-        return errorPayload({ code: 'WORKER_NOT_FOUND', traceId, phone, countryCode, status: statusFor('WORKER_NOT_FOUND') })
+        return genericOtpStartResponse({ phone, traceId })
       }
       provider = lookupResult.provider
     } catch (dbError) {
       console.error('[provider-send-code] provider lookup failed', {
         trace_id: traceId,
-        rawPhone,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         providerLookupResult: 'db_error',
         otpProviderCalled,
-        safeErrorMessage: safeErrorMessage(dbError),
-        stack: dbError instanceof Error ? dbError.stack : undefined,
+        safeErrorMessage: sanitizeLogErrorMessage(dbError, [rawPhone, phone]),
+        stack: sanitizeLogStack(dbError, [rawPhone, phone]),
         timestamp: timestamp(),
         step: STEP,
       })
@@ -389,8 +413,7 @@ export async function POST(request: NextRequest) {
     if (!access.ok && access.code === 'WORKER_NOT_APPROVED') {
       console.warn('[provider-send-code] provider not approved', {
         trace_id: traceId,
-        rawPhone,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         providerLookupResult: 'found_not_approved',
         providerId,
@@ -413,8 +436,7 @@ export async function POST(request: NextRequest) {
     if (!access.ok) {
       console.warn('[provider-send-code] provider inactive', {
         trace_id: traceId,
-        rawPhone,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         providerLookupResult: 'found_inactive',
         providerId,
@@ -424,14 +446,7 @@ export async function POST(request: NextRequest) {
         timestamp: timestamp(),
         step: STEP,
       })
-      return errorPayload({
-        code: 'WORKER_INACTIVE',
-        traceId,
-        phone,
-        countryCode,
-        providerId,
-        status: 423,
-      })
+      return genericOtpStartResponse({ phone, traceId })
     }
 
     const rateCheck = await checkOtpSendLimit({
@@ -442,8 +457,7 @@ export async function POST(request: NextRequest) {
     if (!rateCheck.ok) {
       console.warn('[provider-send-code] rate limited', {
         trace_id: traceId,
-        rawPhone,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         providerId,
         rateLimitReason: rateCheck.code,
@@ -467,9 +481,8 @@ export async function POST(request: NextRequest) {
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('[provider-send-code] Supabase client env missing', {
         trace_id: traceId,
-        rawPhone,
         providerId,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         providerLookupResult: 'found_active',
         otpProviderCalled,
@@ -494,9 +507,8 @@ export async function POST(request: NextRequest) {
     if (!response || typeof response !== 'object' || !('error' in response)) {
       console.error('[provider-send-code] OTP provider bad response', {
         trace_id: traceId,
-        rawPhone,
         providerId,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         providerLookupResult: 'found_active',
         otpProviderCalled,
@@ -521,16 +533,15 @@ export async function POST(request: NextRequest) {
       const code = classifyOtpError(error)
       console.error('[provider-send-code] OTP send failed', {
         trace_id: traceId,
-        rawPhone,
         providerId,
-        normalizedPhone: phone,
+        ...phoneLogFields(phone),
         countryCode,
         providerLookupResult: 'found_active',
         otpProviderCalled,
         otpProviderStatus: code,
         code,
-        safeErrorMessage: safeErrorMessage(error),
-        stack: error instanceof Error ? error.stack : undefined,
+        safeErrorMessage: sanitizeLogErrorMessage(error, [rawPhone, phone]),
+        stack: sanitizeLogStack(error, [rawPhone, phone]),
         timestamp: timestamp(),
         step: STEP,
       })
@@ -546,9 +557,8 @@ export async function POST(request: NextRequest) {
 
     console.info('[provider-send-code] OTP sent', {
       trace_id: traceId,
-      rawPhone,
       providerId,
-      normalizedPhone: phone,
+      ...phoneLogFields(phone),
       countryCode,
       providerLookupResult: 'found_active',
       otpProviderCalled,
@@ -565,15 +575,14 @@ export async function POST(request: NextRequest) {
         : 'AUTH_RESPONSE_INVALID'
     console.error('[provider-send-code] unexpected error', {
       trace_id: traceId,
-      rawPhone,
       providerId,
-      normalizedPhone: phone || rawPhone,
+      ...phoneLogFields(phone || rawPhone),
       countryCode,
       providerLookupResult: providerId ? 'found' : 'unknown',
       otpProviderCalled,
       otpProviderStatus: otpProviderCalled ? code : 'not_called_or_unknown',
-      safeErrorMessage: safeErrorMessage(error),
-      stack: error instanceof Error ? error.stack : undefined,
+      safeErrorMessage: sanitizeLogErrorMessage(error, [rawPhone, phone]),
+      stack: sanitizeLogStack(error, [rawPhone, phone]),
       timestamp: timestamp(),
       step: STEP,
     })

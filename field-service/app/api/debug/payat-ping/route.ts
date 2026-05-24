@@ -129,7 +129,7 @@ async function createRtp(params: {
 
 export async function GET(request: NextRequest) {
   const diagKey = process.env.PAYAT_DIAG_KEY?.trim()
-  if (!diagKey || request.nextUrl.searchParams.get('key') !== diagKey) {
+  if (!diagKey || request.headers.get('x-payat-diag-key') !== diagKey) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 

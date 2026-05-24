@@ -17,7 +17,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     status: 'SENT',
     sentAt: new Date('2026-04-29T10:00:00.000Z'),
     expiresAt: new Date('2026-04-29T11:00:00.000Z'),
-    provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, status: 'ACTIVE' },
+    provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, verified: true, status: 'ACTIVE' },
     unlock: null,
     jobRequest: {
       id: 'job-request-1',
@@ -226,6 +226,27 @@ describe('provider lead access tokens', () => {
       status: 'invalid',
       lead: null,
       reason: 'PROVIDER_NOT_ACTIVE',
+    })
+  })
+
+  it('rejects active tokens for unverified providers under the Phase-1 unlock policy', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({
+      provider: {
+        id: 'provider-1',
+        name: 'Sipho Pro',
+        phone: '+27820000000',
+        active: true,
+        verified: false,
+        status: 'ACTIVE',
+      },
+    }))
+
+    await expect(resolveProviderLeadAccessToken(token)).resolves.toMatchObject({
+      status: 'invalid',
+      lead: null,
+      reason: 'PROVIDER_NOT_APPROVED',
     })
   })
 

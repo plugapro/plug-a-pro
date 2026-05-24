@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
-import {
-  updateLocationNode,
-  deactivateLocationNode,
-  deleteLocationNode,
-  LocationNodeInUseError,
-} from '@/lib/location-nodes'
 import { verifyRequestOrigin } from '@/lib/csrf'
 import { apiError } from '@/lib/api-response'
+import {
+  deleteLocationNodeAction,
+  updateLocationNodeAction,
+} from '@/app/(admin)/admin/locations/actions'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!verifyRequestOrigin(req, [])) {
@@ -31,8 +29,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   try {
-    await updateLocationNode(id, body)
-    return NextResponse.json({ ok: true })
+    const result = await updateLocationNodeAction({ id, ...body })
+    return NextResponse.json(result)
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to update location' },
@@ -53,31 +51,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 
   const { id } = await params
-
-  // Check for ?force=true to skip soft-delete attempt
   const force = new URL(req.url).searchParams.get('force') === 'true'
 
   try {
-    await deleteLocationNode(id)
-    return NextResponse.json({
-      ok: true,
-      deleted: process.env.ALLOW_LOCATION_HARD_DELETE === 'true' ? 'hard' : 'soft',
-    })
+    const result = await deleteLocationNodeAction(id, { allowSoftDelete: !force })
+    return NextResponse.json(result)
   } catch (err) {
-    if (err instanceof LocationNodeInUseError && !force) {
-      try {
-        await deactivateLocationNode(id)
-        return NextResponse.json({ ok: true, deleted: 'soft' })
-      } catch (deactivateErr) {
-        return NextResponse.json(
-          { error: deactivateErr instanceof Error ? deactivateErr.message : 'Failed' },
-          { status: 400 },
-        )
-      }
-    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to delete location' },
-      { status: err instanceof LocationNodeInUseError ? 400 : 500 },
+      { status: 500 },
     )
   }
 }

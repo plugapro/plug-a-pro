@@ -15,7 +15,7 @@ import {
 import { ProviderWalletError } from '@/lib/provider-wallet'
 
 const FLAG = 'admin.crud.payments'
-const RECONCILE_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
+const RECONCILE_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
 const RECONCILE_EXCLUDED_ROLES = ['TRUST'] as const
 
 const ReconcileTopUpSchema = z.object({
