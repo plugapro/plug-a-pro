@@ -74,7 +74,16 @@ describe('apiError / apiSuccess', () => {
     const res = apiError('NOT_FOUND', 'Resource not found', 404)
     expect(res.status).toBe(404)
     const body = await res.json()
-    expect(body).toEqual({ error: { code: 'NOT_FOUND', message: 'Resource not found' } })
+    expect(body.error).toMatchObject({
+      code: 'NOT_FOUND',
+      category: 'not_found',
+      message: 'Resource not found',
+      retryable: false,
+    })
+    expect(body.error.reference_id).toMatch(/^PAP-\d{8}-[A-Z0-9]{6}$/)
+    expect(body.error.referenceId).toBe(body.error.reference_id)
+    expect(Array.isArray(body.error.suggested_actions)).toBe(true)
+    expect(typeof body.error.timestamp).toBe('string')
   })
 
   it('apiError includes referenceId when provided', async () => {

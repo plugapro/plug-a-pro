@@ -110,7 +110,7 @@ export async function deleteLocationNodeAction(id: string, options: { allowSoftD
       entity: 'LocationNode',
       entityId: id,
       action: 'location.delete',
-      requiredRole: ['ADMIN', 'OWNER'],
+      requiredRole: ['OWNER'],
       requiredFlag: FLAG,
       input: { id },
       run: async () => {
@@ -128,7 +128,7 @@ export async function deleteLocationNodeAction(id: string, options: { allowSoftD
         entity: 'LocationNode',
         entityId: id,
         action: 'location.deactivate',
-        requiredRole: ['ADMIN', 'OWNER'],
+        requiredRole: ['OWNER'],
         requiredFlag: FLAG,
         input: { id },
         run: async () => {

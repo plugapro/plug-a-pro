@@ -15,10 +15,39 @@ import {
   checkProviderLookupLimit,
   checkPublicProviderSendCodeLimit,
 } from '@/lib/rate-limit'
+import { createApiReferenceId } from '@/lib/api-response'
 
 const STEP = 'Worker portal send-code'
 const OTP_TIMEOUT_MS = 10_000
-const GENERIC_OTP_START_MESSAGE = 'If this number belongs to an eligible provider account, a login code has been sent.'
+const BOT_CHECK_MIN_AGE_MS = 500
+const BOT_CHECK_MAX_AGE_MS = 10 * 60 * 1000
+
+type ProviderOtpBotCheck = {
+  startedAt?: number
+  website?: string
+}
+
+type ProviderLookupLogResult =
+  | 'not_called'
+  | 'not_found'
+  | 'pending_application'
+  | 'db_error'
+  | 'found_active'
+  | 'found_not_approved'
+  | 'found_inactive'
+  | 'unknown'
+
+function otpStartPayload(params: {
+  traceId: string
+  phone: string
+}) {
+  return NextResponse.json({
+    ok: true,
+    nextStep: 'verify_otp',
+    phone: params.phone,
+    traceId: params.traceId,
+  })
+}
 
 function reasonFor(code: DiagnosticCode) {
   switch (code) {
@@ -38,6 +67,8 @@ function reasonFor(code: DiagnosticCode) {
       return 'This provider account is not active.'
     case 'RATE_LIMITED':
       return 'Too many login code requests were made. Please wait a few minutes and try again.'
+    case 'BOT_CHECK_FAILED':
+      return "We couldn't verify this sign-in request. Please refresh the page and try again."
     case 'OTP_PROVIDER_TIMEOUT':
       return 'OTP delivery timed out.'
     case 'AUTH_CONFIG_MISSING':
@@ -72,6 +103,8 @@ function titleFor(code: DiagnosticCode) {
       return 'Provider account inactive.'
     case 'RATE_LIMITED':
       return 'Please wait before trying again.'
+    case 'BOT_CHECK_FAILED':
+      return 'Refresh and try again.'
     default:
       return "We couldn't send your login code."
   }
@@ -95,6 +128,8 @@ function statusFor(code: DiagnosticCode) {
       return 423
     case 'RATE_LIMITED':
       return 429
+    case 'BOT_CHECK_FAILED':
+      return 403
     case 'AUTH_CONFIG_MISSING':
     case 'OTP_PROVIDER_UNAVAILABLE':
       return 503
@@ -111,35 +146,38 @@ function statusFor(code: DiagnosticCode) {
   }
 }
 
-function sanitizeLogErrorMessage(error: unknown, phones: Array<string | undefined>) {
-  let message = safeErrorMessage(error)
-  for (const phone of phones) {
-    if (phone) message = message.replaceAll(phone, maskPhone(phone) ?? '[phone]')
+function categoryFor(status: number) {
+  if (status === 401) return 'authentication'
+  if (status === 403) return 'authorization'
+  if (status === 422 || status === 400) return 'validation'
+  if (status === 423) return 'account_state'
+  if (status === 429) return 'rate_limit'
+  if (status >= 500) return 'dependency'
+  return 'request'
+}
+
+function suggestedActionsFor(code: DiagnosticCode) {
+  switch (code) {
+    case 'BOT_CHECK_FAILED':
+      return ['Refresh the page and try again.']
+    case 'RATE_LIMITED':
+      return ['Wait a few minutes before trying again.']
+    case 'INVALID_MOBILE_NUMBER':
+    case 'INVALID_PHONE_NUMBER':
+    case 'UNSUPPORTED_COUNTRY_CODE':
+      return ['Check the mobile number and try again.']
+    case 'WORKER_NOT_FOUND':
+    case 'PROVIDER_NOT_FOUND':
+      return ['Use customer sign-in, apply as a provider, or contact support.']
+    case 'WORKER_NOT_APPROVED':
+    case 'PROVIDER_NOT_APPROVED':
+      return ['Wait for approval or contact support.']
+    case 'WORKER_INACTIVE':
+    case 'PROVIDER_INACTIVE':
+      return ['Contact support.']
+    default:
+      return ['Try again shortly or contact support with the reference ID.']
   }
-  return message.replace(/\+?\d[\d\s().-]{7,}\d/g, (match) => maskPhone(match) ?? '[phone]')
-}
-
-function sanitizeLogStack(error: unknown, phones: Array<string | undefined>) {
-  if (!(error instanceof Error) || !error.stack) return undefined
-  let stack = error.stack
-  for (const phone of phones) {
-    if (phone) stack = stack.replaceAll(phone, maskPhone(phone) ?? '[phone]')
-  }
-  return stack.replace(/\+?\d[\d\s().-]{7,}\d/g, (match) => maskPhone(match) ?? '[phone]')
-}
-
-function phoneLogFields(phone: string | null | undefined) {
-  return { phoneMasked: maskPhone(phone) }
-}
-
-function genericOtpStartResponse(params: { phone: string; traceId: string }) {
-  return NextResponse.json({
-    ok: true,
-    nextStep: 'verify_otp',
-    phone: params.phone,
-    traceId: params.traceId,
-    message: GENERIC_OTP_START_MESSAGE,
-  })
 }
 
 function errorPayload(params: {
@@ -151,6 +189,7 @@ function errorPayload(params: {
   status: number
 }) {
   const message = reasonFor(params.code)
+  const referenceId = createApiReferenceId()
   return NextResponse.json(
     {
       ok: false,
@@ -158,9 +197,17 @@ function errorPayload(params: {
       message,
       traceId: params.traceId,
       error: {
+        category: categoryFor(params.status),
         title: titleFor(params.code),
         reason: message,
+        message,
         code: params.code,
+        reference_id: referenceId,
+        referenceId,
+        retryable: params.status === 408 || params.status === 429 || params.status >= 500,
+        suggested_actions: suggestedActionsFor(params.code),
+        context: { surface: 'provider_send_code', step: STEP },
+        timestamp: timestamp(),
         step: STEP,
         traceId: params.traceId,
         time: timestamp(),
@@ -171,6 +218,86 @@ function errorPayload(params: {
     },
     { status: params.status },
   )
+}
+
+function providerOtpBotCheckRequired() {
+  if (process.env.PROVIDER_OTP_BOT_CHECK_REQUIRED === 'true') return true
+  if (process.env.PROVIDER_OTP_BOT_CHECK_REQUIRED === 'false') return false
+  return process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production'
+}
+
+function validateProviderOtpBotCheck(botCheck: ProviderOtpBotCheck | undefined) {
+  if (!providerOtpBotCheckRequired()) return { ok: true as const }
+  if (!botCheck || typeof botCheck !== 'object') return { ok: false as const, reason: 'missing' }
+  if (typeof botCheck.website === 'string' && botCheck.website.trim() !== '') {
+    return { ok: false as const, reason: 'honeypot' }
+  }
+  if (typeof botCheck.startedAt !== 'number' || !Number.isFinite(botCheck.startedAt)) {
+    return { ok: false as const, reason: 'invalid_started_at' }
+  }
+  const ageMs = Date.now() - botCheck.startedAt
+  if (ageMs < BOT_CHECK_MIN_AGE_MS || ageMs > BOT_CHECK_MAX_AGE_MS) {
+    return { ok: false as const, reason: 'stale_or_future' }
+  }
+  return { ok: true as const }
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function phoneRedactionVariants(phone: string | null | undefined) {
+  if (!phone) return []
+  const variants = new Set<string>()
+  const trimmed = phone.trim()
+  if (trimmed) variants.add(trimmed)
+
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return [...variants]
+
+  variants.add(digits)
+  variants.add(`+${digits}`)
+  if (digits.startsWith('27') && digits.length > 2) {
+    variants.add(`0${digits.slice(2)}`)
+  }
+  if (digits.startsWith('0') && digits.length > 1) {
+    variants.add(`27${digits.slice(1)}`)
+    variants.add(`+27${digits.slice(1)}`)
+  }
+
+  return [...variants]
+}
+
+function redactPhoneValues(message: string, phones: Array<string | null | undefined>) {
+  // Error strings can come from DB/Auth providers, so redact every known phone
+  // representation before writing them to logs.
+  let redacted = message
+  const replacements = new Map<string, string>()
+
+  for (const phone of phones) {
+    const masked = maskPhone(phone) ?? '[phone]'
+    for (const variant of phoneRedactionVariants(phone)) {
+      replacements.set(variant, masked)
+    }
+  }
+
+  const orderedReplacements = [...replacements.entries()]
+    .sort(([left], [right]) => right.length - left.length)
+
+  for (const [variant, masked] of orderedReplacements) {
+    redacted = redacted.replace(new RegExp(escapeRegExp(variant), 'g'), masked)
+  }
+
+  return redacted
+}
+
+function safeLogErrorMessage(error: unknown, phones: Array<string | null | undefined>) {
+  return redactPhoneValues(safeErrorMessage(error), phones)
+}
+
+function safeLogErrorStack(error: unknown, phones: Array<string | null | undefined>) {
+  if (!(error instanceof Error) || !error.stack) return undefined
+  return redactPhoneValues(error.stack, phones)
 }
 
 /**
@@ -250,6 +377,19 @@ function classifyOtpError(error: unknown): DiagnosticCode {
   return 'OTP_DELIVERY_FAILED'
 }
 
+function isSupabaseAuthUserMissingError(error: unknown) {
+  const lower = safeErrorMessage(error).toLowerCase()
+  return (
+    lower.includes('user not found') ||
+    lower.includes('user_not_found') ||
+    lower.includes('no user found') ||
+    lower.includes('user does not exist') ||
+    lower.includes('signup is disabled') ||
+    lower.includes('signups are disabled') ||
+    lower.includes('signups not allowed')
+  )
+}
+
 async function withOtpTimeout<T>(operation: Promise<T>): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
 
@@ -276,24 +416,48 @@ export async function POST(request: NextRequest) {
   let providerId: string | undefined
   let otpProviderCalled = false
   let otpSetupStarted = false
+  let providerLookupResult: ProviderLookupLogResult = 'not_called'
 
   try {
     const body = await request.json().catch(() => ({})) as {
       phone?: string
       countryCode?: string
       traceId?: string
+      botCheck?: ProviderOtpBotCheck
     }
     traceId = body.traceId || traceId
     rawPhone = body.phone ?? ''
     countryCode = body.countryCode ?? countryCode
+
+    const botCheck = validateProviderOtpBotCheck(body.botCheck)
+    if (!botCheck.ok) {
+      console.warn('[provider-send-code] bot check failed', {
+        trace_id: traceId,
+        reason: botCheck.reason,
+        phoneMasked: maskPhone(rawPhone),
+        countryCode,
+        providerLookupResult,
+        otpProviderCalled,
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      return errorPayload({
+        code: 'BOT_CHECK_FAILED',
+        traceId,
+        phone: rawPhone,
+        countryCode,
+        status: statusFor('BOT_CHECK_FAILED'),
+      })
+    }
+
     const normalized = normalizeOtpPhoneNumber(rawPhone, countryCode)
 
     if (!normalized.ok) {
       console.warn('[provider-send-code] invalid phone', {
         trace_id: traceId,
-        ...phoneLogFields(rawPhone),
+        phoneMasked: maskPhone(rawPhone),
         countryCode: normalized.countryCode,
-        providerLookupResult: 'not_called',
+        providerLookupResult,
         otpProviderCalled,
         safeErrorMessage: normalized.reason,
         timestamp: timestamp(),
@@ -323,7 +487,7 @@ export async function POST(request: NextRequest) {
     if (!publicRateCheck.ok) {
       console.warn('[provider-send-code] public pre-lookup rate limited', {
         trace_id: traceId,
-        ...phoneLogFields(phone),
+        phoneMasked: maskPhone(phone),
         countryCode,
         rateLimitReason: publicRateCheck.code,
         timestamp: timestamp(),
@@ -347,7 +511,7 @@ export async function POST(request: NextRequest) {
     if (!lookupRateCheck.ok) {
       console.warn('[provider-send-code] lookup rate limited', {
         trace_id: traceId,
-        ...phoneLogFields(phone),
+        phoneMasked: maskPhone(phone),
         countryCode,
         rateLimitReason: lookupRateCheck.code,
         timestamp: timestamp(),
@@ -368,11 +532,12 @@ export async function POST(request: NextRequest) {
       const lookupResult = await findProviderForOtpLogin(phone, rawPhone, db)
       if (!lookupResult.found) {
         const hasPendingApp = Boolean(lookupResult.pendingApplicationId)
+        providerLookupResult = hasPendingApp ? 'pending_application' : 'not_found'
         console.warn('[provider-send-code] provider not found', {
           trace_id: traceId,
-          ...phoneLogFields(phone),
+          phoneMasked: maskPhone(phone),
           countryCode,
-          providerLookupResult: hasPendingApp ? 'pending_application' : 'not_found',
+          providerLookupResult,
           pendingApplicationId: lookupResult.pendingApplicationId ?? null,
           pendingApplicationStatus: lookupResult.pendingApplicationStatus ?? null,
           providerId: null,
@@ -380,21 +545,21 @@ export async function POST(request: NextRequest) {
           timestamp: timestamp(),
           step: STEP,
         })
-        if (hasPendingApp) {
-          return errorPayload({ code: 'WORKER_NOT_APPROVED', traceId, phone, countryCode, status: statusFor('WORKER_NOT_APPROVED') })
-        }
-        return genericOtpStartResponse({ phone, traceId })
+        provider = null
+      } else {
+        provider = lookupResult.provider
+        providerLookupResult = 'found_active'
       }
-      provider = lookupResult.provider
     } catch (dbError) {
+      providerLookupResult = 'db_error'
       console.error('[provider-send-code] provider lookup failed', {
         trace_id: traceId,
-        ...phoneLogFields(phone),
+        phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'db_error',
+        providerLookupResult,
         otpProviderCalled,
-        safeErrorMessage: sanitizeLogErrorMessage(dbError, [rawPhone, phone]),
-        stack: sanitizeLogStack(dbError, [rawPhone, phone]),
+        safeErrorMessage: safeLogErrorMessage(dbError, [rawPhone, phone]),
+        stack: safeLogErrorStack(dbError, [rawPhone, phone]),
         timestamp: timestamp(),
         step: STEP,
       })
@@ -408,45 +573,28 @@ export async function POST(request: NextRequest) {
     }
     providerId = provider?.id
 
-    const access = checkWorkerPortalAccess(provider)
+    if (provider) {
+      const access = checkWorkerPortalAccess(provider)
 
-    if (!access.ok && access.code === 'WORKER_NOT_APPROVED') {
-      console.warn('[provider-send-code] provider not approved', {
-        trace_id: traceId,
-        ...phoneLogFields(phone),
-        countryCode,
-        providerLookupResult: 'found_not_approved',
-        providerId,
-        active: provider.active,
-        providerStatus: provider.status,
-        otpProviderCalled,
-        timestamp: timestamp(),
-        step: STEP,
-      })
-      return errorPayload({
-        code: 'WORKER_NOT_APPROVED',
-        traceId,
-        phone,
-        countryCode,
-        providerId,
-        status: 403,
-      })
-    }
-
-    if (!access.ok) {
-      console.warn('[provider-send-code] provider inactive', {
-        trace_id: traceId,
-        ...phoneLogFields(phone),
-        countryCode,
-        providerLookupResult: 'found_inactive',
-        providerId,
-        active: provider.active,
-        providerStatus: provider.status,
-        otpProviderCalled,
-        timestamp: timestamp(),
-        step: STEP,
-      })
-      return genericOtpStartResponse({ phone, traceId })
+      if (!access.ok) {
+        providerLookupResult = access.code === 'WORKER_NOT_APPROVED' ? 'found_not_approved' : 'found_inactive'
+        console.warn('[provider-send-code] provider account state deferred until OTP verification', {
+          trace_id: traceId,
+          phoneMasked: maskPhone(phone),
+          countryCode,
+          providerLookupResult,
+          providerId,
+          active: provider.active,
+          providerStatus: provider.status,
+          otpProviderCalled,
+          deferredCode: access.code,
+          timestamp: timestamp(),
+          step: STEP,
+        })
+        return otpStartPayload({ traceId, phone })
+      }
+    } else {
+      return otpStartPayload({ traceId, phone })
     }
 
     const rateCheck = await checkOtpSendLimit({
@@ -457,7 +605,7 @@ export async function POST(request: NextRequest) {
     if (!rateCheck.ok) {
       console.warn('[provider-send-code] rate limited', {
         trace_id: traceId,
-        ...phoneLogFields(phone),
+        phoneMasked: maskPhone(phone),
         countryCode,
         providerId,
         rateLimitReason: rateCheck.code,
@@ -482,9 +630,9 @@ export async function POST(request: NextRequest) {
       console.error('[provider-send-code] Supabase client env missing', {
         trace_id: traceId,
         providerId,
-        ...phoneLogFields(phone),
+        phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'found_active',
+        providerLookupResult,
         otpProviderCalled,
         otpProviderStatus: 'not_configured',
         timestamp: timestamp(),
@@ -502,15 +650,20 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
     otpProviderCalled = true
-    const response = await withOtpTimeout(supabase.auth.signInWithOtp({ phone }))
+    const response = await withOtpTimeout(
+      supabase.auth.signInWithOtp({
+        phone,
+        options: { shouldCreateUser: false },
+      }),
+    )
 
     if (!response || typeof response !== 'object' || !('error' in response)) {
       console.error('[provider-send-code] OTP provider bad response', {
         trace_id: traceId,
         providerId,
-        ...phoneLogFields(phone),
+        phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'found_active',
+        providerLookupResult,
         otpProviderCalled,
         otpProviderStatus: 'bad_response',
         safeErrorMessage: 'OTP provider did not return an object with an error field.',
@@ -530,18 +683,34 @@ export async function POST(request: NextRequest) {
     const { error } = response as { error?: unknown }
 
     if (error) {
+      if (isSupabaseAuthUserMissingError(error)) {
+        console.warn('[provider-send-code] OTP auth user missing; returned uniform start response', {
+          trace_id: traceId,
+          providerId,
+          phoneMasked: maskPhone(phone),
+          countryCode,
+          providerLookupResult,
+          otpProviderCalled,
+          otpProviderStatus: 'auth_user_missing',
+          safeErrorMessage: safeLogErrorMessage(error, [rawPhone, phone]),
+          timestamp: timestamp(),
+          step: STEP,
+        })
+        return otpStartPayload({ traceId, phone })
+      }
+
       const code = classifyOtpError(error)
       console.error('[provider-send-code] OTP send failed', {
         trace_id: traceId,
         providerId,
-        ...phoneLogFields(phone),
+        phoneMasked: maskPhone(phone),
         countryCode,
-        providerLookupResult: 'found_active',
+        providerLookupResult,
         otpProviderCalled,
         otpProviderStatus: code,
         code,
-        safeErrorMessage: sanitizeLogErrorMessage(error, [rawPhone, phone]),
-        stack: sanitizeLogStack(error, [rawPhone, phone]),
+        safeErrorMessage: safeLogErrorMessage(error, [rawPhone, phone]),
+        stack: safeLogErrorStack(error, [rawPhone, phone]),
         timestamp: timestamp(),
         step: STEP,
       })
@@ -558,16 +727,32 @@ export async function POST(request: NextRequest) {
     console.info('[provider-send-code] OTP sent', {
       trace_id: traceId,
       providerId,
-      ...phoneLogFields(phone),
+      phoneMasked: maskPhone(phone),
       countryCode,
-      providerLookupResult: 'found_active',
+      providerLookupResult,
       otpProviderCalled,
       otpProviderStatus: 'sent',
       timestamp: timestamp(),
       step: STEP,
     })
-    return NextResponse.json({ ok: true, nextStep: 'verify_otp', phone, traceId })
+    return otpStartPayload({ traceId, phone })
   } catch (error) {
+    if (otpProviderCalled && isSupabaseAuthUserMissingError(error)) {
+      console.warn('[provider-send-code] OTP auth user missing after provider exception; returned uniform start response', {
+        trace_id: traceId,
+        providerId,
+        phoneMasked: maskPhone(phone || rawPhone),
+        countryCode,
+        providerLookupResult,
+        otpProviderCalled,
+        otpProviderStatus: 'auth_user_missing',
+        safeErrorMessage: safeLogErrorMessage(error, [rawPhone, phone]),
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      return otpStartPayload({ traceId, phone: phone || rawPhone })
+    }
+
     const code = otpProviderCalled
       ? classifyOtpError(error)
       : otpSetupStarted
@@ -576,13 +761,13 @@ export async function POST(request: NextRequest) {
     console.error('[provider-send-code] unexpected error', {
       trace_id: traceId,
       providerId,
-      ...phoneLogFields(phone || rawPhone),
+      phoneMasked: maskPhone(phone || rawPhone),
       countryCode,
-      providerLookupResult: providerId ? 'found' : 'unknown',
+      providerLookupResult: providerLookupResult === 'not_called' ? 'unknown' : providerLookupResult,
       otpProviderCalled,
       otpProviderStatus: otpProviderCalled ? code : 'not_called_or_unknown',
-      safeErrorMessage: sanitizeLogErrorMessage(error, [rawPhone, phone]),
-      stack: sanitizeLogStack(error, [rawPhone, phone]),
+      safeErrorMessage: safeLogErrorMessage(error, [rawPhone, phone]),
+      stack: safeLogErrorStack(error, [rawPhone, phone]),
       timestamp: timestamp(),
       step: STEP,
     })

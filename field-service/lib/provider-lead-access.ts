@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'crypto'
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto'
 import { db } from './db'
 import { checkPhaseOneLeadDetailEligibility } from './provider-lead-eligibility'
 import { previewNotes } from './provider-lead-detail'
@@ -62,6 +62,21 @@ type ProviderLeadTokenPayload = {
   exp: number
 }
 
+type CreateProviderLeadAccessTokenParams = {
+  leadId: string
+  providerId: string
+  jobRequestId?: string
+  providerPhone?: string | null
+  scopes?: ProviderLeadAccessScope[]
+  expiresAt?: Date
+  allowLegacyMissingScopes?: boolean
+}
+
+type ProviderLeadAccessTokenIssue = {
+  token: string
+  payload: ProviderLeadTokenPayload
+}
+
 type ProviderLeadAccessInvalidReason =
   | 'SIGNING_SECRET_MISSING'
   | 'LEAD_NOT_FOUND'
@@ -100,6 +115,15 @@ function signPayload(encodedPayload: string) {
   return createHmac('sha256', getSigningSecret()).update(encodedPayload).digest('base64url')
 }
 
+function resolveIssuedScopes(params: Pick<CreateProviderLeadAccessTokenParams, 'scopes' | 'allowLegacyMissingScopes'>) {
+  if (params.allowLegacyMissingScopes) return params.scopes
+  if (!params.scopes) return [...LEAD_RESPONSE_SCOPES]
+  if (params.scopes.length === 0) {
+    throw new Error('Provider lead access tokens require at least one explicit scope')
+  }
+  return [...params.scopes]
+}
+
 function parsePayload(encodedPayload: string): ProviderLeadTokenPayload | null {
   try {
     const raw = Buffer.from(encodedPayload, 'base64url').toString('utf8')
@@ -125,14 +149,7 @@ function parsePayload(encodedPayload: string): ProviderLeadTokenPayload | null {
   }
 }
 
-export function createProviderLeadAccessToken(params: {
-  leadId: string
-  providerId: string
-  jobRequestId?: string
-  providerPhone?: string | null
-  scopes?: ProviderLeadAccessScope[]
-  expiresAt?: Date
-}) {
+function createProviderLeadAccessTokenIssue(params: CreateProviderLeadAccessTokenParams): ProviderLeadAccessTokenIssue {
   const exp = Math.floor((params.expiresAt?.getTime() ?? Date.now() + TOKEN_TTL_MS) / 1000)
   const payload: ProviderLeadTokenPayload = {
     v: 1,
@@ -140,16 +157,17 @@ export function createProviderLeadAccessToken(params: {
     providerId: params.providerId,
     jobRequestId: params.jobRequestId,
     providerPhoneHash: params.providerPhone ? hashProviderPhone(params.providerPhone) : undefined,
-    scopes: params.scopes,
-    jti: createHash('sha256')
-      .update(`${params.leadId}:${params.providerId}:${params.jobRequestId ?? ''}:${exp}:${Math.random()}`)
-      .digest('base64url')
-      .slice(0, 16),
+    scopes: resolveIssuedScopes(params),
+    jti: randomUUID(),
     exp,
   }
   const encodedPayload = base64url(JSON.stringify(payload))
   const signature = signPayload(encodedPayload)
-  return `${encodedPayload}.${signature}`
+  return { token: `${encodedPayload}.${signature}`, payload }
+}
+
+export function createProviderLeadAccessToken(params: CreateProviderLeadAccessTokenParams) {
+  return createProviderLeadAccessTokenIssue(params).token
 }
 
 export function verifyProviderLeadAccessToken(token: string) {
@@ -192,6 +210,38 @@ export function hashProviderPhone(phone: string) {
   return createHash('sha256').update(phone.replace(/\D/g, '')).digest('base64url').slice(0, 24)
 }
 
+async function persistProviderLeadAccessTokenIssue(issue: ProviderLeadAccessTokenIssue) {
+  if (!issue.payload.jti) {
+    throw new Error('Provider lead access token issue is missing jti')
+  }
+
+  try {
+    await db.providerLeadAccessToken.create({
+      data: {
+        jti: issue.payload.jti,
+        tokenHash: hashSignedToken(issue.token),
+        leadId: issue.payload.leadId,
+        providerId: issue.payload.providerId,
+        jobRequestId: issue.payload.jobRequestId,
+        scopes: issue.payload.scopes ?? [],
+        expiresAt: new Date(issue.payload.exp * 1000),
+      },
+    })
+  } catch (error) {
+    // Registry rows support audit/revocation rollout. During this phase, signed
+    // links remain fail-open so transient registry writes do not drop live lead offers.
+    console.error('[provider-lead-access] token registry persistence failed', {
+      jti: issue.payload.jti,
+      leadId: issue.payload.leadId,
+      providerId: issue.payload.providerId,
+      jobRequestId: issue.payload.jobRequestId,
+      scopes: issue.payload.scopes ?? [],
+      expiresAt: new Date(issue.payload.exp * 1000).toISOString(),
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 export function providerLeadTokenAllowsScope(
   payload: ProviderLeadTokenPayload | null,
   scope: ProviderLeadAccessScope,
@@ -212,11 +262,12 @@ export async function getProviderLeadAccessUrl(params: {
   const appUrl = getProviderLeadPublicAppUrl()
   if (!appUrl) return null
 
-  const token = createProviderLeadAccessToken({
+  const issue = createProviderLeadAccessTokenIssue({
     ...params,
     scopes: params.scopes ?? LEAD_RESPONSE_SCOPES,
   })
-  return `${appUrl}/leads/access/${encodeURIComponent(token)}`
+  await persistProviderLeadAccessTokenIssue(issue)
+  return `${appUrl}/leads/access/${encodeURIComponent(issue.token)}`
 }
 
 export async function getProviderSignedJobHandoverUrl(params: {
@@ -229,7 +280,7 @@ export async function getProviderSignedJobHandoverUrl(params: {
   const appUrl = getProviderLeadPublicAppUrl()
   if (!appUrl) return null
 
-  const token = createProviderLeadAccessToken({
+  const issue = createProviderLeadAccessTokenIssue({
     leadId: params.leadId,
     providerId: params.providerId,
     jobRequestId: params.jobRequestId,
@@ -237,7 +288,8 @@ export async function getProviderSignedJobHandoverUrl(params: {
     scopes: ACCEPTED_JOB_SCOPES,
     expiresAt: params.expiresAt,
   })
-  return `${appUrl}/provider/jobs/${encodeURIComponent(params.jobRequestId)}/handover?token=${encodeURIComponent(token)}`
+  await persistProviderLeadAccessTokenIssue(issue)
+  return `${appUrl}/provider/jobs/${encodeURIComponent(params.jobRequestId)}/handover?token=${encodeURIComponent(issue.token)}`
 }
 
 export async function getProviderLeadAccessUrlByLeadId(leadId: string) {

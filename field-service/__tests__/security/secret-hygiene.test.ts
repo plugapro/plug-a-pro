@@ -28,11 +28,17 @@ describe('secret hygiene guard', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'pap-secret-hygiene-'))
     const secretValue = 'sb_secret_' + 'a'.repeat(40)
     writeFileSync(path.join(root, '.env.production.local'), `SUPABASE_SERVICE_ROLE_KEY=${secretValue}\n`)
+    writeFileSync(path.join(root, '.env.development'), 'SAFE_PLACEHOLDER=value\n')
+    writeFileSync(path.join(root, '.env.staging'), 'SAFE_PLACEHOLDER=value\n')
+    writeFileSync(path.join(root, '.env.test'), 'SAFE_PLACEHOLDER=value\n')
 
     const result = runSecretGuard(root)
 
     expect(result.status).toBe(1)
     expect(result.output).toContain('.env.production.local')
+    expect(result.output).toContain('.env.development')
+    expect(result.output).toContain('.env.staging')
+    expect(result.output).toContain('.env.test')
     expect(result.output).not.toContain(secretValue)
   })
 
@@ -57,6 +63,21 @@ describe('secret hygiene guard', () => {
       path.join(root, '.env.local.example'),
       'SUPABASE_SERVICE_ROLE_KEY=your-service-role-key\n',
     )
+    writeFileSync(
+      path.join(root, '.env.staging.example'),
+      'SUPABASE_SERVICE_ROLE_KEY=your-service-role-key\n',
+    )
+
+    const result = runSecretGuard(root)
+
+    expect(result.status).toBe(0)
+  })
+
+  it.runIf(process.platform === 'darwin')('allows local env files after Dropbox ignore is applied', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'pap-secret-hygiene-'))
+    const envFile = path.join(root, '.env.local')
+    writeFileSync(envFile, 'SAFE_PLACEHOLDER=value\n')
+    execFileSync('xattr', ['-w', 'com.dropbox.ignored', '1', envFile])
 
     const result = runSecretGuard(root)
 

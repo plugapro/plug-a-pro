@@ -375,7 +375,10 @@ describe('POST /api/auth/provider/send-code', () => {
       where: { phone: normalized },
       select: { id: true, userId: true, phone: true, active: true, verified: true, status: true },
     })
-    expect(signInWithOtp).toHaveBeenCalledWith({ phone: normalized })
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: normalized,
+      options: { shouldCreateUser: false },
+    })
   })
 
   it('returns INVALID_MOBILE_NUMBER before provider lookup for malformed numbers', async () => {
@@ -521,7 +524,11 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27821234568', traceId: 'lookup_limiter_down' }),
+      body: JSON.stringify({
+        phone: '+27821234568',
+        traceId: 'lookup_limiter_down',
+        botCheck: { startedAt: Date.now() - 1_000, website: '' },
+      }),
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.43' },
     })
 
@@ -587,7 +594,10 @@ describe('POST /api/auth/provider/send-code', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ ok: true, phone: '+27821234567' })
-    expect(signInWithOtp).toHaveBeenCalledWith({ phone: '+27821234567' })
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: '+27821234567',
+      options: { shouldCreateUser: false },
+    })
     if (storedPhone !== e164) {
       expect(db.provider.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { phone: '+27821234567' } }),
@@ -595,7 +605,7 @@ describe('POST /api/auth/provider/send-code', () => {
     }
   })
 
-  it('returns WORKER_NOT_APPROVED when no Provider row but a pending ProviderApplication exists', async () => {
+  it('returns generic OTP-start when no Provider row but a pending ProviderApplication exists', async () => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findUnique as any).mockResolvedValue(null)
     ;(db.provider.findFirst as any).mockResolvedValue(null)
@@ -615,12 +625,16 @@ describe('POST /api/auth/provider/send-code', () => {
     const res = await POST(req)
     const body = await res.json()
 
-    expect(res.status).toBe(403)
-    expect(body).toMatchObject({ ok: false, code: 'WORKER_NOT_APPROVED' })
-    expect(body.error.title).toBe('Application still under review.')
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({
+      ok: true,
+      nextStep: 'verify_otp',
+      phone: '+27821234567',
+    })
+    expect(body).not.toHaveProperty('error')
   })
 
-  it('returns WORKER_NOT_APPROVED for MORE_INFO_REQUIRED application', async () => {
+  it('returns generic OTP-start for MORE_INFO_REQUIRED application', async () => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findUnique as any).mockResolvedValue(null)
     ;(db.provider.findFirst as any).mockResolvedValue(null)
@@ -638,14 +652,14 @@ describe('POST /api/auth/provider/send-code', () => {
     })
 
     const res = await POST(req)
-    expect(res.status).toBe(403)
-    expect(await res.json()).toMatchObject({ ok: false, code: 'WORKER_NOT_APPROVED' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, nextStep: 'verify_otp' })
   })
 
   it.each([
     ['UNDER_REVIEW', 'prov-under-review'],
     ['APPLICATION_PENDING', 'prov-pending'],
-  ])('returns WORKER_NOT_APPROVED for provider with status %s', async (status, id) => {
+  ])('returns generic OTP-start for provider with status %s', async (status, id) => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findUnique as any).mockResolvedValue({ id, active: true, verified: false, status })
 
@@ -659,18 +673,13 @@ describe('POST /api/auth/provider/send-code', () => {
     const res = await POST(req)
     const body = await res.json()
 
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
     expect(body).toMatchObject({
-      ok: false,
-      code: 'WORKER_NOT_APPROVED',
-      message: 'Your provider application must be approved before you can sign in to the Worker Portal.',
+      ok: true,
+      nextStep: 'verify_otp',
+      phone: '+27821234567',
     })
-    expect(body.error).toMatchObject({
-      code: 'WORKER_NOT_APPROVED',
-      title: 'Application still under review.',
-      providerId: id,
-      phoneMasked: '082****567',
-    })
+    expect(body).not.toHaveProperty('error')
   })
 
   it('returns the generic OTP-start response for suspended provider accounts', async () => {

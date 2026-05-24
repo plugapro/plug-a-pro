@@ -19,4 +19,12 @@ describe('admin location API policy boundary', () => {
     expect(itemRoute).toContain('updateLocationNodeAction')
     expect(itemRoute).toContain('deleteLocationNodeAction')
   })
+
+  it('keeps hard and fallback location deletes OWNER-only', () => {
+    const actions = readRoute('app/(admin)/admin/locations/actions.ts')
+
+    expect(actions).toContain("action: 'location.delete'")
+    expect(actions).toContain("requiredRole: ['OWNER']")
+    expect(actions).not.toContain("requiredRole: ['ADMIN', 'OWNER']")
+  })
 })

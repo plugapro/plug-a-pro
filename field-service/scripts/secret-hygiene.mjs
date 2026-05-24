@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
 const root = path.resolve(process.argv[2] ?? process.cwd())
@@ -12,7 +13,8 @@ const ignoredDirs = new Set([
   'test-results',
   '.worktrees',
 ])
-const blockedEnvFilePattern = /^(?:\.env|\.env\.local|\.env.*\.local|\.env\.production.*|\.env\.vercel\.local)$/
+const allowedEnvTemplatePattern = /\.env(?:\.[a-z0-9_-]+)*\.(?:example|sample|template)$/i
+const blockedEnvFilePattern = /^\.env(?:$|\.(?!.*(?:example|sample|template)$)[a-z0-9_-]+(?:\.local)?)$/i
 const blockedVercelEnvPattern = /(?:^|[/\\])\.vercel[/\\]\.env/
 const jwtPattern = /eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g
 const supabaseSecretKeyPattern = /sb_secret_[a-zA-Z0-9_-]{32,}/
@@ -24,11 +26,25 @@ function toRelative(filePath) {
 
 function isBlockedEnvFile(filePath) {
   const relative = toRelative(filePath)
+  if (allowedEnvTemplatePattern.test(path.basename(filePath))) return false
   return blockedEnvFilePattern.test(path.basename(filePath)) || blockedVercelEnvPattern.test(relative)
 }
 
 function shouldSkipDirectory(name) {
   return ignoredDirs.has(name)
+}
+
+function isDropboxIgnored(filePath) {
+  if (process.platform !== 'darwin') return false
+
+  try {
+    return execFileSync('xattr', ['-p', 'com.dropbox.ignored', filePath], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim() === '1'
+  } catch {
+    return false
+  }
 }
 
 function collectFiles(dir, files = []) {
@@ -87,6 +103,10 @@ const findings = []
 
 for (const filePath of collectFiles(root)) {
   const relative = toRelative(filePath)
+
+  if (isDropboxIgnored(filePath)) {
+    continue
+  }
 
   if (isBlockedEnvFile(filePath)) {
     findings.push({ file: relative, reason: 'blocked env file' })

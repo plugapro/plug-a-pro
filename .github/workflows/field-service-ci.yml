@@ -49,6 +49,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Secret hygiene guard
+        run: pnpm security:secrets
+
       - name: Audit production dependencies
         run: pnpm audit --prod
 
@@ -67,6 +70,12 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Verify live public-table RLS
+        if: github.event_name == 'push'
+        run: pnpm security:rls
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   build:
     name: Build

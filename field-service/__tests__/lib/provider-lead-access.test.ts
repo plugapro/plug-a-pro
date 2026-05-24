@@ -4,6 +4,7 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     lead: { findUnique: vi.fn(), findFirst: vi.fn() },
     leadUnlock: { findUnique: vi.fn() },
+    providerLeadAccessToken: { create: vi.fn() },
   },
 }))
 
@@ -50,6 +51,8 @@ describe('provider lead access tokens', () => {
     mockDb.lead.findFirst.mockResolvedValue(null)
     mockDb.leadUnlock.findUnique.mockReset()
     mockDb.leadUnlock.findUnique.mockResolvedValue(null)
+    mockDb.providerLeadAccessToken.create.mockReset()
+    mockDb.providerLeadAccessToken.create.mockResolvedValue({ id: 'token-row-1' })
     delete process.env.AUTH_SECRET
     delete process.env.NEXTAUTH_SECRET
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
@@ -71,6 +74,13 @@ describe('provider lead access tokens', () => {
         providerId: 'provider-1',
         scopes: ['view_lead', 'accept_lead', 'decline_lead'],
       },
+    })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        scopes: ['view_lead', 'accept_lead', 'decline_lead'],
+      }),
     })
   })
 
@@ -95,6 +105,37 @@ describe('provider lead access tokens', () => {
         scopes: expect.arrayContaining(['view_job', 'confirm_arrival', 'contact_customer']),
       },
     })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-1',
+        scopes: expect.arrayContaining(['view_job', 'contact_customer']),
+      }),
+    })
+  })
+
+  it('still returns a signed lead URL when token registry persistence fails', async () => {
+    mockDb.providerLeadAccessToken.create.mockRejectedValueOnce(new Error('registry unavailable'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const { getProviderLeadAccessUrl, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+      const url = await getProviderLeadAccessUrl({ leadId: 'lead-1', providerId: 'provider-1' })
+
+      expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//)
+      const token = decodeURIComponent(url!.split('/leads/access/')[1])
+      expect(verifyProviderLeadAccessToken(token)).toMatchObject({ status: 'active' })
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[provider-lead-access] token registry persistence failed',
+        expect.objectContaining({
+          leadId: 'lead-1',
+          providerId: 'provider-1',
+        }),
+      )
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 
   it('builds a scoped accepted-job handover URL from jobRequest + provider', async () => {

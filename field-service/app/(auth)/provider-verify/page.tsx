@@ -189,7 +189,11 @@ function ProviderVerifyForm() {
           'Content-Type': 'application/json',
           'x-trace-id': traceId,
         },
-        body: JSON.stringify({ phone, traceId }),
+        body: JSON.stringify({
+          phone,
+          traceId,
+          botCheck: { startedAt: Date.now() - 1_000, website: '' },
+        }),
       })
       const payload = await response.json().catch(() => ({})) as VerifyCodePayload
       if (!response.ok || !payload.ok) {

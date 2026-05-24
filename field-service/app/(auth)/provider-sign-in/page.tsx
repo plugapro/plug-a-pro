@@ -124,6 +124,7 @@ export default function ProviderSignInPage() {
   const [countryCode] = useState<OtpCountryCode>('ZA')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<SendCodeError | null>(null)
+  const [formStartedAt] = useState(() => Date.now())
   const requestedNext = searchParams.get('next') ?? searchParams.get('callbackUrl')
   const next = getSafeProviderNextPath(requestedNext, '/provider/jobs')
   const customerNext = getSafeCustomerNextPath(requestedNext, '/bookings')
@@ -168,7 +169,12 @@ export default function ProviderSignInPage() {
       const response = await fetch('/api/auth/provider/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-trace-id': traceId },
-        body: JSON.stringify({ phone, countryCode, traceId }),
+        body: JSON.stringify({
+          phone,
+          countryCode,
+          traceId,
+          botCheck: { startedAt: formStartedAt, website: '' },
+        }),
       })
       const payload = await response.json().catch(() => ({})) as ApiSendCodePayload
 
