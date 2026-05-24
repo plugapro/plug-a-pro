@@ -42,9 +42,14 @@ const PUBLIC_PATHS = [
   '/book',                 // booking steps 1-3 are public; submit endpoint enforces auth
   '/requests/access',      // signed single-ticket links are scoped to one request
   '/leads/access',         // HMAC-signed provider lead links — token validates identity; no session needed
+  '/track',                // public tracking page for customer/provider handoff links
+  '/for-providers',        // public provider marketing/onboarding page
+  '/credit-terms',         // public provider credit terms page
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET
   '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
+  '/api/track',            // public tracking lookup; handler owns token/reference validation
+  '/api/locations/search', // public location search used before customer/provider auth
   '/api/payat/webhook',    // Pay@ provider-credit webhook callback from Pay@ infrastructure
   '/api/payat-go/callback',// Pay@Go RTP callback from Pay@ infrastructure
   '/api/review-first/provider-profile/shortlist', // signed profile-token shortlist action
@@ -54,7 +59,6 @@ const PUBLIC_PATHS = [
   '/api/auth/hooks',                // Supabase Auth webhook hooks (send-sms, etc.) — signature-verified, no session cookie
   '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
-  '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
   '/api/debug',                     // key-protected diagnostic endpoints — handlers enforce their own key check
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard

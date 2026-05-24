@@ -55,7 +55,7 @@ function fallbackCodeForStatus(status: number) {
   switch (status) {
     case 400: return 'UNSUPPORTED_COUNTRY_CODE'
     case 401: return 'OTP_PROVIDER_AUTH_FAILED'
-    case 403: return 'WORKER_NOT_APPROVED'
+    case 403: return 'BOT_CHECK_FAILED'
     case 423: return 'WORKER_INACTIVE'
     case 404: return 'WORKER_NOT_FOUND'
     case 422: return 'INVALID_MOBILE_NUMBER'
@@ -81,6 +81,8 @@ function fallbackReasonForCode(code: string) {
       return 'Only South African mobile numbers are enabled for worker portal OTP sign-in.'
     case 'RATE_LIMITED':
       return 'Too many login code requests were made. Please wait a few minutes and try again.'
+    case 'BOT_CHECK_FAILED':
+      return "We couldn't verify this sign-in request. Please refresh the page and try again."
     default:
       return "We couldn't send the code right now. Please try again shortly."
   }
@@ -94,6 +96,7 @@ function titleForCode(code: string) {
     case 'WORKER_NOT_APPROVED': case 'PROVIDER_NOT_APPROVED': return 'Application still under review.'
     case 'WORKER_INACTIVE': case 'PROVIDER_INACTIVE': return 'Provider account inactive.'
     case 'RATE_LIMITED': return 'Please wait before trying again.'
+    case 'BOT_CHECK_FAILED': return 'Refresh and try again.'
     default: return "We couldn't send your login code."
   }
 }
@@ -103,6 +106,7 @@ function toneForCode(code: string): SendCodeError['tone'] {
     case 'INVALID_MOBILE_NUMBER': case 'INVALID_PHONE_NUMBER': case 'UNSUPPORTED_COUNTRY_CODE':
     case 'WORKER_NOT_FOUND': case 'PROVIDER_NOT_FOUND': case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED': case 'WORKER_INACTIVE': case 'PROVIDER_INACTIVE': case 'RATE_LIMITED':
+    case 'BOT_CHECK_FAILED':
       return 'info'
     default: return 'error'
   }
@@ -124,6 +128,7 @@ export default function ProviderSignInPage() {
   const [countryCode] = useState<OtpCountryCode>('ZA')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<SendCodeError | null>(null)
+  const [formStartedAt] = useState(() => Date.now())
   const requestedNext = searchParams.get('next') ?? searchParams.get('callbackUrl')
   const next = getSafeProviderNextPath(requestedNext, '/provider/jobs')
   const customerNext = getSafeCustomerNextPath(requestedNext, '/bookings')
@@ -168,7 +173,12 @@ export default function ProviderSignInPage() {
       const response = await fetch('/api/auth/provider/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-trace-id': traceId },
-        body: JSON.stringify({ phone, countryCode, traceId }),
+        body: JSON.stringify({
+          phone,
+          countryCode,
+          traceId,
+          botCheck: { startedAt: formStartedAt, website: '' },
+        }),
       })
       const payload = await response.json().catch(() => ({})) as ApiSendCodePayload
 

@@ -290,6 +290,7 @@ model Provider {
   providerCategories        ProviderCategory[]
   providerRates             ProviderRate[]
   leadResponses             ProviderLeadResponse[]
+  leadAccessTokens          ProviderLeadAccessToken[]
   shortlistItems            ProviderShortlistItem[]
   liveStatus                ProviderLiveStatus?
   candidatePool             CandidatePool[]
@@ -458,6 +459,7 @@ model JobRequest {
   matchAttempts MatchAttempt[]
   assignmentHolds AssignmentHold[]
   dispatchDecisions DispatchDecision[]
+  providerLeadAccessTokens ProviderLeadAccessToken[]
 
   @@index([status, createdAt])
   @@index([isTestRequest, status])
@@ -501,6 +503,7 @@ model Lead {
   assignmentHold AssignmentHold? @relation(fields: [assignmentHoldId], references: [id], onDelete: SetNull)
   unlock       LeadUnlock?
   providerResponses ProviderLeadResponse[]
+  accessTokens ProviderLeadAccessToken[]
   shortlistItems ProviderShortlistItem[]
   selectedForJobRequest JobRequest? @relation("SelectedLeadInvite")
   selectedForJob Job? @relation("JobSelectedLeadInvite")
@@ -810,6 +813,31 @@ model ProviderLeadResponse {
   @@index([leadInviteId, createdAt])
   @@index([providerId, createdAt])
   @@map("provider_lead_responses")
+}
+
+model ProviderLeadAccessToken {
+  id           String    @id @default(cuid())
+  jti          String    @unique
+  tokenHash    String    @unique
+  leadId       String
+  providerId   String
+  jobRequestId String?
+  scopes       String[]  @default([])
+  expiresAt    DateTime
+  issuedAt     DateTime  @default(now())
+  revokedAt    DateTime?
+  consumedAt   DateTime?
+
+  lead       Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  provider   Provider    @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  jobRequest JobRequest? @relation(fields: [jobRequestId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, issuedAt])
+  @@index([providerId, issuedAt])
+  @@index([jobRequestId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("provider_lead_access_tokens")
 }
 
 enum ProviderShortlistStatus {

@@ -15,7 +15,8 @@ import {
 import { ProviderWalletError } from '@/lib/provider-wallet'
 
 const FLAG = 'admin.crud.payments'
-const RECONCILE_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
+const RECONCILE_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
+const PAYMENT_NOTE_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
 const RECONCILE_EXCLUDED_ROLES = ['TRUST'] as const
 
 const ReconcileTopUpSchema = z.object({
@@ -213,7 +214,7 @@ export async function addTopUpIntentNoteAction(input: AddNoteInput) {
     entity: AUDIT_ENTITY.PAYMENT_INTENT,
     entityId: input.paymentIntentId,
     action: 'provider_credit_payment_intent.add_note',
-    requiredRole: [...RECONCILE_ROLES],
+    requiredRole: [...PAYMENT_NOTE_ROLES],
     excludedRole: [...RECONCILE_EXCLUDED_ROLES],
     requiredFlag: FLAG,
     schema: AddNoteSchema,

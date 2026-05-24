@@ -293,7 +293,7 @@ describe('provider credit payment admin actions', () => {
     expect(creditPaymentIntentInTransaction).not.toHaveBeenCalled()
   })
 
-  it('keeps TRUST excluded from all manual EFT reconciliation actions', async () => {
+  it('keeps wallet-value actions finance-only while allowing OPS to add notes', async () => {
     await arrangeAdmin()
     const { crudAction } = await import('../../lib/crud-action')
     const { notifyProviderPaymentCredited } = await import('../../lib/provider-wallet-notifications')
@@ -325,14 +325,25 @@ describe('provider credit payment admin actions', () => {
       adminNote: 'Follow-up note',
     })
 
-    for (const call of (crudAction as any).mock.calls) {
-      expect(call[0]).toMatchObject({
+    const [
+      reconcileCall,
+      creditCall,
+      failCall,
+      addNoteCall,
+    ] = (crudAction as any).mock.calls.map((call: any[]) => call[0])
+
+    for (const call of [reconcileCall, creditCall, failCall, addNoteCall]) {
+      expect(call).toMatchObject({
         requiredFlag: 'admin.crud.payments',
       })
-      expect(call[0].requiredRole).toEqual(['OPS', 'FINANCE', 'ADMIN', 'OWNER'])
-      expect(call[0].excludedRole).toEqual(['TRUST'])
-      expect(call[0].requiredRole).not.toContain('TRUST')
+      expect(call.excludedRole).toEqual(['TRUST'])
+      expect(call.requiredRole).not.toContain('TRUST')
     }
+
+    expect(reconcileCall.requiredRole).toEqual(['FINANCE', 'ADMIN', 'OWNER'])
+    expect(creditCall.requiredRole).toEqual(['FINANCE', 'ADMIN', 'OWNER'])
+    expect(failCall.requiredRole).toEqual(['FINANCE', 'ADMIN', 'OWNER'])
+    expect(addNoteCall.requiredRole).toEqual(['OPS', 'FINANCE', 'ADMIN', 'OWNER'])
   })
 
   it('maps suspended-wallet credit failures to action conflicts', async () => {

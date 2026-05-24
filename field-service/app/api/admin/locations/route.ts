@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
-import { listLocationNodes, createLocationNode } from '@/lib/location-nodes'
+import { createLocationNodeAction } from '@/app/(admin)/admin/locations/actions'
+import { listLocationNodes } from '@/lib/location-nodes'
 import { verifyRequestOrigin } from '@/lib/csrf'
-import { apiError } from '@/lib/api-response'
+import { apiError, createApiReferenceId } from '@/lib/api-response'
+import { adminLocationMutationError } from '@/lib/admin-location-api-response'
 
 export async function GET(req: NextRequest) {
   try {
     await requireAdmin()
   } catch {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+    return apiError('UNAUTHENTICATED', 'Authentication required.', 401)
   }
 
   const { searchParams } = new URL(req.url)
@@ -20,20 +22,21 @@ export async function GET(req: NextRequest) {
   try {
     const nodes = await listLocationNodes({ nodeType, active })
     return NextResponse.json(nodes)
-  } catch {
-    return NextResponse.json({ error: 'Failed to list locations' }, { status: 500 })
+  } catch (error) {
+    const referenceId = createApiReferenceId()
+    console.error('[admin-location-api] list failed', {
+      reference_id: referenceId,
+      safeErrorMessage: error instanceof Error ? error.message : String(error),
+    })
+    return apiError('LOCATION_LIST_FAILED', 'Failed to list locations.', 500, referenceId, {
+      context: { surface: 'admin_locations', action: 'list' },
+    })
   }
 }
 
 export async function POST(req: NextRequest) {
   if (!verifyRequestOrigin(req, [])) {
     return apiError('FORBIDDEN', 'Origin not allowed', 403)
-  }
-
-  try {
-    await requireAdmin()
-  } catch {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
   let body: {
@@ -48,21 +51,27 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    return apiError('INVALID_REQUEST_BODY', 'Invalid request body.', 400, undefined, {
+      context: { surface: 'admin_locations', action: 'create' },
+    })
   }
 
   const { nodeType, slug, label, parentId, lat, lng, radiusKm } = body
   if (!nodeType || !slug || !label) {
-    return NextResponse.json({ error: 'nodeType, slug, and label are required' }, { status: 400 })
+    return apiError('VALIDATION', 'nodeType, slug, and label are required.', 400, undefined, {
+      context: { surface: 'admin_locations', action: 'create' },
+    })
   }
 
   const validTypes = ['PROVINCE', 'CITY', 'REGION', 'SUBURB']
   if (!validTypes.includes(nodeType)) {
-    return NextResponse.json({ error: 'Invalid nodeType' }, { status: 400 })
+    return apiError('VALIDATION', 'Invalid nodeType.', 400, undefined, {
+      context: { surface: 'admin_locations', action: 'create' },
+    })
   }
 
   try {
-    const node = await createLocationNode({
+    const result = await createLocationNodeAction({
       nodeType: nodeType as 'PROVINCE' | 'CITY' | 'REGION' | 'SUBURB',
       slug,
       label,
@@ -71,17 +80,8 @@ export async function POST(req: NextRequest) {
       lng: lng ?? undefined,
       radiusKm: radiusKm ?? undefined,
     })
-    return NextResponse.json(node, { status: 201 })
+    return NextResponse.json(result.data, { status: 201 })
   } catch (err) {
-    const isValidationError =
-      err instanceof Error &&
-      (err.message.includes('require') ||
-        err.message.includes('parent') ||
-        err.message.includes('Invalid') ||
-        err.message.includes('parentId'))
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to create location' },
-      { status: isValidationError ? 400 : 500 },
-    )
+    return adminLocationMutationError(err, 'create')
   }
 }
