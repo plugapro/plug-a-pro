@@ -23,6 +23,7 @@
     "seed:locations": "tsx scripts/seed-locations.ts",
     "seed:categories": "tsx scripts/seed-categories.ts",
     "audit:locations": "tsx scripts/audit-locations.ts",
+    "db:verify-public-table-rls": "tsx scripts/verify-public-table-rls.ts",
     "export:locations": "tsx scripts/export-locations.ts",
     "db:probe-migrations": "tsx scripts/probe-migration-state.ts",
     "db:backfill": "tsx scripts/backfill-location-nodes.ts",
@@ -38,6 +39,7 @@
     "db:studio": "prisma studio",
     "db:wallet-schema-drift": "tsx scripts/wallet-schema-drift-repair.ts",
     "whatsapp:templates:audit": "node scripts/register-whatsapp-templates.mjs --audit-coverage",
+    "secrets:assert-clean": "tsx scripts/assert-no-synced-secrets.ts",
     "db:reset": "prisma migrate reset"
   },
   "dependencies": {

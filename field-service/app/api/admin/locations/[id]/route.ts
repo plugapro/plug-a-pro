@@ -1,24 +1,16 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { requireAdmin } from '@/lib/auth'
 import {
-  updateLocationNode,
-  deactivateLocationNode,
-  deleteLocationNode,
-  LocationNodeInUseError,
-} from '@/lib/location-nodes'
+  updateLocationNodeAction,
+  deleteLocationNodeAction,
+} from '@/app/(admin)/admin/locations/actions'
 import { verifyRequestOrigin } from '@/lib/csrf'
 import { apiError } from '@/lib/api-response'
+import { adminLocationMutationError } from '@/lib/admin-location-api-response'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!verifyRequestOrigin(req, [])) {
     return apiError('FORBIDDEN', 'Origin not allowed', 403)
-  }
-
-  try {
-    await requireAdmin()
-  } catch {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
   const { id } = await params
@@ -27,17 +19,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    return apiError('INVALID_REQUEST_BODY', 'Invalid request body.', 400, undefined, {
+      context: { surface: 'admin_locations', action: 'update' },
+    })
   }
 
   try {
-    await updateLocationNode(id, body)
+    await updateLocationNodeAction({ id, ...body })
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to update location' },
-      { status: 400 },
-    )
+    return adminLocationMutationError(err, 'update')
   }
 }
 
@@ -46,38 +37,18 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return apiError('FORBIDDEN', 'Origin not allowed', 403)
   }
 
-  try {
-    await requireAdmin()
-  } catch {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-  }
-
   const { id } = await params
-
-  // Check for ?force=true to skip soft-delete attempt
   const force = new URL(req.url).searchParams.get('force') === 'true'
 
   try {
-    await deleteLocationNode(id)
+    const result = await deleteLocationNodeAction(id, { force })
     return NextResponse.json({
       ok: true,
-      deleted: process.env.ALLOW_LOCATION_HARD_DELETE === 'true' ? 'hard' : 'soft',
+      deleted: result.data.softDeleted || process.env.ALLOW_LOCATION_HARD_DELETE !== 'true'
+        ? 'soft'
+        : 'hard',
     })
   } catch (err) {
-    if (err instanceof LocationNodeInUseError && !force) {
-      try {
-        await deactivateLocationNode(id)
-        return NextResponse.json({ ok: true, deleted: 'soft' })
-      } catch (deactivateErr) {
-        return NextResponse.json(
-          { error: deactivateErr instanceof Error ? deactivateErr.message : 'Failed' },
-          { status: 400 },
-        )
-      }
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to delete location' },
-      { status: err instanceof LocationNodeInUseError ? 400 : 500 },
-    )
+    return adminLocationMutationError(err, 'delete')
   }
 }

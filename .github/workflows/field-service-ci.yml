@@ -52,6 +52,9 @@ jobs:
       - name: Audit production dependencies
         run: pnpm audit --prod
 
+      - name: Secret hygiene guard
+        run: pnpm secrets:assert-clean
+
       # Several tests transitively import @/lib/db (Prisma client). Without
       # `prisma generate` the .prisma/client/default file is missing on a
       # fresh install and every Prisma-touching test errors out. The build
@@ -132,6 +135,12 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: field-service
 
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+        working-directory: field-service
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
       - name: Verify live smoke secrets
         run: |
           test -n "$DATABASE_URL"
@@ -149,6 +158,13 @@ jobs:
           WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           PEACH_ACCESS_TOKEN: ${{ secrets.PEACH_ACCESS_TOKEN }}
           PEACH_ENTITY_ID: ${{ secrets.PEACH_ENTITY_ID }}
+
+      - name: Verify public table RLS
+        run: pnpm db:verify-public-table-rls
+        working-directory: field-service
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       - name: Build with live smoke metadata
         run: pnpm build:ci

@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
+import type { LocationNode } from '@prisma/client'
 import {
   createLocationNode,
   updateLocationNode,
@@ -40,7 +41,7 @@ type UpdateInput = z.infer<typeof UpdateLocationNodeSchema>
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 export async function createLocationNodeAction(input: CreateInput) {
-  const result = await crudAction<CreateInput, { id: string }>({
+  const result = await crudAction<CreateInput, LocationNode>({
     entity: 'LocationNode',
     action: 'location.create',
     requiredRole: [...ROLES],
@@ -48,7 +49,7 @@ export async function createLocationNodeAction(input: CreateInput) {
     schema: CreateLocationNodeSchema,
     input,
     run: async (data) => {
-      const node = await createLocationNode({
+      return createLocationNode({
         nodeType: data.nodeType,
         slug: data.slug,
         label: data.label,
@@ -57,7 +58,6 @@ export async function createLocationNodeAction(input: CreateInput) {
         lng: data.lng ?? undefined,
         radiusKm: data.radiusKm ?? undefined,
       })
-      return { id: node.id }
     },
   })
   revalidatePath('/admin/locations')
@@ -104,7 +104,7 @@ export async function deactivateLocationNodeAction(id: string) {
   return result
 }
 
-export async function deleteLocationNodeAction(id: string) {
+export async function deleteLocationNodeAction(id: string, options: { force?: boolean } = {}) {
   try {
     const result = await crudAction<{ id: string }, { id: string; softDeleted?: boolean }>({
       entity: 'LocationNode',
@@ -122,7 +122,7 @@ export async function deleteLocationNodeAction(id: string) {
     return result
   } catch (err) {
     if (err instanceof CrudActionError) throw err
-    if (err instanceof LocationNodeInUseError) {
+    if (err instanceof LocationNodeInUseError && !options.force) {
       // Node is referenced - soft-delete instead
       const result = await crudAction<{ id: string }, { id: string; softDeleted: boolean }>({
         entity: 'LocationNode',

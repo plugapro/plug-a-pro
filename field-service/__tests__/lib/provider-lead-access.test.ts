@@ -4,6 +4,7 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     lead: { findUnique: vi.fn(), findFirst: vi.fn() },
     leadUnlock: { findUnique: vi.fn() },
+    providerLeadAccessToken: { create: vi.fn() },
   },
 }))
 
@@ -50,6 +51,8 @@ describe('provider lead access tokens', () => {
     mockDb.lead.findFirst.mockResolvedValue(null)
     mockDb.leadUnlock.findUnique.mockReset()
     mockDb.leadUnlock.findUnique.mockResolvedValue(null)
+    mockDb.providerLeadAccessToken.create.mockReset()
+    mockDb.providerLeadAccessToken.create.mockResolvedValue({ id: 'provider-token-1' })
     delete process.env.AUTH_SECRET
     delete process.env.NEXTAUTH_SECRET
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
@@ -57,13 +60,14 @@ describe('provider lead access tokens', () => {
   })
 
   it('builds a signed lead access URL on the configured provider lead host', async () => {
-    const { getProviderLeadAccessUrl, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const { getProviderLeadAccessUrl, hashSignedToken, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
 
     const url = await getProviderLeadAccessUrl({ leadId: 'lead-1', providerId: 'provider-1' })
 
     expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//)
     const token = decodeURIComponent(url!.split('/leads/access/')[1])
     const verified = verifyProviderLeadAccessToken(token)
+    expect(verified.payload?.jti).toEqual(expect.any(String))
     expect(verified).toMatchObject({
       status: 'active',
       payload: {
@@ -72,9 +76,93 @@ describe('provider lead access tokens', () => {
         scopes: ['view_lead', 'accept_lead', 'decline_lead'],
       },
     })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledWith({
+      data: {
+        jti: verified.payload!.jti,
+        tokenHash: hashSignedToken(token),
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: undefined,
+        scopes: ['view_lead', 'accept_lead', 'decline_lead'],
+        expiresAt: new Date(verified.payload!.exp * 1000),
+      },
+    })
+  })
+
+  it('still builds a signed lead access URL when token registry persistence fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const registryError = new Error('simulated registry write outage')
+    mockDb.providerLeadAccessToken.create.mockRejectedValueOnce(registryError)
+    const { getProviderLeadAccessUrl, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+    const url = await getProviderLeadAccessUrl({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//)
+    const token = decodeURIComponent(url!.split('/leads/access/')[1])
+    expect(verifyProviderLeadAccessToken(token)).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jti: expect.any(String),
+      },
+    })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledTimes(1)
+    expect(consoleError).toHaveBeenCalledWith(
+      '[provider-lead-access] token registry persistence failed',
+      expect.objectContaining({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jti: expect.any(String),
+        error: 'simulated registry write outage',
+      }),
+    )
+    const serializedErrorLog = JSON.stringify(consoleError.mock.calls)
+    expect(serializedErrorLog).not.toContain(token)
+    expect(serializedErrorLog).not.toContain('tokenHash')
+    consoleError.mockRestore()
   })
 
   it('builds a scoped accepted-job handover URL', async () => {
+    const { getProviderSignedJobHandoverUrl, hashSignedToken, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+    const url = await getProviderSignedJobHandoverUrl({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'job-request-1',
+      providerPhone: '+27820000000',
+    })
+
+    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/provider\/jobs\/job-request-1\/handover\?token=/)
+    const token = decodeURIComponent(url!.split('token=')[1])
+    const verified = verifyProviderLeadAccessToken(token)
+    expect(verified.payload?.jti).toEqual(expect.any(String))
+    expect(verified).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-1',
+        scopes: expect.arrayContaining(['view_job', 'confirm_arrival', 'contact_customer']),
+      },
+    })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledWith({
+      data: {
+        jti: verified.payload!.jti,
+        tokenHash: hashSignedToken(token),
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-1',
+        scopes: expect.arrayContaining(['view_job', 'confirm_arrival', 'contact_customer']),
+        expiresAt: new Date(verified.payload!.exp * 1000),
+      },
+    })
+  })
+
+  it('still builds a scoped accepted-job handover URL when token registry persistence fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const registryError = new Error('simulated registry write outage')
+    mockDb.providerLeadAccessToken.create.mockRejectedValueOnce(registryError)
     const { getProviderSignedJobHandoverUrl, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
 
     const url = await getProviderSignedJobHandoverUrl({
@@ -92,9 +180,60 @@ describe('provider lead access tokens', () => {
         leadId: 'lead-1',
         providerId: 'provider-1',
         jobRequestId: 'job-request-1',
-        scopes: expect.arrayContaining(['view_job', 'confirm_arrival', 'contact_customer']),
+        jti: expect.any(String),
       },
     })
+    expect(mockDb.providerLeadAccessToken.create).toHaveBeenCalledTimes(1)
+    expect(consoleError).toHaveBeenCalledWith(
+      '[provider-lead-access] token registry persistence failed',
+      expect.objectContaining({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-1',
+        jti: expect.any(String),
+        error: 'simulated registry write outage',
+      }),
+    )
+    const serializedErrorLog = JSON.stringify(consoleError.mock.calls)
+    expect(serializedErrorLog).not.toContain(token)
+    expect(serializedErrorLog).not.toContain('tokenHash')
+    consoleError.mockRestore()
+  })
+
+  it('defaults direct token creation to lead-response scopes and a jti when scopes are omitted', async () => {
+    const { createProviderLeadAccessToken, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(verifyProviderLeadAccessToken(token)).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        scopes: ['view_lead', 'accept_lead', 'decline_lead'],
+        jti: expect.any(String),
+      },
+    })
+  })
+
+  it('requires an explicit legacy option to mint a missing-scope token', async () => {
+    const { createProviderLeadAccessToken, providerLeadTokenAllowsScope, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+    expect(() => createProviderLeadAccessToken({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      scopes: [],
+    })).toThrow(/scope/i)
+
+    const token = createProviderLeadAccessToken({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      allowLegacyMissingScopes: true,
+    })
+    const { payload } = verifyProviderLeadAccessToken(token)
+
+    expect(payload?.scopes).toBeUndefined()
+    expect(providerLeadTokenAllowsScope(payload, 'complete_job')).toBe(true)
   })
 
   it('builds a scoped accepted-job handover URL from jobRequest + provider', async () => {

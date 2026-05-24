@@ -74,14 +74,27 @@ describe('apiError / apiSuccess', () => {
     const res = apiError('NOT_FOUND', 'Resource not found', 404)
     expect(res.status).toBe(404)
     const body = await res.json()
-    expect(body).toEqual({ error: { code: 'NOT_FOUND', message: 'Resource not found' } })
+    expect(body.error).toMatchObject({
+      code: 'NOT_FOUND',
+      category: 'not_found',
+      message: 'Resource not found',
+      retryable: false,
+      suggested_actions: ['Check the requested resource and try again.'],
+      context: {},
+    })
+    expect(body.error.reference_id).toMatch(/^PAP-\d{8}-[A-Z0-9]{6}$/)
+    expect(body.error.referenceId).toBe(body.error.reference_id)
+    expect(Date.parse(body.error.timestamp)).not.toBeNaN()
   })
 
-  it('apiError includes referenceId when provided', async () => {
+  it('apiError includes the provided reference ID', async () => {
     const { apiError } = await import('../../lib/api-response')
     const res = apiError('SERVER_ERROR', 'Unexpected error', 500, 'PAP-20260518-ABCDEF')
     const body = await res.json()
+    expect(body.error.reference_id).toBe('PAP-20260518-ABCDEF')
     expect(body.error.referenceId).toBe('PAP-20260518-ABCDEF')
+    expect(body.error.category).toBe('internal')
+    expect(body.error.retryable).toBe(true)
   })
 
   it('apiSuccess wraps data and defaults to 200', async () => {
