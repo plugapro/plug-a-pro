@@ -14,6 +14,9 @@ export type WhatsAppSavedAddress = {
   label: string | null
   street: string
   addressLine1: string | null
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
   suburb: string
   region: string | null
   city: string
@@ -68,18 +71,137 @@ function displayFirstName(name: string | null | undefined) {
   return name?.trim().split(/\s+/)[0] || undefined
 }
 
-function deduplicateAddresses<T extends { street: string; suburb: string; city: string; province: string }>(
+function normalizedAddressPart(value: string | null | undefined) {
+  return (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function savedAddressBaseKey(address: {
+  street: string
+  addressLine1?: string | null
+  suburb: string
+  city: string
+  province?: string | null
+}) {
+  // WhatsApp renders saved addresses from the structured street line when it
+  // exists. Use that same base identity so two historical Address snapshots do
+  // not become visually identical rows because of hidden metadata differences
+  // or because one legacy street contains unit detail and the other does not.
+  const streetLine = address.addressLine1 || address.street
+  return [
+    normalizedAddressPart(streetLine),
+    normalizedAddressPart(address.suburb),
+    normalizedAddressPart(address.city),
+    normalizedAddressPart(address.province),
+  ].join('|')
+}
+
+function savedAddressDetailKey(address: {
+  street: string
+  addressLine1?: string | null
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
+  suburb: string
+  city: string
+  province?: string | null
+  postalCode?: string | null
+  locationNodeId?: string | null
+}) {
+  return [
+    savedAddressBaseKey(address),
+    normalizedAddressPart(address.unitNumber),
+    normalizedAddressPart(address.complexName),
+    normalizedAddressPart(address.addressLine2),
+    normalizedAddressPart(address.addressLine1 && address.street !== address.addressLine1 ? address.street : null),
+  ].join('|')
+}
+
+function hasStreetLevelDetail(address: {
+  street: string
+  addressLine1?: string | null
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
+}) {
+  return Boolean(
+    normalizedAddressPart(address.unitNumber) ||
+    normalizedAddressPart(address.complexName) ||
+    normalizedAddressPart(address.addressLine2) ||
+    (normalizedAddressPart(address.addressLine1) &&
+      normalizedAddressPart(address.street) !== normalizedAddressPart(address.addressLine1)),
+  )
+}
+
+function addressPreferenceScore(address: { isDefault?: boolean | null; locationNodeId?: string | null; postalCode?: string | null }) {
+  return [
+    address.isDefault ? 4 : 0,
+    address.locationNodeId ? 2 : 0,
+    address.postalCode ? 1 : 0,
+  ].reduce((sum, value) => sum + value, 0)
+}
+
+function preferAddress<T extends { isDefault?: boolean | null; locationNodeId?: string | null; postalCode?: string | null }>(
+  current: T,
+  candidate: T,
+) {
+  return addressPreferenceScore(candidate) > addressPreferenceScore(current) ? candidate : current
+}
+
+export function deduplicateWhatsAppSavedAddresses<T extends {
+  street: string
+  addressLine1?: string | null
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
+  suburb: string
+  city: string
+  province?: string | null
+  postalCode?: string | null
+  locationNodeId?: string | null
+  isDefault?: boolean | null
+}>(
   addresses: T[],
 ): T[] {
-  const seen = new Set<string>()
-  return addresses.filter((addr) => {
-    const key = [addr.street, addr.suburb, addr.city, addr.province]
-      .map((v) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase())
-      .join('|')
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
+  const grouped = new Map<string, T[]>()
+  for (const address of addresses) {
+    const key = savedAddressBaseKey(address)
+    grouped.set(key, [...(grouped.get(key) ?? []), address])
+  }
+
+  const selected = new Set<T>()
+  for (const group of grouped.values()) {
+    const detailed = group.filter(hasStreetLevelDetail)
+    const candidates = detailed.length > 0 ? detailed : group
+    const byDetail = new Map<string, T>()
+
+    for (const address of candidates) {
+      const key = detailed.length > 0 ? savedAddressDetailKey(address) : savedAddressBaseKey(address)
+      const existing = byDetail.get(key)
+      byDetail.set(key, existing ? preferAddress(existing, address) : address)
+    }
+
+    for (const address of byDetail.values()) selected.add(address)
+  }
+
+  return addresses.filter((address) => selected.has(address))
+}
+
+function deduplicateAddresses<T extends {
+  street: string
+  addressLine1?: string | null
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
+  suburb: string
+  city: string
+  province?: string | null
+  postalCode?: string | null
+  locationNodeId?: string | null
+  isDefault?: boolean | null
+}>(
+  addresses: T[],
+): T[] {
+  return deduplicateWhatsAppSavedAddresses(addresses)
 }
 
 const ACTIVE_PROVIDER_JOB_STATUSES = [
@@ -113,6 +235,9 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
             label: true,
             street: true,
             addressLine1: true,
+            addressLine2: true,
+            complexName: true,
+            unitNumber: true,
             suburb: true,
             region: true,
             city: true,
@@ -248,6 +373,9 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
       provider.technicianAvailability?.availabilityMode === 'PAUSED' ||
       provider.technicianAvailability?.availabilityState === 'PAUSED' ||
       provider.technicianAvailability?.availabilityState === 'OFFLINE')
+  const savedAddresses: WhatsAppSavedAddress[] = deduplicateAddresses(
+    (customer?.addresses ?? []) as WhatsAppSavedAddress[],
+  )
 
   console.info('[whatsapp-identity] resolved sender', {
     traceId,
@@ -261,7 +389,8 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
     applicationId: application?.id ?? null,
     providerStatus: provider?.status ?? null,
     applicationStatus: application?.status ?? null,
-    savedAddressCount: customer?.addresses?.length ?? 0,
+    rawSavedAddressCount: customer?.addresses?.length ?? 0,
+    savedAddressCount: savedAddresses.length,
     blockedRoleConflict: conflict,
   })
 
@@ -280,7 +409,7 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
     customerFirstName: displayFirstName(customer?.name),
     providerDisplayName: provider?.name ?? application?.name ?? undefined,
     providerFirstName: displayFirstName(provider?.name ?? application?.name),
-    savedAddresses: deduplicateAddresses(customer?.addresses ?? []),
+    savedAddresses,
     providerStatus: provider?.status,
     applicationStatus: application?.status,
     activeJobCount,

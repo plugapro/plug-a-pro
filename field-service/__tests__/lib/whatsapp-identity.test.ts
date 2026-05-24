@@ -214,4 +214,90 @@ describe('WhatsApp identity resolution', () => {
     expect(identity.role).toBe('provider_pending')
     expect(identity.providerId).toBe('prv_under_review')
   })
+
+  it('deduplicates saved addresses that render identically in the WhatsApp picker', async () => {
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'cust_sarah',
+      phone: '+27773923802',
+      name: 'Sarah Sullivan',
+      addresses: [
+        {
+          id: 'addr_with_unit',
+          street: 'Unit 21, 21 Jump Street',
+          addressLine1: '21 Jump Street',
+          suburb: 'Constantia Kloof',
+          region: 'JHB West / Roodepoort',
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: '1709',
+          locationNodeId: 'sub_constantia_kloof',
+          isDefault: false,
+        },
+        {
+          id: 'addr_plain',
+          street: '21 Jump Street',
+          addressLine1: '21 Jump Street',
+          suburb: 'Constantia Kloof',
+          region: 'JHB West / Roodepoort',
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: '1709',
+          locationNodeId: 'sub_constantia_kloof',
+          isDefault: false,
+        },
+      ],
+    } as any)
+
+    const identity = await resolveWhatsAppIdentity('+27773923802')
+
+    expect(identity.savedAddresses).toHaveLength(1)
+    expect(identity.savedAddresses[0]).toMatchObject({
+      id: 'addr_with_unit',
+      addressLine1: '21 Jump Street',
+      suburb: 'Constantia Kloof',
+    })
+  })
+
+  it('deduplicates visible address matches even when hidden location metadata differs', async () => {
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'cust_sarah',
+      phone: '+27773923802',
+      name: 'Sarah Sullivan',
+      addresses: [
+        {
+          id: 'addr_structured',
+          street: '21 Jump Street',
+          addressLine1: '21 Jump Street',
+          suburb: 'Constantia Kloof',
+          region: 'JHB West / Roodepoort',
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: '1709',
+          locationNodeId: 'sub_constantia_kloof',
+          isDefault: false,
+        },
+        {
+          id: 'addr_legacy',
+          street: '21 Jump Street',
+          addressLine1: '21 Jump Street',
+          suburb: 'Constantia Kloof',
+          region: null,
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: null,
+          locationNodeId: null,
+          isDefault: false,
+        },
+      ],
+    } as any)
+
+    const identity = await resolveWhatsAppIdentity('+27773923802')
+
+    expect(identity.savedAddresses).toHaveLength(1)
+    expect(identity.savedAddresses[0]).toMatchObject({
+      id: 'addr_structured',
+      postalCode: '1709',
+      locationNodeId: 'sub_constantia_kloof',
+    })
+  })
 })

@@ -761,6 +761,110 @@ describe('WhatsApp job-request flow — structured address', () => {
       )
     })
 
+    it('does not show duplicate address rows when historical address snapshots render the same', async () => {
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_1',
+        phone: PHONE,
+        name: 'Sarah Sullivan',
+        addresses: [
+          {
+            id: 'addr_with_unit',
+            street: 'Unit 21, 21 Jump Street',
+            addressLine1: '21 Jump Street',
+            suburb: 'Constantia Kloof',
+            region: 'JHB West / Roodepoort',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postalCode: '1709',
+            locationNodeId: 'sub_constantia_kloof',
+            isDefault: false,
+          },
+          {
+            id: 'addr_plain',
+            street: '21 Jump Street',
+            addressLine1: '21 Jump Street',
+            suburb: 'Constantia Kloof',
+            region: 'JHB West / Roodepoort',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postalCode: '1709',
+            locationNodeId: 'sub_constantia_kloof',
+            isDefault: false,
+          },
+        ],
+      })
+
+      const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
+
+      expect(result.nextStep).toBe('collect_address')
+      expect(wa.sendList).not.toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Which site'),
+        expect.any(Array),
+        expect.any(Object),
+      )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Welcome back, Sarah'),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'addr_same' }),
+          expect.objectContaining({ id: 'addr_new' }),
+        ]),
+      )
+    })
+
+    it('deduplicates the first-booking saved-site picker before rendering rows', async () => {
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_1',
+        addresses: [
+          {
+            id: 'addr_with_unit',
+            label: null,
+            street: 'Unit 21, 21 Jump Street',
+            addressLine1: '21 Jump Street',
+            suburb: 'Constantia Kloof',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            locationNodeId: 'sub_constantia_kloof',
+            isDefault: false,
+          },
+          {
+            id: 'addr_plain',
+            label: null,
+            street: '21 Jump Street',
+            addressLine1: '21 Jump Street',
+            suburb: 'Constantia Kloof',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            locationNodeId: 'sub_constantia_kloof',
+            isDefault: false,
+          },
+        ],
+      })
+
+      const result = await handleJobRequestFlow(
+        makeCtx('collect_site', 'collect_site_start', undefined, {
+          customerName: 'Sarah',
+          category: 'Plumbing',
+        }),
+      )
+
+      expect(result.nextStep).toBe('collect_site')
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Which site'),
+        [
+          expect.objectContaining({
+            rows: [
+              expect.objectContaining({ id: 'site:addr_with_unit' }),
+              expect.objectContaining({ id: 'site_new' }),
+            ],
+          }),
+        ],
+        expect.any(Object),
+      )
+    })
+
     it('skips name capture for a returning multi-role customer and offers saved sites', async () => {
       ;(db.customer.findFirst as any).mockResolvedValue({
         id: 'cust_1',

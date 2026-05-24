@@ -36,6 +36,7 @@ import {
   InvalidStructuredAddressError,
 } from '../structured-address'
 import {
+  deduplicateWhatsAppSavedAddresses,
   phoneLookupVariants,
   resolveWhatsAppUserContext,
   type WhatsAppSavedAddress,
@@ -575,7 +576,12 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
             label: true,
             street: true,
             addressLine1: true,
+            addressLine2: true,
+            complexName: true,
+            unitNumber: true,
             suburb: true,
+            province: true,
+            postalCode: true,
             city: true,
             locationNodeId: true,
             isDefault: true,
@@ -584,7 +590,8 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
       },
     })
 
-    if (!customer || customer.addresses.length === 0) {
+    const savedSites = customer ? deduplicateWhatsAppSavedAddresses(customer.addresses) : []
+    if (!customer || savedSites.length === 0) {
       // No saved addresses — skip the site picker entirely and go straight to
       // manual street entry (unchanged legacy path).
       await sendText(
@@ -595,7 +602,7 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
     }
 
     const rows: ListRow[] = [
-      ...customer.addresses.map((a) => ({
+      ...savedSites.map((a) => ({
         id: `site:${a.id}`,
         title: (a.label ?? (savedAddressShortLabel(a as Parameters<typeof savedAddressShortLabel>[0]) || 'Saved address')).slice(0, 24),
         description: `${a.addressLine1 ?? a.street}, ${a.suburb}`.slice(0, 72),
