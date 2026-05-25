@@ -703,6 +703,44 @@ describe('processInboundMessage stateless notification replies', () => {
     )
     expect(mockSendJourneyRecovery).toHaveBeenCalledTimes(1)
   })
+
+  it('routes the WhatsApp identity fallback button into the provider journey identity flow', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567'],
+      customerId: undefined,
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Sipho',
+      firstName: 'Sipho',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'provider-trace',
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockResolvedValue({ nextStep: 'pj_identity_consent' })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(buttonMessage('iv_start_whatsapp'))
+
+    expect(handleProviderJourneyFlow).toHaveBeenCalledWith(expect.objectContaining({
+      flow: 'provider_journey',
+      step: 'pj_identity_start',
+      data: {},
+      phone: PHONE,
+    }))
+  })
+
   it('handles malformed WhatsApp accept payloads without falling through to the generic bot error', async () => {
     await processInboundMessage(buttonMessage('accept:'))
 

@@ -1,6 +1,7 @@
 // ─── WhatsApp conversation flow types ────────────────────────────────────────
 
 import type { InboundReply } from '../whatsapp-interactive'
+import type { IdentityBasis, IdentityDocumentKind } from '../identity-verification/types'
 
 // All possible flow names
 export type FlowName =
@@ -111,6 +112,12 @@ export type FlowStep =
   | 'pj_status_confirm'
   | 'pj_problem_report'
   | 'pj_verify_identity'
+  | 'pj_identity_start'
+  | 'pj_identity_consent'
+  | 'pj_identity_basis'
+  | 'pj_identity_identifier'
+  | 'pj_identity_document'
+  | 'pj_identity_selfie'
   | 'pj_running_late'
   | 'pj_dispute_collect'
   | 'pj_invoice'
@@ -245,6 +252,11 @@ export interface ConversationData {
   availableNow?: boolean
   activeJobId?: string
   statusUpdate?: string
+  identityVerificationId?: string
+  identityVerificationBasis?: IdentityBasis
+  identityVerificationDocumentKinds?: IdentityDocumentKind[]
+  identityVerificationDocumentMediaIds?: string[]
+  identityVerificationSelfieMediaId?: string
 
   // Shared
   customerId?: string

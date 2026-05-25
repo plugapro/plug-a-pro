@@ -13,6 +13,8 @@
 import { put } from '@vercel/blob'
 import { randomUUID } from 'crypto'
 import { db } from './db'
+import { storeIdentityDocument } from './identity-verification/storage'
+import type { IdentityDocumentKind } from './identity-verification/types'
 
 const API_VERSION = 'v21.0'
 const MAX_EVIDENCE_SIZE = 15 * 1024 * 1024 // 15 MB — WhatsApp Cloud API limit
@@ -22,6 +24,13 @@ const ALLOWED_EVIDENCE_TYPES: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'application/pdf': 'pdf',
+}
+
+type WhatsAppMediaDownload = {
+  buffer: ArrayBuffer
+  ext: string
+  meta: { url: string; mime_type: string; file_size: number }
+  traceId: string
 }
 
 export async function downloadAndStoreWhatsAppMedia(params: {
@@ -49,13 +58,108 @@ export async function downloadAndStoreWhatsAppMedia(params: {
     return { attachmentId: existing.id }
   }
 
+  const { buffer, ext, meta } = await downloadWhatsAppMedia({
+    mediaId,
+    label,
+    maxSizeBytes,
+    traceId,
+  })
+
+  // Step 3 — upload to Vercel Blob
+  // Blobs are stored as public for compatibility with the existing evidence upload
+  // architecture. The /api/attachments/[id] auth proxy is the canonical access path;
+  // addRandomSuffix ensures direct blob URLs are non-guessable.
+  const pathname = `${prefix}/${mediaId.slice(-8)}.${ext}`
+
+  const blob = await put(pathname, buffer, {
+    access: 'public',
+    addRandomSuffix: true,       // prevents overwrite collisions on concurrent uploads
+    contentType: meta.mime_type,
+  })
+  console.info('[whatsapp-media] media uploaded to app storage', {
+    traceId,
+    mediaIdSuffix: mediaId.slice(-8),
+    blobKey: blob.pathname,
+    mimeType: meta.mime_type,
+    sizeBytes: buffer.byteLength,
+    label,
+  })
+
+  // Step 4 — create Attachment record so access goes via the auth proxy.
+  // providerApplicationId / jobRequestId start null; backfilled by the caller once the parent
+  // record exists (e.g. handlePending for evidence, handleJobRequestSubmitted for customer photos).
+  const attachment = await db.attachment.create({
+    data: {
+      providerApplicationId,
+      url: blob.url,
+      blobKey: blob.pathname,
+      mimeType: meta.mime_type,
+      sizeBytes: buffer.byteLength,   // actual transferred bytes — meta.file_size can be stale
+      label,
+      uploadedBy,
+    },
+  })
+  console.info('[whatsapp-media] attachment record created', {
+    traceId,
+    mediaIdSuffix: mediaId.slice(-8),
+    attachmentId: attachment.id,
+    label,
+  })
+
+  return { attachmentId: attachment.id }
+}
+
+export async function downloadAndStoreWhatsAppIdentityDocument(params: {
+  mediaId: string
+  verificationId: string
+  documentKind: IdentityDocumentKind
+  maxSizeBytes?: number
+}): Promise<{ documentId: string }> {
+  const { mediaId, verificationId, documentKind, maxSizeBytes = MAX_EVIDENCE_SIZE } = params
+  const traceId = randomUUID().slice(0, 8)
+  const { buffer, ext, meta } = await downloadWhatsAppMedia({
+    mediaId,
+    label: `identity:${documentKind}`,
+    maxSizeBytes,
+    traceId,
+  })
+  const file = new File(
+    [buffer],
+    `${documentKind}-${mediaId.slice(-8)}.${ext}`,
+    { type: meta.mime_type },
+  )
+  const document = await storeIdentityDocument({
+    verificationId,
+    documentKind,
+    file,
+  })
+
+  console.info('[whatsapp-media] identity media stored privately', {
+    traceId,
+    mediaIdSuffix: mediaId.slice(-8),
+    documentId: document.id,
+    documentKind,
+    mimeType: meta.mime_type,
+    sizeBytes: buffer.byteLength,
+  })
+
+  return { documentId: document.id }
+}
+
+async function downloadWhatsAppMedia(params: {
+  mediaId: string
+  label: string
+  maxSizeBytes: number
+  traceId: string
+}): Promise<WhatsAppMediaDownload> {
+  const { mediaId, label, maxSizeBytes, traceId } = params
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
   if (!accessToken) throw new Error('Missing WHATSAPP_ACCESS_TOKEN')
 
   // Step 1 — resolve media URL + metadata
   const metaRes = await fetch(
     `https://graph.facebook.com/${API_VERSION}/${mediaId}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
+    { headers: { Authorization: `Bearer ${accessToken}` } },
   )
   if (!metaRes.ok) {
     const err = await metaRes.text()
@@ -107,47 +211,10 @@ export async function downloadAndStoreWhatsAppMedia(params: {
     throw new Error('WhatsApp media download returned an empty file')
   }
 
-  // Step 3 — upload to Vercel Blob
-  // Blobs are stored as public for compatibility with the existing evidence upload
-  // architecture. The /api/attachments/[id] auth proxy is the canonical access path;
-  // addRandomSuffix ensures direct blob URLs are non-guessable.
-  const ext = ALLOWED_EVIDENCE_TYPES[meta.mime_type]
-  const pathname = `${prefix}/${mediaId.slice(-8)}.${ext}`
-
-  const blob = await put(pathname, buffer, {
-    access: 'public',
-    addRandomSuffix: true,       // prevents overwrite collisions on concurrent uploads
-    contentType: meta.mime_type,
-  })
-  console.info('[whatsapp-media] media uploaded to app storage', {
+  return {
+    buffer,
+    ext: ALLOWED_EVIDENCE_TYPES[meta.mime_type],
+    meta,
     traceId,
-    mediaIdSuffix: mediaId.slice(-8),
-    blobKey: blob.pathname,
-    mimeType: meta.mime_type,
-    sizeBytes: buffer.byteLength,
-    label,
-  })
-
-  // Step 4 — create Attachment record so access goes via the auth proxy.
-  // providerApplicationId / jobRequestId start null; backfilled by the caller once the parent
-  // record exists (e.g. handlePending for evidence, handleJobRequestSubmitted for customer photos).
-  const attachment = await db.attachment.create({
-    data: {
-      providerApplicationId,
-      url: blob.url,
-      blobKey: blob.pathname,
-      mimeType: meta.mime_type,
-      sizeBytes: buffer.byteLength,   // actual transferred bytes — meta.file_size can be stale
-      label,
-      uploadedBy,
-    },
-  })
-  console.info('[whatsapp-media] attachment record created', {
-    traceId,
-    mediaIdSuffix: mediaId.slice(-8),
-    attachmentId: attachment.id,
-    label,
-  })
-
-  return { attachmentId: attachment.id }
+  }
 }

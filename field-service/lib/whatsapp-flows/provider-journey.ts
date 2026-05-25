@@ -22,6 +22,7 @@ import { ctaLabelFor } from '../whatsapp-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
 import { phoneLookupVariants } from '../whatsapp-identity'
+import { handleWhatsAppIdentityVerificationFlow } from './identity-verification'
 import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
 
@@ -304,6 +305,13 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
       return handleProblemReport(ctx)
     case 'pj_verify_identity':
       return handleVerifyIdentity(ctx)
+    case 'pj_identity_start':
+    case 'pj_identity_consent':
+    case 'pj_identity_basis':
+    case 'pj_identity_identifier':
+    case 'pj_identity_document':
+    case 'pj_identity_selfie':
+      return handleWhatsAppIdentityVerificationFlow(ctx)
     case 'pj_running_late':
       return handleRunningLateFlow(ctx.phone)
     case 'pj_dispute_collect':
@@ -1500,7 +1508,23 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  if (provider.kycStatus === 'VERIFIED') {
+  const latestVerification = await db.providerIdentityVerification.findFirst({
+    where: { providerId: provider.id },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      status: true,
+      decision: true,
+      assuranceLevel: true,
+      expiresAt: true,
+    },
+  })
+  const hasHighAssuranceVerification =
+    latestVerification?.status === 'PASSED' &&
+    latestVerification.decision === 'PASS' &&
+    latestVerification.assuranceLevel === 'HIGH' &&
+    (!latestVerification.expiresAt || latestVerification.expiresAt > new Date())
+
+  if (provider.kycStatus === 'VERIFIED' && hasHighAssuranceVerification) {
     await sendButtons(
       ctx.phone,
       '✅ *Identity already verified*\n\nYour identity has been confirmed. No further action is needed.',
@@ -1516,16 +1540,26 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
     REJECTED: 'Rejected — resubmission required',
     EXPIRED: 'Expired',
   }
-  const status = statusLabel[(provider.kycStatus as string) ?? 'NOT_STARTED'] ?? (provider.kycStatus ?? 'Not started')
+  const status = provider.kycStatus === 'VERIFIED'
+    ? 'Manual review complete — secure liveness step required for buying credits'
+    : statusLabel[(provider.kycStatus as string) ?? 'NOT_STARTED'] ?? (provider.kycStatus ?? 'Not started')
   const link = await issueIdentityVerificationLinkForWhatsApp(provider.id)
   const portalUrl = link?.verificationUrl ?? getPublicAppUrl('/provider/verification')
 
   if (portalUrl) {
     await sendCtaUrl(
       ctx.phone,
-      `🪪 *Identity Verification*\n\nStatus: *${status}*\n\nComplete or update your identity verification in the Worker Portal. Verified providers build more trust with customers.`,
+      `🪪 *Identity Verification*\n\nStatus: *${status}*\n\nComplete or update your identity verification in the Worker Portal. The secure liveness step is required before buying credits.`,
       ctaLabelFor('identity_verification'),
       portalUrl,
+    )
+    await sendButtons(
+      ctx.phone,
+      'WhatsApp fallback: If the secure page will not open because of data limits, you can submit documents here for manual review. This is lower assurance and buying credits still needs the secure PWA liveness step.',
+      [
+        { id: 'iv_start_whatsapp', title: 'Use WhatsApp' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
     )
   } else {
     await sendButtons(

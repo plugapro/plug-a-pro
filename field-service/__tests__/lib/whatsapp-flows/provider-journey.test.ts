@@ -12,6 +12,7 @@ vi.mock('@/lib/db', () => {
       auditLog: { create: vi.fn().mockResolvedValue({}) },
       lead: { findMany: vi.fn(), findUnique: vi.fn() },
       job: { findMany: vi.fn(), findUnique: vi.fn() },
+      providerIdentityVerification: { findFirst: vi.fn() },
       $transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(txClient)),
     },
   }
@@ -100,6 +101,7 @@ describe('handleProviderJourneyFlow', () => {
     ;(db.lead.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
     ;(db.lead.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
     ;((db.provider as any).findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;((db as any).providerIdentityVerification.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
     ;((db as any).providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
   })
 
@@ -956,6 +958,42 @@ describe('handleProviderJourneyFlow', () => {
       expect(wa.sendCtaUrl).toHaveBeenCalledWith(
         '+27711111111',
         expect.stringContaining('Identity Verification'),
+        expect.any(String),
+        'https://app.plugapro.co.za/provider/verify/secure-token',
+      )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('WhatsApp fallback'),
+        [
+          { id: 'iv_start_whatsapp', title: 'Use WhatsApp' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+      )
+      expect(result.nextStep).toBe('done')
+    })
+
+    it('offers PWA step-up when provider is only LOW-assurance verified from WhatsApp', async () => {
+      ;((db.provider as any).findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        kycStatus: 'VERIFIED',
+      })
+      ;((db as any).providerIdentityVerification.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'ver-low-1',
+        status: 'PASSED',
+        decision: 'PASS',
+        assuranceLevel: 'LOW',
+        expiresAt: null,
+      })
+
+      const result = await handleProviderJourneyFlow(mockCtx('pj_verify_identity'))
+
+      expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
+        providerId: 'prov_1',
+        channel: 'PWA',
+      })
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('liveness step'),
         expect.any(String),
         'https://app.plugapro.co.za/provider/verify/secure-token',
       )

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDb, mockPut, mockFetch } = vi.hoisted(() => ({
+const { mockDb, mockPut, mockFetch, mockStoreIdentityDocument } = vi.hoisted(() => ({
   mockDb: {
     attachment: {
       findFirst: vi.fn(),
@@ -9,13 +9,17 @@ const { mockDb, mockPut, mockFetch } = vi.hoisted(() => ({
   },
   mockPut: vi.fn(),
   mockFetch: vi.fn(),
+  mockStoreIdentityDocument: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('@vercel/blob', () => ({ put: mockPut }))
+vi.mock('../../lib/identity-verification/storage', () => ({
+  storeIdentityDocument: mockStoreIdentityDocument,
+}))
 vi.stubGlobal('fetch', mockFetch)
 
-import { downloadAndStoreWhatsAppMedia } from '../../lib/whatsapp-media'
+import { downloadAndStoreWhatsAppIdentityDocument, downloadAndStoreWhatsAppMedia } from '../../lib/whatsapp-media'
 
 describe('downloadAndStoreWhatsAppMedia', () => {
   beforeEach(() => {
@@ -27,6 +31,7 @@ describe('downloadAndStoreWhatsAppMedia', () => {
       url: 'https://blob.example/customer-photos/media.jpg',
       pathname: 'customer-photos/media.jpg',
     })
+    mockStoreIdentityDocument.mockResolvedValue({ id: 'identity-doc-1' })
   })
 
   it('downloads WhatsApp media and stores an app-controlled attachment record', async () => {
@@ -178,6 +183,44 @@ describe('downloadAndStoreWhatsAppMedia', () => {
       downloadAndStoreWhatsAppMedia({ mediaId: 'media-empty', label: 'customer_photo' }),
     ).rejects.toThrow('empty file')
 
+    expect(mockPut).not.toHaveBeenCalled()
+    expect(mockDb.attachment.create).not.toHaveBeenCalled()
+  })
+
+  it('stores WhatsApp identity media through private identity-document storage, not generic attachments', async () => {
+    const body = new Uint8Array([0xff, 0xd8, 0xff, 0x00]).buffer
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          url: 'https://lookaside.whatsapp.net/identity-doc',
+          mime_type: 'image/jpeg',
+          file_size: 4,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => body,
+      })
+
+    await expect(
+      downloadAndStoreWhatsAppIdentityDocument({
+        mediaId: 'media-id-doc',
+        verificationId: 'ver-1',
+        documentKind: 'ID_FRONT',
+        maxSizeBytes: 10,
+      }),
+    ).resolves.toEqual({ documentId: 'identity-doc-1' })
+
+    expect(mockStoreIdentityDocument).toHaveBeenCalledWith({
+      verificationId: 'ver-1',
+      documentKind: 'ID_FRONT',
+      file: expect.any(File),
+    })
+    const file = mockStoreIdentityDocument.mock.calls[0][0].file as File
+    expect(file.type).toBe('image/jpeg')
+    expect(file.size).toBe(4)
+    expect(file.name).toBe('ID_FRONT-a-id-doc.jpg')
     expect(mockPut).not.toHaveBeenCalled()
     expect(mockDb.attachment.create).not.toHaveBeenCalled()
   })
