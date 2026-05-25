@@ -1020,6 +1020,28 @@ describe('handleProviderJourneyFlow', () => {
       expect(result.nextStep).toBe('done')
     })
 
+    it('returns a specific retry path when the identity verification CTA cannot be sent', async () => {
+      ;((db.provider as any).findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        kycStatus: 'NOT_STARTED',
+      })
+      vi.mocked(wa.sendCtaUrl).mockRejectedValueOnce(
+        new Error('[sendCtaUrl] CTA URL button text must be 20 characters or fewer.'),
+      )
+
+      const result = await handleProviderJourneyFlow(mockCtx('pj_verify_identity'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('secure identity link'),
+        [
+          { id: 'provider_verify_identity', title: 'Try again' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+      )
+      expect(result.nextStep).toBe('done')
+    })
+
     it('offers PWA step-up when provider is only LOW-assurance verified from WhatsApp', async () => {
       ;((db.provider as any).findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'prov_1',

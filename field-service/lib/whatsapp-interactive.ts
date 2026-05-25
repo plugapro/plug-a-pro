@@ -13,6 +13,7 @@ import { assertNoRawUrlsInWhatsAppBody, type WhatsAppCtaLink } from './whatsapp-
 import { normalizePhone } from './utils'
 
 const API_VERSION = 'v21.0'
+const WHATSAPP_CTA_URL_BUTTON_TEXT_MAX = 20
 
 function getConfig() {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
@@ -86,6 +87,15 @@ function assertVisibleWhatsAppTextIsSafe(contextName: string, fields: Array<[str
   for (const [fieldName, value] of fields) {
     if (!value) continue
     assertNoRawUrlsInWhatsAppBody(value, `${contextName}:${fieldName}`)
+  }
+}
+
+function assertCtaUrlButtonTextIsValid(buttonText: string, contextName: string) {
+  if (buttonText.length > WHATSAPP_CTA_URL_BUTTON_TEXT_MAX) {
+    throw new Error(
+      `[sendCtaUrl] CTA URL button text must be ${WHATSAPP_CTA_URL_BUTTON_TEXT_MAX} characters or fewer. ` +
+      `Received ${buttonText.length} in ${contextName}.`,
+    )
   }
 }
 
@@ -256,6 +266,7 @@ export async function sendCtaUrl(
   }
   assertCohortSendAllowed(to, context)
   const contextName = context?.templateName ?? 'interactive:cta_url'
+  assertCtaUrlButtonTextIsValid(buttonText, contextName)
   assertVisibleWhatsAppTextIsSafe(contextName, [
     ['body', body],
     ['buttonText', buttonText],

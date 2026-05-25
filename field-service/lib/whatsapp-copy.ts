@@ -68,7 +68,7 @@ const CTA_LABELS: Record<WhatsAppCtaPurpose, string> = {
   provider_terms: 'View terms',
   application_status: 'Check status',
   provider_profile: 'Complete profile',
-  identity_verification: 'Complete verification',
+  identity_verification: 'Verify identity',
   job_detail: 'View job',
   booking_view: 'View booking',
   quote_view: 'View quote',

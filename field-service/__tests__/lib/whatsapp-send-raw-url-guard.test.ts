@@ -43,6 +43,19 @@ describe('central WhatsApp send raw URL guard', () => {
     expect(global.fetch).toHaveBeenCalledOnce()
   })
 
+  it('blocks CTA button labels longer than Meta allows before sending', async () => {
+    await expect(
+      sendCtaUrl(
+        '+27711111111',
+        'Identity verification is available below.',
+        'Complete verification',
+        'https://app.plugapro.co.za/provider/verify/secure-token',
+      ),
+    ).rejects.toThrow(/CTA URL button text.*20/)
+
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
   it('sends provider lead offers with the signed URL only in a CTA button payload', async () => {
     const { sendJobOffer } = await import('@/lib/whatsapp')
 

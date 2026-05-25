@@ -1539,14 +1539,44 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
     : statusLabel[(provider.kycStatus as string) ?? 'NOT_STARTED'] ?? (provider.kycStatus ?? 'Not started')
   const link = await issueIdentityVerificationLinkForWhatsApp(provider.id)
   const portalUrl = link?.verificationUrl ?? getPublicAppUrl('/provider/verification')
+  const identityCtaLabel = ctaLabelFor('identity_verification')
 
   if (portalUrl) {
-    await sendCtaUrl(
-      ctx.phone,
-      `🪪 *Identity Verification*\n\nStatus: *${status}*\n\nComplete or update your identity verification in the Worker Portal. The secure liveness step is required before buying credits.`,
-      ctaLabelFor('identity_verification'),
-      portalUrl,
-    )
+    console.info('[provider-journey] identity verification CTA prepared', {
+      providerId: provider.id,
+      verificationSessionId: link?.verificationId ?? null,
+      verificationStatus: link?.status ?? null,
+      outboundMessageType: 'interactive:cta_url',
+      buttonText: identityCtaLabel,
+      buttonTextLength: identityCtaLabel.length,
+    })
+    try {
+      await sendCtaUrl(
+        ctx.phone,
+        `🪪 *Identity Verification*\n\nStatus: *${status}*\n\nComplete or update your identity verification in the Worker Portal. The secure liveness step is required before buying credits.`,
+        identityCtaLabel,
+        portalUrl,
+      )
+    } catch (error) {
+      console.error('[provider-journey] identity verification CTA send failed', {
+        providerId: provider.id,
+        verificationSessionId: link?.verificationId ?? null,
+        verificationStatus: link?.status ?? null,
+        outboundMessageType: 'interactive:cta_url',
+        buttonText: identityCtaLabel,
+        buttonTextLength: identityCtaLabel.length,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      await sendButtons(
+        ctx.phone,
+        'We could not send the secure identity link right now. Please tap Try again to request a new link.',
+        [
+          { id: 'provider_verify_identity', title: 'Try again' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+      )
+      return { nextStep: 'done' }
+    }
     await sendButtons(
       ctx.phone,
       'WhatsApp fallback: If the secure page will not open because of data limits, you can submit documents here for manual review. This is lower assurance and buying credits still needs the secure PWA liveness step.',

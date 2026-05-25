@@ -53,7 +53,7 @@ describe('ctaLabelFor / ctaLink', () => {
     expect(ctaLabelFor('application_status')).toBe('Check status')
     expect(ctaLabelFor('worker_portal')).toBe('Open Worker Portal')
     expect(ctaLabelFor('provider_profile')).toBe('Complete profile')
-    expect(ctaLabelFor('identity_verification')).toBe('Complete verification')
+    expect(ctaLabelFor('identity_verification')).toBe('Verify identity')
     expect(ctaLabelFor('job_detail')).toBe('View job')
     expect(ctaLabelFor('booking_view')).toBe('View booking')
     expect(ctaLabelFor('quote_view')).toBe('View quote')
@@ -72,6 +72,42 @@ describe('ctaLabelFor / ctaLink', () => {
       url: 'https://app.plugapro.co.za/provider/terms/credits',
       purpose: 'credits_terms',
     })
+  })
+
+  it('keeps every CTA URL display label within Meta limits', () => {
+    const purposes = [
+      'view_lead',
+      'view_job',
+      'view_request',
+      'view_provider',
+      'accept_job',
+      'check_status',
+      'worker_portal',
+      'credits_rules',
+      'credits_history',
+      'provider_status',
+      'support',
+      'generic_details',
+      'credit_history',
+      'credits_terms',
+      'buy_credits',
+      'top_up_credits',
+      'provider_terms',
+      'application_status',
+      'provider_profile',
+      'identity_verification',
+      'job_detail',
+      'booking_view',
+      'quote_view',
+      'quote_approval',
+      'payment',
+      'invoice_view',
+      'receipt_view',
+    ] as const
+
+    for (const purpose of purposes) {
+      expect(ctaLabelFor(purpose).length, `${purpose}: ${ctaLabelFor(purpose)}`).toBeLessThanOrEqual(20)
+    }
   })
 
   it('allows a label override when needed', () => {
