@@ -1,3 +1,4 @@
+import { KycStatus } from '@prisma/client'
 import { db } from '../db'
 import { isEnabled } from '../flags'
 
@@ -14,6 +15,36 @@ export type IdentityVerificationLookupClient = {
       orderBy: { updatedAt: 'desc' }
       select: { id: true; providerId: true }
     }): Promise<{ id: string; providerId: string | null } | null>
+  }
+}
+
+type IdentityVerificationFindFirstArgs = Parameters<
+  IdentityVerificationLookupClient['providerIdentityVerification']['findFirst']
+>[0]
+
+export type HighAssuranceCreditVerificationWhere = IdentityVerificationFindFirstArgs['where']
+
+// Injectable DB client type for isProviderEligibleForCredits; needs both
+// provider and providerIdentityVerification.
+export type EligibilityLookupClient = IdentityVerificationLookupClient & {
+  provider: {
+    findUnique(args: {
+      where: { id: string }
+      select: { kycStatus: true }
+    }): Promise<{ kycStatus: KycStatus } | null>
+  }
+}
+
+export function buildHighAssuranceCreditVerificationWhere(
+  providerId: string,
+  now = new Date(),
+): HighAssuranceCreditVerificationWhere {
+  return {
+    providerId,
+    status: 'PASSED',
+    decision: 'PASS',
+    assuranceLevel: 'HIGH',
+    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
   }
 }
 
@@ -35,13 +66,7 @@ export async function assertIdentityVerifiedForCredits(
   }
 
   const verification = await client.providerIdentityVerification.findFirst({
-    where: {
-      providerId,
-      status: 'PASSED',
-      decision: 'PASS',
-      assuranceLevel: 'HIGH',
-      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-    },
+    where: buildHighAssuranceCreditVerificationWhere(providerId),
     orderBy: { updatedAt: 'desc' },
     select: { id: true, providerId: true },
   })
@@ -51,4 +76,44 @@ export async function assertIdentityVerifiedForCredits(
   }
 
   return { providerId: verification.providerId!, verificationId: verification.id }
+}
+
+// Non-throwing eligibility check (display gating).
+//
+// Use this to determine whether to SHOW the top-up UI. The throwing gate above
+// (assertIdentityVerifiedForCredits) remains the server-side enforcement backstop.
+//
+// IMPORTANT: the verification where-clause is built by
+// buildHighAssuranceCreditVerificationWhere and shared with the throwing gate.
+// Change that builder when the paid-credit verification predicate changes.
+//
+// Returns true when:
+//   - the flag 'provider.identity.verification' is off (no-op; current behaviour)
+//   - OR the provider has kycStatus === VERIFIED and a current PASSED/PASS/HIGH
+//     ProviderIdentityVerification row.
+export async function isProviderEligibleForCredits(
+  providerId: string,
+  client: EligibilityLookupClient = db,
+): Promise<boolean> {
+  if (!(await isEnabled('provider.identity.verification'))) {
+    // Flag off means everyone is eligible, preserving behaviour before gating.
+    return true
+  }
+
+  const provider = await client.provider.findUnique({
+    where: { id: providerId },
+    select: { kycStatus: true },
+  })
+
+  if (!provider || provider.kycStatus !== KycStatus.VERIFIED) {
+    return false
+  }
+
+  const verification = await client.providerIdentityVerification.findFirst({
+    where: buildHighAssuranceCreditVerificationWhere(providerId),
+    orderBy: { updatedAt: 'desc' },
+    select: { id: true, providerId: true },
+  })
+
+  return Boolean(verification)
 }

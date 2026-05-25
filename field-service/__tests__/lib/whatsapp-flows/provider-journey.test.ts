@@ -55,6 +55,10 @@ vi.mock('@/lib/identity-verification/link', () => ({
   }),
 }))
 
+vi.mock('@/lib/identity-verification/credit-gate', () => ({
+  isProviderEligibleForCredits: vi.fn().mockResolvedValue(true),
+}))
+
 vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderPaymentIntentCreated: vi.fn().mockResolvedValue(undefined),
   notifyProviderPaymentCredited: vi.fn().mockResolvedValue(undefined),
@@ -81,6 +85,7 @@ import { recordAuditLog } from '@/lib/audit'
 import * as paymentIntents from '@/lib/provider-credit-payment-intents'
 import * as walletNotifications from '@/lib/provider-wallet-notifications'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
+import { isProviderEligibleForCredits } from '@/lib/identity-verification/credit-gate'
 
 const mockCtx = (step: string, replyId?: string, replyText?: string, data: object = {}) => ({
   phone: '+27711111111',
@@ -831,6 +836,7 @@ describe('handleProviderJourneyFlow', () => {
 
     beforeEach(() => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(activeProvider)
+      ;(isProviderEligibleForCredits as ReturnType<typeof vi.fn>).mockResolvedValue(true)
     })
 
     it('shows package list when entering the step from menu', async () => {
@@ -858,6 +864,41 @@ describe('handleProviderJourneyFlow', () => {
       )
       expect(wa.sendList).toHaveBeenCalled()
       expect(result.nextStep).toBe('pj_topup_select_amount')
+    })
+
+    it('sends verification CTA instead of package list when provider is not high-assurance verified', async () => {
+      ;(isProviderEligibleForCredits as ReturnType<typeof vi.fn>).mockResolvedValue(false)
+
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'provider_topup'),
+      )
+
+      expect(isProviderEligibleForCredits).toHaveBeenCalledWith('prov_1')
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Identity check required'),
+        expect.any(String),
+        'https://app.plugapro.co.za/provider/verify/secure-token',
+      )
+      expect(wa.sendList).not.toHaveBeenCalled()
+      expect(result.nextStep).toBe('done')
+    })
+
+    it('sends verification CTA instead of creating Pay@ intent when stale amount button is tapped by unverified provider', async () => {
+      ;(isProviderEligibleForCredits as ReturnType<typeof vi.fn>).mockResolvedValue(false)
+
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'provider_topup_100'),
+      )
+
+      expect(paymentIntents.createPayatTopUpIntent).not.toHaveBeenCalled()
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Identity check required'),
+        expect.any(String),
+        'https://app.plugapro.co.za/provider/verify/secure-token',
+      )
+      expect(result.nextStep).toBe('done')
     })
 
     it('creates Pay@ intent and sends CTA with fee breakdown when R100 is selected', async () => {

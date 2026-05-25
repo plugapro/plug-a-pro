@@ -632,8 +632,8 @@ function validatePassportNumber(raw: string): string | null {
   const trimmed = raw.trim()
   // Reject if the input contains spaces — passport numbers never have spaces
   if (/\s/.test(trimmed)) return null
-  // Passport: 6–30 alphanumeric, must contain at least one letter (not all digits)
-  if (trimmed.length >= 6 && trimmed.length <= 30 && /^[a-z0-9]+$/i.test(trimmed) && /[a-z]/i.test(trimmed)) {
+  // Passport: 6-30 alphanumeric. Foreign passport numbers can be numeric-only.
+  if (trimmed.length >= 6 && trimmed.length <= 30 && /^[a-z0-9]+$/i.test(trimmed)) {
     return trimmed.toUpperCase()
   }
   return null
@@ -704,7 +704,7 @@ async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: saId, verificationMethod: 'id_number', skills: [] } }
   }
 
-  // Passport number: 6–30 alphanumeric, must not be all digits.
+  // Passport number: 6-30 alphanumeric. Foreign passport numbers can be numeric-only.
   const passport = validatePassportNumber(raw)
   if (passport) {
     await sendText(ctx.phone, buildSkillPromptText(`✅ Passport number saved.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))

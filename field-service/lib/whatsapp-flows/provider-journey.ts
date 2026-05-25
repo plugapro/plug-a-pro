@@ -18,6 +18,7 @@ import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
 import { buildProviderCreditSummaryMessage, creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
 import { issueProviderIdentityVerificationLink } from '../identity-verification/link'
+import { isProviderEligibleForCredits } from '../identity-verification/credit-gate'
 import { ctaLabelFor } from '../whatsapp-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
@@ -1805,6 +1806,29 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
   const provider = await findProviderForWhatsApp(ctx.phone)
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  // Pre-check: require identity verification before showing top-up options.
+  // Mirrors the server-side gate (assertIdentityVerifiedForCredits) so the provider
+  // is redirected to verify BEFORE being shown amounts or using a stale amount button.
+  const eligible = await isProviderEligibleForCredits(provider.id)
+  if (!eligible) {
+    const verificationLink = await issueIdentityVerificationLinkForWhatsApp(provider.id)
+    const verificationUrl = verificationLink?.verificationUrl ?? getPublicAppUrl('/provider/verification')
+    if (verificationUrl) {
+      await sendCtaUrl(
+        ctx.phone,
+        '🛡️ *Identity check required*\n\nYou must complete identity verification before purchasing top-up credits.\n\nTap the button below to verify — it takes about 2 minutes and is required once.',
+        ctaLabelFor('identity_verification'),
+        verificationUrl,
+      )
+    } else {
+      await sendText(
+        ctx.phone,
+        '🛡️ *Identity check required*\n\nYou must complete identity verification before purchasing top-up credits. Reply *verify identity* to get started.',
+      )
+    }
     return { nextStep: 'done' }
   }
 

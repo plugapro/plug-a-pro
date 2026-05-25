@@ -271,7 +271,7 @@ async function handleIdentitySelfie(ctx: FlowContext): Promise<FlowResult> {
     await sendText(ctx.phone, 'We could not find your verification session. Please start identity verification again from the provider menu.')
     return { nextStep: 'done', nextData: {} }
   }
-  if (!mediaId || !['image', 'document'].includes(ctx.reply.type)) {
+  if (!mediaId || ctx.reply.type !== 'image') {
     await sendText(ctx.phone, 'Please send a clear selfie photo of your face to submit this for manual review.')
     return {
       nextStep: 'pj_identity_selfie',

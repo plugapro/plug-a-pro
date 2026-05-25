@@ -4,11 +4,11 @@ import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } f
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import QRCode from 'react-qr-code'
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Clipboard, Clock, ExternalLink, Info, Loader2, MessageCircle, Store, XCircle, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Clipboard, Clock, ExternalLink, Info, Loader2, Lock, MessageCircle, Store, XCircle, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { AuthShell } from '@/components/shared/auth-shell'
 import { Button } from '@/components/ui/button'
-import { cancelProviderPayatTopUpIntent, createProviderPayatTopUpIntent, notifyProviderPayatTopUpInitiated, type ProviderWallet, type ProviderWalletPendingIntent, type ProviderWalletRecentActivityItem } from '@/app/(provider)/provider/credits/actions'
+import { cancelProviderPayatTopUpIntent, createProviderPayatTopUpIntent, notifyProviderPayatTopUpInitiated, requestCreditVerificationUrl, type ProviderWallet, type ProviderWalletPendingIntent, type ProviderWalletRecentActivityItem } from '@/app/(provider)/provider/credits/actions'
 
 const POLL_INTERVAL_MS = 5_000
 const POLL_REQUEST_TIMEOUT_MS = 4_000
@@ -116,6 +116,52 @@ function ActivityList({ items }: { items: ProviderWalletRecentActivityItem[] }) 
 function WaitingIndicator() { return <div className="flex items-center justify-center gap-2 rounded-[16px] border border-emerald-500/15 bg-emerald-500/5 px-3 py-2.5"><span aria-hidden className="block size-2 animate-pulse rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(15,157,88,0.12)]" /><span className="text-[12.5px] font-semibold text-emerald-700 dark:text-emerald-400">Waiting for payment</span><span className="font-mono text-[10.5px] text-emerald-700/65 dark:text-emerald-400/65">· checking every 5s</span></div> }
 function StepRow({ n, title, body }: { n: number; title: string; body: string }) { return <div className="flex gap-3 rounded-[16px] bg-card p-3 shadow-[inset_0_0_0_1px_var(--border)]"><div className="flex size-6 shrink-0 items-center justify-center rounded-full brand-gradient-soft text-xs font-extrabold text-[var(--brand-purple)]">{n}</div><div className="min-w-0 flex-1"><div className="text-[13.5px] font-semibold text-[var(--ink)]">{title}</div><div className="mt-0.5 text-[12px] leading-snug text-[var(--ink-mute)]">{body}</div></div></div> }
 
+function VerificationPromptCard() {
+  const [isPending, startTransition] = useTransition()
+
+  function handleVerify() {
+    startTransition(async () => {
+      try {
+        const { url } = await requestCreditVerificationUrl()
+        if (url) {
+          window.location.assign(url)
+        } else {
+          toast.error('Could not start verification. Please try again.')
+        }
+      } catch {
+        toast.error('Could not start verification. Please try again.')
+      }
+    })
+  }
+
+  return (
+    <div className="rounded-[20px] bg-card p-5 shadow-[inset_0_0_0_1px_var(--border)]">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-amber-500/10">
+          <Lock className="size-6 text-amber-600" aria-hidden />
+        </div>
+        <div>
+          <div className="text-[16px] font-bold text-[var(--ink)]">ID verification needed</div>
+          <p className="mt-1 text-[13px] leading-relaxed text-[var(--ink-mute)]">
+            Verify your identity to unlock credit top-ups.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="lg"
+          className="w-full"
+          disabled={isPending}
+          onClick={handleVerify}
+        >
+          {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ArrowRight className="size-4" aria-hidden />}
+          Verify my ID
+        </Button>
+        <p className="text-[11.5px] text-[var(--ink-soft)]">Takes ~2 min · Required once</p>
+      </div>
+    </div>
+  )
+}
+
 export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: ProviderWallet; creditPriceZar: number }) {
   const router = useRouter()
   const topUpRef = useRef<HTMLDivElement | null>(null)
@@ -155,7 +201,74 @@ export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: Provide
       }
     })
   }
-  return <CreditsShell eyebrow="Provider wallet" title="Credits" subtitle="Top up to accept job leads. Pay cash or card at Pay@ retailers."><BalanceHero credits={wallet.credits} starter={wallet.starter} onTopUp={() => topUpRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} onTerms={() => router.push('/credit-terms')} /><section ref={topUpRef} className="space-y-3" id="topup"><div className="flex items-center justify-between gap-3"><div className="font-mono text-[11px] font-bold uppercase tracking-[0.10em] text-[var(--ink-mute)]">Top up with Pay@</div><div className="flex items-center gap-1.5 font-mono text-[10.5px] text-[var(--ink-soft)]"><Store className="size-3.5" aria-hidden />Cash at retailers</div></div><div className="space-y-2.5">{packages.map((pkg) => <PackageRow key={pkg.amountCents} pkg={pkg} loading={isPending && selectedAmount === pkg.amountCents} disabled={isPending} onClick={() => startTopUp(pkg)} />)}</div></section><div className="rounded-[16px] brand-gradient-soft px-4 py-3 shadow-[inset_0_0_0_1px_rgba(139,63,232,0.18)]"><div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--ink)]"><Store className="size-4 text-[var(--brand-purple)]" aria-hidden />Pay cash or card at the till</div><div className="mt-1 text-[12px] leading-relaxed text-[var(--ink-mute)]">Builders, Shoprite, Pick n Pay, Checkers, Boxer and Usave can process Pay@ references.</div></div>{pendingCount > 0 ? <button type="button" onClick={() => router.push('/provider/credits/pending')} className="flex items-center gap-3 rounded-[16px] bg-card px-4 py-3 text-left shadow-[inset_0_0_0_1px_var(--border)]"><Clock className="size-5 text-[var(--brand-purple)]" aria-hidden /><div className="min-w-0 flex-1"><div className="text-[13.5px] font-semibold text-[var(--ink)]">{pendingCount} payment{pendingCount === 1 ? '' : 's'} waiting</div><div className="font-mono text-[10.5px] text-[var(--ink-soft)]">Resume active Pay@ link{pendingCount === 1 ? '' : 's'}</div></div><ChevronRight className="size-4 text-[var(--ink-soft)]" aria-hidden /></button> : null}<ActivityList items={wallet.recentActivity} /><p className="px-4 text-center text-[12px] leading-relaxed text-[var(--ink-soft)]">Credits never expire. 1 credit = R{creditPriceZar}. Failed or reversed payments do not add wallet credits.</p><p className="px-4 text-center text-[12px]"><Link href="/provider/voucher" className="text-muted-foreground underline hover:text-foreground">Have a voucher code? Redeem it here</Link></p></CreditsShell>
+  return (
+    <CreditsShell eyebrow="Provider wallet" title="Credits" subtitle="Top up to accept job leads. Pay cash or card at Pay@ retailers.">
+      <BalanceHero
+        credits={wallet.credits}
+        starter={wallet.starter}
+        onTopUp={() => topUpRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        onTerms={() => router.push('/credit-terms')}
+      />
+      <section ref={topUpRef} className="space-y-3" id="topup">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.10em] text-[var(--ink-mute)]">Top up with Pay@</div>
+          {!wallet.creditPurchaseLocked && (
+            <div className="flex items-center gap-1.5 font-mono text-[10.5px] text-[var(--ink-soft)]">
+              <Store className="size-3.5" aria-hidden />Cash at retailers
+            </div>
+          )}
+        </div>
+        {wallet.creditPurchaseLocked ? (
+          <VerificationPromptCard />
+        ) : (
+          <div className="space-y-2.5">
+            {packages.map((pkg) => (
+              <PackageRow
+                key={pkg.amountCents}
+                pkg={pkg}
+                loading={isPending && selectedAmount === pkg.amountCents}
+                disabled={isPending}
+                onClick={() => startTopUp(pkg)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+      {!wallet.creditPurchaseLocked && (
+        <div className="rounded-[16px] brand-gradient-soft px-4 py-3 shadow-[inset_0_0_0_1px_rgba(139,63,232,0.18)]">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--ink)]">
+            <Store className="size-4 text-[var(--brand-purple)]" aria-hidden />Pay cash or card at the till
+          </div>
+          <div className="mt-1 text-[12px] leading-relaxed text-[var(--ink-mute)]">
+            Builders, Shoprite, Pick n Pay, Checkers, Boxer and Usave can process Pay@ references.
+          </div>
+        </div>
+      )}
+      {pendingCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => router.push('/provider/credits/pending')}
+          className="flex items-center gap-3 rounded-[16px] bg-card px-4 py-3 text-left shadow-[inset_0_0_0_1px_var(--border)]"
+        >
+          <Clock className="size-5 text-[var(--brand-purple)]" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13.5px] font-semibold text-[var(--ink)]">{pendingCount} payment{pendingCount === 1 ? '' : 's'} waiting</div>
+            <div className="font-mono text-[10.5px] text-[var(--ink-soft)]">Resume active Pay@ link{pendingCount === 1 ? '' : 's'}</div>
+          </div>
+          <ChevronRight className="size-4 text-[var(--ink-soft)]" aria-hidden />
+        </button>
+      ) : null}
+      <ActivityList items={wallet.recentActivity} />
+      <p className="px-4 text-center text-[12px] leading-relaxed text-[var(--ink-soft)]">
+        Credits never expire. 1 credit = R{creditPriceZar}. Failed or reversed payments do not add wallet credits.
+      </p>
+      <p className="px-4 text-center text-[12px]">
+        <Link href="/provider/voucher" className="text-muted-foreground underline hover:text-foreground">
+          Have a voucher code? Redeem it here
+        </Link>
+      </p>
+    </CreditsShell>
+  )
 }
 
 function PendingIntentRow({ intent }: { intent: ProviderWalletPendingIntent }) {

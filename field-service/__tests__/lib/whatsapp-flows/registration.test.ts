@@ -742,6 +742,15 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextData).toMatchObject({ providerIdNumber: 'A1234567', verificationMethod: 'id_number', skills: [] })
   })
 
+  it('reg_verify_enter_id: numeric-only foreign passport number saves and advances', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_verify_enter_id', undefined, '123456789', { name: 'Thabo Nkosi' })
+    )
+
+    expect(result.nextStep).toBe('reg_collect_skills_more')
+    expect(result.nextData).toMatchObject({ providerIdNumber: '123456789', verificationMethod: 'id_number', skills: [] })
+  })
+
 
   // ── reg_verify_upload_doc / reg_verify_upload_selfie ─────────────────────────
 

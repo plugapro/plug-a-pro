@@ -52,8 +52,7 @@ export function validatePassportNumber(raw: string): PassportValidationResult {
   if (
     trimmed.length >= 6 &&
     trimmed.length <= 30 &&
-    /^[a-z0-9]+$/i.test(trimmed) &&
-    /[a-z]/i.test(trimmed)
+    /^[a-z0-9]+$/i.test(trimmed)
   ) {
     return { ok: true, normalized: trimmed.toUpperCase() }
   }

@@ -229,4 +229,27 @@ describe('WhatsApp identity verification fallback flow', () => {
     expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('manual review'))
     expect(result).toEqual({ nextStep: 'done', nextData: {} })
   })
+
+  it('rejects document uploads at the selfie step and keeps waiting for a facial image', async () => {
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_selfie',
+        { type: 'document', mediaId: 'media-selfie-pdf', mimeType: 'application/pdf' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+        },
+      ),
+    )
+
+    expect(mockDownloadIdentityMedia).not.toHaveBeenCalled()
+    expect(mockTransition).not.toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      toStatus: 'SUBMITTED',
+    }))
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('selfie photo'))
+    expect(result).toMatchObject({ nextStep: 'pj_identity_selfie' })
+  })
 })

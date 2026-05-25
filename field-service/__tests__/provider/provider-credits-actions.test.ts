@@ -61,6 +61,10 @@ vi.mock('../../lib/identity-verification/link', () => ({
   }),
 }))
 
+vi.mock('../../lib/identity-verification/credit-gate', () => ({
+  isProviderEligibleForCredits: vi.fn().mockResolvedValue(true),
+}))
+
 vi.mock('../../lib/provider-wallet-notifications', () => ({
   notifyProviderPayatTopUpInitiated: vi.fn(),
   notifyProviderPaymentIntentCreated: vi.fn(),
@@ -559,7 +563,8 @@ describe('provider credits server actions', () => {
       metadata: Record<string, unknown> = {},
       amountCredits = 1,
     ) {
-      await arrangeProvider()
+      const { db } = await arrangeProvider()
+      ;(db.paymentIntent.findMany as any).mockResolvedValue([])
       const { getProviderWalletBalance, getProviderWalletLedgerEntries } = await import(
         '../../lib/provider-wallet'
       )
@@ -664,6 +669,44 @@ describe('provider credits server actions', () => {
       const wallet = await getProviderWallet()
       expect(wallet.recentActivity[0].title).toBe('Wallet suspended')
       expect(wallet.recentActivity[0].delta).toBe(0)
+    })
+
+    it('locks paid credit purchases when the provider is not high-assurance verified', async () => {
+      await arrangeWalletWithEntry(
+        'PROMO_CREDIT',
+        'provider_promo_award',
+        'award-id-00000001',
+        { awardType: 'MOBILE_VERIFIED' },
+      )
+      const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
+      ;(isProviderEligibleForCredits as any).mockResolvedValue(false)
+
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+
+      expect(wallet.creditPurchaseLocked).toBe(true)
+      expect(isProviderEligibleForCredits).toHaveBeenCalledWith('provider-1')
+    })
+
+    it('leaves paid credit purchases unlocked when the provider is high-assurance verified', async () => {
+      await arrangeWalletWithEntry(
+        'PROMO_CREDIT',
+        'provider_promo_award',
+        'award-id-00000001',
+        { awardType: 'MOBILE_VERIFIED' },
+      )
+      const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
+      ;(isProviderEligibleForCredits as any).mockResolvedValue(true)
+
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+
+      expect(wallet.creditPurchaseLocked).toBe(false)
+      expect(isProviderEligibleForCredits).toHaveBeenCalledWith('provider-1')
     })
   })
 

@@ -23,6 +23,7 @@ import {
 import { PayatConfigError, PayatApiError, PayatTokenError } from '@/lib/payat'
 import { notifyProviderPayatTopUpInitiated as notifyProviderPayatTopUpInitiatedCore } from '@/lib/provider-wallet-notifications'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
+import { isProviderEligibleForCredits } from '@/lib/identity-verification/credit-gate'
 
 const ACTIVE_PAYAT_STATUSES = ['PENDING_PAYMENT', 'ITN_RECEIVED'] as const
 
@@ -61,6 +62,10 @@ export type ProviderWallet = {
   starter: number
   pendingIntents: ProviderWalletPendingIntent[]
   recentActivity: ProviderWalletRecentActivityItem[]
+  /** true when the provider.identity.verification flag is on and the provider
+   *  has not completed high-assurance KYC. The top-up UI hides packages and
+   *  shows a verification prompt instead. */
+  creditPurchaseLocked: boolean
 }
 
 export type ProviderWalletPendingIntent = {
@@ -359,16 +364,18 @@ export async function getProviderWalletSummary(): Promise<ProviderWalletSummary>
 export async function getProviderWallet(): Promise<ProviderWallet> {
   const provider = await getAuthenticatedProvider()
 
-  const [balance, pendingIntents, walletEntries] = await Promise.all([
+  const [balance, pendingIntents, walletEntries, eligible] = await Promise.all([
     getProviderWalletBalance(provider.id),
-    getProviderPendingIntents(),
+    getProviderPendingIntents(provider.id),
     getProviderWalletLedgerEntries(provider.id, { limit: LEDGER_LIMIT }),
+    isProviderEligibleForCredits(provider.id),
   ])
 
   return {
     credits: balance.totalCreditBalance,
     starter: balance.promoCreditBalance,
     pendingIntents,
+    creditPurchaseLocked: !eligible,
     recentActivity: walletEntries.map((entry) => {
       const signedAmount = isDebit(entry.entryType) ? -entry.amountCredits : entry.amountCredits
 
@@ -384,11 +391,11 @@ export async function getProviderWallet(): Promise<ProviderWallet> {
   }
 }
 
-export async function getProviderPendingIntents(): Promise<ProviderWalletPendingIntent[]> {
-  const provider = await getAuthenticatedProvider()
+export async function getProviderPendingIntents(providerId?: string): Promise<ProviderWalletPendingIntent[]> {
+  const resolvedId = providerId ?? (await getAuthenticatedProvider()).id
   const pendingIntents = await db.paymentIntent.findMany({
     where: {
-      providerId: provider.id,
+      providerId: resolvedId,
       paymentMethod: 'PAYAT',
       status: { in: [...ACTIVE_PAYAT_STATUSES] },
     },
@@ -756,6 +763,15 @@ async function issueCreditVerificationUrl(providerId: string | null): Promise<st
     })
     return null
   }
+}
+
+/** Public action: issue a verification link URL for the authenticated provider.
+ *  Called by the "Verify my ID" button on the credits page when top-ups are locked.
+ *  Returns { url } on success or { url: null } if link issuance fails (caller toasts). */
+export async function requestCreditVerificationUrl(): Promise<{ url: string | null }> {
+  const provider = await getAuthenticatedProvider()
+  const url = await issueCreditVerificationUrl(provider.id)
+  return { url }
 }
 
 // Server actions can't surface real error messages to the client in production

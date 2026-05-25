@@ -35,8 +35,12 @@ describe('SA identity validation', () => {
     expect(validatePassportNumber('a12345678')).toEqual({ ok: true, normalized: 'A12345678' })
   })
 
-  it('rejects passport-like identifiers that do not contain a letter', () => {
-    expect(validatePassportNumber('123456789')).toEqual({ ok: false, reason: 'format' })
+  it('accepts numeric-only passport-like identifiers for foreign nationals', () => {
+    expect(validatePassportNumber('123456789')).toEqual({ ok: true, normalized: '123456789' })
+  })
+
+  it('rejects passport-like identifiers with spaces', () => {
+    expect(validatePassportNumber('A 1234567')).toEqual({ ok: false, reason: 'format' })
   })
 
   it('extracts the last four characters from a normalized identifier', () => {
