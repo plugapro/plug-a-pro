@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { ArrowRight, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
@@ -13,13 +12,8 @@ import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
-
-function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
+import { createCustomerOtpClient } from '@/lib/supabase-auth-client'
+import { getCustomerOtpSendErrorMessage } from '@/lib/auth-client-errors'
 
 function WhatsAppIcon() {
   return (
@@ -66,26 +60,13 @@ export default function SignInPage() {
     }
 
     try {
-      const supabase = getSupabaseClient()
+      const supabase = createCustomerOtpClient()
       const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalized.e164 })
 
       if (otpError) {
-        const msg = otpError.message.toLowerCase()
-        if (msg.includes('rate') || msg.includes('limit')) {
-          setError('Too many attempts. Please wait a few minutes and try again.')
-        } else if (msg.includes('invalid') || msg.includes('format')) {
-          setError('Invalid phone number format. Please use your full South African number.')
-        } else if (
-          msg.includes('otp_whatsapp_disabled') || msg.includes('template_not_approved') ||
-          msg.includes('wa_auth_failed') || msg.includes('wa_transient') ||
-          msg.includes('unsupported') || msg.includes('provider') ||
-          msg.includes('not enabled') || msg.includes('phone')
-        ) {
-          setError("We couldn't deliver your code on WhatsApp. Check the number and try again, or contact support@plugapro.co.za.")
-        } else {
-          console.error('[sign-in] Supabase OTP error:', otpError.message)
-          setError('Could not send code. Please try again or contact support@plugapro.co.za.')
-        }
+        const errorMessage = getCustomerOtpSendErrorMessage(otpError.message)
+        console.error('[sign-in] Supabase OTP error:', otpError.message)
+        setError(errorMessage)
         return
       }
 
@@ -95,7 +76,8 @@ export default function SignInPage() {
         savedAt: Date.now(),
       })
       router.push(`/verify?phone=${encodeURIComponent(normalized.e164)}&next=${encodeURIComponent(next)}`)
-    } catch {
+    } catch (error) {
+      console.error('[sign-in] unexpected OTP request failure:', error)
       setError('Something went wrong. Please try again.')
     } finally {
       setLoading(false)

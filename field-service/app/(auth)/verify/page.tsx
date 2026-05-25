@@ -2,22 +2,16 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { AlertCircle } from 'lucide-react'
 import { OtpInput } from '@/components/ui/otp-input'
 import { Button } from '@/components/ui/button'
 import { AuthShell } from '@/components/shared/auth-shell'
 import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
+import { createCustomerOtpClient } from '@/lib/supabase-auth-client'
+import { getCustomerOtpSendErrorMessage } from '@/lib/auth-client-errors'
 import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
 import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, loadOtpVerifyState, saveOtpVerifyState } from '@/lib/otp-verify-state'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
-
-function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
 
 function formatPhoneForDisplay(e164: string) {
   const digits = e164.replace(/\D/g, '')
@@ -104,13 +98,18 @@ function VerifyForm() {
     setLoading(true)
 
     try {
-      const supabase = getSupabaseClient()
+      const supabase = createCustomerOtpClient()
       const { data, error: verifyError } = await supabase.auth.verifyOtp({
         phone, token: code.trim(), type: 'sms',
       })
 
       if (verifyError || !data.user) {
         setError(getOtpVerifyErrorMessage(verifyError?.message))
+        if (verifyError) {
+          console.error('[verify] OTP verification error:', verifyError.message)
+        } else {
+          console.error('[verify] OTP verification returned no user without error')
+        }
         return
       }
 
@@ -143,7 +142,8 @@ function VerifyForm() {
 
       setDone(true)
       router.replace(destination)
-    } catch {
+    } catch (error) {
+      console.error('[verify] unexpected OTP verify failure:', error)
       setError('Something went wrong. Please try again.')
     } finally {
       setLoading(false)
@@ -152,10 +152,11 @@ function VerifyForm() {
 
   async function handleResend() {
     if (resendCooldown > 0) return
-    const supabase = getSupabaseClient()
+    const supabase = createCustomerOtpClient()
     const { error: resendError } = await supabase.auth.signInWithOtp({ phone })
     if (resendError) {
-      setError('Could not resend the code. Please try again.')
+      setError(getCustomerOtpSendErrorMessage(resendError.message))
+      console.error('[verify] OTP resend error:', resendError.message)
       return
     }
     try { sessionStorage.setItem(COOLDOWN_KEY, String(Date.now() + 30_000)) } catch { /* ignore */ }
