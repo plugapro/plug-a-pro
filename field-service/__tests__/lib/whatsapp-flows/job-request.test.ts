@@ -22,6 +22,9 @@ vi.mock('@/lib/db', () => {
       updateMany: vi.fn(),
       upsert: vi.fn(),
     },
+    provider: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     address: {
       findFirst: vi.fn(),
     },
@@ -1934,5 +1937,32 @@ describe('WhatsApp job-request flow — job request summary preference display',
       const body: string = (wa.sendButtons as any).mock.calls[0][1]
       expect(body).not.toContain(pref)
     }
+  })
+})
+
+// Customer auto-creation guard: a provider's phone must never be turned into a
+// Customer record via the "notify me" path (would mark them multi-role).
+describe('WhatsApp notify-me — provider auto-create guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('does not create a customer record when the phone belongs to a provider', async () => {
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'prov-1' })
+
+    const result = await handleJobRequestFlow(makeCtx('notify_me', 'notify_me'))
+
+    expect(db.customer.upsert).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('welcome')
+  })
+
+  it('creates a customer record for a non-provider phone (existing behaviour)', async () => {
+    ;(db.provider.findFirst as any).mockResolvedValue(null)
+    ;(db.customer.upsert as any).mockResolvedValue({ id: 'cust-1' })
+
+    const result = await handleJobRequestFlow(makeCtx('notify_me', 'notify_me'))
+
+    expect(db.customer.upsert).toHaveBeenCalled()
+    expect(result.nextStep).toBe('done')
   })
 })

@@ -38,6 +38,18 @@ describe('/profile role-aware redirect', () => {
     expect(mockRedirect).toHaveBeenCalledWith('/provider/profile')
   })
 
+  it('redirects a pending provider (role still customer) to the verification page', async () => {
+    // A provider mid-identity-verification is not yet portal-eligible, so
+    // getSession leaves role='customer' but flags isProvider. They must still be
+    // routed out of the customer profile — to the verification status page, which
+    // (unlike /provider/*) does not require portal access.
+    mockGetSession.mockResolvedValue({ id: 'u3', role: 'customer', isProvider: true, phone: '+27823035070' })
+    const Page = (await import('@/app/(customer)/profile/page')).default
+
+    await expect(Page()).rejects.toThrow('redirect:/provider/verification')
+    expect(mockRedirect).toHaveBeenCalledWith('/provider/verification')
+  })
+
   it('redirects an unauthenticated visitor to sign-in', async () => {
     mockGetSession.mockResolvedValue(null)
     const Page = (await import('@/app/(customer)/profile/page')).default

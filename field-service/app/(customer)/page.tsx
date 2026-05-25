@@ -87,9 +87,14 @@ export default async function CustomerHomePage({
   ]).catch(() => [0, 0] as const)
 
   const isLoggedOut = !session
-  const hasProviderRole = Boolean(provider) || session?.role === 'provider'
+  const hasProviderRole = Boolean(provider) || session?.role === 'provider' || Boolean(session?.isProvider)
   const hasCustomerRole = Boolean(customer) || session?.role === 'customer'
-  const firstName = (customer?.name || provider?.name || '').split(' ')[0]
+  // Prefer the provider name for providers so a leftover placeholder "Customer"
+  // record never surfaces in the greeting ("Hi Customer").
+  const preferredName = hasProviderRole
+    ? (provider?.name || customer?.name)
+    : (customer?.name || provider?.name)
+  const firstName = (preferredName || '').split(' ')[0]
 
   return (
     <div className="relative screen-enter">

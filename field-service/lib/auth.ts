@@ -17,6 +17,11 @@ export interface AuthUser {
   phone: string | null
   role: UserRole
   providerId?: string // set when role === 'provider'
+  // True when a Provider record exists for this user, EVEN IF they are not yet
+  // portal-eligible (pending application / under review / mid-identity-verification).
+  // `role` stays 'customer' for non-eligible providers so portal gating is unchanged;
+  // `isProvider` lets UI route them away from customer context (see provider-routing).
+  isProvider?: boolean
 }
 
 export interface AdminAuthUser extends AuthUser {
@@ -108,9 +113,25 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
       },
     }).catch(() => null)
 
+    const isProvider = Boolean(provider)
     if (checkWorkerPortalAccess(provider).ok) {
       role = 'provider'
       providerId = provider?.id
+    } else if (isProvider) {
+      // A Provider record exists but the worker portal isn't open yet (pending /
+      // under review / unverified). Keep role='customer' (portal gating relies on
+      // it) but record providerId + isProvider so UI never treats them as a
+      // customer. This is the case that previously surfaced providers as "Customer".
+      providerId = provider?.id
+      console.log('[auth.role] provider not yet portal-eligible — flagged isProvider', {
+        userId: user.id,
+        phone,
+        providerStatus: provider?.status,
+        verified: provider?.verified,
+        active: provider?.active,
+        resolvedRole: role,
+        isProvider: true,
+      })
     }
 
     return {
@@ -119,6 +140,7 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
       phone,
       role,
       providerId,
+      isProvider,
     }
   } catch {
     return null

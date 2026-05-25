@@ -105,4 +105,18 @@ describe('customer mobile landing page', () => {
     expect(html).toContain('what needs fixing?')
     expect(html).toContain('Join as provider')
   })
+
+  it('greets a pending provider by their provider name, never the spurious "Customer" placeholder', async () => {
+    // A provider mid-verification has role='customer' but a Provider record, and
+    // may carry a leftover placeholder Customer row named "Customer" from before
+    // the auto-creation fix. The home greeting must prefer the provider name.
+    mockGetSession.mockResolvedValue({ id: 'u-9', role: 'customer', isProvider: true, phone: '+27823035070' })
+    mockProviderFindFirst.mockResolvedValue({ id: 'p-9', name: 'Thabo Mokoena' })
+    mockResolveCustomerForSession.mockResolvedValue({ id: 'c-9', name: 'Customer' })
+
+    const html = renderToStaticMarkup(await CustomerHomePage())
+
+    expect(html).toContain('Hi Thabo')
+    expect(html).not.toContain('Hi Customer')
+  })
 })

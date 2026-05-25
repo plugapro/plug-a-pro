@@ -1824,6 +1824,25 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'notify_me' || ctx.step === 'notify_me') {
+    // Never auto-create a Customer record for a provider's phone. A provider who
+    // lands in the customer "notify me" path must not be converted into a customer
+    // (that would mark them multi-role and surface them as "Customer" elsewhere).
+    const providerForPhone = await db.provider.findFirst({
+      where: { phone: { in: phoneLookupVariants(ctx.phone) } },
+      select: { id: true },
+    })
+    if (providerForPhone) {
+      console.log('[notify_me] provider phone — skipping customer auto-create', {
+        phone: ctx.phone,
+        providerId: providerForPhone.id,
+      })
+      await sendText(
+        ctx.phone,
+        "You're registered as a Plug A Pro provider, so this customer notify list isn't for you. Reply *MENU* for your provider options.",
+      )
+      return { nextStep: 'welcome' }
+    }
+
     const fallbackName = normalizeCustomerName(ctx.data.customerName)
     await db.customer.upsert({
       where: { phone: ctx.phone },

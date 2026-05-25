@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { resolveProviderRedirect } from '@/lib/provider-routing'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { SignOutButton } from '@/components/customer/SignOutButton'
 import { buildMetadata } from '@/lib/metadata'
@@ -95,12 +96,21 @@ export default async function ProfilePage() {
   const session = await getSession()
   if (!session) redirect(`/sign-in?next=${encodeURIComponent('/profile')}`)
 
-  // Role-aware: a provider's account lives on the provider profile. Never render a
-  // provider through the customer account page (which labels everyone "Customer").
-  // This runs on every server render, so it also covers manual URL edits, deep
-  // links, and refreshes — not just navigation through the bottom nav.
-  if (session.role === 'provider') {
-    redirect('/provider/profile')
+  // Role-aware: a provider's account lives on the provider area, never the customer
+  // account page (which labels everyone "Customer"). Covers portal-eligible providers
+  // AND providers still in verification (role==='customer' but isProvider) — the
+  // latter previously fell through and were shown as "Customer". Runs on every server
+  // render, so it also covers manual URL edits, deep links, and refreshes.
+  const providerDest = resolveProviderRedirect(session, 'profile')
+  if (providerDest) {
+    console.log('[profile] provider routed away from customer profile', {
+      userId: session.id,
+      phone: session.phone,
+      role: session.role,
+      isProvider: session.isProvider,
+      dest: providerDest,
+    })
+    redirect(providerDest)
   }
 
   const customer = await resolveCustomerForSession(db, session)
