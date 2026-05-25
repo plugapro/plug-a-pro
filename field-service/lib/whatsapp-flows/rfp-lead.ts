@@ -51,11 +51,6 @@ export async function handleRfpLeadInterest(
     return
   }
 
-  if (lead.expiresAt && lead.expiresAt <= new Date()) {
-    await sendText(phone, '⚠️ This lead has expired. New leads will come through as jobs arise.')
-    return
-  }
-
   console.info('[whatsapp-bot] rfp_interest: request_start', {
     traceId,
     leadId: lead.id,
@@ -96,6 +91,10 @@ export async function handleRfpLeadInterest(
   // Idempotent: already interested or already selected
   if (lead.status === 'INTERESTED') {
     await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.\n\nReply *status* to check your active leads.`)
+    return
+  }
+  if (lead.expiresAt && lead.expiresAt <= new Date()) {
+    await sendText(phone, '⚠️ This lead has expired. New leads will come through as jobs arise.')
     return
   }
   // Customer has selected this provider but acceptance is not yet locked. Offer

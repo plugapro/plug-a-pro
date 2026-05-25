@@ -19,6 +19,7 @@ The handler failed inside the database transaction. Production drifted from the 
 2. Added migration `20260525105500_repair_provider_lead_response_text` so future environments repair the same drift.
 3. Added a schema regression test to keep this drift visible.
 4. Replayed Lovemore's valid availability tap through the RFP handler after the schema repair.
+5. Moved the already-`INTERESTED` idempotency check before the expiry check so a late retry confirms the response is already noted instead of incorrectly saying the lead expired.
 
 ## Result
 
@@ -34,5 +35,6 @@ The local production WhatsApp token on this machine returned Meta OAuth error `1
 ## Verification
 
 - `pnpm vitest run __tests__/lib/qualified-shortlist-schema-foundation.test.ts __tests__/lib/whatsapp-flows/rfp-lead.test.ts __tests__/lib/whatsapp-bot-stateless.test.ts` — 72 passing.
+- `pnpm vitest run __tests__/lib/whatsapp-flows/rfp-lead.test.ts __tests__/lib/qualified-shortlist-schema-foundation.test.ts` — 11 passing after the idempotent retry follow-up.
 - `pnpm typecheck` — passing.
 - `pnpm lint` — passing.

@@ -145,4 +145,14 @@ describe('handleRfpLeadInterest', () => {
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('already noted'))
     expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
+
+  it('keeps already-interested retry idempotent even after the response window expires', async () => {
+    const interestedRepo = createInMemoryLeadRepository([
+      { ...BASE_LEAD, status: LeadStatus.INTERESTED, expiresAt: new Date(Date.now() - 1000) },
+    ])
+    await handleRfpLeadInterest(PHONE, PROVIDER_ID, LEAD_ID, TRACE_ID, { _repo: interestedRepo })
+    expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('already noted'))
+    expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('expired'))
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
 })
