@@ -13,6 +13,16 @@ Thumbs.db
 # MCP tooling
 .playwright-mcp/
 
+# Local package manager caches
+.pnpm-store/
+
+# Local test artifacts
+field-service/test-results/
+
+# Local cleanup archive for untracked/generated artifacts that should not be
+# committed without an explicit product/docs review.
+.local-artifacts/
+
 # Git worktrees
 .worktrees/
 
