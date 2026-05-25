@@ -75,8 +75,8 @@ const FIELD_REQUIREMENTS: ReadonlyArray<{
   {
     field: 'idNumber',
     group: 'core_identity',
-    severity: 'block_approve',
-    reason: 'ID/passport is required for trust review before approval.',
+    severity: 'recommended',
+    reason: 'ID/passport verification is optional at onboarding and required before paid credit purchase.',
     satisfiedBy: (p) => Boolean(p.idNumber?.trim()),
   },
   // ── Service offering ─────────────────────────────────────────────────────

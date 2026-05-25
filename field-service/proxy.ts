@@ -34,6 +34,7 @@ const PUBLIC_PATHS = [
   '/provider-verify',      // provider OTP verification
   '/provider/terms',       // provider credit rules are linked before login/application
   '/provider/verification', // WhatsApp identity step-up CTA must load before provider login
+  '/provider/verify',      // token-gated identity verification PWA links are public
   '/track',                // public customer tracking landing pages
   '/for-providers',        // public provider acquisition page
   '/credit-terms',         // public provider credit terms page
@@ -52,6 +53,7 @@ const PUBLIC_PATHS = [
   '/api/payat/webhook',    // Pay@ provider-credit webhook callback from Pay@ infrastructure
   '/api/payat-go/callback',// Pay@Go RTP callback from Pay@ infrastructure
   '/api/review-first/provider-profile/shortlist', // signed profile-token shortlist action
+  '/api/provider/identity/upload', // token-gated identity upload endpoint; handler validates token
   '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
   '/api/auth/session',              // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',                 // called client-side after OTP — no session cookie yet

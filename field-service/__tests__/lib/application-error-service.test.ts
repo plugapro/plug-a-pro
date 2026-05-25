@@ -140,6 +140,29 @@ describe('captureApplicationError — payload redaction', () => {
     expect(callData.requestPayloadSummary).toMatchObject({ idNumber: '[REDACTED]', name: 'Lovemore' })
   })
 
+  it('redacts identity verification document and biometric fields', async () => {
+    await captureApplicationError({
+      ...baseInput,
+      requestPayload: {
+        passport: 'A12345678',
+        permitNumber: 'ASY-123',
+        documentNumber: 'DOC-123',
+        selfie: 'base64-image',
+        livenessScore: 0.9,
+        action: 'identity_upload',
+      },
+    })
+    const callData = (db.applicationErrorEvent.create as ReturnType<typeof vi.fn>).mock.calls[0][0].data
+    expect(callData.requestPayloadSummary).toMatchObject({
+      passport: '[REDACTED]',
+      permitNumber: '[REDACTED]',
+      documentNumber: '[REDACTED]',
+      selfie: '[REDACTED]',
+      livenessScore: '[REDACTED]',
+      action: 'identity_upload',
+    })
+  })
+
   it('redacts authorization header from response payload', async () => {
     await captureApplicationError({
       ...baseInput,

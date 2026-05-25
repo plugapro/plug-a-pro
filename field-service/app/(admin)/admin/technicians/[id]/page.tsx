@@ -175,6 +175,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     where: { phone: provider.phone },
     orderBy: { submittedAt: 'desc' },
     select: {
+      id: true,
       evidenceFileUrls: true,
       evidenceNote: true,
       skills: true,
@@ -197,6 +198,22 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
   const idDocAttachments = allApplicationAttachments.filter((a) =>
     a.label === 'provider_id_document' || a.label === 'provider_id_selfie'
   )
+  const latestIdentityVerification = await db.providerIdentityVerification.findFirst({
+    where: {
+      OR: [
+        { providerId: provider.id },
+        ...(latestApplication?.id ? [{ providerApplicationId: latestApplication.id }] : []),
+      ],
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: {
+      id: true,
+      identityBasis: true,
+      identifierLast4: true,
+      status: true,
+      assuranceLevel: true,
+    },
+  })
   const highRiskRequirements = getHighRiskServiceRequirements(latestApplication?.skills ?? provider.skills)
 
   const completeness = evaluateProviderProfileCompleteness({
@@ -526,14 +543,26 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
               </>
             )}
 
-            {(idDocAttachments.length > 0 || latestApplication?.idNumber) && (
+            {(idDocAttachments.length > 0 || latestApplication?.idNumber || latestIdentityVerification) && (
               <>
                 <Separator />
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">Identity verification</p>
                   <div className="space-y-2">
-                    {latestApplication?.idNumber && (
-                      <p className="text-sm">🪪 ID/passport: <span className="font-mono">{latestApplication.idNumber}</span></p>
+                    {latestIdentityVerification?.identifierLast4 ? (
+                      <p className="text-sm">
+                        ID/passport ending:{' '}
+                        <span className="font-mono">****{latestIdentityVerification.identifierLast4}</span>
+                      </p>
+                    ) : latestApplication?.idNumber ? (
+                      <p className="text-sm">
+                        ID/passport: <span className="font-mono">provided</span>
+                      </p>
+                    ) : null}
+                    {latestIdentityVerification && (
+                      <p className="text-xs text-muted-foreground">
+                        {latestIdentityVerification.identityBasis} · {latestIdentityVerification.status.replace(/_/g, ' ').toLowerCase()} · {latestIdentityVerification.assuranceLevel.toLowerCase()} assurance
+                      </p>
                     )}
                     {idDocAttachments.map((att) => {
                       const typeLabel = att.label === 'provider_id_selfie' ? 'Selfie with ID' : 'ID document'

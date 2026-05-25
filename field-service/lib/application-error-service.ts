@@ -17,6 +17,8 @@ function hashPhone(phone: string): string {
 const REDACT_KEYS = [
   'phone', 'email', 'password', 'otp', 'token', 'idnumber', 'id_number',
   'authorization', 'apikey', 'api_key', 'secret', 'session', 'cookie',
+  'passport', 'permit', 'identifier', 'documentnumber', 'document_number',
+  'id_document', 'selfie', 'biometric', 'liveness',
 ]
 
 function redactPayload(obj: unknown, depth = 0): unknown {

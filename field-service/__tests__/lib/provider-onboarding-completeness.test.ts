@@ -49,11 +49,11 @@ describe('evaluateProviderProfileCompleteness', () => {
     expect(result.missing.find((m) => m.field === 'serviceAreas')).toBeDefined()
   })
 
-  it('blocks approval (but not submission) when ID/passport is missing', () => {
+  it('does not block approval when ID/passport is missing because paid credits are gated separately', () => {
     const result = evaluateProviderProfileCompleteness({ ...completeProfile, idNumber: null })
     expect(result.canSubmit).toBe(true)
-    expect(result.canApprove).toBe(false)
-    expect(result.missing.find((m) => m.field === 'idNumber')?.severity).toBe('block_approve')
+    expect(result.canApprove).toBe(true)
+    expect(result.missing.find((m) => m.field === 'idNumber')?.severity).toBe('recommended')
   })
 
   it('blocks customer display (but allows approval) when call-out fee is missing', () => {
