@@ -70,7 +70,6 @@ export async function POST(request: NextRequest) {
       status: verification.status,
       documentKind,
       documentId: document.id,
-      blobKey: document.blobKey,
       sizeBytes: file.size,
       mimeType: file.type,
     })

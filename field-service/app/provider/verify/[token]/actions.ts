@@ -31,7 +31,7 @@ const IdentifierSchema = z.object({
 export type SubmitIdentityBasisAndIdentifierInput = z.infer<typeof IdentifierSchema>
 
 export type IdentifierActionResult =
-  | { ok: true }
+  | { ok: true; alreadyAdvanced?: boolean }
   | { ok: false; code: 'INVALID_INPUT' | 'INVALID_DETAILS'; message: string }
 
 export type DocumentActionResult =
@@ -39,8 +39,23 @@ export type DocumentActionResult =
   | { ok: false; code: 'MISSING_DOCUMENTS'; missingDocuments: IdentityDocumentKind[] }
   | { ok: false; code: 'INVALID_IDENTITY_BASIS' }
 
+// Consent only does work before it has been recorded. Every other status
+// (already consented, mid-flow, or terminal) is a no-op so a stale tab can't
+// attempt an invalid transition back to CONSENTED.
+const CONSENT_REQUIRED_STATUSES: readonly VerificationStatus[] = ['NOT_STARTED', 'STARTED']
+
 export async function acceptIdentityConsent(token: string) {
   const verification = await resolveProviderVerificationToken(token)
+
+  // Idempotent / stale-safe: consent already given, flow advanced, or terminal.
+  if (!statusIn(verification.status, CONSENT_REQUIRED_STATUSES)) {
+    logIdentityVerificationEvent('verify.consent.noop', {
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      status: verification.status,
+    })
+    return { ok: true as const }
+  }
 
   if (verification.status === 'NOT_STARTED') {
     await transitionIdentityVerification({
@@ -66,11 +81,25 @@ export async function acceptIdentityConsent(token: string) {
   return { ok: true as const }
 }
 
+// Statuses where the identifier-capture form is still the active step.
+const IDENTIFIER_CAPTURE_STATUSES: readonly VerificationStatus[] = ['CONSENTED', 'AWAITING_IDENTIFIER', 'RETRY_REQUIRED']
+
 export async function submitIdentityBasisAndIdentifier(
   token: string,
   rawInput: SubmitIdentityBasisAndIdentifierInput,
 ): Promise<IdentifierActionResult> {
   const verification = await resolveProviderVerificationToken(token)
+
+  // Idempotent / stale-safe: identifier already captured (flow moved on). Do not
+  // rewrite metadata or force an invalid transition on a stale resubmit.
+  if (!statusIn(verification.status, IDENTIFIER_CAPTURE_STATUSES)) {
+    logIdentityVerificationEvent('verify.identifier.noop', {
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      status: verification.status,
+    })
+    return { ok: true as const, alreadyAdvanced: true }
+  }
 
   // Validation failures are an expected outcome — return them so the page can
   // surface a controlled message instead of triggering the error boundary.
@@ -235,6 +264,18 @@ export async function submitIdentitySelfie(token: string) {
 
 export async function submitIdentityVerificationForReview(token: string): Promise<DocumentActionResult> {
   const verification = await resolveProviderVerificationToken(token)
+
+  // Idempotent / stale-safe: review already submitted (or decided). Avoid an
+  // invalid NEEDS_MANUAL_REVIEW -> NEEDS_MANUAL_REVIEW transition on double submit.
+  if (statusIn(verification.status, REVIEW_ALREADY_SUBMITTED)) {
+    logIdentityVerificationEvent('verify.review.noop', {
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      status: verification.status,
+    })
+    return { ok: true as const, alreadyAdvanced: true }
+  }
+
   if (!isIdentityBasis(verification.identityBasis)) {
     logIdentityVerificationEvent('verify.review.invalid_basis', {
       verificationId: verification.id,
@@ -275,6 +316,18 @@ export async function submitIdentityVerificationForReview(token: string): Promis
 
   revalidatePath(`/provider/verify/${token}`)
   return { ok: true as const }
+}
+
+// Statuses where review has already been submitted or a decision was reached.
+const REVIEW_ALREADY_SUBMITTED: readonly VerificationStatus[] = [
+  'NEEDS_MANUAL_REVIEW',
+  'PROCESSING',
+  'PASSED',
+  'FAILED',
+]
+
+function statusIn(status: unknown, statuses: readonly VerificationStatus[]): boolean {
+  return typeof status === 'string' && statuses.includes(status as VerificationStatus)
 }
 
 async function getUploadedDocumentKinds(verificationId: string): Promise<Set<IdentityDocumentKind>> {

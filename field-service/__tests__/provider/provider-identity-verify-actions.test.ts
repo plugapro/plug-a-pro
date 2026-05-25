@@ -58,6 +58,36 @@ describe('provider identity verification PWA actions', () => {
     })
   })
 
+  it('treats consent as a no-op when the flow already advanced past consent', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+    })
+
+    const { acceptIdentityConsent } = await import('../../app/provider/verify/[token]/actions')
+
+    await expect(acceptIdentityConsent('token-1')).resolves.toEqual({ ok: true })
+
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+
+  it('treats consent as a no-op when the flow has already reached a terminal decision', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'PASSED',
+      identityBasis: 'SA_ID',
+    })
+
+    const { acceptIdentityConsent } = await import('../../app/provider/verify/[token]/actions')
+
+    await expect(acceptIdentityConsent('token-1')).resolves.toEqual({ ok: true })
+
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+
   it('stores only hashed and masked identifier metadata', async () => {
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',
@@ -133,6 +163,26 @@ describe('provider identity verification PWA actions', () => {
     expect(mockDb.providerIdentityVerification.update).not.toHaveBeenCalled()
   })
 
+  it('treats stale identifier submission as already complete without rewriting metadata', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+    })
+
+    const { submitIdentityBasisAndIdentifier } = await import('../../app/provider/verify/[token]/actions')
+
+    const result = await submitIdentityBasisAndIdentifier('token-1', {
+      identityBasis: 'SA_ID',
+      identifier: '8001015009087',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(mockDb.providerIdentityVerification.update).not.toHaveBeenCalled()
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+
   it('reports missing documents without throwing when continuing to selfie', async () => {
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',
@@ -181,6 +231,23 @@ describe('provider identity verification PWA actions', () => {
 
     expect(result.ok).toBe(true)
     expect(mockTransition).not.toHaveBeenCalled()
+  })
+
+  it('treats review submission as a no-op when already in manual review', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      identityBasis: 'SA_ID',
+    })
+
+    const { submitIdentityVerificationForReview } = await import('../../app/provider/verify/[token]/actions')
+
+    const result = await submitIdentityVerificationForReview('token-1')
+
+    expect(result.ok).toBe(true)
+    expect(mockTransition).not.toHaveBeenCalled()
+    expect(mockDb.providerIdentityDocument.findMany).not.toHaveBeenCalled()
   })
 
   it('submits a complete document set for manual review without echoing identifiers', async () => {

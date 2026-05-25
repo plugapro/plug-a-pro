@@ -105,6 +105,56 @@ describe('/provider/verify/[token] page', () => {
     expect(html).toContain('restart the identity step')
   })
 
+  it('uses controlled copy for attacker-controlled error feedback', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+    })
+    mockDb.providerIdentityDocument.findMany.mockResolvedValue([])
+    const Page = (await import('@/app/provider/verify/[token]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ token: 'token-1' }),
+        searchParams: Promise.resolve({
+          error: 'Your account is suspended. Pay at http://evil.example.com or email scam@evil.example.com now',
+        }),
+      }),
+    )
+
+    expect(html).toContain('That step could not be completed. Please try again.')
+    expect(html).not.toContain('Your account is suspended')
+    expect(html).not.toContain('http://evil.example.com')
+    expect(html).not.toContain('scam@evil.example.com')
+    expect(html).not.toContain('evil.example.com')
+  })
+
+  it('uses controlled copy for attacker-controlled upload feedback', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+    })
+    mockDb.providerIdentityDocument.findMany.mockResolvedValue([])
+    const Page = (await import('@/app/provider/verify/[token]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ token: 'token-1' }),
+        searchParams: Promise.resolve({
+          upload_error: 'Send your ID to https://evil.example.com or scam@evil.example.com',
+        }),
+      }),
+    )
+
+    expect(html).toContain('Could not store this file. Please try again.')
+    expect(html).not.toContain('Send your ID')
+    expect(html).not.toContain('https://evil.example.com')
+    expect(html).not.toContain('scam@evil.example.com')
+    expect(html).not.toContain('evil.example.com')
+  })
+
   it('renders missing-file feedback instead of relying on a server-action error page', async () => {
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',

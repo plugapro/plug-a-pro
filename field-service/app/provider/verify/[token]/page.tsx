@@ -410,18 +410,17 @@ export default async function ProviderIdentityVerifyPage({
   )
 }
 
+const GENERIC_VERIFY_STEP_ERROR = 'That step could not be completed. Please try again.'
+const GENERIC_UPLOAD_ERROR = 'Could not store this file. Please try again.'
+
 function buildFeedback(params?: { upload_error?: string; uploaded?: string; missing?: string; error?: string }) {
+  // Query params are attacker-controllable via crafted links, so banners use
+  // fixed copy instead of reflecting the raw value back on our trusted domain.
   if (params?.error) {
-    return {
-      tone: 'error' as const,
-      message: params.error,
-    }
+    return { tone: 'error' as const, message: GENERIC_VERIFY_STEP_ERROR }
   }
   if (params?.upload_error) {
-    return {
-      tone: 'error' as const,
-      message: params.upload_error,
-    }
+    return { tone: 'error' as const, message: GENERIC_UPLOAD_ERROR }
   }
   if (params?.missing === 'selfie') {
     return {
