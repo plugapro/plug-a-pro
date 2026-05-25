@@ -95,9 +95,13 @@ export async function POST(request: NextRequest) {
                       data:  { duplicateCount: { increment: 1 }, lastSeenAt: new Date() },
                     })
                     .catch(() => {})
-                  console.warn(
-                    `[webhook/whatsapp:${reqId}] Duplicate WAMID ${message.id} - skipping`
-                  )
+                  console.warn('[webhook/whatsapp] duplicate webhook message ignored', {
+                    reqId,
+                    code: 'DUPLICATE_WEBHOOK_MESSAGE_IGNORED',
+                    failedOperationName: 'webhook_duplicate_guard',
+                    messageId: message.id,
+                    messageIdSuffix: String(message.id).slice(-8),
+                  })
                   return
                 }
                 // Non-unique DB error - log but still attempt processing

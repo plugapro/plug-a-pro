@@ -95,6 +95,40 @@ describe('identity document storage', () => {
     })
   })
 
+  it('classifies private Blob upload failures without writing a document record', async () => {
+    const { storeIdentityDocument } = await import('../../../lib/identity-verification/storage')
+    mockPut.mockRejectedValueOnce(new Error('blob service unavailable'))
+
+    await expect(
+      storeIdentityDocument({
+        verificationId: 'ver-1',
+        documentKind: 'ID_FRONT',
+        file: new File(['%PDF- identity'], 'id.pdf', { type: 'application/pdf' }),
+      }),
+    ).rejects.toMatchObject({
+      code: 'DOCUMENT_STORAGE_UPLOAD_FAILED',
+      operation: 'document_storage_upload',
+    })
+
+    expect(mockCreateDocument).not.toHaveBeenCalled()
+  })
+
+  it('classifies identity document metadata DB write failures after upload succeeds', async () => {
+    const { storeIdentityDocument } = await import('../../../lib/identity-verification/storage')
+    mockCreateDocument.mockRejectedValueOnce(new Error('database unavailable'))
+
+    await expect(
+      storeIdentityDocument({
+        verificationId: 'ver-1',
+        documentKind: 'ID_FRONT',
+        file: new File(['%PDF- identity'], 'id.pdf', { type: 'application/pdf' }),
+      }),
+    ).rejects.toMatchObject({
+      code: 'VERIFICATION_DOCUMENT_DB_WRITE_FAILED',
+      operation: 'verification_document_db_write',
+    })
+  })
+
   it('rejects files whose bytes do not match the declared MIME type', async () => {
     const { uploadIdentityDocument } = await import('../../../lib/storage')
 

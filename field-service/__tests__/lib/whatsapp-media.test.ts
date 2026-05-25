@@ -224,4 +224,164 @@ describe('downloadAndStoreWhatsAppMedia', () => {
     expect(mockPut).not.toHaveBeenCalled()
     expect(mockDb.attachment.create).not.toHaveBeenCalled()
   })
+
+  it('stores WhatsApp PDF identity documents through private identity-document storage', async () => {
+    const body = new TextEncoder().encode('%PDF- identity document').buffer
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          url: 'https://lookaside.whatsapp.net/identity-doc-pdf',
+          mime_type: 'application/pdf',
+          file_size: 22,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => body,
+      })
+
+    await expect(
+      downloadAndStoreWhatsAppIdentityDocument({
+        mediaId: 'media-id-pdf',
+        verificationId: 'ver-1',
+        documentKind: 'ID_FRONT',
+        maxSizeBytes: 100,
+      }),
+    ).resolves.toEqual({ documentId: 'identity-doc-1' })
+
+    const file = mockStoreIdentityDocument.mock.calls[0][0].file as File
+    expect(file.type).toBe('application/pdf')
+    expect(file.size).toBe(body.byteLength)
+    expect(file.name).toBe('ID_FRONT-a-id-pdf.pdf')
+  })
+
+  it('classifies WhatsApp metadata failures without leaking provider response bodies', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      text: async () => '{"error":{"message":"token-secret-or-url"}}',
+    })
+
+    let thrown: unknown
+    await downloadAndStoreWhatsAppIdentityDocument({
+      mediaId: 'media-meta-fail',
+      verificationId: 'ver-1',
+      documentKind: 'ID_FRONT',
+    }).catch((error) => {
+      thrown = error
+    })
+
+    expect(thrown).toMatchObject({
+      code: 'WHATSAPP_MEDIA_METADATA_FETCH_FAILED',
+      operation: 'whatsapp_media_metadata_fetch',
+      status: 401,
+    })
+    expect(thrown).toBeInstanceOf(Error)
+    expect((thrown as Error).message).not.toContain('token-secret-or-url')
+    await expect(Promise.reject(thrown)).rejects.not.toThrow(/token-secret-or-url/)
+  })
+
+  it('classifies missing WhatsApp media IDs before calling Meta', async () => {
+    await expect(
+      downloadAndStoreWhatsAppIdentityDocument({
+        mediaId: '',
+        verificationId: 'ver-1',
+        documentKind: 'ID_FRONT',
+      }),
+    ).rejects.toMatchObject({
+      code: 'WHATSAPP_MEDIA_ID_MISSING',
+      operation: 'whatsapp_media_id_extract',
+    })
+
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('classifies WhatsApp media binary download failures without leaking media URLs', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          url: 'https://lookaside.whatsapp.net/private-media-url',
+          mime_type: 'image/jpeg',
+          file_size: 4,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 410,
+        text: async () => 'expired',
+      })
+
+    let thrown: unknown
+    await downloadAndStoreWhatsAppIdentityDocument({
+      mediaId: 'media-download-fail',
+      verificationId: 'ver-1',
+      documentKind: 'ID_FRONT',
+    }).catch((error) => {
+      thrown = error
+    })
+
+    expect(thrown).toMatchObject({
+      code: 'WHATSAPP_MEDIA_DOWNLOAD_FAILED',
+      operation: 'whatsapp_media_download',
+      status: 410,
+    })
+    expect(thrown).toBeInstanceOf(Error)
+    expect((thrown as Error).message).not.toContain('private-media-url')
+  })
+
+  it('classifies unsupported document MIME types before downloading the binary', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        url: 'https://lookaside.whatsapp.net/identity-doc-gif',
+        mime_type: 'image/gif',
+        file_size: 4,
+      }),
+    })
+
+    await expect(
+      downloadAndStoreWhatsAppIdentityDocument({
+        mediaId: 'media-gif',
+        verificationId: 'ver-1',
+        documentKind: 'ID_FRONT',
+      }),
+    ).rejects.toMatchObject({
+      code: 'UNSUPPORTED_DOCUMENT_MIME_TYPE',
+      operation: 'document_mime_validation',
+      mimeType: 'image/gif',
+    })
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(mockStoreIdentityDocument).not.toHaveBeenCalled()
+  })
+
+  it('classifies oversized identity documents before downloading the binary', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        url: 'https://lookaside.whatsapp.net/identity-doc-large',
+        mime_type: 'application/pdf',
+        file_size: 20_000_000,
+      }),
+    })
+
+    await expect(
+      downloadAndStoreWhatsAppIdentityDocument({
+        mediaId: 'media-large-doc',
+        verificationId: 'ver-1',
+        documentKind: 'ID_FRONT',
+        maxSizeBytes: 10_000_000,
+      }),
+    ).rejects.toMatchObject({
+      code: 'DOCUMENT_FILE_TOO_LARGE',
+      operation: 'document_size_validation',
+      sizeBytes: 20_000_000,
+      maxSizeBytes: 10_000_000,
+    })
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(mockStoreIdentityDocument).not.toHaveBeenCalled()
+  })
 })

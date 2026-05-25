@@ -10,6 +10,9 @@ const { mockDb, mockSendButtons, mockSendList, mockSendText, mockTransition, moc
       create: vi.fn(),
       update: vi.fn(),
     },
+    providerIdentityDocument: {
+      findFirst: vi.fn(),
+    },
   },
   mockSendButtons: vi.fn(),
   mockSendList: vi.fn(),
@@ -54,6 +57,7 @@ describe('WhatsApp identity verification fallback flow', () => {
       status: 'NOT_STARTED',
     })
     mockDb.providerIdentityVerification.update.mockResolvedValue({ id: 'ver-wa-1' })
+    mockDb.providerIdentityDocument.findFirst.mockResolvedValue(null)
     mockTransition.mockResolvedValue({ id: 'ver-wa-1' })
     mockDownloadIdentityMedia.mockResolvedValue({ documentId: 'doc-1' })
   })
@@ -234,7 +238,16 @@ describe('WhatsApp identity verification fallback flow', () => {
 
   it('keeps the document upload step recoverable when media storage fails', async () => {
     const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
-    mockDownloadIdentityMedia.mockRejectedValueOnce(new Error('WhatsApp media download failed: 410'))
+    const { IdentityDocumentMediaError } = await import('@/lib/identity-verification/document-media-errors')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockDownloadIdentityMedia.mockRejectedValueOnce(new IdentityDocumentMediaError({
+      code: 'WHATSAPP_MEDIA_DOWNLOAD_FAILED',
+      operation: 'whatsapp_media_download',
+      message: 'WhatsApp media download failed',
+      status: 410,
+      mediaIdSuffix: 'pired-doc',
+      mimeType: 'image/jpeg',
+    }))
 
     const result = await handleWhatsAppIdentityVerificationFlow(
       baseCtx(
@@ -258,6 +271,16 @@ describe('WhatsApp identity verification fallback flow', () => {
       verificationId: 'ver-wa-1',
       toStatus: 'AWAITING_SELFIE',
     }))
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[identity-verification:whatsapp] document media storage failed',
+      expect.objectContaining({
+        code: 'WHATSAPP_MEDIA_DOWNLOAD_FAILED',
+        failedOperationName: 'whatsapp_media_download',
+        mediaIdSuffix: 'pired-doc',
+        mimeType: 'image/jpeg',
+      }),
+    )
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('media-expired-doc')
     expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining("couldn't save"))
     expect(result).toMatchObject({
       nextStep: 'pj_identity_document',
@@ -267,6 +290,7 @@ describe('WhatsApp identity verification fallback flow', () => {
         identityVerificationDocumentKinds: ['ID_FRONT'],
       },
     })
+    warnSpy.mockRestore()
   })
 
   it('keeps the document upload step recoverable when WhatsApp media type is rejected', async () => {
@@ -297,6 +321,74 @@ describe('WhatsApp identity verification fallback flow', () => {
     }))
     expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining("couldn't save"))
     expect(result).toMatchObject({ nextStep: 'pj_identity_document' })
+  })
+
+  it('continues from the saved document state when the document is already stored', async () => {
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+    mockDb.providerIdentityDocument.findFirst.mockResolvedValueOnce({ id: 'doc-existing' })
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_document',
+        { type: 'button_reply', id: 'flow_continue' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+          identityVerificationDocumentKinds: ['ID_FRONT'],
+        },
+      ),
+    )
+
+    expect(mockDownloadIdentityMedia).not.toHaveBeenCalled()
+    expect(mockTransition).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      toStatus: 'AWAITING_SELFIE',
+    }))
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('selfie'))
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_selfie',
+      nextData: {
+        identityVerificationDocumentIds: ['doc-existing'],
+      },
+    })
+  })
+
+  it('logs state update failures after a document save and lets the provider continue safely later', async () => {
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockTransition.mockRejectedValueOnce(new Error('database unavailable'))
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_document',
+        { type: 'image', mediaId: 'media-doc-state-fail', mimeType: 'image/jpeg' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+          identityVerificationDocumentKinds: ['ID_FRONT'],
+        },
+      ),
+    )
+
+    expect(mockDownloadIdentityMedia).toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[identity-verification:whatsapp] verification state update failed',
+      expect.objectContaining({
+        code: 'VERIFICATION_STATE_UPDATE_FAILED',
+        failedOperationName: 'verification_state_update',
+        verificationId: 'ver-wa-1',
+        documentKind: 'ID_FRONT',
+      }),
+    )
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('media-doc-state-fail')
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining("We saved your document"))
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_document',
+      nextData: {
+        identityVerificationDocumentIds: ['doc-1'],
+      },
+    })
+    errorSpy.mockRestore()
   })
 
   it('submits selfie media as LOW-assurance manual review', async () => {

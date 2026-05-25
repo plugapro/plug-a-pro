@@ -13,6 +13,11 @@
 import { put } from '@vercel/blob'
 import { randomUUID } from 'crypto'
 import { db } from './db'
+import {
+  IdentityDocumentMediaError,
+  safeIdentityDocumentMediaErrorLog,
+  safeMediaIdSuffix,
+} from './identity-verification/document-media-errors'
 import { storeIdentityDocument } from './identity-verification/storage'
 import type { IdentityDocumentKind } from './identity-verification/types'
 
@@ -117,6 +122,7 @@ export async function downloadAndStoreWhatsAppIdentityDocument(params: {
 }): Promise<{ documentId: string }> {
   const { mediaId, verificationId, documentKind, maxSizeBytes = MAX_EVIDENCE_SIZE } = params
   const traceId = randomUUID().slice(0, 8)
+  const mediaIdSuffix = safeMediaIdSuffix(mediaId) ?? 'unknown'
   const { buffer, ext, meta } = await downloadWhatsAppMedia({
     mediaId,
     label: `identity:${documentKind}`,
@@ -125,9 +131,19 @@ export async function downloadAndStoreWhatsAppIdentityDocument(params: {
   })
   const file = new File(
     [buffer],
-    `${documentKind}-${mediaId.slice(-8)}.${ext}`,
+    `${documentKind}-${mediaIdSuffix}.${ext}`,
     { type: meta.mime_type },
   )
+  console.info('[whatsapp-media] identity document storage starting', {
+    traceId,
+    verificationId,
+    documentKind,
+    mediaIdSuffix,
+    mimeType: meta.mime_type,
+    sizeBytes: buffer.byteLength,
+    storageProvider: 'vercel_blob',
+    storageBucketName: 'identity',
+  })
   const document = await storeIdentityDocument({
     verificationId,
     documentKind,
@@ -136,7 +152,8 @@ export async function downloadAndStoreWhatsAppIdentityDocument(params: {
 
   console.info('[whatsapp-media] identity media stored privately', {
     traceId,
-    mediaIdSuffix: mediaId.slice(-8),
+    mediaIdSuffix,
+    verificationId,
     documentId: document.id,
     documentKind,
     mimeType: meta.mime_type,
@@ -153,8 +170,23 @@ async function downloadWhatsAppMedia(params: {
   traceId: string
 }): Promise<WhatsAppMediaDownload> {
   const { mediaId, label, maxSizeBytes, traceId } = params
+  const mediaIdSuffix = safeMediaIdSuffix(mediaId)
+  if (!mediaId) {
+    throw new IdentityDocumentMediaError({
+      code: 'WHATSAPP_MEDIA_ID_MISSING',
+      operation: 'whatsapp_media_id_extract',
+      message: 'WhatsApp media ID missing',
+    })
+  }
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
-  if (!accessToken) throw new Error('Missing WHATSAPP_ACCESS_TOKEN')
+  if (!accessToken) {
+    throw new IdentityDocumentMediaError({
+      code: 'WHATSAPP_ACCESS_TOKEN_MISSING',
+      operation: 'whatsapp_media_metadata_fetch',
+      message: 'WhatsApp access token missing',
+      mediaIdSuffix,
+    })
+  }
 
   // Step 1 — resolve media URL + metadata
   const metaRes = await fetch(
@@ -162,33 +194,56 @@ async function downloadWhatsAppMedia(params: {
     { headers: { Authorization: `Bearer ${accessToken}` } },
   )
   if (!metaRes.ok) {
-    const err = await metaRes.text()
-    throw new Error(`WhatsApp media metadata fetch failed (${metaRes.status}): ${err}`)
+    const error = new IdentityDocumentMediaError({
+      code: 'WHATSAPP_MEDIA_METADATA_FETCH_FAILED',
+      operation: 'whatsapp_media_metadata_fetch',
+      message: `WhatsApp media metadata fetch failed (${metaRes.status})`,
+      status: metaRes.status,
+      mediaIdSuffix,
+    })
+    console.warn(
+      '[whatsapp-media] metadata fetch failed',
+      safeIdentityDocumentMediaErrorLog(error),
+    )
+    throw error
   }
   const meta = await metaRes.json() as { url: string; mime_type: string; file_size: number }
 
   if (!ALLOWED_EVIDENCE_TYPES[meta.mime_type]) {
-    console.warn('[whatsapp-media] rejected unsupported media type', {
-      traceId,
-      mediaIdSuffix: mediaId.slice(-8),
+    const error = new IdentityDocumentMediaError({
+      code: 'UNSUPPORTED_DOCUMENT_MIME_TYPE',
+      operation: 'document_mime_validation',
+      message: `Unsupported media type: ${meta.mime_type}`,
+      mediaIdSuffix,
       mimeType: meta.mime_type,
+    })
+    console.warn('[whatsapp-media] rejected unsupported media type', {
+      ...safeIdentityDocumentMediaErrorLog(error),
+      traceId,
       label,
     })
-    throw new Error(`Unsupported media type: ${meta.mime_type}`)
+    throw error
   }
   if (meta.file_size > maxSizeBytes) {
-    console.warn('[whatsapp-media] rejected oversized media', {
-      traceId,
-      mediaIdSuffix: mediaId.slice(-8),
+    const error = new IdentityDocumentMediaError({
+      code: 'DOCUMENT_FILE_TOO_LARGE',
+      operation: 'document_size_validation',
+      message: `File too large: ${meta.file_size} bytes (max ${maxSizeBytes})`,
+      mediaIdSuffix,
+      mimeType: meta.mime_type,
       sizeBytes: meta.file_size,
       maxSizeBytes,
+    })
+    console.warn('[whatsapp-media] rejected oversized media', {
+      ...safeIdentityDocumentMediaErrorLog(error),
+      traceId,
       label,
     })
-    throw new Error(`File too large: ${meta.file_size} bytes (max ${maxSizeBytes})`)
+    throw error
   }
   console.info('[whatsapp-media] metadata resolved', {
     traceId,
-    mediaIdSuffix: mediaId.slice(-8),
+    mediaIdSuffix,
     mimeType: meta.mime_type,
     sizeBytes: meta.file_size,
     label,
@@ -199,17 +254,46 @@ async function downloadWhatsAppMedia(params: {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!mediaRes.ok) {
-    throw new Error(`WhatsApp media download failed: ${mediaRes.status}`)
+    const error = new IdentityDocumentMediaError({
+      code: 'WHATSAPP_MEDIA_DOWNLOAD_FAILED',
+      operation: 'whatsapp_media_download',
+      message: `WhatsApp media download failed: ${mediaRes.status}`,
+      status: mediaRes.status,
+      mediaIdSuffix,
+      mimeType: meta.mime_type,
+      sizeBytes: meta.file_size,
+    })
+    console.warn(
+      '[whatsapp-media] binary download failed',
+      safeIdentityDocumentMediaErrorLog(error),
+    )
+    throw error
   }
   const buffer = await mediaRes.arrayBuffer()
   if (buffer.byteLength === 0) {
+    const error = new IdentityDocumentMediaError({
+      code: 'WHATSAPP_MEDIA_DOWNLOAD_FAILED',
+      operation: 'whatsapp_media_download',
+      message: 'WhatsApp media download returned an empty file',
+      status: mediaRes.status,
+      mediaIdSuffix,
+      mimeType: meta.mime_type,
+      sizeBytes: 0,
+    })
     console.error('[whatsapp-media] downloaded empty media body', {
+      ...safeIdentityDocumentMediaErrorLog(error),
       traceId,
-      mediaIdSuffix: mediaId.slice(-8),
       label,
     })
-    throw new Error('WhatsApp media download returned an empty file')
+    throw error
   }
+  console.info('[whatsapp-media] binary media downloaded', {
+    traceId,
+    mediaIdSuffix,
+    mimeType: meta.mime_type,
+    sizeBytes: buffer.byteLength,
+    label,
+  })
 
   return {
     buffer,

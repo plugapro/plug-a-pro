@@ -1,5 +1,11 @@
 import { db } from '../db'
 import { hashIdentifier, identifierLast4, normalizeIdentifier } from '../identity-verification/crypto'
+import {
+  IdentityDocumentMediaError,
+  safeIdentityDocumentMediaErrorLog,
+  safeMediaIdSuffix,
+  toIdentityDocumentMediaError,
+} from '../identity-verification/document-media-errors'
 import { transitionIdentityVerification } from '../identity-verification/orchestrator'
 import { validatePassportNumber, validateSaId } from '../identity-verification/sa-id'
 import {
@@ -209,6 +215,19 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done', nextData: {} }
   }
   if (!mediaId || !['image', 'document'].includes(ctx.reply.type)) {
+    if (isContinueReply(ctx) && verificationId && documentKind) {
+      const existingDocument = await findStoredIdentityDocument(verificationId, documentKind)
+      if (existingDocument) {
+        return continueAfterIdentityDocumentStored({
+          ctx,
+          verificationId,
+          identityBasis,
+          pendingDocumentKinds,
+          documentKind,
+          documentId: existingDocument.id,
+        })
+      }
+    }
     await sendText(ctx.phone, documentPrompt(documentKind, identityBasis))
     return {
       nextStep: 'pj_identity_document',
@@ -232,12 +251,33 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
       maxSizeBytes: IDENTITY_WHATSAPP_MEDIA_MAX_BYTES,
     })
   } catch (error) {
-    console.warn('[identity-verification:whatsapp] document media storage failed', {
+    const classified = toIdentityDocumentMediaError(error, {
+      code: 'DOCUMENT_STORAGE_UPLOAD_FAILED',
+      operation: 'document_storage_upload',
+      message: 'Identity document media storage failed',
       verificationId,
       documentKind,
-      mediaIdSuffix: mediaId.slice(-8),
-      reason: identityMediaFailureReason(error),
+      mediaIdSuffix: safeMediaIdSuffix(mediaId),
+      mimeType: ctx.reply.mimeType,
+      maxSizeBytes: IDENTITY_WHATSAPP_MEDIA_MAX_BYTES,
+      storageProvider: 'vercel_blob',
+      storageBucketName: 'identity',
     })
+    console.warn(
+      '[identity-verification:whatsapp] document media storage failed',
+      {
+        ...safeIdentityDocumentMediaErrorLog(classified, {
+          verificationId,
+          documentKind,
+          mediaIdSuffix: safeMediaIdSuffix(mediaId),
+          mimeType: ctx.reply.mimeType,
+          maxSizeBytes: IDENTITY_WHATSAPP_MEDIA_MAX_BYTES,
+          storageProvider: 'vercel_blob',
+          storageBucketName: 'identity',
+        }),
+        reason: identityMediaFailureReason(classified),
+      },
+    )
     await sendText(ctx.phone, "We couldn't save that document photo right now. Please send a clear image or PDF again.")
     return {
       nextStep: 'pj_identity_document',
@@ -249,6 +289,25 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
+  return continueAfterIdentityDocumentStored({
+    ctx,
+    verificationId,
+    identityBasis,
+    pendingDocumentKinds,
+    documentKind,
+    documentId: storedDocument.documentId,
+  })
+}
+
+async function continueAfterIdentityDocumentStored(params: {
+  ctx: FlowContext
+  verificationId: string
+  identityBasis: IdentityBasis
+  pendingDocumentKinds: IdentityDocumentKind[]
+  documentKind: IdentityDocumentKind
+  documentId: string
+}): Promise<FlowResult> {
+  const { ctx, verificationId, identityBasis, pendingDocumentKinds, documentKind, documentId } = params
   const remaining = pendingDocumentKinds.slice(1)
   if (remaining.length > 0) {
     await sendText(ctx.phone, documentPrompt(remaining[0], identityBasis))
@@ -260,17 +319,45 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
         identityVerificationDocumentKinds: remaining,
         identityVerificationDocumentIds: [
           ...(ctx.data.identityVerificationDocumentIds ?? []),
-          storedDocument.documentId,
+          documentId,
         ],
       },
     }
   }
 
-  await transitionIdentityVerification({
-    verificationId,
-    toStatus: 'AWAITING_SELFIE',
-    metadata: { channel: 'whatsapp', identityBasis },
-  })
+  try {
+    await transitionIdentityVerification({
+      verificationId,
+      toStatus: 'AWAITING_SELFIE',
+      metadata: { channel: 'whatsapp', identityBasis },
+    })
+  } catch (error) {
+    const classified = new IdentityDocumentMediaError({
+      code: 'VERIFICATION_STATE_UPDATE_FAILED',
+      operation: 'verification_state_update',
+      message: 'Identity verification state update failed after document save',
+      cause: error,
+      verificationId,
+      documentKind,
+    })
+    console.error(
+      '[identity-verification:whatsapp] verification state update failed',
+      safeIdentityDocumentMediaErrorLog(classified, { verificationId, documentKind }),
+    )
+    await sendText(ctx.phone, "We saved your document, but couldn't move to the next step right now. Reply Continue to keep going.")
+    return {
+      nextStep: 'pj_identity_document',
+      nextData: {
+        identityVerificationId: verificationId,
+        identityVerificationBasis: identityBasis,
+        identityVerificationDocumentKinds: pendingDocumentKinds,
+        identityVerificationDocumentIds: [
+          ...(ctx.data.identityVerificationDocumentIds ?? []),
+          documentId,
+        ],
+      },
+    }
+  }
   await sendText(ctx.phone, 'Now send a clear selfie photo of your face. This WhatsApp option is reviewed manually and may still require a secure PWA liveness step before buying credits.')
 
   return {
@@ -280,10 +367,37 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
       identityVerificationBasis: identityBasis,
       identityVerificationDocumentIds: [
         ...(ctx.data.identityVerificationDocumentIds ?? []),
-        storedDocument.documentId,
+        documentId,
       ],
     },
   }
+}
+
+async function findStoredIdentityDocument(
+  verificationId: string,
+  documentKind: IdentityDocumentKind,
+): Promise<{ id: string } | null> {
+  try {
+    return await db.providerIdentityDocument.findFirst({
+      where: { verificationId, documentKind },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+    })
+  } catch (error) {
+    console.warn('[identity-verification:whatsapp] stored document lookup failed', {
+      code: 'VERIFICATION_DOCUMENT_DB_WRITE_FAILED',
+      failedOperationName: 'verification_document_db_write',
+      verificationId,
+      documentKind,
+      reason: error instanceof Error ? error.name : 'unknown',
+    })
+    return null
+  }
+}
+
+function isContinueReply(ctx: FlowContext): boolean {
+  if (ctx.reply.type === 'button_reply' && ctx.reply.id?.toLowerCase().includes('continue')) return true
+  return ctx.reply.type === 'text' && ctx.reply.text?.trim().toLowerCase() === 'continue'
 }
 
 async function handleIdentitySelfie(ctx: FlowContext): Promise<FlowResult> {
@@ -346,6 +460,7 @@ async function handleIdentitySelfie(ctx: FlowContext): Promise<FlowResult> {
 }
 
 function identityMediaFailureReason(error: unknown) {
+  if (error instanceof IdentityDocumentMediaError) return error.code
   const message = error instanceof Error ? error.message : String(error)
   if (message.includes('Unsupported media type')) return 'unsupported_media_type'
   if (message.includes('File too large')) return 'file_too_large'
