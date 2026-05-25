@@ -95,7 +95,9 @@ describe('provider verification tokens', () => {
       accessTokenRevokedAt: new Date('2026-05-25T09:00:00.000Z'),
     })
 
-    await expect(resolveProviderVerificationToken(token)).rejects.toMatchObject({ code: 'TOKEN_REVOKED' })
+    await expect(
+      resolveProviderVerificationToken(token, { now: new Date('2026-05-25T10:00:00.000Z') }),
+    ).rejects.toMatchObject({ code: 'TOKEN_REVOKED' })
   })
 
   it('rejects terminal verification tokens', async () => {
@@ -109,6 +111,8 @@ describe('provider verification tokens', () => {
       accessTokenRevokedAt: null,
     })
 
-    await expect(resolveProviderVerificationToken(token)).rejects.toMatchObject({ code: 'TOKEN_TERMINAL' })
+    await expect(
+      resolveProviderVerificationToken(token, { now: new Date('2026-05-25T10:00:00.000Z') }),
+    ).rejects.toMatchObject({ code: 'TOKEN_TERMINAL' })
   })
 })
