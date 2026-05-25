@@ -591,6 +591,71 @@ export async function notifyProviderPayatTopUpInitiated(
   }
 }
 
+type CancelPayatTopUpResult =
+  | { ok: true }
+  | { ok: false; code: 'FORBIDDEN' | 'NOT_CANCELLABLE'; message: string }
+
+export async function cancelProviderPayatTopUpIntent(
+  intentId: string,
+): Promise<CancelPayatTopUpResult> {
+  const actor = await getAuthenticatedProvider().catch(() => null)
+  if (!actor) {
+    return { ok: false, code: 'FORBIDDEN', message: 'Not authorized.' }
+  }
+
+  const cancelled = await db.$transaction(async (tx) => {
+    const intent = await tx.paymentIntent.findFirst({
+      where: {
+        id: intentId,
+        providerId: actor.id,
+        paymentMethod: 'PAYAT',
+        status: 'PENDING_PAYMENT',
+      },
+      select: { metadata: true },
+    })
+    if (!intent) return false
+
+    const existingMeta =
+      typeof intent.metadata === 'object' &&
+      intent.metadata !== null &&
+      !Array.isArray(intent.metadata)
+        ? (intent.metadata as Record<string, unknown>)
+        : {}
+
+    await tx.paymentIntent.update({
+      where: { id: intentId },
+      data: {
+        status: 'CANCELLED',
+        metadata: {
+          ...existingMeta,
+          cancelledAt: new Date().toISOString(),
+          cancelledBy: 'provider',
+        },
+      },
+    })
+
+    return true
+  })
+
+  if (!cancelled) {
+    return {
+      ok: false,
+      code: 'NOT_CANCELLABLE',
+      message: 'This link cannot be cancelled — it may have already been paid, expired, or cancelled.',
+    }
+  }
+
+  revalidatePath('/provider/credits')
+  revalidatePath('/provider/credits/pending')
+
+  console.info('[payat] intent_cancelled_by_provider', {
+    providerId: actor.id,
+    intentId,
+  })
+
+  return { ok: true }
+}
+
 export async function getProviderWalletLedger(): Promise<ProviderWalletLedgerItem[]> {
   const provider = await getAuthenticatedProvider()
   const entries = await getProviderWalletLedgerEntries(provider.id, { limit: LEDGER_LIMIT })

@@ -35,7 +35,7 @@ function makeIntent(overrides: Record<string, unknown> = {}) {
     paymentReference: 'PAT-ABCDEF',
     providerCellphone: '+27821234567',
     creditedAt: null,
-    expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     provider: { id: 'provider-1', phone: '+27821234567' },
     ...overrides,
   }

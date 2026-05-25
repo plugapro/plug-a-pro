@@ -491,9 +491,9 @@ export async function createPayatTopUpIntent(
       () => `PAT-${randomBytes(6).toString('hex').toUpperCase()}`,
     )
 
-    // H-2: expiresAt matches the Pay@ RTP daysValid:3 so the intent does not
+    // H-2: expiresAt matches the Pay@ RTP daysValid:1 so the intent does not
     // stay PENDING_PAYMENT indefinitely after the payment link expires.
-    const payatExpiresAt = new Date((input.now ?? new Date()).getTime() + 3 * 24 * 60 * 60 * 1000)
+    const payatExpiresAt = new Date((input.now ?? new Date()).getTime() + 24 * 60 * 60 * 1000)
 
     // The PaymentIntent is created before Pay@ is called so webhook references
     // can use the immutable intent ID and remain idempotent under retries.
@@ -529,7 +529,7 @@ export async function createPayatTopUpIntent(
 
   // C-2: If the Pay@ API call fails the intent is already committed as
   // PENDING_PAYMENT. Without cleanup, the DUPLICATE_INTENT guard would block
-  // retries for the full 3-day expiresAt window. Mark it FAILED before throwing.
+  // retries for the full 24-hour expiresAt window. Mark it FAILED before throwing.
   let payat: PayatPaymentResponse
   try {
     console.info(JSON.stringify({

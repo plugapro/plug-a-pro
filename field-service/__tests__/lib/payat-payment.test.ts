@@ -88,7 +88,7 @@ describe('Pay@ merchant RTP payment service', () => {
       customerNameSurname: 'Thabo Nkosi',
       customerMobileNumber: '+27829876543',
       customerEmail: 'thabo@example.com',
-      daysValid: 3,
+      daysValid: 1,
     })
     // clientAccountNumber must be a 14-digit numeric string
     expect(body.clientAccountNumber).toMatch(/^\d{14}$/)

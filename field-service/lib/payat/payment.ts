@@ -188,7 +188,7 @@ async function sendPayatPaymentRequest(
           // Always include customerEmail (even empty string). The integrator endpoint
           // returns non-2xx when customerEmail is absent entirely.
           customerEmail: params.providerEmail,
-          daysValid: 3,
+          daysValid: 1,
         }),
         signal: AbortSignal.timeout(10_000),
       },

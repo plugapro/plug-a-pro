@@ -219,13 +219,42 @@ describe('creditProviderWalletFromGatewayItn', () => {
     expect(mockNotify).not.toHaveBeenCalled()
   })
 
-  it('returns credited: false for a non-creditable intent status', async () => {
+  it('returns credited: false for a non-creditable intent status (FAILED)', async () => {
     walletState.intent = makeIntent({ status: 'FAILED' })
     const { creditProviderWalletFromGatewayItn } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
     const result = await creditProviderWalletFromGatewayItn('intent-1')
     expect(result).toMatchObject({ credited: false, reason: expect.stringContaining('FAILED') })
+  })
+
+  // CANCELLED intents are creditable so a provider who self-cancels a link but
+  // then pays it at the till still receives their credits (money-safe path).
+  it('credits wallet for a CANCELLED intent (honor-late-payment)', async () => {
+    walletState.intent = makeIntent({ status: 'CANCELLED' })
+    const { creditProviderWalletFromGatewayItn } = await import(
+      '../../lib/provider-credit-gateway-itn'
+    )
+    const result = await creditProviderWalletFromGatewayItn('intent-1')
+
+    expect(result).toMatchObject({ credited: true })
+    expect(walletState.wallet!.paidCreditBalance).toBe(2)
+    expect(walletState.intent!.status).toBe('CREDITED')
+  })
+
+  it('does not double-credit a CANCELLED intent on a second webhook call', async () => {
+    walletState.intent = makeIntent({ status: 'CANCELLED' })
+    const { creditProviderWalletFromGatewayItn } = await import(
+      '../../lib/provider-credit-gateway-itn'
+    )
+
+    const first = await creditProviderWalletFromGatewayItn('intent-1')
+    expect(first).toMatchObject({ credited: true })
+
+    // Second call: intent is now CREDITED — should be idempotent no-op.
+    const second = await creditProviderWalletFromGatewayItn('intent-1')
+    expect(second).toMatchObject({ credited: false })
+    expect(walletState.wallet!.paidCreditBalance).toBe(2)
   })
 
   it('handles concurrent duplicate calls via the updateMany lock', async () => {

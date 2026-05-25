@@ -23,7 +23,9 @@ import { creditPaidCreditsInTransaction } from './provider-wallet'
 // Gateway intents arrive at ITN_RECEIVED before crediting. This function
 // accepts both ITN_RECEIVED (normal flow) and PENDING_PAYMENT (admin retry
 // or missed-ITN recovery path) as creditable statuses.
-const GATEWAY_CREDITABLE_STATUSES = ['PENDING_PAYMENT', 'ITN_RECEIVED'] as const
+// CANCELLED is included so a provider who self-cancels a link but still pays
+// it at a till is credited rather than relying on manual recovery.
+const GATEWAY_CREDITABLE_STATUSES = ['PENDING_PAYMENT', 'ITN_RECEIVED', 'CANCELLED'] as const
 
 type CreditFromItnResult =
   | { credited: true; ledgerEntryId: string }
