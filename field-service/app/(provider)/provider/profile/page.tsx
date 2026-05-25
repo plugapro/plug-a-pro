@@ -18,6 +18,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ServiceAreaPicker } from '@/components/provider/ServiceAreaPicker'
 import { SkillPicker } from '@/components/provider/SkillPicker'
+import {
+  providerApplicationApprovalStatus,
+  providerIdentityVerificationStatus,
+  type ProviderStatusTone,
+} from '@/lib/provider-identity-status'
 import { updateProviderProfileFromFormAction } from './actions'
 
 export const metadata = buildMetadata({ title: 'My Profile', noIndex: true })
@@ -31,6 +36,21 @@ const DAYS = [
   { value: 6, label: 'Saturday' },
   { value: 0, label: 'Sunday' },
 ]
+
+function statusPillStyle(tone: ProviderStatusTone) {
+  switch (tone) {
+    case 'success':
+      return { background: 'rgba(15,162,138,0.12)', color: '#0FA28A' }
+    case 'danger':
+      return { background: 'rgba(239,68,68,0.12)', color: '#EF4444' }
+    case 'info':
+      return { background: 'rgba(42,120,240,0.12)', color: '#2A78F0' }
+    case 'warning':
+      return { background: 'rgba(255,194,43,0.15)', color: '#FFC22B' }
+    default:
+      return { background: 'rgba(148,163,184,0.14)', color: '#64748B' }
+  }
+}
 
 export default async function ProviderProfilePage() {
   const session = await requireProvider()
@@ -109,6 +129,8 @@ export default async function ProviderProfilePage() {
     ? reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length
     : null
   const reviewByJobId = new Map(reviews.map((review) => [review.jobId, review]))
+  const applicationStatus = providerApplicationApprovalStatus(provider.verified)
+  const identityStatus = providerIdentityVerificationStatus(provider.kycStatus)
 
   return (
     <div className="pb-32 screen-enter">
@@ -130,12 +152,21 @@ export default async function ProviderProfilePage() {
               {provider.name ?? 'Provider'}
             </div>
             <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>{provider.phone ?? '-'}</div>
-            <div className="mt-1.5 inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-bold tracking-[0.04em] uppercase"
-                 style={{
-                   background: provider.verified ? 'rgba(15,162,138,0.12)' : 'rgba(255,194,43,0.15)',
-                   color: provider.verified ? '#0FA28A' : '#FFC22B',
-                 }}>
-              {provider.verified ? 'Verified' : 'Pending verification'}
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <span
+                className="inline-flex h-5 items-center rounded-full px-2 text-[10.5px] font-bold uppercase tracking-[0.04em]"
+                style={statusPillStyle(applicationStatus.tone)}
+                title={applicationStatus.description}
+              >
+                {applicationStatus.label}
+              </span>
+              <span
+                className="inline-flex h-5 items-center rounded-full px-2 text-[10.5px] font-bold uppercase tracking-[0.04em]"
+                style={statusPillStyle(identityStatus.tone)}
+                title={identityStatus.description}
+              >
+                {identityStatus.label}
+              </span>
             </div>
           </div>
         </div>

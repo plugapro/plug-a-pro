@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { randomUUID } from 'crypto'
-import { type WalletCreditType, type WalletLedgerEntryType } from '@prisma/client'
+import { type KycStatus, type WalletCreditType, type WalletLedgerEntryType } from '@prisma/client'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import {
@@ -24,6 +24,10 @@ import { PayatConfigError, PayatApiError, PayatTokenError } from '@/lib/payat'
 import { notifyProviderPayatTopUpInitiated as notifyProviderPayatTopUpInitiatedCore } from '@/lib/provider-wallet-notifications'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import { isProviderEligibleForCredits } from '@/lib/identity-verification/credit-gate'
+import {
+  providerIdentityVerificationStatus,
+  type ProviderIdentityVerificationStatus,
+} from '@/lib/provider-identity-status'
 
 const ACTIVE_PAYAT_STATUSES = ['PENDING_PAYMENT', 'ITN_RECEIVED'] as const
 
@@ -48,6 +52,7 @@ function payatPackageIdForAmount(amountCents: number) {
 type ProviderWalletActor = {
   id: string
   phone: string | null
+  kycStatus: KycStatus
 }
 
 export type ProviderWalletSummary = {
@@ -66,6 +71,7 @@ export type ProviderWallet = {
    *  has not completed high-assurance KYC. The top-up UI hides packages and
    *  shows a verification prompt instead. */
   creditPurchaseLocked: boolean
+  identityVerificationStatus: ProviderIdentityVerificationStatus
 }
 
 export type ProviderWalletPendingIntent = {
@@ -153,7 +159,7 @@ async function getAuthenticatedProvider(): Promise<ProviderWalletActor> {
   const session = await requireProvider()
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
-    select: { id: true, phone: true },
+    select: { id: true, phone: true, kycStatus: true },
   })
 
   if (!provider) {
@@ -166,6 +172,7 @@ async function getAuthenticatedProvider(): Promise<ProviderWalletActor> {
   return {
     id: provider.id,
     phone: provider.phone ?? session.phone ?? null,
+    kycStatus: provider.kycStatus,
   }
 }
 
@@ -376,6 +383,7 @@ export async function getProviderWallet(): Promise<ProviderWallet> {
     starter: balance.promoCreditBalance,
     pendingIntents,
     creditPurchaseLocked: !eligible,
+    identityVerificationStatus: providerIdentityVerificationStatus(provider.kycStatus),
     recentActivity: walletEntries.map((entry) => {
       const signedAmount = isDebit(entry.entryType) ? -entry.amountCredits : entry.amountCredits
 

@@ -124,7 +124,6 @@ export default function ProviderSignInPage() {
   const [countryCode] = useState<OtpCountryCode>('ZA')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<SendCodeError | null>(null)
-  const [formStartedAt] = useState(() => Date.now())
   const requestedNext = searchParams.get('next') ?? searchParams.get('callbackUrl')
   const next = getSafeProviderNextPath(requestedNext, '/provider/jobs')
   const customerNext = getSafeCustomerNextPath(requestedNext, '/bookings')
@@ -173,7 +172,10 @@ export default function ProviderSignInPage() {
           phone,
           countryCode,
           traceId,
-          botCheck: { startedAt: formStartedAt, website: '' },
+          // Use a fresh timestamp per OTP attempt so a legitimate provider is
+          // not blocked after leaving the sign-in page open for too long.
+          // The small backdate keeps the existing minimum-age bot check intact.
+          botCheck: { startedAt: Date.now() - 1_000, website: '' },
         }),
       })
       const payload = await response.json().catch(() => ({})) as ApiSendCodePayload

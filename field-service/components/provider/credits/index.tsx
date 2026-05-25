@@ -116,7 +116,7 @@ function ActivityList({ items }: { items: ProviderWalletRecentActivityItem[] }) 
 function WaitingIndicator() { return <div className="flex items-center justify-center gap-2 rounded-[16px] border border-emerald-500/15 bg-emerald-500/5 px-3 py-2.5"><span aria-hidden className="block size-2 animate-pulse rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(15,157,88,0.12)]" /><span className="text-[12.5px] font-semibold text-emerald-700 dark:text-emerald-400">Waiting for payment</span><span className="font-mono text-[10.5px] text-emerald-700/65 dark:text-emerald-400/65">· checking every 5s</span></div> }
 function StepRow({ n, title, body }: { n: number; title: string; body: string }) { return <div className="flex gap-3 rounded-[16px] bg-card p-3 shadow-[inset_0_0_0_1px_var(--border)]"><div className="flex size-6 shrink-0 items-center justify-center rounded-full brand-gradient-soft text-xs font-extrabold text-[var(--brand-purple)]">{n}</div><div className="min-w-0 flex-1"><div className="text-[13.5px] font-semibold text-[var(--ink)]">{title}</div><div className="mt-0.5 text-[12px] leading-snug text-[var(--ink-mute)]">{body}</div></div></div> }
 
-function VerificationPromptCard() {
+function VerificationPromptCard({ identityStatus }: { identityStatus: ProviderWallet['identityVerificationStatus'] }) {
   const [isPending, startTransition] = useTransition()
 
   function handleVerify() {
@@ -141,9 +141,9 @@ function VerificationPromptCard() {
           <Lock className="size-6 text-amber-600" aria-hidden />
         </div>
         <div>
-          <div className="text-[16px] font-bold text-[var(--ink)]">ID verification needed</div>
+          <div className="text-[16px] font-bold text-[var(--ink)]">{identityStatus.creditGateTitle}</div>
           <p className="mt-1 text-[13px] leading-relaxed text-[var(--ink-mute)]">
-            Verify your identity to unlock credit top-ups.
+            {identityStatus.creditGateDescription}
           </p>
         </div>
         <Button
@@ -219,7 +219,7 @@ export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: Provide
           )}
         </div>
         {wallet.creditPurchaseLocked ? (
-          <VerificationPromptCard />
+          <VerificationPromptCard identityStatus={wallet.identityVerificationStatus} />
         ) : (
           <div className="space-y-2.5">
             {packages.map((pkg) => (
