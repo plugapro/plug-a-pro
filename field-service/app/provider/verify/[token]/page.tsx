@@ -145,10 +145,13 @@ const COUNTRY_OPTIONS = [
 
 export default async function ProviderIdentityVerifyPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>
+  searchParams?: Promise<{ upload_error?: string; uploaded?: string; missing?: string }>
 }) {
   const { token } = await params
+  const feedback = buildFeedback(searchParams ? await searchParams : undefined)
   const verification = await resolveForPage(token)
   if (!verification) return <ExpiredLink />
 
@@ -187,7 +190,7 @@ export default async function ProviderIdentityVerifyPage({
     'use server'
     const result = await submitIdentityDocuments(token)
     if (!result.ok) {
-      throw new Error(`Please upload your document photo before continuing. Missing: ${result.missingDocuments.join(', ')}`)
+      redirect(`/provider/verify/${token}?missing=document`)
     }
     redirect(`/provider/verify/${token}`)
   }
@@ -196,7 +199,7 @@ export default async function ProviderIdentityVerifyPage({
     'use server'
     const result = await submitIdentitySelfie(token)
     if (!result.ok) {
-      throw new Error('Please upload your selfie photo before continuing.')
+      redirect(`/provider/verify/${token}?missing=selfie`)
     }
     redirect(`/provider/verify/${token}`)
   }
@@ -219,6 +222,7 @@ export default async function ProviderIdentityVerifyPage({
       </header>
 
       <StatusStrip status={verification.status} />
+      {feedback ? <FeedbackBanner feedback={feedback} /> : null}
 
       {verification.status === 'NOT_STARTED' || verification.status === 'STARTED' ? (
         <section className="space-y-4 rounded-lg border bg-card p-4">
@@ -334,6 +338,41 @@ export default async function ProviderIdentityVerifyPage({
       ) : null}
     </main>
   )
+}
+
+function buildFeedback(params?: { upload_error?: string; uploaded?: string; missing?: string }) {
+  if (params?.upload_error) {
+    return {
+      tone: 'error' as const,
+      message: params.upload_error,
+    }
+  }
+  if (params?.missing === 'selfie') {
+    return {
+      tone: 'error' as const,
+      message: 'Please upload your selfie photo before continuing.',
+    }
+  }
+  if (params?.missing === 'document') {
+    return {
+      tone: 'error' as const,
+      message: 'Please upload your document photo before continuing.',
+    }
+  }
+  if (params?.uploaded) {
+    return {
+      tone: 'success' as const,
+      message: 'File uploaded. Continue when all required files show as uploaded.',
+    }
+  }
+  return null
+}
+
+function FeedbackBanner({ feedback }: { feedback: { tone: 'error' | 'success'; message: string } }) {
+  const className = feedback.tone === 'error'
+    ? 'rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive'
+    : 'tone-success rounded-lg border px-4 py-3 text-sm'
+  return <div className={className}>{feedback.message}</div>
 }
 
 async function resolveForPage(token: string) {
