@@ -340,6 +340,28 @@ describe('provider credits server actions', () => {
       }
     })
 
+    it('returns IDENTITY_NOT_VERIFIED when verification is required before paid top-ups', async () => {
+      const { db } = await arrangeProvider()
+      ;(db.paymentIntent.count as any).mockResolvedValue(0)
+      const { createPayatTopUpIntent, ProviderCreditPaymentIntentError } = await import(
+        '../../lib/provider-credit-payment-intents'
+      )
+      ;(createPayatTopUpIntent as any).mockRejectedValue(
+        new ProviderCreditPaymentIntentError(
+          'IDENTITY_NOT_VERIFIED',
+          'Identity verification is required before creating a paid top-up.',
+        ),
+      )
+
+      const { createProviderPayatTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
+      const result = await createProviderPayatTopUpIntent(10_000)
+
+      expect(result).toMatchObject({ ok: false, code: 'IDENTITY_NOT_VERIFIED' })
+      if (result.ok === false) {
+        expect(result.userMessage).toContain('verification')
+      }
+    })
+
     it('returns UNKNOWN for unrecognised errors', async () => {
       const { db } = await arrangeProvider()
       ;(db.paymentIntent.count as any).mockResolvedValue(0)
@@ -431,6 +453,28 @@ describe('provider credits server actions', () => {
         intentId: 'pf-intent-1',
         checkout: expect.objectContaining({ action: expect.stringContaining('payfast') }),
       })
+    })
+
+    it('returns IDENTITY_NOT_VERIFIED when payfast is blocked by identity gate', async () => {
+      const { db } = await arrangeProvider()
+      ;(db.paymentIntent.count as any).mockResolvedValue(0)
+      const { createPayfastTopUpIntent, ProviderCreditPaymentIntentError } = await import(
+        '../../lib/provider-credit-payment-intents'
+      )
+      ;(createPayfastTopUpIntent as any).mockRejectedValue(
+        new ProviderCreditPaymentIntentError(
+          'IDENTITY_NOT_VERIFIED',
+          'Identity verification is required before creating a paid top-up.',
+        ),
+      )
+
+      const { createProviderPayfastTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
+      const result = await createProviderPayfastTopUpIntent(10_000)
+
+      expect(result).toMatchObject({ ok: false, code: 'IDENTITY_NOT_VERIFIED' })
+      if (result.ok === false) {
+        expect(result.userMessage).toContain('verification')
+      }
     })
   })
 

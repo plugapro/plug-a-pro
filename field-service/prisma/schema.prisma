@@ -302,6 +302,7 @@ model Provider {
   promoAwards               ProviderPromoAward[]
   redeemedVouchers          PromoVoucher[]
   campaignRedemptions       ProviderCampaignRedemption[]
+  identityVerifications     ProviderIdentityVerification[]
 
   @@index([active, verified])
   @@index([isTestUser])
@@ -382,6 +383,7 @@ model ProviderApplication {
 
   provider    Provider?    @relation(fields: [providerId], references: [id])
   attachments Attachment[]
+  identityVerifications ProviderIdentityVerification[]
 
   @@index([approvalWhatsappSentAt])
   @@index([isTestUser, status])
@@ -951,6 +953,142 @@ model Attachment {
   providerApplication ProviderApplication? @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
 
   @@map("attachments")
+}
+
+// ─── Provider identity verification ──────────────────────────────────────────
+
+model ProviderIdentityVerification {
+  id                           String                     @id @default(cuid())
+  providerId                   String?
+  providerApplicationId        String?
+  channel                      VerificationChannel
+  identityBasis                IdentityBasis
+  issuingCountry               String?
+  nationality                  String?
+  identifierHash               String?
+  identifierLast4              String?
+  identifierEncrypted          String?
+  documentNumberHash           String?
+  documentNumberLast4          String?
+  documentExpiryDate           DateTime?
+  dobDerived                   DateTime?
+  genderDerived                String?
+  citizenshipDerived           String?
+  status                       VerificationStatus         @default(NOT_STARTED)
+  decision                     VerificationDecision?
+  assuranceLevel               VerificationAssuranceLevel @default(LOW)
+  riskFlags                    Json?
+  failureReasonCode            String?
+  providerNameComparisonResult String?
+  selfieMatchScore             Float?
+  livenessScore                Float?
+  documentConfidenceScore      Float?
+  dhaMatchResult               String?
+  immigrationStatusResult      String?
+  sourceCheckProvider          String?
+  rawPayloadRedacted           Json?
+  consentAcceptedAt            DateTime?
+  reviewedById                 String?
+  reviewedAt                   DateTime?
+  auditLogReference            String?
+  expiresAt                    DateTime?
+  accessTokenHash              String?                    @unique
+  accessTokenExpiresAt         DateTime?
+  accessTokenLastUsedAt        DateTime?
+  accessTokenRevokedAt         DateTime?
+  createdAt                    DateTime                   @default(now())
+  updatedAt                    DateTime                   @updatedAt
+
+  provider              Provider?                         @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  providerApplication   ProviderApplication?              @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
+  documents             ProviderIdentityDocument[]
+  events                ProviderVerificationEvent[]
+  reviews               ProviderVerificationReview[]
+  sensitiveAccessLogs   ProviderSensitiveDataAccessLog[]
+
+  @@index([identifierHash])
+  @@index([documentNumberHash])
+  @@index([status, createdAt])
+  @@index([providerId])
+  @@index([providerApplicationId])
+  @@index([assuranceLevel, status])
+  @@map("provider_identity_verifications")
+}
+
+model ProviderIdentityDocument {
+  id             String                     @id @default(cuid())
+  verificationId String
+  documentKind   IdentityDocumentKind
+  blobKey        String
+  mimeType       String
+  sizeBytes      Int
+  sha256         String
+  status         VerificationDocumentStatus @default(UPLOADED)
+  deleteAfter    DateTime
+  deletedAt      DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  verification        ProviderIdentityVerification   @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+  sensitiveAccessLogs ProviderSensitiveDataAccessLog[]
+
+  @@index([verificationId])
+  @@index([deleteAfter, deletedAt])
+  @@index([sha256])
+  @@map("provider_identity_documents")
+}
+
+model ProviderVerificationEvent {
+  id             String                @id @default(cuid())
+  verificationId String
+  fromStatus     VerificationStatus?
+  toStatus       VerificationStatus
+  actorId        String?
+  actorRole      String?
+  decision       VerificationDecision?
+  reasonCode     String?
+  metadata       Json?
+  createdAt      DateTime              @default(now())
+
+  verification ProviderIdentityVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId, createdAt])
+  @@map("provider_verification_events")
+}
+
+model ProviderVerificationReview {
+  id             String               @id @default(cuid())
+  verificationId String
+  reviewerId     String
+  decision       VerificationDecision
+  notes          String?
+  createdAt      DateTime             @default(now())
+
+  verification ProviderIdentityVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId, createdAt])
+  @@index([reviewerId, createdAt])
+  @@map("provider_verification_reviews")
+}
+
+model ProviderSensitiveDataAccessLog {
+  id             String                      @id @default(cuid())
+  verificationId String?
+  documentId     String?
+  actorId        String
+  actorRole      String
+  accessType     SensitiveIdentityAccessType
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime                    @default(now())
+
+  verification ProviderIdentityVerification? @relation(fields: [verificationId], references: [id], onDelete: SetNull)
+  document     ProviderIdentityDocument?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([verificationId, createdAt])
+  @@index([documentId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("provider_sensitive_data_access_logs")
 }
 
 // ─── Payments & Payouts ───────────────────────────────────────────────────────
@@ -2178,6 +2316,82 @@ enum KycStatus {
   VERIFIED
   REJECTED
   EXPIRED
+}
+
+enum IdentityBasis {
+  SA_ID
+  PASSPORT
+  REFUGEE_ID
+  ASYLUM_PERMIT
+  REFUGEE_PERMIT
+  WORK_PERMIT
+  PERMANENT_RESIDENCE_PERMIT
+}
+
+enum IdentityDocumentKind {
+  ID_FRONT
+  ID_BACK
+  GREEN_ID_BOOK
+  PASSPORT_PHOTO_PAGE
+  VISA
+  WORK_PERMIT
+  ASYLUM_SEEKER_PERMIT_SECTION_22
+  REFUGEE_PERMIT_SECTION_24
+  REFUGEE_ID
+  SELFIE
+  LIVENESS_FRAME
+}
+
+enum VerificationStatus {
+  NOT_STARTED
+  STARTED
+  CONSENTED
+  AWAITING_IDENTIFIER
+  AWAITING_DOCUMENT
+  AWAITING_SELFIE
+  SUBMITTED
+  PROCESSING
+  NEEDS_MANUAL_REVIEW
+  RETRY_REQUIRED
+  PASSED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum VerificationDecision {
+  PASS
+  FAIL
+  MANUAL_REVIEW
+  RETRY_REQUIRED
+  PROVIDER_UNAVAILABLE
+}
+
+enum VerificationChannel {
+  PWA
+  WHATSAPP
+  ADMIN
+  VENDOR
+}
+
+enum VerificationAssuranceLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum VerificationDocumentStatus {
+  UPLOADED
+  ACCEPTED
+  REJECTED
+  DELETED
+}
+
+enum SensitiveIdentityAccessType {
+  VIEW_DOC
+  REVEAL_IDENTIFIER
+  SIGNED_URL_ISSUED
+  EXPORT
 }
 
 enum ProviderStatus {

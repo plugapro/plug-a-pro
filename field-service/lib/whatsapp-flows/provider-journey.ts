@@ -1818,11 +1818,35 @@ async function handleTopUpPayatCreate(
       })
     }
   } catch (err) {
+    const isIdentityNotVerified =
+      err !== null &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: unknown }).code === 'IDENTITY_NOT_VERIFIED'
+
     const isDuplicate =
       err !== null &&
       typeof err === 'object' &&
       'code' in err &&
       (err as { code: unknown }).code === 'DUPLICATE_INTENT'
+
+    if (isIdentityNotVerified) {
+      const verificationUrl = getPublicAppUrl('/provider/verification')
+      if (verificationUrl) {
+        await sendCtaUrl(
+          ctx.phone,
+          '🛡️ *Identity check required*\n\nYou must complete identity verification before purchasing top-up credits.',
+          ctaLabelFor('identity_verification'),
+          verificationUrl,
+        )
+      } else {
+        await sendText(
+          ctx.phone,
+          '🛡️ Identity check required. Reply *verify identity* from the provider menu to continue.',
+        )
+      }
+      return { nextStep: 'pj_topup_select_amount' }
+    }
 
     const message = isDuplicate
       ? `You already have an active Pay@ top-up link. Check your earlier messages for the payment barcode, or visit the provider portal to start a new one after it expires.`

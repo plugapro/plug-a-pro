@@ -59,6 +59,7 @@ const {
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/csrf', () => ({ verifyRequestOrigin: vi.fn().mockReturnValue(true) }))
 vi.mock('@/lib/provider-credit-payment-intents', () => ({
   ProviderCreditPaymentIntentError: ProviderCreditPaymentIntentErrorMock,
   createManualEftTopUpIntent: mockCreateManualEftTopUpIntent,
@@ -290,6 +291,29 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     await expect(response.json()).resolves.toMatchObject({
       code: 'PROVIDER_PHONE_MISSING',
       error: expect.stringContaining('mobile number'),
+    })
+  })
+
+  it('maps identity-not-verified to 403 for top-up gating', async () => {
+    mockCreatePayatTopUpIntent.mockRejectedValue(
+      new ProviderCreditPaymentIntentErrorMock(
+        'IDENTITY_NOT_VERIFIED',
+        'provider identity not verified',
+      ),
+    )
+
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000 }),
+      }),
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'IDENTITY_NOT_VERIFIED',
+      error: expect.stringContaining('Identity verification is required before buying credits'),
     })
   })
 

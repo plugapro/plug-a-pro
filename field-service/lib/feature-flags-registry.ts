@@ -244,6 +244,37 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
+  // ─── Identity verification ───────────────────────────────────────────────────
+  'provider.identity.verification': {
+    description: 'Gate paid credit purchases (Pay@, Payfast, Manual EFT) behind HIGH-assurance identity verification. Disable to roll back without a deploy.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'admin.crud.verifications': {
+    description: 'Enable admin identity-verification review queue: view docs, approve/reject/request-retry. Requires TRUST or higher.',
+    owner: 'ops',
+    defaultValue: false,
+  },
+  'provider.identity.vendor.omnicheck': {
+    description: 'Enable OmniCheck/VerifyID as a live identity verification vendor (P2 — sandbox only until contract signed).',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'provider.identity.vendor.datanamix': {
+    description: 'Enable Datanamix/pbVerify as a live identity verification vendor (P2 — sandbox only until contract signed).',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'provider.identity.vendor.smile_id': {
+    description: 'Enable Smile ID as a live identity verification vendor for foreign-national passport paths (P3).',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'provider.identity.vendor.thisisme': {
+    description: 'Enable ThisIsMe NIIS as a live identity verification vendor for refugee/asylum-seeker paths (P3).',
+    owner: 'eng',
+    defaultValue: false,
+  },
   // ─── Vouchers ────────────────────────────────────────────────────────────────
   'admin.vouchers': {
     description: 'Enable the admin Vouchers page and cancel-voucher mutation.',

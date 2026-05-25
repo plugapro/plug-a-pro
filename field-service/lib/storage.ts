@@ -159,6 +159,31 @@ export async function getProviderPaymentProof(url: string) {
   })
 }
 
+export async function uploadIdentityDocument(params: {
+  verificationId: string
+  documentKind: string
+  file: File
+}) {
+  await validateFile(params.file)
+
+  const ext = safeExtension(params.file)
+  const key = `identity/${params.verificationId}/${params.documentKind}-${Date.now()}.${ext}`
+
+  return put(key, params.file, {
+    access: 'private',
+    addRandomSuffix: true,
+    contentType: params.file.type,
+    cacheControlMaxAge: 60,
+  })
+}
+
+export async function getIdentityDocument(blobKeyOrUrl: string) {
+  return get(blobKeyOrUrl, {
+    access: 'private',
+    useCache: false,
+  })
+}
+
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
 export async function deleteAttachment(attachmentId: string): Promise<void> {

@@ -1,6 +1,11 @@
 import { randomBytes, randomInt } from 'crypto'
-import { Prisma, type PaymentIntent } from '@prisma/client'
+import { KycStatus, Prisma, type PaymentIntent } from '@prisma/client'
 import { db } from './db'
+import {
+  IdentityCreditGateError,
+  assertIdentityVerifiedForCredits as assertHighAssuranceIdentityVerifiedForCredits,
+} from './identity-verification/credit-gate'
+import { isEnabled } from './flags'
 import { PLUG_A_PRO_CREDIT_VALUE_CENTS } from './provider-wallet'
 import {
   buildCheckoutPayload,
@@ -27,6 +32,7 @@ type PaymentIntentErrorCode =
   | 'PROVIDER_PHONE_MISSING'
   | 'REFERENCE_GENERATION_FAILED'
   | 'DUPLICATE_INTENT'
+  | 'IDENTITY_NOT_VERIFIED'
 
 export class ProviderCreditPaymentIntentError extends Error {
   constructor(
@@ -98,6 +104,43 @@ function assertValidTopUpAmount(amountCents: number) {
 function creditsForAmount(amountCents: number) {
   assertValidTopUpAmount(amountCents)
   return amountCents / PLUG_A_PRO_CREDIT_VALUE_CENTS
+}
+
+async function assertProviderVerifiedForPaidTopUp(provider: { id: string; kycStatus: KycStatus }) {
+  // Short-circuit when the feature is disabled — allows rollback without a deploy.
+  if (!(await isEnabled('provider.identity.verification'))) return
+  if (provider.kycStatus !== KycStatus.VERIFIED) {
+    throw new ProviderCreditPaymentIntentError(
+      'IDENTITY_NOT_VERIFIED',
+      'Identity verification is required before creating a paid top-up. Complete verification first.',
+    )
+  }
+  try {
+    await assertHighAssuranceIdentityVerifiedForCredits(provider.id)
+  } catch (err) {
+    if (err instanceof IdentityCreditGateError) {
+      throw new ProviderCreditPaymentIntentError(
+        'IDENTITY_NOT_VERIFIED',
+        err.message,
+      )
+    }
+    throw err
+  }
+}
+
+export async function assertIdentityVerifiedForCredits(providerId: string): Promise<{ id: string }> {
+  const provider = await db.provider.findUnique({
+    where: { id: providerId },
+    select: { id: true, kycStatus: true },
+  })
+  if (!provider) {
+    throw new ProviderCreditPaymentIntentError(
+      'PROVIDER_NOT_FOUND',
+      'Provider account not found.',
+    )
+  }
+  await assertProviderVerifiedForPaidTopUp(provider)
+  return { id: provider.id }
 }
 
 function toJson(metadata: CreateManualEftTopUpIntentInput['metadata']): Prisma.InputJsonValue {
@@ -213,7 +256,7 @@ export async function createManualEftTopUpIntent(
   const result = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
-      select: { id: true, phone: true },
+      select: { id: true, phone: true, kycStatus: true },
     })
 
     if (!provider) {
@@ -222,6 +265,7 @@ export async function createManualEftTopUpIntent(
         'Provider account not found.',
       )
     }
+    await assertProviderVerifiedForPaidTopUp(provider)
 
     const paymentReference = await createUniquePaymentReference(tx, referenceGenerator)
 
@@ -270,6 +314,7 @@ export type PayatTopUpFailureCode =
   | 'INVALID_AMOUNT'
   | 'PROVIDER_NOT_FOUND'
   | 'PROVIDER_PHONE_MISSING'
+  | 'IDENTITY_NOT_VERIFIED'
   | 'REFERENCE_GENERATION_FAILED'
   | 'PAYAT_TOKEN_FAILED'
   | 'PAYAT_API_FAILED'
@@ -366,7 +411,7 @@ export async function createPayatTopUpIntent(
   const { intent, provider, resolvedPhone } = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
-      select: { id: true, phone: true, name: true, email: true },
+      select: { id: true, phone: true, name: true, email: true, kycStatus: true },
     })
 
     if (!provider) {
@@ -381,6 +426,7 @@ export async function createPayatTopUpIntent(
         'Provider account not found.',
       )
     }
+    await assertProviderVerifiedForPaidTopUp(provider)
 
     console.info(JSON.stringify({
       event: 'payat.provider_resolved',
@@ -614,7 +660,7 @@ export async function createPayfastTopUpIntent(
   const intent = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
-      select: { id: true, phone: true, name: true, email: true },
+      select: { id: true, phone: true, name: true, email: true, kycStatus: true },
     })
 
     if (!provider) {
@@ -623,6 +669,7 @@ export async function createPayfastTopUpIntent(
         'Provider account not found.',
       )
     }
+    await assertProviderVerifiedForPaidTopUp(provider)
 
     // Use the intent ID as the Payfast m_payment_id and as the internal
     // payment reference. For Payfast there is no human-readable bank

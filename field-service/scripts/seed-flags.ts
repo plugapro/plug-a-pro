@@ -110,6 +110,30 @@ const FLAGS: Array<{ key: string; description: string }> = [
     description: 'Enable cron-based auto-approval of standard (non-high-risk) provider applications. When disabled, all applications queue for manual admin review only.',
   },
   {
+    key: 'provider.identity.verification',
+    description: 'Enable provider identity verification and paid-credit purchase gating.',
+  },
+  {
+    key: 'admin.crud.verifications',
+    description: 'Enable admin identity-verification review queue mutations.',
+  },
+  {
+    key: 'provider.identity.vendor.omnicheck',
+    description: 'Enable OmniCheck/VerifyID identity verification adapter.',
+  },
+  {
+    key: 'provider.identity.vendor.datanamix',
+    description: 'Enable Datanamix/pbVerify identity verification adapter.',
+  },
+  {
+    key: 'provider.identity.vendor.smile_id',
+    description: 'Enable Smile ID identity verification adapter for foreign-national paths.',
+  },
+  {
+    key: 'provider.identity.vendor.thisisme',
+    description: 'Enable ThisIsMe identity verification adapter for refugee/asylum paths.',
+  },
+  {
     key: 'feature.customer.operator_member',
     description: 'M1-T8: CustomerMember operator delegation — when enabled, a session whose phone/userId matches an active CustomerMember record resolves to the principal customer account (B2B team booking).',
   },

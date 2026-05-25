@@ -892,6 +892,24 @@ describe('handleProviderJourneyFlow', () => {
       expect(result.nextStep).toBe('pj_topup_select_amount')
     })
 
+    it('guides provider to verification when Pay@ intent requires identity verification', async () => {
+      ;(paymentIntents.createPayatTopUpIntent as ReturnType<typeof vi.fn>).mockRejectedValue({
+        code: 'IDENTITY_NOT_VERIFIED',
+      })
+
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'provider_topup_100'),
+      )
+
+      const ctaCalls = (wa.sendCtaUrl as ReturnType<typeof vi.fn>).mock.calls
+      const textCalls = (wa.sendText as ReturnType<typeof vi.fn>).mock.calls
+      const sawIdentityText = [...textCalls, ...ctaCalls].some((call) => call[1]?.includes('Identity check required'))
+      const sawRetryText = textCalls.some((call) => call[1]?.includes('complete identity verification'))
+
+      expect(sawIdentityText || sawRetryText).toBe(true)
+      expect(result.nextStep).toBe('pj_topup_select_amount')
+    })
+
     it('shows not-registered message when provider is not found', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
 

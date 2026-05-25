@@ -43,6 +43,12 @@ function mapProviderIntentError(error: ProviderCreditPaymentIntentError) {
       }
     case 'REFERENCE_GENERATION_FAILED':
       return { status: 500, error: 'Could not generate a payment reference right now. Please try again.', code: error.code }
+    case 'IDENTITY_NOT_VERIFIED':
+      return {
+        status: 403,
+        error: 'Identity verification is required before buying credits.',
+        code: error.code,
+      }
     default:
       return { status: 400, error: 'Could not create top-up payment intent.', code: error.code }
   }

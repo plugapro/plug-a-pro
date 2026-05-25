@@ -1313,12 +1313,32 @@ async function processInboundMessageUnlocked(
         // H-4: DUPLICATE_INTENT means an active Pay@ link already exists for this
         // amount. Telling the provider to "try again" would loop — give them a
         // specific message directing them to the link already sent.
+        const isIdentityNotVerified =
+          err !== null &&
+          typeof err === 'object' &&
+          'code' in err &&
+          (err as { code: unknown }).code === 'IDENTITY_NOT_VERIFIED'
         const isDuplicate =
           err !== null &&
           typeof err === 'object' &&
           'code' in err &&
           (err as { code: unknown }).code === 'DUPLICATE_INTENT'
-        if (!isDuplicate) {
+        if (isIdentityNotVerified) {
+          const verificationUrl = getPublicAppUrl('/provider/verification')
+          if (verificationUrl) {
+            await sendCtaUrl(
+              phone,
+              '🛡️ *Identity check required*\n\nYou must complete identity verification before purchasing top-up credits.',
+              ctaLabelFor('identity_verification'),
+              verificationUrl,
+            )
+          } else {
+            await sendText(
+              phone,
+              '🛡️ Identity check required. Reply *verify identity* to continue top-ups.',
+            )
+          }
+        } else if (!isDuplicate) {
           console.error('[whatsapp-bot] createPayatTopUpIntent failed', {
             phone,
             amountCents,
@@ -1327,9 +1347,11 @@ async function processInboundMessageUnlocked(
         }
         await sendText(
           phone,
-          isDuplicate
+          isIdentityNotVerified
+            ? 'Please complete identity verification before creating another top-up link.'
+            : (isDuplicate
             ? `You already have an active Pay@ top-up link for R${Math.round(amountCents / 100)}. Check your earlier WhatsApp messages for the payment link, or visit the provider portal to start a new one after it expires.`
-            : 'Could not create a Pay@ payment link. Please try again or visit the provider portal.',
+            : 'Could not create a Pay@ payment link. Please try again or visit the provider portal.')
         )
       }
       return

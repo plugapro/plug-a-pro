@@ -798,6 +798,12 @@ export async function createProviderPayatTopUpIntent(
             code: 'PROVIDER_PHONE_MISSING',
             userMessage: 'Your provider profile is missing a mobile number. Please update your profile and try again.',
           }
+        case 'IDENTITY_NOT_VERIFIED':
+          return {
+            ok: false,
+            code: 'IDENTITY_NOT_VERIFIED',
+            userMessage: 'Identity verification is required before purchasing credits. Verify your identity first.',
+          }
         case 'REFERENCE_GENERATION_FAILED':
           return {
             ok: false,
@@ -939,9 +945,10 @@ export async function createProviderPayfastTopUpIntent(
     revalidatePath('/provider/credits')
     return { ok: true, intentId: result.intent.id, checkout: result.checkout }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[payfast] checkout_failed', { providerId, amountCents, intentId, error: message })
     if (err instanceof ProviderCreditPaymentIntentError) {
+      console.warn('[payfast] checkout_blocked: payment_intent_error', {
+        providerId, amountCents, intentId, code: err.code, status: 'blocked',
+      })
       switch (err.code) {
         case 'INVALID_AMOUNT':
           return {
@@ -955,10 +962,18 @@ export async function createProviderPayfastTopUpIntent(
             code: 'PROVIDER_NOT_FOUND',
             userMessage: 'We could not load your provider profile. Sign in again and retry.',
           }
+        case 'IDENTITY_NOT_VERIFIED':
+          return {
+            ok: false,
+            code: 'IDENTITY_NOT_VERIFIED',
+            userMessage: 'Identity verification is required before purchasing credits. Verify your identity first.',
+          }
         default:
           break
       }
     }
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[payfast] checkout_failed', { providerId, amountCents, intentId, error: message })
     return {
       ok: false,
       code: 'UNKNOWN',
@@ -978,8 +993,11 @@ export async function createProviderTopUpIntentFormAction(formData: FormData) {
     const instructions = await createProviderTopUpIntent(amountCents)
     intentId = instructions.intentId
   } catch (error) {
+    if (error instanceof ProviderCreditPaymentIntentError && error.code === 'IDENTITY_NOT_VERIFIED') {
+      redirect('/provider/credits?error=identity_not_verified')
+    }
     console.error('[credits] top-up intent creation failed', {
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof ProviderCreditPaymentIntentError ? error.code : error instanceof Error ? error.message : String(error),
     })
     redirect('/provider/credits?error=topup_failed')
   }

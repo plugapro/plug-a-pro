@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockDb, mockCreatePayatPaymentRequest, state } = vi.hoisted(() => {
   const state = {
-    provider: { id: 'provider-1', phone: '+27821234567', name: 'Provider One', email: 'pro@example.com' },
+    provider: {
+      id: 'provider-1',
+      phone: '+27821234567',
+      name: 'Provider One',
+      email: 'pro@example.com',
+      kycStatus: 'VERIFIED',
+    },
+    highAssuranceVerification: { id: 'verification-1', providerId: 'provider-1' },
     createdIntent: null as any,
   }
 
@@ -10,6 +17,9 @@ const { mockDb, mockCreatePayatPaymentRequest, state } = vi.hoisted(() => {
     $transaction: vi.fn(),
     provider: {
       findUnique: vi.fn(),
+    },
+    providerIdentityVerification: {
+      findFirst: vi.fn(),
     },
     paymentIntent: {
       findUnique: vi.fn(),
@@ -41,6 +51,7 @@ describe('Pay@ provider credit payment intents', () => {
       callback(mockDb as any),
     )
     mockDb.provider.findUnique.mockResolvedValue(state.provider)
+    mockDb.providerIdentityVerification.findFirst.mockResolvedValue(state.highAssuranceVerification)
     mockDb.paymentIntent.findUnique.mockResolvedValue(null)
     // No active duplicate intents by default — allow creation to proceed.
     mockDb.paymentIntent.findFirst.mockResolvedValue(null)

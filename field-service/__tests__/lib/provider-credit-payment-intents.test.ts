@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ProviderCreditPaymentIntentError,
   createPayatTopUpIntent,
   createManualEftTopUpIntent,
   generateManualEftPaymentReference,
 } from '../../lib/provider-credit-payment-intents'
+import { invalidateFlagCache } from '../../lib/flags'
 
 const {
   mockDb,
@@ -14,11 +15,19 @@ const {
   state,
 } = vi.hoisted(() => {
   const state: {
-    provider: { id: string; phone: string | null; name: string | null; email: string | null } | null
+    provider: { id: string; phone: string | null; name: string | null; email: string | null; kycStatus: string } | null
+    highAssuranceVerification: { id: string; providerId: string } | null
     existingReferences: Set<string>
     intents: any[]
   } = {
-    provider: { id: 'provider-1', phone: '+27821234567', name: 'Provider One', email: 'provider@example.com' },
+    provider: {
+      id: 'provider-1',
+      phone: '+27821234567',
+      name: 'Provider One',
+      email: 'provider@example.com',
+      kycStatus: 'VERIFIED',
+    },
+    highAssuranceVerification: { id: 'verification-1', providerId: 'provider-1' },
     existingReferences: new Set(),
     intents: [],
   }
@@ -27,6 +36,9 @@ const {
     $transaction: vi.fn(),
     provider: {
       findUnique: vi.fn(),
+    },
+    providerIdentityVerification: {
+      findFirst: vi.fn(),
     },
     paymentIntent: {
       findUnique: vi.fn(),
@@ -73,6 +85,9 @@ vi.mock('../../lib/payat/payment', () => ({
 describe('provider credit payment intents', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    invalidateFlagCache()
+    // Enable the identity gate for all tests in this suite — mirrors production config.
+    vi.stubEnv('FEATURE_FLAGS', JSON.stringify({ 'provider.identity.verification': true }))
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug A Pro provider credits')
     vi.stubEnv('PROVIDER_CREDIT_EFT_BANK_NAME', 'Test Bank')
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER', '123456789')
@@ -80,7 +95,14 @@ describe('provider credit payment intents', () => {
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_TYPE', 'Business current account')
     vi.stubEnv('PROVIDER_CREDIT_EFT_INTENT_EXPIRY_DAYS', '7')
 
-    state.provider = { id: 'provider-1', phone: '+27821234567', name: 'Provider One', email: 'provider@example.com' }
+    state.provider = {
+      id: 'provider-1',
+      phone: '+27821234567',
+      name: 'Provider One',
+      email: 'provider@example.com',
+      kycStatus: 'VERIFIED',
+    }
+    state.highAssuranceVerification = { id: 'verification-1', providerId: 'provider-1' }
     state.existingReferences = new Set()
     state.intents = []
     mockNotifyPaymentIntentCreated.mockResolvedValue(undefined)
@@ -95,6 +117,7 @@ describe('provider credit payment intents', () => {
     )
 
     mockDb.provider.findUnique.mockImplementation(async () => state.provider)
+    mockDb.providerIdentityVerification.findFirst.mockImplementation(async () => state.highAssuranceVerification)
 
     mockDb.paymentIntent.findUnique.mockImplementation(async (args: any) => (
       state.existingReferences.has(args.where.paymentReference)
@@ -125,6 +148,11 @@ describe('provider credit payment intents', () => {
       if (intent) Object.assign(intent, args.data)
       return intent ?? null
     })
+  })
+
+  afterEach(() => {
+    invalidateFlagCache()
+    vi.unstubAllEnvs()
   })
 
   it('rejects an amount below the R100 minimum top-up', async () => {
@@ -316,6 +344,21 @@ describe('provider credit payment intents', () => {
     expect(parsed).toMatchObject({ event: 'payat.intent_cleanup_failed', alert: true, intentId: 'intent-1' })
 
     consoleSpy.mockRestore()
+  })
+
+  it('rejects creation when provider has no high-assurance identity verification', async () => {
+    state.highAssuranceVerification = null
+
+    await expect(
+      createManualEftTopUpIntent({
+        providerId: 'provider-1',
+        amountCents: 10_000,
+      }),
+    ).rejects.toMatchObject({
+      code: 'IDENTITY_NOT_VERIFIED',
+    } satisfies Partial<ProviderCreditPaymentIntentError>)
+
+    expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
   })
 
   it('T-7: blocks a second PENDING_PAYMENT Pay@ intent for the same provider+amount', async () => {
