@@ -40,4 +40,15 @@ describe('qualified shortlist schema foundation', () => {
     expect(repair).toContain('provider_shortlist_items_shortlistId_leadInviteId_key')
     expect(repair).toContain('provider_lead_responses_leadInviteId_createdAt_idx')
   })
+
+  it('repairs provider lead response enum drift back to text', () => {
+    const repair = readFileSync(
+      join(projectRoot, 'prisma/migrations/20260525105500_repair_provider_lead_response_text/migration.sql'),
+      'utf8',
+    )
+
+    expect(repair).toContain('ALTER TABLE "provider_lead_responses"')
+    expect(repair).toContain('ALTER COLUMN "response" TYPE TEXT')
+    expect(repair).toContain('USING "response"::text')
+  })
 })
