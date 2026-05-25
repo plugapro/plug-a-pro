@@ -25,6 +25,133 @@ const BASIS_OPTIONS: Array<{ value: IdentityBasis; label: string }> = [
   { value: 'PERMANENT_RESIDENCE_PERMIT', label: 'Permanent residence permit' },
 ]
 
+// Southern Africa first, then rest of Africa, then world — alphabetical within each group.
+const COUNTRY_OPTIONS = [
+  // Southern Africa
+  'South Africa',
+  'Botswana',
+  'Eswatini',
+  'Lesotho',
+  'Mozambique',
+  'Namibia',
+  'Zimbabwe',
+  // Rest of Africa
+  'Angola',
+  'Cameroon',
+  'Democratic Republic of the Congo',
+  'Egypt',
+  'Ethiopia',
+  'Ghana',
+  'Kenya',
+  'Malawi',
+  'Nigeria',
+  'Rwanda',
+  'Senegal',
+  'Somalia',
+  'Sudan',
+  'Tanzania',
+  'Uganda',
+  'Zambia',
+  // Rest of world
+  'Afghanistan',
+  'Albania',
+  'Algeria',
+  'Argentina',
+  'Australia',
+  'Austria',
+  'Azerbaijan',
+  'Bangladesh',
+  'Belgium',
+  'Bolivia',
+  'Brazil',
+  'Bulgaria',
+  'Cambodia',
+  'Canada',
+  'Chile',
+  'China',
+  'Colombia',
+  'Croatia',
+  'Cuba',
+  'Czech Republic',
+  'Denmark',
+  'Ecuador',
+  'Finland',
+  'France',
+  'Germany',
+  'Greece',
+  'Guatemala',
+  'Honduras',
+  'Hungary',
+  'India',
+  'Indonesia',
+  'Iran',
+  'Iraq',
+  'Ireland',
+  'Israel',
+  'Italy',
+  'Jamaica',
+  'Japan',
+  'Jordan',
+  'Kazakhstan',
+  'Kuwait',
+  'Kyrgyzstan',
+  'Laos',
+  'Latvia',
+  'Lebanon',
+  'Libya',
+  'Lithuania',
+  'Malaysia',
+  'Mexico',
+  'Moldova',
+  'Mongolia',
+  'Morocco',
+  'Myanmar',
+  'Nepal',
+  'Netherlands',
+  'New Zealand',
+  'Nicaragua',
+  'North Korea',
+  'Norway',
+  'Oman',
+  'Pakistan',
+  'Palestine',
+  'Panama',
+  'Paraguay',
+  'Peru',
+  'Philippines',
+  'Poland',
+  'Portugal',
+  'Qatar',
+  'Romania',
+  'Russia',
+  'Saudi Arabia',
+  'Serbia',
+  'Singapore',
+  'Slovakia',
+  'Slovenia',
+  'South Korea',
+  'Spain',
+  'Sri Lanka',
+  'Sweden',
+  'Switzerland',
+  'Syria',
+  'Taiwan',
+  'Tajikistan',
+  'Thailand',
+  'Tunisia',
+  'Turkey',
+  'Turkmenistan',
+  'Ukraine',
+  'United Arab Emirates',
+  'United Kingdom',
+  'United States',
+  'Uruguay',
+  'Uzbekistan',
+  'Venezuela',
+  'Vietnam',
+  'Yemen',
+] as const
+
 export default async function ProviderIdentityVerifyPage({
   params,
 }: {
@@ -128,8 +255,24 @@ export default async function ProviderIdentityVerifyPage({
               <input name="identifier" required className="h-11 rounded-md border bg-background px-3" autoComplete="off" />
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
-              <input name="issuingCountry" placeholder="Issuing country" className="h-11 rounded-md border bg-background px-3 text-sm" />
-              <input name="nationality" placeholder="Nationality" className="h-11 rounded-md border bg-background px-3 text-sm" />
+              <label className="grid gap-1 text-sm">
+                <span className="font-medium">Country of issue</span>
+                <select name="issuingCountry" defaultValue={verification.issuingCountry ?? ''} className="h-11 rounded-md border bg-background px-3 text-sm">
+                  <option value="">Select country</option>
+                  {COUNTRY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="font-medium">Nationality</span>
+                <select name="nationality" defaultValue={verification.nationality ?? ''} className="h-11 rounded-md border bg-background px-3 text-sm">
+                  <option value="">Select nationality</option>
+                  {COUNTRY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
             </div>
             <label className="grid gap-1 text-sm">
               <span className="font-medium">Document expiry date, if applicable</span>
