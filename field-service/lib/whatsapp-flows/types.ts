@@ -255,8 +255,10 @@ export interface ConversationData {
   identityVerificationId?: string
   identityVerificationBasis?: IdentityBasis
   identityVerificationDocumentKinds?: IdentityDocumentKind[]
-  identityVerificationDocumentMediaIds?: string[]
-  identityVerificationSelfieMediaId?: string
+  // Store only private identity-document record IDs here. Raw WhatsApp media IDs
+  // are transient fetch handles and must not be retained in conversation state.
+  identityVerificationDocumentIds?: string[]
+  identityVerificationSelfieDocumentId?: string
 
   // Shared
   customerId?: string

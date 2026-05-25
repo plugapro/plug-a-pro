@@ -192,7 +192,111 @@ describe('WhatsApp identity verification fallback flow', () => {
       toStatus: 'AWAITING_SELFIE',
     }))
     expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('selfie'))
-    expect(result).toMatchObject({ nextStep: 'pj_identity_selfie' })
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_selfie',
+      nextData: {
+        identityVerificationDocumentIds: ['doc-1'],
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain('media-doc-1')
+  })
+
+  it('keeps waiting for identity media when text is sent at the document upload step', async () => {
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_document',
+        { type: 'text', text: 'I sent it already' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+          identityVerificationDocumentKinds: ['ID_FRONT'],
+        },
+      ),
+    )
+
+    expect(mockDownloadIdentityMedia).not.toHaveBeenCalled()
+    expect(mockTransition).not.toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      toStatus: 'AWAITING_SELFIE',
+    }))
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('photo of your South African ID'))
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_document',
+      nextData: {
+        identityVerificationId: 'ver-wa-1',
+        identityVerificationBasis: 'SA_ID',
+        identityVerificationDocumentKinds: ['ID_FRONT'],
+      },
+    })
+  })
+
+  it('keeps the document upload step recoverable when media storage fails', async () => {
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+    mockDownloadIdentityMedia.mockRejectedValueOnce(new Error('WhatsApp media download failed: 410'))
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_document',
+        { type: 'image', mediaId: 'media-expired-doc', mimeType: 'image/jpeg' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+          identityVerificationDocumentKinds: ['ID_FRONT'],
+        },
+      ),
+    )
+
+    expect(mockDownloadIdentityMedia).toHaveBeenCalledWith({
+      mediaId: 'media-expired-doc',
+      verificationId: 'ver-wa-1',
+      documentKind: 'ID_FRONT',
+      maxSizeBytes: expect.any(Number),
+    })
+    expect(mockTransition).not.toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      toStatus: 'AWAITING_SELFIE',
+    }))
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining("couldn't save"))
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_document',
+      nextData: {
+        identityVerificationId: 'ver-wa-1',
+        identityVerificationBasis: 'SA_ID',
+        identityVerificationDocumentKinds: ['ID_FRONT'],
+      },
+    })
+  })
+
+  it('keeps the document upload step recoverable when WhatsApp media type is rejected', async () => {
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+    mockDownloadIdentityMedia.mockRejectedValueOnce(new Error('Unsupported media type: image/gif'))
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_document',
+        { type: 'document', mediaId: 'media-gif-doc', mimeType: 'image/gif' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+          identityVerificationDocumentKinds: ['ID_FRONT'],
+        },
+      ),
+    )
+
+    expect(mockDownloadIdentityMedia).toHaveBeenCalledWith({
+      mediaId: 'media-gif-doc',
+      verificationId: 'ver-wa-1',
+      documentKind: 'ID_FRONT',
+      maxSizeBytes: expect.any(Number),
+    })
+    expect(mockTransition).not.toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      toStatus: 'AWAITING_SELFIE',
+    }))
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining("couldn't save"))
+    expect(result).toMatchObject({ nextStep: 'pj_identity_document' })
   })
 
   it('submits selfie media as LOW-assurance manual review', async () => {

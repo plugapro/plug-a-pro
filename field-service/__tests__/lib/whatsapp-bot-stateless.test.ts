@@ -157,6 +157,16 @@ function imageMessage(mediaId: string) {
   }
 }
 
+function documentMessage(mediaId: string, mimeType = 'application/pdf') {
+  return {
+    from: PHONE,
+    id: `wamid.${mediaId}`,
+    type: 'document',
+    document: { id: mediaId, mime_type: mimeType, filename: 'identity-document.pdf' },
+    timestamp: String(Date.now()),
+  }
+}
+
 function textMessage(id: string, body: string) {
   return {
     from: PHONE,
@@ -742,6 +752,198 @@ describe('processInboundMessage stateless notification replies', () => {
       data: {},
       phone: PHONE,
     }))
+  })
+
+  it('routes provider identity document images through the provider journey media step', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567'],
+      customerId: undefined,
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Sipho',
+      firstName: 'Sipho',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'provider-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'provider_journey',
+      step: 'pj_identity_document',
+      data: {
+        identityVerificationId: 'ver-wa-1',
+        identityVerificationBasis: 'SA_ID',
+        identityVerificationDocumentKinds: ['ID_FRONT'],
+      },
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nextStep: 'pj_identity_selfie',
+      nextData: { identityVerificationDocumentIds: ['doc-id-front'] },
+    })
+
+    await processInboundMessage(imageMessage('media-id-front'))
+
+    expect(handleProviderJourneyFlow).toHaveBeenCalledWith(expect.objectContaining({
+      flow: 'provider_journey',
+      step: 'pj_identity_document',
+      phone: PHONE,
+      reply: expect.objectContaining({
+        type: 'image',
+        mediaId: 'media-id-front',
+        mimeType: 'image/jpeg',
+      }),
+    }))
+    expect(mockSendJourneyRecovery).not.toHaveBeenCalled()
+  })
+
+  it('routes provider identity document files through the provider journey media step', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567'],
+      customerId: undefined,
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Sipho',
+      firstName: 'Sipho',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'provider-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'provider_journey',
+      step: 'pj_identity_document',
+      data: {
+        identityVerificationId: 'ver-wa-1',
+        identityVerificationBasis: 'SA_ID',
+        identityVerificationDocumentKinds: ['ID_FRONT'],
+      },
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nextStep: 'pj_identity_selfie',
+      nextData: { identityVerificationDocumentIds: ['doc-id-pdf'] },
+    })
+
+    await processInboundMessage(documentMessage('media-id-pdf'))
+
+    expect(handleProviderJourneyFlow).toHaveBeenCalledWith(expect.objectContaining({
+      flow: 'provider_journey',
+      step: 'pj_identity_document',
+      phone: PHONE,
+      reply: expect.objectContaining({
+        type: 'document',
+        mediaId: 'media-id-pdf',
+        mimeType: 'application/pdf',
+      }),
+    }))
+    expect(mockSendJourneyRecovery).not.toHaveBeenCalled()
+  })
+
+  it('continues provider identity verification from the advanced step after document media is accepted', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567'],
+      customerId: undefined,
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Sipho',
+      firstName: 'Sipho',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'provider-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'provider_journey',
+      step: 'pj_identity_selfie',
+      data: {
+        identityVerificationId: 'ver-wa-1',
+        identityVerificationBasis: 'SA_ID',
+        identityVerificationDocumentIds: ['doc-id-front'],
+      },
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nextStep: 'pj_identity_selfie',
+    })
+
+    await processInboundMessage(buttonMessage('flow_continue'))
+
+    expect(handleProviderJourneyFlow).toHaveBeenCalledWith(expect.objectContaining({
+      flow: 'provider_journey',
+      step: 'pj_identity_selfie',
+      phone: PHONE,
+      data: expect.objectContaining({
+        identityVerificationDocumentIds: ['doc-id-front'],
+      }),
+      reply: expect.objectContaining({
+        id: undefined,
+        text: undefined,
+      }),
+    }))
+    expect(mockSendJourneyRecovery).not.toHaveBeenCalled()
+  })
+
+  it('clears transient provider identity conversation data after terminal selfie submission', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567'],
+      customerId: undefined,
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Sipho',
+      firstName: 'Sipho',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'provider-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'provider_journey',
+      step: 'pj_identity_selfie',
+      data: {
+        identityVerificationId: 'ver-wa-1',
+        identityVerificationBasis: 'SA_ID',
+        identityVerificationDocumentIds: ['doc-id-front'],
+      },
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nextStep: 'done',
+      nextData: { identityVerificationSelfieDocumentId: 'doc-id-selfie' },
+    })
+
+    await processInboundMessage(imageMessage('media-selfie'))
+
+    const saveCall = mockDb.conversation.upsert.mock.calls.at(-1)?.[0]
+    expect(saveCall.update).toMatchObject({
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+    })
   })
 
   it('routes typed Verify for a returning multi-role verification user before the mixed main menu', async () => {

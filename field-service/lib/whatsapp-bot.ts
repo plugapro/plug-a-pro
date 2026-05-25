@@ -510,6 +510,16 @@ function hasActiveFlow(flow: FlowName, step: FlowStep) {
   return ACTIVE_FLOW_NAMES.includes(flow) && step !== 'welcome' && step !== 'done' && step !== 'cancelled'
 }
 
+function isProviderIdentityVerificationStep(step: FlowStep) {
+  return step === 'pj_verify_identity' ||
+    step === 'pj_identity_start' ||
+    step === 'pj_identity_consent' ||
+    step === 'pj_identity_basis' ||
+    step === 'pj_identity_identifier' ||
+    step === 'pj_identity_document' ||
+    step === 'pj_identity_selfie'
+}
+
 function activeFlowResumeCopy(flow: FlowName, step: FlowStep) {
   return resolveJourneyRecovery({
     userRole: flow === 'registration' || flow === 'provider_journey' || flow === 'provider_job' ? 'provider' : 'customer',
@@ -1078,6 +1088,7 @@ async function processInboundMessageUnlocked(
     // image/document are allowed through for:
     //   - evidence collection in the provider registration flow (reg_collect_evidence)
     //   - profile photo capture in the provider registration flow (reg_collect_profile_photo)
+    //   - provider identity document/selfie capture in the provider journey flow
     //   - customer photo upload in the job-request flow (collect_photos)
     //   - completion photo upload in the provider job completion flow (providerCompletionStep === 'photo')
     // Must be checked BEFORE flow dispatch so mid-flow reactions don't retrigger menus.
@@ -1090,6 +1101,11 @@ async function processInboundMessageUnlocked(
       (conversation.flow === 'registration' &&
         (conversation.step === 'reg_collect_evidence' ||
           conversation.step === 'reg_collect_profile_photo')) ||
+      // Identity media is sensitive and belongs to the provider journey state
+      // machine; the router must pass it through without logging raw media IDs.
+      (conversation.flow === 'provider_journey' &&
+        (conversation.step === 'pj_identity_document' ||
+          conversation.step === 'pj_identity_selfie')) ||
       (conversation.flow === 'job_request' && conversation.step === 'collect_photos') ||
       // Provider completion photo: conversation is in tech_job_view with a pending
       // completion job and the provider has already supplied the note (photo step).
@@ -1099,7 +1115,7 @@ async function processInboundMessageUnlocked(
         (data as ConversationData).providerCompletionStep === 'photo')
     if ((reply.type === 'image' || reply.type === 'document') && !isMediaAllowedStep) {
       console.info('[whatsapp-bot] dropped media at non-media step', {
-        normalized_phone: phone,
+        normalized_phone: maskedPhone(phone),
         whatsapp_message_id: message.id,
         flow: conversation.flow,
         step: conversation.step,
@@ -2243,12 +2259,19 @@ async function processInboundMessageUnlocked(
     // Determine if flow is complete
     const terminalSteps: FlowStep[] = ['done', 'cancelled']
     const isTerminal = terminalSteps.includes(result.nextStep)
+    const shouldClearIdentityConversationData =
+      isTerminal &&
+      flow === 'provider_journey' &&
+      isProviderIdentityVerificationStep(step)
 
     await saveConversation({
       phone,
       flow: isTerminal ? 'idle' : flow,
       step: isTerminal ? 'welcome' : result.nextStep,
-      data: { ...data, ...(result.nextData ?? {}) },
+      // Identity documents are already linked to the verification record. Once
+      // the WhatsApp KYC branch is terminal, clear transient conversation state
+      // instead of retaining document/session references in the idle chat row.
+      data: shouldClearIdentityConversationData ? {} : { ...data, ...(result.nextData ?? {}) },
     })
   } catch (err) {
     console.error('[whatsapp-bot] Error processing inbound message', {

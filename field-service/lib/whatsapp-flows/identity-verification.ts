@@ -220,12 +220,34 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  await downloadAndStoreWhatsAppIdentityDocument({
-    mediaId,
-    verificationId,
-    documentKind,
-    maxSizeBytes: IDENTITY_WHATSAPP_MEDIA_MAX_BYTES,
-  })
+  let storedDocument: { documentId: string }
+  try {
+    // This is where a transient WhatsApp media ID becomes a private identity
+    // document record. On failure, keep the same step so the next upload can
+    // retry without exposing or logging the source media.
+    storedDocument = await downloadAndStoreWhatsAppIdentityDocument({
+      mediaId,
+      verificationId,
+      documentKind,
+      maxSizeBytes: IDENTITY_WHATSAPP_MEDIA_MAX_BYTES,
+    })
+  } catch (error) {
+    console.warn('[identity-verification:whatsapp] document media storage failed', {
+      verificationId,
+      documentKind,
+      mediaIdSuffix: mediaId.slice(-8),
+      reason: identityMediaFailureReason(error),
+    })
+    await sendText(ctx.phone, "We couldn't save that document photo right now. Please send a clear image or PDF again.")
+    return {
+      nextStep: 'pj_identity_document',
+      nextData: {
+        identityVerificationId: verificationId,
+        identityVerificationBasis: identityBasis,
+        identityVerificationDocumentKinds: pendingDocumentKinds,
+      },
+    }
+  }
 
   const remaining = pendingDocumentKinds.slice(1)
   if (remaining.length > 0) {
@@ -236,9 +258,9 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
         identityVerificationId: verificationId,
         identityVerificationBasis: identityBasis,
         identityVerificationDocumentKinds: remaining,
-        identityVerificationDocumentMediaIds: [
-          ...(ctx.data.identityVerificationDocumentMediaIds ?? []),
-          mediaId,
+        identityVerificationDocumentIds: [
+          ...(ctx.data.identityVerificationDocumentIds ?? []),
+          storedDocument.documentId,
         ],
       },
     }
@@ -256,9 +278,9 @@ async function handleIdentityDocument(ctx: FlowContext): Promise<FlowResult> {
     nextData: {
       identityVerificationId: verificationId,
       identityVerificationBasis: identityBasis,
-      identityVerificationDocumentMediaIds: [
-        ...(ctx.data.identityVerificationDocumentMediaIds ?? []),
-        mediaId,
+      identityVerificationDocumentIds: [
+        ...(ctx.data.identityVerificationDocumentIds ?? []),
+        storedDocument.documentId,
       ],
     },
   }
@@ -282,12 +304,31 @@ async function handleIdentitySelfie(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  await downloadAndStoreWhatsAppIdentityDocument({
-    mediaId,
-    verificationId,
-    documentKind: 'SELFIE',
-    maxSizeBytes: IDENTITY_WHATSAPP_MEDIA_MAX_BYTES,
-  })
+  try {
+    // Selfies are stored as private identity documents too. Retry in-place on
+    // storage/download failure so duplicate or expired media does not corrupt state.
+    await downloadAndStoreWhatsAppIdentityDocument({
+      mediaId,
+      verificationId,
+      documentKind: 'SELFIE',
+      maxSizeBytes: IDENTITY_WHATSAPP_MEDIA_MAX_BYTES,
+    })
+  } catch (error) {
+    console.warn('[identity-verification:whatsapp] selfie media storage failed', {
+      verificationId,
+      documentKind: 'SELFIE',
+      mediaIdSuffix: mediaId.slice(-8),
+      reason: identityMediaFailureReason(error),
+    })
+    await sendText(ctx.phone, "We couldn't save that selfie photo right now. Please send a clear selfie image again.")
+    return {
+      nextStep: 'pj_identity_selfie',
+      nextData: {
+        identityVerificationId: verificationId,
+        identityVerificationBasis: ctx.data.identityVerificationBasis,
+      },
+    }
+  }
   await transitionIdentityVerification({
     verificationId,
     toStatus: 'SUBMITTED',
@@ -302,6 +343,17 @@ async function handleIdentitySelfie(ctx: FlowContext): Promise<FlowResult> {
   await sendText(ctx.phone, 'Your identity documents were submitted for manual review. We will update you once the review is complete. Buying credits still requires the secure PWA liveness step.')
 
   return { nextStep: 'done', nextData: {} }
+}
+
+function identityMediaFailureReason(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('Unsupported media type')) return 'unsupported_media_type'
+  if (message.includes('File too large')) return 'file_too_large'
+  if (message.includes('metadata fetch failed')) return 'metadata_fetch_failed'
+  if (message.includes('media download failed')) return 'download_failed'
+  if (message.includes('empty file')) return 'empty_file'
+  if (message.includes('Missing WHATSAPP_ACCESS_TOKEN')) return 'missing_whatsapp_access_token'
+  return 'storage_failed'
 }
 
 async function sendIdentityBasisList(phone: string) {
