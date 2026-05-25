@@ -1954,7 +1954,10 @@ async function processInboundMessageUnlocked(
       return
     } else if (PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) && flow === 'idle') {
       flow = 'provider_journey'
-      step = 'pj_menu'
+      const VERIFY_TRIGGERS = ['verify', 'verification', 'verify identity', 'complete verification']
+      step = VERIFY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))
+        ? 'pj_verify_identity'
+        : 'pj_menu'
     } else if ((isRegistration || reply.id === 'find_work') && flow === 'idle') {
       flow = 'registration'
       step = 'reg_start'
