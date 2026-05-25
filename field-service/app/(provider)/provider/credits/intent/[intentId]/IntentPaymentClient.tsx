@@ -191,7 +191,7 @@ export function IntentPaymentClient({
       <div className="mt-5 rounded-[24px] p-4" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Ref {reference.slice(-8).toUpperCase()}</p>
+            <p className="text-[13px] break-all font-semibold" style={{ color: 'var(--ink)' }}>Ref {reference.slice(-8).toUpperCase()}</p>
             <p className="mt-1 text-[12px]" style={{ color: 'var(--ink-mute)' }}>
               R{amountCents / 100} = {creditsToIssue} credits
             </p>
@@ -230,7 +230,7 @@ export function IntentPaymentClient({
         >
           <span className="min-w-0">
             <span className="block text-[12px] font-semibold" style={{ color: 'var(--ink)' }}>Copy payment link</span>
-            <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--ink-mute)' }}>{paymentLink ?? 'Link is not available yet'}</span>
+            <span className="mt-0.5 block break-all text-[11px] leading-snug" style={{ color: 'var(--ink-mute)' }}>{paymentLink ?? 'Link is not available yet'}</span>
           </span>
           <Copy className="size-4 shrink-0" style={{ color: '#8B3FE8' }} aria-hidden="true" />
         </button>

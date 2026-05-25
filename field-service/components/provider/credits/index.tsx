@@ -8,7 +8,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Clipboard, Clock
 import { toast } from 'sonner'
 import { AuthShell } from '@/components/shared/auth-shell'
 import { Button } from '@/components/ui/button'
-import { createProviderPayatTopUpIntent, notifyProviderPayatTopUpInitiated, type ProviderWallet, type ProviderWalletPendingIntent, type ProviderWalletRecentActivityItem } from '@/app/(provider)/provider/credits/actions'
+import { cancelProviderPayatTopUpIntent, createProviderPayatTopUpIntent, notifyProviderPayatTopUpInitiated, type ProviderWallet, type ProviderWalletPendingIntent, type ProviderWalletRecentActivityItem } from '@/app/(provider)/provider/credits/actions'
 
 const POLL_INTERVAL_MS = 5_000
 const POLL_REQUEST_TIMEOUT_MS = 4_000
@@ -28,7 +28,7 @@ function CreditsShell({ eyebrow, title, subtitle, backHref = '/provider', childr
 function formatAmount(amountCents: number) { return `R${Math.round(amountCents / 100)}` }
 function shortReference(reference: string) { return reference.replace(/^PAT-/, '').slice(-8).toUpperCase() }
 function timeLeft(expiresAt: string | null) {
-  if (!expiresAt) return 'valid 3 days'
+  if (!expiresAt) return 'valid 24h'
   const ms = new Date(expiresAt).getTime() - Date.now()
   if (!Number.isFinite(ms) || ms <= 0) return 'expired'
   const hours = Math.floor(ms / 3_600_000)
@@ -158,9 +158,66 @@ export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: Provide
   return <CreditsShell eyebrow="Provider wallet" title="Credits" subtitle="Top up to accept job leads. Pay cash or card at Pay@ retailers."><BalanceHero credits={wallet.credits} starter={wallet.starter} onTopUp={() => topUpRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} onTerms={() => router.push('/credit-terms')} /><section ref={topUpRef} className="space-y-3" id="topup"><div className="flex items-center justify-between gap-3"><div className="font-mono text-[11px] font-bold uppercase tracking-[0.10em] text-[var(--ink-mute)]">Top up with Pay@</div><div className="flex items-center gap-1.5 font-mono text-[10.5px] text-[var(--ink-soft)]"><Store className="size-3.5" aria-hidden />Cash at retailers</div></div><div className="space-y-2.5">{packages.map((pkg) => <PackageRow key={pkg.amountCents} pkg={pkg} loading={isPending && selectedAmount === pkg.amountCents} disabled={isPending} onClick={() => startTopUp(pkg)} />)}</div></section><div className="rounded-[16px] brand-gradient-soft px-4 py-3 shadow-[inset_0_0_0_1px_rgba(139,63,232,0.18)]"><div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--ink)]"><Store className="size-4 text-[var(--brand-purple)]" aria-hidden />Pay cash or card at the till</div><div className="mt-1 text-[12px] leading-relaxed text-[var(--ink-mute)]">Builders, Shoprite, Pick n Pay, Checkers, Boxer and Usave can process Pay@ references.</div></div>{pendingCount > 0 ? <button type="button" onClick={() => router.push('/provider/credits/pending')} className="flex items-center gap-3 rounded-[16px] bg-card px-4 py-3 text-left shadow-[inset_0_0_0_1px_var(--border)]"><Clock className="size-5 text-[var(--brand-purple)]" aria-hidden /><div className="min-w-0 flex-1"><div className="text-[13.5px] font-semibold text-[var(--ink)]">{pendingCount} payment{pendingCount === 1 ? '' : 's'} waiting</div><div className="font-mono text-[10.5px] text-[var(--ink-soft)]">Resume active Pay@ link{pendingCount === 1 ? '' : 's'}</div></div><ChevronRight className="size-4 text-[var(--ink-soft)]" aria-hidden /></button> : null}<ActivityList items={wallet.recentActivity} /><p className="px-4 text-center text-[12px] leading-relaxed text-[var(--ink-soft)]">Credits never expire. 1 credit = R{creditPriceZar}. Failed or reversed payments do not add wallet credits.</p><p className="px-4 text-center text-[12px]"><Link href="/provider/voucher" className="text-muted-foreground underline hover:text-foreground">Have a voucher code? Redeem it here</Link></p></CreditsShell>
 }
 
-export function PendingIntentList({ intents }: { intents: ProviderWalletPendingIntent[] }) {
+function PendingIntentRow({ intent }: { intent: ProviderWalletPendingIntent }) {
   const router = useRouter()
-  return <CreditsShell eyebrow="Pay@ payments" title="Active links" subtitle="Resume a payment link you already created." backHref="/provider/credits">{intents.length === 0 ? <div className="rounded-[20px] bg-card p-5 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div className="text-[15px] font-semibold text-[var(--ink)]">No active Pay@ links</div><div className="mt-1 text-[12.5px] text-[var(--ink-mute)]">Create a new top-up from your credits screen.</div></div> : <div className="space-y-2.5">{intents.map((intent) => <button key={intent.id} type="button" onClick={() => router.push(`/provider/credits/intent/${encodeURIComponent(intent.id)}`)} className="flex w-full items-center gap-3 rounded-[16px] bg-card p-4 text-left shadow-[inset_0_0_0_1px_var(--border)]"><Clock className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden /><div className="min-w-0 flex-1"><div className="text-[15px] font-bold text-[var(--ink)]">{formatAmount(intent.amountCents)} · {intent.creditsToIssue} credits</div><div className="mt-0.5 truncate font-mono text-[10.5px] text-[var(--ink-soft)]">{intent.paymentReference} · expires {intent.expiresAt ? new Date(intent.expiresAt).toLocaleString('en-ZA') : 'pending'}</div></div><ChevronRight className="size-4 shrink-0 text-[var(--ink-soft)]" aria-hidden /></button>)}</div>}</CreditsShell>
+  const [cancelling, startCancel] = useTransition()
+
+  function handleCancel(e: React.MouseEvent) {
+    e.stopPropagation()
+    startCancel(async () => {
+      const result = await cancelProviderPayatTopUpIntent(intent.id)
+      if (result.ok) {
+        toast.success('Payment link cancelled.')
+        router.refresh()
+      } else {
+        toast.error(result.message)
+      }
+    })
+  }
+
+  return (
+    <div className="flex w-full items-center gap-3 rounded-[16px] bg-card p-4 shadow-[inset_0_0_0_1px_var(--border)]">
+      <button
+        type="button"
+        onClick={() => router.push(`/provider/credits/intent/${encodeURIComponent(intent.id)}`)}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        <Clock className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-bold text-[var(--ink)]">{formatAmount(intent.amountCents)} · {intent.creditsToIssue} credits</div>
+          <div className="mt-0.5 truncate font-mono text-[10.5px] text-[var(--ink-soft)]">{intent.paymentReference} · expires {intent.expiresAt ? new Date(intent.expiresAt).toLocaleString('en-ZA') : 'pending'}</div>
+        </div>
+        <ChevronRight className="size-4 shrink-0 text-[var(--ink-soft)]" aria-hidden />
+      </button>
+      <button
+        type="button"
+        disabled={cancelling}
+        onClick={handleCancel}
+        className="flex shrink-0 items-center gap-1 rounded-[10px] bg-[var(--card-alt)] px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-mute)] hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+        aria-label={`Cancel Pay@ link ${intent.paymentReference}`}
+      >
+        {cancelling ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <XCircle className="size-3" aria-hidden />}
+        Cancel
+      </button>
+    </div>
+  )
+}
+
+export function PendingIntentList({ intents }: { intents: ProviderWalletPendingIntent[] }) {
+  return (
+    <CreditsShell eyebrow="Pay@ payments" title="Active links" subtitle="Resume a payment link you already created." backHref="/provider/credits">
+      {intents.length === 0 ? (
+        <div className="rounded-[20px] bg-card p-5 text-center shadow-[inset_0_0_0_1px_var(--border)]">
+          <div className="text-[15px] font-semibold text-[var(--ink)]">No active Pay@ links</div>
+          <div className="mt-1 text-[12.5px] text-[var(--ink-mute)]">Create a new top-up from your credits screen.</div>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {intents.map((intent) => <PendingIntentRow key={intent.id} intent={intent} />)}
+        </div>
+      )}
+    </CreditsShell>
+  )
 }
 
 export function LimitScreen() { const router = useRouter(); return <CreditsShell eyebrow="Limit reached" title="Too many open links" subtitle="You can keep up to 3 Pay@ payments open at once." backHref="/provider/credits"><div className="rounded-[24px] bg-card p-5 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div className="mx-auto flex size-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-600"><AlertTriangle className="size-7" aria-hidden /></div><div className="mt-4 text-[17px] font-bold text-[var(--ink)]">Complete an existing Pay@ link first</div><p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-mute)]">This guard prevents duplicate counter payments and keeps wallet crediting traceable.</p></div><Button type="button" size="lg" onClick={() => router.push('/provider/credits/pending')}>View active payment links</Button><Button type="button" variant="outline" size="lg" onClick={() => router.push('/provider/credits')}>Back to credits</Button></CreditsShell> }
@@ -189,6 +246,7 @@ export function PaymentIntentStatusClient({
   const [phase, setPhase] = useState<'creating' | 'ready'>(showCreatingFirst ? 'creating' : 'ready')
   const [whatsAppPending, setWhatsAppPending] = useState(false)
   const [countdown, setCountdown] = useState(() => timeLeft(expiresAt))
+  const [cancelPending, startCancelTransition] = useTransition()
   const displayRef = useMemo(() => shortReference(reference), [reference])
 
   useEffect(() => {
@@ -246,6 +304,18 @@ export function PaymentIntentStatusClient({
     if (result.ok) toast.success('WhatsApp link sent'); else toast.error(result.message)
   }
 
+  function cancelIntent() {
+    startCancelTransition(async () => {
+      const result = await cancelProviderPayatTopUpIntent(intentId)
+      if (result.ok) {
+        toast.success('Payment link cancelled.')
+        router.push('/provider/credits')
+      } else {
+        toast.error(result.message)
+      }
+    })
+  }
+
   return (
     <CreditsShell eyebrow="Pay@ payment" title="Show this at the till" subtitle={`${formatAmount(amountCents)} · ${creditsToIssue} credits. Pay cash or card at a Pay@ retailer.`} backHref="/provider/credits">
       <div className="rounded-[20px] bg-card p-4 shadow-[inset_0_0_0_1px_var(--border)]">
@@ -281,7 +351,7 @@ export function PaymentIntentStatusClient({
               <div className="flex w-full items-center gap-3 rounded-[23px] bg-white px-5 py-4">
                 <div className="min-w-0 flex-1">
                   <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-500">Pay@ retail reference</div>
-                  <div className="mt-1 font-mono text-[28px] font-extrabold tracking-[0.04em] text-neutral-900">{sourceReference}</div>
+                  <div className="mt-1 break-all font-mono text-[22px] font-extrabold tracking-[0.04em] text-neutral-900 sm:text-[28px]">{sourceReference}</div>
                   <div className="mt-1 text-[12px] text-neutral-500">Give this number to the cashier at PEP, Shoprite, Pick n Pay, Checkers, Boxer, or Builders.</div>
                 </div>
                 <Clipboard className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden />
@@ -309,7 +379,7 @@ export function PaymentIntentStatusClient({
               <button type="button" onClick={copyLink} className="flex w-full items-center gap-3 rounded-[16px] bg-card p-4 text-left shadow-[inset_0_0_0_1px_var(--border)]">
                 <div className="min-w-0 flex-1">
                   <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ink-soft)]">Copy online payment link</div>
-                  <div className="mt-1 truncate font-mono text-[11px] text-[var(--ink)]">{paymentLink}</div>
+                  <div className="mt-1 break-all font-mono text-[11px] leading-snug text-[var(--ink)]">{paymentLink}</div>
                 </div>
                 <Clipboard className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden />
               </button>
@@ -329,13 +399,23 @@ export function PaymentIntentStatusClient({
             <StepRow n={3} title={`Pay ${formatAmount(amountCents)}`} body="Cash or card. Keep your printed slip." />
             <StepRow n={4} title="Credits land in ~30s" body={`WhatsApp confirms when ${creditsToIssue} credits are added.`} />
           </section>
+
+          <button
+            type="button"
+            disabled={cancelPending}
+            onClick={cancelIntent}
+            className="flex w-full items-center justify-center gap-2 rounded-[14px] bg-[var(--card-alt)] py-3 font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ink-mute)] hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+          >
+            {cancelPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <XCircle className="size-3.5" aria-hidden />}
+            Cancel this payment link
+          </button>
         </>
       )}
     </CreditsShell>
   )
 }
 
-export function ExpiredPayatIntentScreen() { const router = useRouter(); return <CreditsShell eyebrow="Link expired" title="Create a fresh link" subtitle="Pay@ links are valid for 3 days. This one can no longer be paid at the till." backHref="/provider/credits"><div className="rounded-[24px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[var(--card-alt)] text-[var(--ink-mute)]"><XCircle className="size-8" aria-hidden /></div><div className="mt-4 text-[17px] font-bold text-[var(--ink)]">This Pay@ link expired</div><p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-mute)]">No credits were added. Start a new top-up and use the latest QR or reference.</p></div><Button type="button" size="lg" onClick={() => router.push('/provider/credits#topup')}>Create new Pay@ link</Button></CreditsShell> }
+export function ExpiredPayatIntentScreen() { const router = useRouter(); return <CreditsShell eyebrow="Link expired" title="Create a fresh link" subtitle="Pay@ links are valid for 24 hours. This one can no longer be paid at the till." backHref="/provider/credits"><div className="rounded-[24px] bg-card p-6 text-center shadow-[inset_0_0_0_1px_var(--border)]"><div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[var(--card-alt)] text-[var(--ink-mute)]"><XCircle className="size-8" aria-hidden /></div><div className="mt-4 text-[17px] font-bold text-[var(--ink)]">This Pay@ link expired</div><p className="mt-2 text-[13px] leading-relaxed text-[var(--ink-mute)]">No credits were added. Start a new top-up and use the latest QR or reference.</p></div><Button type="button" size="lg" onClick={() => router.push('/provider/credits#topup')}>Create new Pay@ link</Button></CreditsShell> }
 
 export function HistoryClient({
   initialItems,
