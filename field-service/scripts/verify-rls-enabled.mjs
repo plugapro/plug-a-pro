@@ -1,4 +1,7 @@
-import { PrismaClient } from '@prisma/client'
+import { existsSync, readFileSync } from 'node:fs'
+
+loadLocalEnvFiles()
+const { PrismaClient } = await import('@prisma/client')
 
 const query = `
 SELECT c.relname
@@ -36,4 +39,30 @@ try {
   process.exitCode = 1
 } finally {
   await prisma.$disconnect()
+}
+
+function loadLocalEnvFiles() {
+  const inheritedKeys = new Set(Object.keys(process.env))
+
+  for (const file of ['.env', '.env.local']) {
+    if (!existsSync(file)) continue
+
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)\s*$/)
+      if (!match || inheritedKeys.has(match[1])) continue
+
+      process.env[match[1]] = unquoteEnvValue(match[2])
+    }
+  }
+}
+
+function unquoteEnvValue(value) {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
 }
