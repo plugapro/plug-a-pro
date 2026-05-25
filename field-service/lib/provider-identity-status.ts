@@ -13,6 +13,12 @@ export type ProviderIdentityVerificationStatus = {
   isIdentityVerified: boolean
 }
 
+export type ProviderCreditGateStatus = {
+  title: string
+  description: string
+  tone: ProviderStatusTone
+}
+
 export function providerApplicationApprovalStatus(verified: boolean) {
   return verified
     ? {
@@ -90,5 +96,32 @@ export function providerIdentityVerificationStatus(
         tone: 'warning',
         isIdentityVerified: false,
       }
+  }
+}
+
+export function providerCreditGateStatus(
+  identityStatus: ProviderIdentityVerificationStatus,
+  creditPurchaseLocked: boolean,
+): ProviderCreditGateStatus {
+  if (!creditPurchaseLocked) {
+    return {
+      title: 'ID verified',
+      description: 'Credit top-ups are unlocked for this provider.',
+      tone: 'success',
+    }
+  }
+
+  if (identityStatus.kycStatus === 'VERIFIED') {
+    return {
+      title: 'Secure liveness needed',
+      description: 'Complete the secure PWA verification step to unlock credit top-ups.',
+      tone: 'warning',
+    }
+  }
+
+  return {
+    title: identityStatus.creditGateTitle,
+    description: identityStatus.creditGateDescription,
+    tone: identityStatus.tone,
   }
 }

@@ -159,6 +159,11 @@ export default async function ProviderIdentityVerifyPage({
   })
   const uploadedKinds = new Set(documents.map((doc) => doc.documentKind))
   const requiredKinds = getRequiredDocumentKinds(verification.identityBasis as IdentityBasis)
+  // Show only the kinds relevant to the current step — selfie is always its own step.
+  const displayKinds =
+    verification.status === 'AWAITING_SELFIE'
+      ? requiredKinds.filter((k) => k === 'SELFIE')
+      : requiredKinds.filter((k) => k !== 'SELFIE')
 
   async function acceptConsentAction() {
     'use server'
@@ -180,13 +185,19 @@ export default async function ProviderIdentityVerifyPage({
 
   async function documentsDoneAction() {
     'use server'
-    await submitIdentityDocuments(token)
+    const result = await submitIdentityDocuments(token)
+    if (!result.ok) {
+      throw new Error(`Please upload your document photo before continuing. Missing: ${result.missingDocuments.join(', ')}`)
+    }
     redirect(`/provider/verify/${token}`)
   }
 
   async function selfieDoneAction() {
     'use server'
-    await submitIdentitySelfie(token)
+    const result = await submitIdentitySelfie(token)
+    if (!result.ok) {
+      throw new Error('Please upload your selfie photo before continuing.')
+    }
     redirect(`/provider/verify/${token}`)
   }
 
@@ -247,35 +258,53 @@ export default async function ProviderIdentityVerifyPage({
       {['AWAITING_DOCUMENT', 'AWAITING_SELFIE'].includes(verification.status) ? (
         <section className="space-y-4 rounded-lg border bg-card p-4">
           <div>
-            <h2 className="text-base font-semibold">Required files</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Upload clear photos or PDFs. Each file is stored privately.</p>
+            <h2 className="text-base font-semibold">
+              {verification.status === 'AWAITING_SELFIE' ? 'Take a selfie' : 'Upload your ID document'}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {verification.status === 'AWAITING_SELFIE'
+                ? 'Take a clear selfie of your face in good lighting. Each file is stored privately.'
+                : 'Upload a clear photo or PDF of your document. Each file is stored privately.'}
+            </p>
           </div>
           <div className="space-y-3">
-            {requiredKinds.map((kind) => (
-              <form key={kind} action="/api/provider/identity/upload" method="post" encType="multipart/form-data" className="grid gap-2 rounded-md border p-3">
+            {displayKinds.map((kind) => (
+              <form key={kind} action={`/api/provider/identity/upload?token=${encodeURIComponent(token)}`} method="post" encType="multipart/form-data" className="grid gap-2 rounded-md border p-3">
                 <input type="hidden" name="token" value={token} />
                 <input type="hidden" name="verificationId" value={verification.id} />
                 <input type="hidden" name="documentKind" value={kind} />
                 <input type="hidden" name="returnTo" value={`/provider/verify/${token}`} />
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium">{formatKind(kind)}</span>
-                  <span className="text-xs text-muted-foreground">{uploadedKinds.has(kind) ? 'uploaded' : 'needed'}</span>
+                  <span className={`text-xs font-medium ${uploadedKinds.has(kind) ? 'text-green-500' : 'text-muted-foreground'}`}>
+                    {uploadedKinds.has(kind) ? '✓ uploaded' : 'needed'}
+                  </span>
                 </div>
-                <input name="file" type="file" required accept="image/*,application/pdf" className="text-sm" />
-                <button className="min-h-10 rounded-md border px-3 py-2 text-sm font-medium">Upload {formatKind(kind)}</button>
+                {!uploadedKinds.has(kind) && (
+                  <>
+                    <input name="file" type="file" required accept="image/*,application/pdf" className="text-sm" />
+                    <button className="min-h-10 rounded-md border px-3 py-2 text-sm font-medium">Upload {formatKind(kind)}</button>
+                  </>
+                )}
+                {uploadedKinds.has(kind) && (
+                  <>
+                    <input name="file" type="file" accept="image/*,application/pdf" className="text-sm" />
+                    <button className="min-h-10 rounded-md border px-3 py-2 text-sm font-medium text-muted-foreground">Replace {formatKind(kind)}</button>
+                  </>
+                )}
               </form>
             ))}
           </div>
           {verification.status === 'AWAITING_DOCUMENT' ? (
             <form action={documentsDoneAction}>
               <button className="min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-                Continue to selfie
+                Continue to selfie →
               </button>
             </form>
           ) : (
             <form action={selfieDoneAction}>
               <button className="min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-                Confirm selfie upload
+                Submit selfie
               </button>
             </form>
           )}

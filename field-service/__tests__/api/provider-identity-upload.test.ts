@@ -82,6 +82,23 @@ describe('POST /api/provider/identity/upload', () => {
     expect(mockStoreIdentityDocument).not.toHaveBeenCalled()
   })
 
+  it('rejects invalid query tokens before parsing multipart upload bodies', async () => {
+    mockResolveToken.mockRejectedValue(new Error('invalid token'))
+    const formData = vi.fn()
+
+    const { POST } = await import('@/app/api/provider/identity/upload/route')
+    const response = await POST({
+      formData,
+      headers: new Headers(),
+      url: 'http://localhost/api/provider/identity/upload?token=bad-token',
+    } as unknown as NextRequest)
+
+    expect(response.status).toBe(401)
+    expect(formData).not.toHaveBeenCalled()
+    expect(mockResolveToken).toHaveBeenCalledWith('bad-token')
+    expect(mockStoreIdentityDocument).not.toHaveBeenCalled()
+  })
+
   it('does not redirect uploads to an external returnTo target', async () => {
     const form = new FormData()
     form.set('token', 'token-1')

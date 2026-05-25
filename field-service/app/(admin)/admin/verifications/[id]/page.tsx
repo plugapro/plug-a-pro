@@ -81,6 +81,7 @@ export default async function AdminIdentityVerificationDetailPage({
               <Field label="Failure reason" value={verification.failureReasonCode ?? 'None'} />
               <Field label="Submitted" value={formatDate(verification.createdAt)} />
             </dl>
+            <RiskFlags value={verification.riskFlags} />
           </div>
 
           <div className="rounded-xl border bg-card p-4">
@@ -230,6 +231,38 @@ function Field({ label: labelText, value, mono }: { label: string; value: string
       <dd className={mono ? 'font-mono text-xs' : 'font-medium'}>{value}</dd>
     </div>
   )
+}
+
+function RiskFlags({ value }: { value: unknown }) {
+  const flags = riskFlagEntries(value)
+  if (flags.length === 0) return null
+
+  return (
+    <div className="mt-4 rounded-md border bg-muted/30 p-3">
+      <h3 className="text-sm font-semibold">Risk flags</h3>
+      <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+        {flags.map(([key, flagValue]) => (
+          <div key={key}>
+            <dt className="font-mono text-xs text-muted-foreground">{key}</dt>
+            <dd className="font-medium">{formatRiskFlagValue(flagValue)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function riskFlagEntries(value: unknown): Array<[string, unknown]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value)
+}
+
+function formatRiskFlagValue(value: unknown) {
+  if (typeof value === 'boolean') return String(value)
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+  if (value === null) return 'null'
+  return JSON.stringify(value)
 }
 
 const ROLE_LEVEL: Record<Role, number> = {

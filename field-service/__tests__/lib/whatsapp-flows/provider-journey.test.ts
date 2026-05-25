@@ -56,6 +56,13 @@ vi.mock('@/lib/identity-verification/link', () => ({
 }))
 
 vi.mock('@/lib/identity-verification/credit-gate', () => ({
+  buildHighAssuranceCreditVerificationWhere: vi.fn((providerId: string) => ({
+    providerId,
+    status: 'PASSED',
+    decision: 'PASS',
+    assuranceLevel: 'HIGH',
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date('2026-05-25T00:00:00.000Z') } }],
+  })),
   isProviderEligibleForCredits: vi.fn().mockResolvedValue(true),
 }))
 
@@ -1018,13 +1025,19 @@ describe('handleProviderJourneyFlow', () => {
         id: 'prov_1',
         kycStatus: 'VERIFIED',
       })
-      ;((db as any).providerIdentityVerification.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'ver-low-1',
-        status: 'PASSED',
-        decision: 'PASS',
-        assuranceLevel: 'LOW',
-        expiresAt: null,
-      })
+      ;((db as any).providerIdentityVerification.findFirst as ReturnType<typeof vi.fn>).mockImplementation(
+        async (args: { where?: { assuranceLevel?: string } }) => {
+          if (args.where?.assuranceLevel === 'HIGH') return null
+
+          return {
+            id: 'ver-low-1',
+            status: 'PASSED',
+            decision: 'PASS',
+            assuranceLevel: 'LOW',
+            expiresAt: null,
+          }
+        },
+      )
 
       const result = await handleProviderJourneyFlow(mockCtx('pj_verify_identity'))
 
@@ -1038,6 +1051,38 @@ describe('handleProviderJourneyFlow', () => {
         expect.any(String),
         'https://app.plugapro.co.za/provider/verify/secure-token',
       )
+      expect(result.nextStep).toBe('done')
+    })
+
+    it('treats any current HIGH-assurance verification as complete even when a newer LOW-assurance row exists', async () => {
+      ;((db.provider as any).findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        kycStatus: 'VERIFIED',
+      })
+      ;((db as any).providerIdentityVerification.findFirst as ReturnType<typeof vi.fn>).mockImplementation(
+        async (args: { where?: { assuranceLevel?: string } }) => {
+          if (args.where?.assuranceLevel === 'HIGH') {
+            return { id: 'ver-high-1', providerId: 'prov_1' }
+          }
+
+          return {
+            id: 'ver-low-1',
+            status: 'PASSED',
+            decision: 'PASS',
+            assuranceLevel: 'LOW',
+            expiresAt: null,
+          }
+        },
+      )
+
+      const result = await handleProviderJourneyFlow(mockCtx('pj_verify_identity'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Identity already verified'),
+        [{ id: 'back_home', title: 'Main Menu' }],
+      )
+      expect(issueProviderIdentityVerificationLink).not.toHaveBeenCalled()
       expect(result.nextStep).toBe('done')
     })
   })

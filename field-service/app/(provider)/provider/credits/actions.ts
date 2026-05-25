@@ -25,7 +25,9 @@ import { notifyProviderPayatTopUpInitiated as notifyProviderPayatTopUpInitiatedC
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import { isProviderEligibleForCredits } from '@/lib/identity-verification/credit-gate'
 import {
+  providerCreditGateStatus,
   providerIdentityVerificationStatus,
+  type ProviderCreditGateStatus,
   type ProviderIdentityVerificationStatus,
 } from '@/lib/provider-identity-status'
 
@@ -72,6 +74,7 @@ export type ProviderWallet = {
    *  shows a verification prompt instead. */
   creditPurchaseLocked: boolean
   identityVerificationStatus: ProviderIdentityVerificationStatus
+  creditGateStatus: ProviderCreditGateStatus
 }
 
 export type ProviderWalletPendingIntent = {
@@ -377,13 +380,16 @@ export async function getProviderWallet(): Promise<ProviderWallet> {
     getProviderWalletLedgerEntries(provider.id, { limit: LEDGER_LIMIT }),
     isProviderEligibleForCredits(provider.id),
   ])
+  const creditPurchaseLocked = !eligible
+  const identityVerificationStatus = providerIdentityVerificationStatus(provider.kycStatus)
 
   return {
     credits: balance.totalCreditBalance,
     starter: balance.promoCreditBalance,
     pendingIntents,
-    creditPurchaseLocked: !eligible,
-    identityVerificationStatus: providerIdentityVerificationStatus(provider.kycStatus),
+    creditPurchaseLocked,
+    identityVerificationStatus,
+    creditGateStatus: providerCreditGateStatus(identityVerificationStatus, creditPurchaseLocked),
     recentActivity: walletEntries.map((entry) => {
       const signedAmount = isDebit(entry.entryType) ? -entry.amountCredits : entry.amountCredits
 

@@ -109,7 +109,7 @@ describe('provider credits server actions', () => {
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_TYPE', 'Business current account')
   })
 
-  async function arrangeProvider() {
+  async function arrangeProvider(kycStatus = 'NOT_STARTED') {
     const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
 
@@ -121,6 +121,7 @@ describe('provider credits server actions', () => {
     ;(db.provider.findUnique as any).mockResolvedValue({
       id: 'provider-1',
       phone: '+27821234567',
+      kycStatus,
     })
     ;(db.providerWallet.upsert as any).mockResolvedValue({ id: 'wallet-1' })
 
@@ -688,6 +689,35 @@ describe('provider credits server actions', () => {
 
       expect(wallet.creditPurchaseLocked).toBe(true)
       expect(isProviderEligibleForCredits).toHaveBeenCalledWith('provider-1')
+    })
+
+    it('shows step-up credit gate copy when provider KYC is verified but high-assurance credit verification is locked', async () => {
+      const { db } = await arrangeProvider('VERIFIED')
+      ;(db.paymentIntent.findMany as any).mockResolvedValue([])
+      const { getProviderWalletBalance, getProviderWalletLedgerEntries } = await import(
+        '../../lib/provider-wallet'
+      )
+      ;(getProviderWalletBalance as any).mockResolvedValue({
+        providerId: 'provider-1',
+        paidCreditBalance: 2,
+        promoCreditBalance: 1,
+        totalCreditBalance: 3,
+        status: 'ACTIVE',
+      })
+      ;(getProviderWalletLedgerEntries as any).mockResolvedValue([])
+      const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
+      ;(isProviderEligibleForCredits as any).mockResolvedValue(false)
+
+      const { getProviderWallet } = await import(
+        '../../app/(provider)/provider/credits/actions'
+      )
+      const wallet = await getProviderWallet()
+
+      expect(wallet.creditPurchaseLocked).toBe(true)
+      expect(wallet.identityVerificationStatus.label).toBe('Identity verified')
+      expect(wallet.creditGateStatus.title).toBe('Secure liveness needed')
+      expect(wallet.creditGateStatus.description).toContain('secure PWA verification')
+      expect(wallet.creditGateStatus.description).not.toContain('unlocked')
     })
 
     it('leaves paid credit purchases unlocked when the provider is high-assurance verified', async () => {

@@ -18,7 +18,10 @@ import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
 import { buildProviderCreditSummaryMessage, creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
 import { issueProviderIdentityVerificationLink } from '../identity-verification/link'
-import { isProviderEligibleForCredits } from '../identity-verification/credit-gate'
+import {
+  buildHighAssuranceCreditVerificationWhere,
+  isProviderEligibleForCredits,
+} from '../identity-verification/credit-gate'
 import { ctaLabelFor } from '../whatsapp-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
@@ -1509,23 +1512,13 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  const latestVerification = await db.providerIdentityVerification.findFirst({
-    where: { providerId: provider.id },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      status: true,
-      decision: true,
-      assuranceLevel: true,
-      expiresAt: true,
-    },
+  const highAssuranceVerification = await db.providerIdentityVerification.findFirst({
+    where: buildHighAssuranceCreditVerificationWhere(provider.id),
+    orderBy: { updatedAt: 'desc' },
+    select: { id: true },
   })
-  const hasHighAssuranceVerification =
-    latestVerification?.status === 'PASSED' &&
-    latestVerification.decision === 'PASS' &&
-    latestVerification.assuranceLevel === 'HIGH' &&
-    (!latestVerification.expiresAt || latestVerification.expiresAt > new Date())
 
-  if (provider.kycStatus === 'VERIFIED' && hasHighAssuranceVerification) {
+  if (provider.kycStatus === 'VERIFIED' && highAssuranceVerification) {
     await sendButtons(
       ctx.phone,
       '✅ *Identity already verified*\n\nYour identity has been confirmed. No further action is needed.',

@@ -6,8 +6,18 @@ import { resolveProviderVerificationToken } from '@/lib/provider-verification-to
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
+  const preflightToken = tokenFromRequest(request)
+  let preflightVerification: Awaited<ReturnType<typeof resolveProviderVerificationToken>> | null = null
+  if (preflightToken) {
+    try {
+      preflightVerification = await resolveProviderVerificationToken(preflightToken)
+    } catch {
+      return jsonOrRedirect(request, undefined, { ok: false, error: 'Verification link is invalid or expired.' }, 401)
+    }
+  }
+
   const formData = await request.formData()
-  const token = formData.get('token')?.toString() ?? ''
+  const token = preflightToken || formData.get('token')?.toString() || ''
   const verificationId = formData.get('verificationId')?.toString() ?? ''
   const documentKind = formData.get('documentKind')?.toString() ?? ''
   const returnTo = formData.get('returnTo')?.toString()
@@ -15,7 +25,7 @@ export async function POST(request: NextRequest) {
 
   let verification: Awaited<ReturnType<typeof resolveProviderVerificationToken>>
   try {
-    verification = await resolveProviderVerificationToken(token)
+    verification = preflightVerification ?? await resolveProviderVerificationToken(token)
   } catch {
     return jsonOrRedirect(request, returnTo, { ok: false, error: 'Verification link is invalid or expired.' }, 401)
   }
@@ -53,6 +63,13 @@ export async function POST(request: NextRequest) {
   } catch {
     return jsonOrRedirect(request, returnTo, { ok: false, error: 'Could not store this file.' }, 400)
   }
+}
+
+function tokenFromRequest(request: NextRequest): string | null {
+  const queryToken = new URL(request.url).searchParams.get('token')?.trim()
+  if (queryToken) return queryToken
+  const headerToken = request.headers.get('x-provider-verification-token')?.trim()
+  return headerToken || null
 }
 
 function isIdentityDocumentKind(value: string): value is IdentityDocumentKind {

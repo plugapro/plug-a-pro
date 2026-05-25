@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { crudAction } from '@/lib/crud-action'
+import { decryptIdentifier } from '@/lib/identity-verification/crypto'
 import { transitionIdentityVerification } from '@/lib/identity-verification/orchestrator'
 
 const FLAG = 'admin.crud.verifications'
@@ -17,6 +18,12 @@ const ReviewSchema = z.object({
 })
 
 type ReviewInput = z.infer<typeof ReviewSchema>
+
+const RevealIdentifierSchema = z.object({
+  verificationId: z.string().min(1),
+})
+
+type RevealIdentifierInput = z.infer<typeof RevealIdentifierSchema>
 
 export async function approveIdentityVerificationAction(input: ReviewInput) {
   const admin = await requireAdmin()
@@ -137,6 +144,42 @@ export async function requestIdentityVerificationRetryAction(input: ReviewInput)
 
   revalidateVerificationPaths(input.verificationId)
   return { ok: result.ok }
+}
+
+export async function revealIdentityIdentifierAction(input: RevealIdentifierInput) {
+  const admin = await requireAdmin()
+  const result = await crudAction<RevealIdentifierInput, { identifier: string }>({
+    entity: 'ProviderIdentityVerification',
+    entityId: input.verificationId,
+    action: 'provider_identity_verification.reveal_identifier',
+    requiredRole: [...REVIEW_ROLES],
+    requiredFlag: FLAG,
+    schema: RevealIdentifierSchema,
+    input,
+    run: async (data, tx) => {
+      const verification = await tx.providerIdentityVerification.findUnique({
+        where: { id: data.verificationId },
+        select: { id: true, identifierEncrypted: true },
+      })
+      if (!verification?.identifierEncrypted) {
+        throw new Error('No encrypted identifier is available for this verification.')
+      }
+
+      const identifier = decryptIdentifier(verification.identifierEncrypted)
+      await tx.providerSensitiveDataAccessLog.create({
+        data: {
+          verificationId: data.verificationId,
+          actorId: admin.adminUserId ?? admin.id,
+          actorRole: admin.adminRole,
+          accessType: 'REVEAL_IDENTIFIER',
+        },
+      })
+
+      return { identifier }
+    },
+  })
+
+  return { ok: result.ok, identifier: result.data.identifier }
 }
 
 export async function approveIdentityVerificationFormAction(formData: FormData) {
