@@ -3,10 +3,10 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { hashIdentifier, identifierLast4, normalizeIdentifier } from '@/lib/identity-verification/crypto'
+import { hashIdentifier, identifierLast4 } from '@/lib/identity-verification/crypto'
+import { validateIdentityDocumentDetails } from '@/lib/identity-verification/document-validation'
 import { transitionIdentityVerification } from '@/lib/identity-verification/orchestrator'
 import { getRequiredDocumentKinds, type IdentityBasis, type IdentityDocumentKind, type VerificationStatus } from '@/lib/identity-verification/types'
-import { validatePassportNumber, validateSaId } from '@/lib/identity-verification/sa-id'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 
 const IdentityBasisSchema = z.enum([
@@ -62,22 +62,26 @@ export async function submitIdentityBasisAndIdentifier(
 ) {
   const verification = await resolveProviderVerificationToken(token)
   const input = IdentifierSchema.parse(rawInput)
-  const normalized = normalizeByBasis(input.identityBasis, input.identifier)
+  const validation = validateIdentityDocumentDetails(input)
+
+  if (!validation.ok) {
+    throw new Error(validation.message)
+  }
 
   await db.providerIdentityVerification.update({
     where: { id: verification.id },
     data: {
       identityBasis: input.identityBasis,
-      issuingCountry: input.issuingCountry?.trim() || null,
-      nationality: input.nationality?.trim() || null,
-      identifierHash: hashIdentifier(normalized.identifier, `identity:${input.identityBasis}`),
-      identifierLast4: identifierLast4(normalized.identifier),
+      issuingCountry: validation.issuingCountry,
+      nationality: validation.nationality,
+      identifierHash: hashIdentifier(validation.normalizedIdentifier, `identity:${input.identityBasis}`),
+      identifierLast4: identifierLast4(validation.normalizedIdentifier),
       documentNumberHash: null,
       documentNumberLast4: null,
-      documentExpiryDate: parseOptionalDate(input.documentExpiryDate),
-      dobDerived: normalized.dateOfBirth ?? null,
-      genderDerived: normalized.gender ?? null,
-      citizenshipDerived: normalized.citizenship ?? null,
+      documentExpiryDate: validation.documentExpiryDate,
+      dobDerived: validation.dateOfBirth ?? null,
+      genderDerived: validation.gender ?? null,
+      citizenshipDerived: validation.citizenship ?? null,
     },
   })
 
@@ -195,41 +199,6 @@ async function advanceTo(
     actorRole: 'provider',
     metadata: options.metadata,
   })
-}
-
-function normalizeByBasis(identityBasis: IdentityBasis, identifier: string) {
-  if (identityBasis === 'SA_ID') {
-    const validation = validateSaId(identifier)
-    if (!validation.ok) {
-      throw new Error(`Invalid SA ID: ${validation.reason}`)
-    }
-    return {
-      identifier: validation.normalized,
-      dateOfBirth: validation.dateOfBirth,
-      gender: validation.gender,
-      citizenship: validation.citizenship,
-    }
-  }
-
-  if (['PASSPORT', 'WORK_PERMIT', 'PERMANENT_RESIDENCE_PERMIT'].includes(identityBasis)) {
-    const validation = validatePassportNumber(identifier)
-    if (!validation.ok) {
-      throw new Error(`Invalid passport/document number: ${validation.reason}`)
-    }
-    return { identifier: validation.normalized }
-  }
-
-  const normalized = normalizeIdentifier(identifier).replace(/[^A-Z0-9/-]/g, '')
-  if (normalized.length < 4 || normalized.length > 40) {
-    throw new Error('Invalid permit or refugee document number.')
-  }
-  return { identifier: normalized }
-}
-
-function parseOptionalDate(value?: string): Date | null {
-  if (!value) return null
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
 function requiredKindsForStep(identityBasis: IdentityBasis, step: 'documents' | 'selfie') {

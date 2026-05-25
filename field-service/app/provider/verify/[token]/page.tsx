@@ -11,19 +11,10 @@ import {
   submitIdentitySelfie,
   submitIdentityVerificationForReview,
 } from './actions'
+import { IdentityDetailsForm } from './IdentityDetailsForm'
 
 export const dynamic = 'force-dynamic'
 export const metadata = buildMetadata({ title: 'Verify Identity', noIndex: true })
-
-const BASIS_OPTIONS: Array<{ value: IdentityBasis; label: string }> = [
-  { value: 'SA_ID', label: 'South African ID' },
-  { value: 'PASSPORT', label: 'Passport / foreign national' },
-  { value: 'REFUGEE_ID', label: 'Refugee ID' },
-  { value: 'ASYLUM_PERMIT', label: 'Asylum seeker permit' },
-  { value: 'REFUGEE_PERMIT', label: 'Refugee permit' },
-  { value: 'WORK_PERMIT', label: 'Work permit' },
-  { value: 'PERMANENT_RESIDENCE_PERMIT', label: 'Permanent residence permit' },
-]
 
 // Southern Africa first, then rest of Africa, then world — alphabetical within each group.
 const COUNTRY_OPTIONS = [
@@ -239,49 +230,17 @@ export default async function ProviderIdentityVerifyPage({
         <section className="space-y-4 rounded-lg border bg-card p-4">
           <div>
             <h2 className="text-base font-semibold">Identity details</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Your full number is not shown back after submission.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Choose the document you have. The form only asks for the details needed for that document type.
+            </p>
           </div>
-          <form action={identifierAction} className="grid gap-3">
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">Identity type</span>
-              <select name="identityBasis" defaultValue={verification.identityBasis} className="h-11 rounded-md border bg-background px-3">
-                {BASIS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">ID, passport, or permit number</span>
-              <input name="identifier" required className="h-11 rounded-md border bg-background px-3" autoComplete="off" />
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-sm">
-                <span className="font-medium">Country of issue</span>
-                <select name="issuingCountry" defaultValue={verification.issuingCountry ?? ''} className="h-11 rounded-md border bg-background px-3 text-sm">
-                  <option value="">Select country</option>
-                  {COUNTRY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm">
-                <span className="font-medium">Nationality</span>
-                <select name="nationality" defaultValue={verification.nationality ?? ''} className="h-11 rounded-md border bg-background px-3 text-sm">
-                  <option value="">Select nationality</option>
-                  {COUNTRY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">Document expiry date, if applicable</span>
-              <input name="documentExpiryDate" type="date" className="h-11 rounded-md border bg-background px-3" />
-            </label>
-            <button className="min-h-11 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-              Save identity details
-            </button>
-          </form>
+          <IdentityDetailsForm
+            action={identifierAction}
+            defaultIdentityBasis={verification.identityBasis as IdentityBasis}
+            defaultIssuingCountry={verification.issuingCountry}
+            defaultNationality={verification.nationality}
+            countryOptions={COUNTRY_OPTIONS}
+          />
         </section>
       ) : null}
 
