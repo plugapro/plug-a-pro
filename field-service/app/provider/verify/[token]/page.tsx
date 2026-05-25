@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { getRequiredDocumentKinds, type IdentityBasis } from '@/lib/identity-verification/types'
-import { ProviderVerificationTokenError, resolveProviderVerificationToken } from '@/lib/provider-verification-token'
+import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 import {
   acceptIdentityConsent,
   submitIdentityBasisAndIdentifier,
@@ -208,9 +208,8 @@ export default async function ProviderIdentityVerifyPage({
 async function resolveForPage(token: string) {
   try {
     return await resolveProviderVerificationToken(token)
-  } catch (error) {
-    if (error instanceof ProviderVerificationTokenError) return null
-    throw error
+  } catch {
+    return null
   }
 }
 
