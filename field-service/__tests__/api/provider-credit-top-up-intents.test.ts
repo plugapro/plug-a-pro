@@ -7,6 +7,7 @@ const {
   mockCreateManualEftTopUpIntent,
   mockCreatePayatTopUpIntent,
   mockCreatePayfastTopUpIntent,
+  mockIssueVerificationLink,
   ProviderCreditPaymentIntentErrorMock,
   PayatConfigErrorMock,
   PayatTokenErrorMock,
@@ -21,6 +22,7 @@ const {
   mockCreateManualEftTopUpIntent: vi.fn(),
   mockCreatePayatTopUpIntent: vi.fn(),
   mockCreatePayfastTopUpIntent: vi.fn(),
+  mockIssueVerificationLink: vi.fn(),
   ProviderCreditPaymentIntentErrorMock: class ProviderCreditPaymentIntentError extends Error {
     code: string
     constructor(code: string, message: string) {
@@ -66,6 +68,9 @@ vi.mock('@/lib/provider-credit-payment-intents', () => ({
   createPayatTopUpIntent: mockCreatePayatTopUpIntent,
   createPayfastTopUpIntent: mockCreatePayfastTopUpIntent,
 }))
+vi.mock('@/lib/identity-verification/link', () => ({
+  issueProviderIdentityVerificationLink: mockIssueVerificationLink,
+}))
 vi.mock('@/lib/payat', () => ({
   PayatConfigError: PayatConfigErrorMock,
   PayatTokenError: PayatTokenErrorMock,
@@ -99,6 +104,13 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     mockCreatePayfastTopUpIntent.mockResolvedValue({
       intent: { id: 'intent-payfast-1', status: 'PENDING_PAYMENT' },
       checkout: { action: 'https://sandbox.payfast.co.za/eng/process', fields: {} },
+    })
+    mockIssueVerificationLink.mockResolvedValue({
+      verificationId: 'ver-1',
+      verificationUrl: 'https://app.plugapro.co.za/provider/verify/secure-token',
+      expiresAt: new Date('2026-05-28T10:00:00.000Z'),
+      reused: false,
+      status: 'NOT_STARTED',
     })
   })
 
@@ -314,6 +326,11 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     await expect(response.json()).resolves.toMatchObject({
       code: 'IDENTITY_NOT_VERIFIED',
       error: expect.stringContaining('Identity verification is required before buying credits'),
+      verificationUrl: 'https://app.plugapro.co.za/provider/verify/secure-token',
+    })
+    expect(mockIssueVerificationLink).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      channel: 'PWA',
     })
   })
 

@@ -337,7 +337,7 @@ export type PayatTopUpResultData = {
 
 export type ProviderPayatTopUpResponse =
   | { ok: true; data: PayatTopUpResultData }
-  | { ok: false; code: PayatTopUpFailureCode; userMessage: string }
+  | { ok: false; code: PayatTopUpFailureCode; userMessage: string; verificationUrl?: string | null }
 
 export type PayfastTopUpMethod = 'PAYFAST_CARD' | 'PAYFAST_EFT' | 'PAYFAST_SCODE'
 

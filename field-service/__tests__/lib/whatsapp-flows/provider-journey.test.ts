@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/db', () => {
-  const providerMock = { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() }
+  const providerMock = { findUnique: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() }
   const availabilityMock = { upsert: vi.fn().mockResolvedValue({}) }
   const txClient = { provider: providerMock, technicianAvailability: availabilityMock }
   return {
@@ -44,6 +44,16 @@ vi.mock('@/lib/provider-credit-payment-intents', () => ({
   createPayatTopUpIntent: vi.fn(),
 }))
 
+vi.mock('@/lib/identity-verification/link', () => ({
+  issueProviderIdentityVerificationLink: vi.fn().mockResolvedValue({
+    verificationId: 'ver-1',
+    verificationUrl: 'https://app.plugapro.co.za/provider/verify/secure-token',
+    expiresAt: new Date('2026-05-28T10:00:00.000Z'),
+    reused: false,
+    status: 'NOT_STARTED',
+  }),
+}))
+
 vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderPaymentIntentCreated: vi.fn().mockResolvedValue(undefined),
   notifyProviderPaymentCredited: vi.fn().mockResolvedValue(undefined),
@@ -69,6 +79,7 @@ import { transitionJob } from '@/lib/jobs'
 import { recordAuditLog } from '@/lib/audit'
 import * as paymentIntents from '@/lib/provider-credit-payment-intents'
 import * as walletNotifications from '@/lib/provider-wallet-notifications'
+import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 
 const mockCtx = (step: string, replyId?: string, replyText?: string, data: object = {}) => ({
   phone: '+27711111111',
@@ -901,12 +912,16 @@ describe('handleProviderJourneyFlow', () => {
         mockCtx('pj_topup_select_amount', 'provider_topup_100'),
       )
 
-      const ctaCalls = (wa.sendCtaUrl as ReturnType<typeof vi.fn>).mock.calls
-      const textCalls = (wa.sendText as ReturnType<typeof vi.fn>).mock.calls
-      const sawIdentityText = [...textCalls, ...ctaCalls].some((call) => call[1]?.includes('Identity check required'))
-      const sawRetryText = textCalls.some((call) => call[1]?.includes('complete identity verification'))
-
-      expect(sawIdentityText || sawRetryText).toBe(true)
+      expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
+        providerId: 'prov_1',
+        channel: 'PWA',
+      })
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Identity check required'),
+        expect.any(String),
+        'https://app.plugapro.co.za/provider/verify/secure-token',
+      )
       expect(result.nextStep).toBe('pj_topup_select_amount')
     })
 
@@ -920,6 +935,29 @@ describe('handleProviderJourneyFlow', () => {
       expect(wa.sendText).toHaveBeenCalledWith(
         '+27711111111',
         expect.stringContaining('not registered'),
+      )
+      expect(result.nextStep).toBe('done')
+    })
+  })
+
+  describe('pj_verify_identity step', () => {
+    it('issues a tokenized verification CTA for an unverified provider', async () => {
+      ;((db.provider as any).findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        kycStatus: 'NOT_STARTED',
+      })
+
+      const result = await handleProviderJourneyFlow(mockCtx('pj_verify_identity'))
+
+      expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
+        providerId: 'prov_1',
+        channel: 'PWA',
+      })
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Identity Verification'),
+        expect.any(String),
+        'https://app.plugapro.co.za/provider/verify/secure-token',
       )
       expect(result.nextStep).toBe('done')
     })

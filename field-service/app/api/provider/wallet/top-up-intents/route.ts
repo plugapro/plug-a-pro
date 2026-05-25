@@ -11,6 +11,7 @@ import {
 import { PayatApiError, PayatConfigError, PayatTokenError } from '@/lib/payat'
 import { verifyRequestOrigin } from '@/lib/csrf'
 import { apiError } from '@/lib/api-response'
+import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 
 type CreateTopUpIntentBody = {
   amountCents?: unknown
@@ -140,7 +141,17 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof ProviderCreditPaymentIntentError) {
       const mapped = mapProviderIntentError(error)
-      return NextResponse.json({ error: mapped.error, code: mapped.code }, { status: mapped.status })
+      const verificationUrl = mapped.code === 'IDENTITY_NOT_VERIFIED'
+        ? await issueVerificationLink(provider.id)
+        : null
+      return NextResponse.json(
+        {
+          error: mapped.error,
+          code: mapped.code,
+          ...(verificationUrl ? { verificationUrl } : {}),
+        },
+        { status: mapped.status },
+      )
     }
 
     if (error instanceof PayatConfigError) {
@@ -179,5 +190,21 @@ export async function POST(request: NextRequest) {
 
     console.error('[provider/wallet/top-up-intents] Failed to create payment intent:', error)
     return NextResponse.json({ error: 'Could not create top-up payment intent' }, { status: 500 })
+  }
+}
+
+async function issueVerificationLink(providerId: string): Promise<string | null> {
+  try {
+    const link = await issueProviderIdentityVerificationLink({
+      providerId,
+      channel: 'PWA',
+    })
+    return link.verificationUrl
+  } catch (error) {
+    console.error('[provider/wallet/top-up-intents] identity verification link issue failed', {
+      providerId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
   }
 }

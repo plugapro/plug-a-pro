@@ -22,6 +22,7 @@ import {
 } from '@/lib/provider-credit-payment-intents'
 import { PayatConfigError, PayatApiError, PayatTokenError } from '@/lib/payat'
 import { notifyProviderPayatTopUpInitiated as notifyProviderPayatTopUpInitiatedCore } from '@/lib/provider-wallet-notifications'
+import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 
 const ACTIVE_PAYAT_STATUSES = ['PENDING_PAYMENT', 'ITN_RECEIVED'] as const
 
@@ -665,7 +666,7 @@ export async function createProviderTopUpIntent(
 
 export type ProviderPayfastCheckoutResult =
   | { ok: true; intentId: string; checkout: import('@/lib/payfast').PayfastCheckoutPayload }
-  | { ok: false; code: string; userMessage: string }
+  | { ok: false; code: string; userMessage: string; verificationUrl?: string | null }
 
 export type ProviderPayatTopUpResult = {
   intentId: string
@@ -673,6 +674,23 @@ export type ProviderPayatTopUpResult = {
   creditsToIssue: number
   reference: string
   paymentLink: string
+}
+
+async function issueCreditVerificationUrl(providerId: string | null): Promise<string | null> {
+  if (!providerId) return null
+  try {
+    const link = await issueProviderIdentityVerificationLink({
+      providerId,
+      channel: 'PWA',
+    })
+    return link.verificationUrl
+  } catch (error) {
+    console.error('[provider/credits] identity verification link issue failed', {
+      providerId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
 }
 
 // Server actions can't surface real error messages to the client in production
@@ -803,6 +821,7 @@ export async function createProviderPayatTopUpIntent(
             ok: false,
             code: 'IDENTITY_NOT_VERIFIED',
             userMessage: 'Identity verification is required before purchasing credits. Verify your identity first.',
+            verificationUrl: await issueCreditVerificationUrl(providerId),
           }
         case 'REFERENCE_GENERATION_FAILED':
           return {
@@ -967,6 +986,7 @@ export async function createProviderPayfastTopUpIntent(
             ok: false,
             code: 'IDENTITY_NOT_VERIFIED',
             userMessage: 'Identity verification is required before purchasing credits. Verify your identity first.',
+            verificationUrl: await issueCreditVerificationUrl(providerId),
           }
         default:
           break

@@ -17,6 +17,7 @@ import { AUDIT_ENTITY } from '../audit-entities'
 import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
 import { buildProviderCreditSummaryMessage, creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
+import { issueProviderIdentityVerificationLink } from '../identity-verification/link'
 import { ctaLabelFor } from '../whatsapp-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
@@ -173,6 +174,21 @@ async function providerCreditBalanceLine(providerId: string) {
 async function providerCreditSummary(providerId: string) {
   const balance = await getProviderWalletBalanceReadOnly(providerId)
   return buildProviderCreditSummaryMessage(balance)
+}
+
+async function issueIdentityVerificationLinkForWhatsApp(providerId: string) {
+  try {
+    return await issueProviderIdentityVerificationLink({
+      providerId,
+      channel: 'PWA',
+    })
+  } catch (error) {
+    console.error('[provider-journey] identity verification link issue failed', {
+      providerId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
 }
 
 async function findProviderForWhatsApp(phone: string, include?: Prisma.ProviderInclude) {
@@ -1470,7 +1486,7 @@ async function handleProblemReport(ctx: FlowContext): Promise<FlowResult> {
 async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
   const provider = await db.provider.findFirst({
     where: { phone: { in: phoneLookupVariants(ctx.phone) } },
-    select: { kycStatus: true },
+    select: { id: true, kycStatus: true },
     orderBy: { updatedAt: 'desc' },
   })
 
@@ -1501,7 +1517,8 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
     EXPIRED: 'Expired',
   }
   const status = statusLabel[(provider.kycStatus as string) ?? 'NOT_STARTED'] ?? (provider.kycStatus ?? 'Not started')
-  const portalUrl = getPublicAppUrl('/provider/verification')
+  const link = await issueIdentityVerificationLinkForWhatsApp(provider.id)
+  const portalUrl = link?.verificationUrl ?? getPublicAppUrl('/provider/verification')
 
   if (portalUrl) {
     await sendCtaUrl(
@@ -1831,7 +1848,8 @@ async function handleTopUpPayatCreate(
       (err as { code: unknown }).code === 'DUPLICATE_INTENT'
 
     if (isIdentityNotVerified) {
-      const verificationUrl = getPublicAppUrl('/provider/verification')
+      const verificationLink = await issueIdentityVerificationLinkForWhatsApp(provider.id)
+      const verificationUrl = verificationLink?.verificationUrl ?? getPublicAppUrl('/provider/verification')
       if (verificationUrl) {
         await sendCtaUrl(
           ctx.phone,

@@ -1324,7 +1324,20 @@ async function processInboundMessageUnlocked(
           'code' in err &&
           (err as { code: unknown }).code === 'DUPLICATE_INTENT'
         if (isIdentityNotVerified) {
-          const verificationUrl = getPublicAppUrl('/provider/verification')
+          let verificationUrl = getPublicAppUrl('/provider/verification')
+          try {
+            const { issueProviderIdentityVerificationLink } = await import('./identity-verification/link')
+            const verificationLink = await issueProviderIdentityVerificationLink({
+              providerId: provider.id,
+              channel: 'PWA',
+            })
+            verificationUrl = verificationLink.verificationUrl ?? verificationUrl
+          } catch (linkError) {
+            console.error('[whatsapp-bot] identity verification link issue failed', {
+              providerId: provider.id,
+              error: linkError instanceof Error ? linkError.message : String(linkError),
+            })
+          }
           if (verificationUrl) {
             await sendCtaUrl(
               phone,

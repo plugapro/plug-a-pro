@@ -51,6 +51,16 @@ vi.mock('../../lib/provider-credit-payment-intents', () => ({
   },
 }))
 
+vi.mock('../../lib/identity-verification/link', () => ({
+  issueProviderIdentityVerificationLink: vi.fn().mockResolvedValue({
+    verificationId: 'ver-1',
+    verificationUrl: 'https://app.plugapro.co.za/provider/verify/secure-token',
+    expiresAt: new Date('2026-05-28T10:00:00.000Z'),
+    reused: false,
+    status: 'NOT_STARTED',
+  }),
+}))
+
 vi.mock('../../lib/provider-wallet-notifications', () => ({
   notifyProviderPayatTopUpInitiated: vi.fn(),
   notifyProviderPaymentIntentCreated: vi.fn(),
@@ -346,6 +356,7 @@ describe('provider credits server actions', () => {
       const { createPayatTopUpIntent, ProviderCreditPaymentIntentError } = await import(
         '../../lib/provider-credit-payment-intents'
       )
+      const { issueProviderIdentityVerificationLink } = await import('../../lib/identity-verification/link')
       ;(createPayatTopUpIntent as any).mockRejectedValue(
         new ProviderCreditPaymentIntentError(
           'IDENTITY_NOT_VERIFIED',
@@ -359,7 +370,12 @@ describe('provider credits server actions', () => {
       expect(result).toMatchObject({ ok: false, code: 'IDENTITY_NOT_VERIFIED' })
       if (result.ok === false) {
         expect(result.userMessage).toContain('verification')
+        expect(result.verificationUrl).toBe('https://app.plugapro.co.za/provider/verify/secure-token')
       }
+      expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
+        providerId: 'provider-1',
+        channel: 'PWA',
+      })
     })
 
     it('returns UNKNOWN for unrecognised errors', async () => {

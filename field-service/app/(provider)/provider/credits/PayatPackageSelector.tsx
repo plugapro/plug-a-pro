@@ -30,6 +30,10 @@ export function PayatPackageSelector() {
           router.push(`/provider/credits/intent/${response.data.intentId}`)
           return
         }
+        if (response.code === 'IDENTITY_NOT_VERIFIED' && response.verificationUrl) {
+          window.location.assign(response.verificationUrl)
+          return
+        }
         if (response.code === 'TOO_MANY_PENDING') {
           router.push('/provider/credits/limit')
           return

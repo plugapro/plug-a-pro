@@ -134,6 +134,8 @@ export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: Provide
         if (!result.ok) {
           if (result.code === 'TOO_MANY_PENDING') {
             router.push('/provider/credits/limit')
+          } else if (result.code === 'IDENTITY_NOT_VERIFIED' && result.verificationUrl) {
+            window.location.assign(result.verificationUrl)
           } else {
             toast.error(result.userMessage)
           }
