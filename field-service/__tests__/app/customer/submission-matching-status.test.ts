@@ -99,6 +99,17 @@ describe('CLIENT-06: token request-submitted page', () => {
     expect(source).toContain('<Badge variant="brand">Review providers</Badge>')
   })
 
+  it('shows immediate pending labels for public-token Review Providers First actions', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'app/requests/access/[token]/page.tsx'),
+      'utf8',
+    )
+    expect(source).toContain("import { FormSubmitButton } from '@/components/ui/form-submit-button'")
+    expect(source).toContain('pendingLabel="Adding…"')
+    expect(source).toContain('pendingLabel="Sending…"')
+    expect(source).toContain('pendingLabel="Removing…"')
+  })
+
   it('includes safe app navigation and auth-aware bottom nav on ticket page', () => {
     const source = readFileSync(
       join(process.cwd(), 'app/requests/access/[token]/page.tsx'),

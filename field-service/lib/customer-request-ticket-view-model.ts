@@ -84,73 +84,72 @@ export async function buildCustomerRequestTicketViewModel(params: {
     }
   }
 
-  let shortlist: ShortlistShape = null
-  try {
-    shortlist = await getCustomerShortlistForRequest(destination.request.id)
-  } catch (error) {
-    // Shortlist is optional for most request states; suppress fetch failures and
-    // continue rendering the ticket status page.
-    console.warn('[ticket-access] shortlist fetch failed (non-fatal)', {
-      traceId,
-      route: '/requests/access/[token]',
-      requestId: destination.request.id,
-      requestStatus: destination.request.status,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    shortlist = null
-  }
-
   const batch = Math.max(1, params.reviewBatch ?? 1)
   const isReviewFirstFlow =
     (destination.request.status === 'PENDING_VALIDATION' || destination.request.status === 'MATCHING') &&
     destination.request.assignmentMode === 'OPS_REVIEW' &&
     Boolean(destination.request.latestDispatchDecisionId)
 
-  let reviewCandidates: ReviewCandidatesShape = null
-  let reviewShortlist: ReviewShortlistShape = null
   const customerId = destination.request.customer?.id
 
-  if (isReviewFirstFlow && customerId) {
-    try {
-      reviewCandidates = await getProviderCandidatesForCustomerReview({
-        requestId: destination.request.id,
-        customerId,
-        batch,
-      })
-    } catch (error) {
-      // Candidate rendering should fail closed to a clear empty-state in the
-      // ticket page, not crash the whole public-token flow.
-      console.warn('[ticket-access] review candidates fetch failed (non-fatal)', {
-        traceId,
-        route: '/requests/access/[token]',
-        requestId: destination.request.id,
-        requestStatus: destination.request.status,
-        assignmentMode: destination.request.assignmentMode,
-        batch,
-        error: error instanceof Error ? error.message : String(error),
-      })
-      reviewCandidates = null
-    }
+  const shortlistPromise = getCustomerShortlistForRequest(destination.request.id).catch((error) => {
+    // Shortlist is optional for most request states; suppress fetch failures and
+    // continue rendering the ticket status page.
+    console.warn('[ticket-access] shortlist fetch failed (non-fatal)', {
+      traceId,
+      route: '/requests/access/[token]',
+      requestId: destination.request!.id,
+      requestStatus: destination.request!.status,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  })
 
-    try {
-      reviewShortlist = await getCustomerReviewShortlist({
+  const reviewCandidatesPromise: Promise<ReviewCandidatesShape> = isReviewFirstFlow && customerId
+    ? getProviderCandidatesForCustomerReview({
         requestId: destination.request.id,
         customerId,
+        batch,
+      }).catch((error) => {
+        // Candidate rendering should fail closed to a clear empty-state in the
+        // ticket page, not crash the whole public-token flow.
+        console.warn('[ticket-access] review candidates fetch failed (non-fatal)', {
+          traceId,
+          route: '/requests/access/[token]',
+          requestId: destination.request!.id,
+          requestStatus: destination.request!.status,
+          assignmentMode: destination.request!.assignmentMode,
+          batch,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return null
       })
-    } catch (error) {
-      // Shortlist read errors are non-fatal for the same reason as shortlist
-      // fetch above; we still render the request details safely.
-      console.warn('[ticket-access] review shortlist fetch failed (non-fatal)', {
-        traceId,
-        route: '/requests/access/[token]',
+    : Promise.resolve(null)
+
+  const reviewShortlistPromise: Promise<ReviewShortlistShape> = isReviewFirstFlow && customerId
+    ? getCustomerReviewShortlist({
         requestId: destination.request.id,
-        requestStatus: destination.request.status,
-        assignmentMode: destination.request.assignmentMode,
-        error: error instanceof Error ? error.message : String(error),
+        customerId,
+      }).catch((error) => {
+        // Shortlist read errors are non-fatal for the same reason as shortlist
+        // fetch above; we still render the request details safely.
+        console.warn('[ticket-access] review shortlist fetch failed (non-fatal)', {
+          traceId,
+          route: '/requests/access/[token]',
+          requestId: destination.request!.id,
+          requestStatus: destination.request!.status,
+          assignmentMode: destination.request!.assignmentMode,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return null
       })
-      reviewShortlist = null
-    }
-  }
+    : Promise.resolve(null)
+
+  const [shortlist, reviewCandidates, reviewShortlist] = await Promise.all([
+    shortlistPromise,
+    reviewCandidatesPromise,
+    reviewShortlistPromise,
+  ])
 
   console.info('[ticket-access] ticket view model ready', {
     traceId,

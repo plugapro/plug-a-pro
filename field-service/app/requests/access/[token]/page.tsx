@@ -14,6 +14,7 @@ import { BottomNav, type BottomNavItem } from '@/components/shared/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
@@ -755,9 +756,9 @@ export default async function TicketAccessPage({
                               <input type="hidden" name="token" value={token} />
                               <input type="hidden" name="requestId" value={jobRequest.id} />
                               <input type="hidden" name="providerId" value={candidate.providerId} />
-                              <Button type="submit" className="w-full">
+                              <FormSubmitButton className="w-full" pendingLabel="Adding…">
                                 Add #{reviewShortlistedProviderIds.size + 1}
-                              </Button>
+                              </FormSubmitButton>
                             </form>
                           )}
                         </div>
@@ -818,7 +819,14 @@ export default async function TicketAccessPage({
                                   <input type="hidden" name="token" value={token} />
                                   <input type="hidden" name="requestId" value={jobRequest.id} />
                                   <input type="hidden" name="providerId" value={provider.providerId} />
-                                  <button type="submit" className="text-xs text-destructive underline">Remove</button>
+                                  <FormSubmitButton
+                                    variant="link"
+                                    size="sm"
+                                    className="h-auto p-0 text-xs text-destructive underline"
+                                    pendingLabel="Removing…"
+                                  >
+                                    Remove
+                                  </FormSubmitButton>
                                 </form>
                               )}
                             </div>
@@ -851,9 +859,13 @@ export default async function TicketAccessPage({
                       <form action={sendReviewShortlistFromToken}>
                         <input type="hidden" name="token" value={token} />
                         <input type="hidden" name="requestId" value={jobRequest.id} />
-                        <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
+                        <FormSubmitButton
+                          className="w-full"
+                          disabled={reviewShortlist.providers.length < 1}
+                          pendingLabel="Sending…"
+                        >
                           {hasReviewFirstSendFailure ? 'Retry sending' : 'Send request'}
-                        </Button>
+                        </FormSubmitButton>
                       </form>
                     )}
                   </div>

@@ -166,6 +166,60 @@ describe('buildCustomerRequestTicketViewModel', () => {
     }
   })
 
+  it('starts independent review-first ticket queries without waiting for the legacy shortlist query', async () => {
+    let resolveShortlist: (value: null) => void = () => {}
+    mockResolveClientPwaDestination.mockResolvedValue({
+      accessLevel: 'public_token',
+      screen: 'request_submitted',
+      request: {
+        id: 'jr-review-parallel',
+        status: 'PENDING_VALIDATION',
+        assignmentMode: 'OPS_REVIEW',
+        latestDispatchDecisionId: 'dd-1',
+        customer: { id: 'cust-1' },
+      },
+      reason: 'request_awaiting_matching_mode',
+      route: '/requests/access/tok-review-parallel',
+      allowedActions: ['view_matching_status'],
+      job: null,
+    })
+    mockGetCustomerShortlistForRequest.mockImplementation(() => new Promise<null>((resolve) => {
+      resolveShortlist = resolve
+    }))
+    mockGetProviderCandidatesForCustomerReview.mockResolvedValue({
+      requestId: 'jr-review-parallel',
+      batch: 1,
+      hasMore: false,
+      candidates: [{ providerId: 'prov-1', name: 'Tshepo' }],
+    })
+    mockGetCustomerReviewShortlist.mockResolvedValue({
+      requestId: 'jr-review-parallel',
+      providers: [{ providerId: 'prov-1', name: 'Tshepo' }],
+    })
+
+    const { buildCustomerRequestTicketViewModel } = await import('../../lib/customer-request-ticket-view-model')
+    const pendingResult = buildCustomerRequestTicketViewModel({
+      token: 'tok-review-parallel',
+      reviewBatch: 1,
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mockGetProviderCandidatesForCustomerReview).toHaveBeenCalledWith({
+      requestId: 'jr-review-parallel',
+      customerId: 'cust-1',
+      batch: 1,
+    })
+    expect(mockGetCustomerReviewShortlist).toHaveBeenCalledWith({
+      requestId: 'jr-review-parallel',
+      customerId: 'cust-1',
+    })
+
+    resolveShortlist(null)
+    await expect(pendingResult).resolves.toMatchObject({ kind: 'ready' })
+  })
+
   it('keeps loading review-first shortlist after the customer sends it to providers', async () => {
     mockResolveClientPwaDestination.mockResolvedValue({
       accessLevel: 'public_token',
