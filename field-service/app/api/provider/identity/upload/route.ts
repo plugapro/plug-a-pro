@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { getRequiredDocumentKinds, type IdentityDocumentKind } from '@/lib/identity-verification/types'
+import { getRequiredDocumentKinds, isIdentityBasis, type IdentityDocumentKind } from '@/lib/identity-verification/types'
+import { logIdentityVerificationError, logIdentityVerificationEvent } from '@/lib/identity-verification/log'
 import { storeIdentityDocument } from '@/lib/identity-verification/storage'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 
@@ -38,7 +39,16 @@ export async function POST(request: NextRequest) {
     return jsonOrRedirect(request, returnTo, { ok: false, error: 'Unsupported document type.' }, 400)
   }
 
-  const requiredKinds = getRequiredDocumentKinds(verification.identityBasis as Parameters<typeof getRequiredDocumentKinds>[0])
+  if (!isIdentityBasis(verification.identityBasis)) {
+    return jsonOrRedirect(
+      request,
+      returnTo,
+      { ok: false, error: 'Document requirements are unavailable. Please restart this verification step.' },
+      400,
+    )
+  }
+
+  const requiredKinds = getRequiredDocumentKinds(verification.identityBasis)
   if (!requiredKinds.includes(documentKind)) {
     return jsonOrRedirect(request, returnTo, { ok: false, error: 'This document is not required for this verification.' }, 400)
   }
@@ -54,13 +64,32 @@ export async function POST(request: NextRequest) {
       file,
     })
 
+    logIdentityVerificationEvent('upload.stored', {
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      status: verification.status,
+      documentKind,
+      documentId: document.id,
+      blobKey: document.blobKey,
+      sizeBytes: file.size,
+      mimeType: file.type,
+    })
+
     return jsonOrRedirect(
       request,
       returnTo,
       { ok: true, documentId: document.id },
       201,
     )
-  } catch {
+  } catch (error) {
+    logIdentityVerificationError('upload.failed', error, {
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      status: verification.status,
+      documentKind,
+      sizeBytes: file.size,
+      mimeType: file.type,
+    })
     return jsonOrRedirect(request, returnTo, { ok: false, error: 'Could not store this file.' }, 400)
   }
 }

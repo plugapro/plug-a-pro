@@ -38,6 +38,11 @@ export const VERIFICATION_DECISIONS = [
 export const VERIFICATION_ASSURANCE_LEVELS = ['LOW', 'MEDIUM', 'HIGH'] as const
 
 export type IdentityBasis = (typeof IDENTITY_BASES)[number]
+
+export function isIdentityBasis(value: unknown): value is IdentityBasis {
+  return typeof value === 'string' && (IDENTITY_BASES as readonly string[]).includes(value)
+}
+
 export type VerificationChannel = (typeof VERIFICATION_CHANNELS)[number]
 export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
 export type VerificationDecision = (typeof VERIFICATION_DECISIONS)[number]

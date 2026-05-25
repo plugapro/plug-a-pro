@@ -52,6 +52,59 @@ describe('/provider/verify/[token] page', () => {
     expect(html).toContain('Could not store this file.')
   })
 
+  it('keeps the continue control locked until the document upload is persisted', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+    })
+    mockDb.providerIdentityDocument.findMany.mockResolvedValue([])
+    const Page = (await import('@/app/provider/verify/[token]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({ params: Promise.resolve({ token: 'token-1' }) }),
+    )
+
+    expect(html).toContain('Upload your document first to continue.')
+    expect(html).toContain('data-testid="continue-locked"')
+  })
+
+  it('unlocks the continue control once the required document is uploaded', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+    })
+    mockDb.providerIdentityDocument.findMany.mockResolvedValue([
+      { id: 'doc-1', documentKind: 'ID_FRONT', createdAt: new Date() },
+    ])
+    const Page = (await import('@/app/provider/verify/[token]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({ params: Promise.resolve({ token: 'token-1' }) }),
+    )
+
+    expect(html).not.toContain('Upload your document first to continue.')
+    expect(html).toContain('Continue to selfie')
+    expect(html).not.toContain('data-testid="continue-locked"')
+  })
+
+  it('shows a recoverable message instead of crashing when the identity basis is unknown', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'NOT_A_REAL_BASIS',
+    })
+    mockDb.providerIdentityDocument.findMany.mockResolvedValue([])
+    const Page = (await import('@/app/provider/verify/[token]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({ params: Promise.resolve({ token: 'token-1' }) }),
+    )
+
+    expect(html).toContain('restart the identity step')
+  })
+
   it('renders missing-file feedback instead of relying on a server-action error page', async () => {
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',

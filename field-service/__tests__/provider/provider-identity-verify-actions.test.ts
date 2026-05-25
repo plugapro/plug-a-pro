@@ -94,6 +94,78 @@ describe('provider identity verification PWA actions', () => {
     }))
   })
 
+  it('returns a controlled validation result instead of throwing on an invalid identifier', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'CONSENTED',
+      identityBasis: 'SA_ID',
+    })
+
+    const { submitIdentityBasisAndIdentifier } = await import('../../app/provider/verify/[token]/actions')
+
+    const result = await submitIdentityBasisAndIdentifier('token-1', {
+      identityBasis: 'SA_ID',
+      identifier: '0000000000000',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(mockDb.providerIdentityVerification.update).not.toHaveBeenCalled()
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+
+  it('returns a controlled validation result instead of throwing on malformed input', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'CONSENTED',
+      identityBasis: 'SA_ID',
+    })
+
+    const { submitIdentityBasisAndIdentifier } = await import('../../app/provider/verify/[token]/actions')
+
+    const result = await submitIdentityBasisAndIdentifier('token-1', {
+      identityBasis: 'SA_ID',
+      identifier: '12',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(mockDb.providerIdentityVerification.update).not.toHaveBeenCalled()
+  })
+
+  it('reports missing documents without throwing when continuing to selfie', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+    })
+    mockDb.providerIdentityDocument.findMany.mockResolvedValue([])
+
+    const { submitIdentityDocuments } = await import('../../app/provider/verify/[token]/actions')
+
+    const result = await submitIdentityDocuments('token-1')
+
+    expect(result.ok).toBe(false)
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+
+  it('treats a stale document step as already complete instead of forcing an invalid transition', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'AWAITING_SELFIE',
+      identityBasis: 'SA_ID',
+    })
+
+    const { submitIdentityDocuments } = await import('../../app/provider/verify/[token]/actions')
+
+    const result = await submitIdentityDocuments('token-1')
+
+    expect(result.ok).toBe(true)
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+
   it('submits a complete document set for manual review without echoing identifiers', async () => {
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',
