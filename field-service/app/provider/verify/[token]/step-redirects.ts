@@ -27,13 +27,18 @@ export type StepResult = {
 }
 
 const DEFAULT_IDENTIFIER_ERROR = 'Check the document details and try again.'
+const DOCUMENT_REQUIREMENTS_ERROR = 'Document requirements are unavailable. Please restart this verification step.'
 
 export function basePath(token: string): string {
   return `/provider/verify/${token}`
 }
 
 export function documentStepRedirect(token: string, result: StepResult): string {
-  return result.ok ? basePath(token) : `${basePath(token)}?missing=document`
+  if (result.ok) return basePath(token)
+  if (result.code === 'INVALID_IDENTITY_BASIS') {
+    return `${basePath(token)}?upload_error=${encodeURIComponent(DOCUMENT_REQUIREMENTS_ERROR)}`
+  }
+  return `${basePath(token)}?missing=document`
 }
 
 export function selfieStepRedirect(token: string, result: StepResult): string {
@@ -47,7 +52,11 @@ export function identifierStepRedirect(token: string, result: StepResult): strin
 }
 
 export function reviewStepRedirect(token: string, result: StepResult): string {
-  return result.ok ? basePath(token) : `${basePath(token)}?missing=document`
+  if (result.ok) return basePath(token)
+  if (result.code === 'INVALID_IDENTITY_BASIS') {
+    return `${basePath(token)}?upload_error=${encodeURIComponent(DOCUMENT_REQUIREMENTS_ERROR)}`
+  }
+  return `${basePath(token)}?missing=document`
 }
 
 export function mapVerificationActionError(

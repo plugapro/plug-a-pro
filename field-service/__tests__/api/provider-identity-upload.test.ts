@@ -64,6 +64,32 @@ describe('POST /api/provider/identity/upload', () => {
     expect(mockStoreIdentityDocument).not.toHaveBeenCalled()
   })
 
+  it('returns a controlled error when document requirements cannot be resolved', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      identityBasis: 'NOT_A_REAL_BASIS',
+      status: 'AWAITING_DOCUMENT',
+    })
+    const form = new FormData()
+    form.set('token', 'token-1')
+    form.set('verificationId', 'ver-1')
+    form.set('documentKind', 'ID_FRONT')
+    form.set('file', new File(['%PDF- id'], 'id.pdf', { type: 'application/pdf' }))
+
+    const { POST } = await import('@/app/api/provider/identity/upload/route')
+    const response = await POST(new NextRequest('http://localhost/api/provider/identity/upload', {
+      method: 'POST',
+      body: form,
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Document requirements are unavailable'),
+    })
+    expect(mockStoreIdentityDocument).not.toHaveBeenCalled()
+  })
+
   it('returns a neutral unauthorized response for invalid tokens', async () => {
     mockResolveToken.mockRejectedValue(new Error('invalid token'))
     const form = new FormData()

@@ -150,6 +150,23 @@ describe('provider identity verification PWA actions', () => {
     expect(mockTransition).not.toHaveBeenCalled()
   })
 
+  it('returns a controlled document-step error when the identity basis is unknown', async () => {
+    mockResolveToken.mockResolvedValue({
+      id: 'ver-1',
+      providerId: 'provider-1',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'NOT_A_REAL_BASIS',
+    })
+
+    const { submitIdentityDocuments } = await import('../../app/provider/verify/[token]/actions')
+
+    const result = await submitIdentityDocuments('token-1')
+
+    expect(result).toEqual({ ok: false, code: 'INVALID_IDENTITY_BASIS' })
+    expect(mockDb.providerIdentityDocument.findMany).not.toHaveBeenCalled()
+    expect(mockTransition).not.toHaveBeenCalled()
+  })
+
   it('treats a stale document step as already complete instead of forcing an invalid transition', async () => {
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',

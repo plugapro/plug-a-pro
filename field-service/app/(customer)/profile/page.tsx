@@ -100,11 +100,6 @@ export default async function ProfilePage() {
   // This runs on every server render, so it also covers manual URL edits, deep
   // links, and refreshes — not just navigation through the bottom nav.
   if (session.role === 'provider') {
-    console.log('[profile] provider session routed to /provider/profile', {
-      userId: session.id,
-      phone: session.phone,
-      role: session.role,
-    })
     redirect('/provider/profile')
   }
 

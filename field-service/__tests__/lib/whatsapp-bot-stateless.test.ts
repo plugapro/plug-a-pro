@@ -25,6 +25,7 @@ const {
     match: { findFirst: vi.fn() },
     booking: { findFirst: vi.fn() },
     providerWallet: { findUnique: vi.fn(), updateMany: vi.fn() },
+    providerIdentityVerification: { findFirst: vi.fn() },
     providerApplication: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -224,6 +225,8 @@ describe('processInboundMessage stateless notification replies', () => {
     mockDb.lead.findMany.mockResolvedValue([])
     mockDb.provider.findFirst.mockReset()
     mockDb.provider.findFirst.mockResolvedValue(null)
+    mockDb.providerIdentityVerification.findFirst.mockReset()
+    mockDb.providerIdentityVerification.findFirst.mockResolvedValue(null)
     mockDb.messageEvent.findFirst.mockReset()
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.providerApplication.findFirst.mockResolvedValue(null)
@@ -739,6 +742,181 @@ describe('processInboundMessage stateless notification replies', () => {
       data: {},
       phone: PHONE,
     }))
+  })
+
+  it('routes typed Verify for a returning multi-role verification user before the mixed main menu', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'customer',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567', '27821234567', '0821234567'],
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Lovemore Sibanda',
+      firstName: 'Lovemore',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: true,
+      traceId: 'verify-trace',
+    })
+    mockDb.providerIdentityVerification.findFirst.mockResolvedValueOnce({
+      id: 'ver-1',
+      status: 'CONSENTED',
+      channel: 'PWA',
+      providerId: 'provider-1',
+      providerApplicationId: null,
+      updatedAt: new Date(),
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockResolvedValue({ nextStep: 'done' })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.verify-returning', 'Verify'))
+
+    expect(mockDb.providerIdentityVerification.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({ providerId: 'provider-1' }),
+            expect.objectContaining({ provider: { is: { phone: { in: ['+27821234567', '27821234567', '0821234567'] } } } }),
+          ]),
+        }),
+      }),
+    )
+    expect(handleProviderJourneyFlow).toHaveBeenCalledWith(expect.objectContaining({
+      flow: 'provider_journey',
+      step: 'pj_verify_identity',
+      phone: PHONE,
+    }))
+    expect(showMainMenu).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Welcome back, Customer'),
+    )
+  })
+
+  it('keeps an expired session from breaking a typed Verify identity journey', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567', '27821234567', '0821234567'],
+      customerId: undefined,
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Lovemore Sibanda',
+      firstName: 'Lovemore',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'expired-verify-trace',
+    })
+    mockDb.providerIdentityVerification.findFirst.mockResolvedValueOnce({
+      id: 'ver-expired-session-1',
+      status: 'AWAITING_DOCUMENT',
+      channel: 'WHATSAPP',
+      providerId: 'provider-1',
+      providerApplicationId: null,
+      updatedAt: new Date(),
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockResolvedValue({ nextStep: 'done' })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: { otpStatus: 'expired' },
+      expiresAt: new Date(Date.now() - 60_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.verify-expired-session', 'Verify'))
+
+    expect(handleProviderJourneyFlow).toHaveBeenCalledWith(expect.objectContaining({
+      flow: 'provider_journey',
+      step: 'pj_verify_identity',
+    }))
+    expect(showMainMenu).not.toHaveBeenCalled()
+  })
+
+  it('does not show the mixed menu when an unknown WhatsApp sender types Verify', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'unknown',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567', '27821234567', '0821234567'],
+      customerId: undefined,
+      providerId: undefined,
+      applicationId: undefined,
+      displayName: undefined,
+      firstName: undefined,
+      savedAddresses: [],
+      providerStatus: undefined,
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'unknown-verify-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.verify-unknown', 'Verify'))
+
+    expect(handleProviderJourneyFlow).not.toHaveBeenCalled()
+    expect(showMainMenu).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find an active identity verification"),
+    )
+  })
+
+  it('keeps customer-only Verify users out of restricted provider identity tools', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'customer',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567', '27821234567', '0821234567'],
+      customerId: 'customer-1',
+      providerId: undefined,
+      applicationId: undefined,
+      displayName: 'Sheila',
+      firstName: 'Sheila',
+      savedAddresses: [],
+      providerStatus: undefined,
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'customer-verify-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.verify-customer-only', 'Verify'))
+
+    expect(handleProviderJourneyFlow).not.toHaveBeenCalled()
+    expect(showMainMenu).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find an active identity verification"),
+    )
   })
 
   it('handles malformed WhatsApp accept payloads without falling through to the generic bot error', async () => {

@@ -5,6 +5,7 @@ import {
   documentStepRedirect,
   identifierStepRedirect,
   mapVerificationActionError,
+  reviewStepRedirect,
   selfieStepRedirect,
 } from '../../app/provider/verify/[token]/step-redirects'
 
@@ -17,6 +18,18 @@ describe('provider identity verification step redirects', () => {
 
   it('routes a completed document step back into the flow', () => {
     expect(documentStepRedirect('tok', { ok: true })).toBe('/provider/verify/tok')
+  })
+
+  it('routes invalid document requirements to a recoverable in-flow prompt', () => {
+    const url = documentStepRedirect('tok', { ok: false, code: 'INVALID_IDENTITY_BASIS' })
+    expect(url.startsWith('/provider/verify/tok?upload_error=')).toBe(true)
+    expect(url).toContain(encodeURIComponent('Document requirements are unavailable'))
+  })
+
+  it('routes invalid review requirements to a recoverable in-flow prompt', () => {
+    const url = reviewStepRedirect('tok', { ok: false, code: 'INVALID_IDENTITY_BASIS' })
+    expect(url.startsWith('/provider/verify/tok?upload_error=')).toBe(true)
+    expect(url).toContain(encodeURIComponent('Document requirements are unavailable'))
   })
 
   it('routes a missing selfie to a controlled prompt', () => {

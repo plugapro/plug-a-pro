@@ -47,7 +47,7 @@ import { createTraceId } from './support-diagnostics'
 import { createTestCohortContext } from './internal-test-cohort'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import { FLAG_KEYS, isEnabled } from './flags'
-import { phoneLookupVariants, resolveWhatsAppUserContext } from './whatsapp-identity'
+import { phoneLookupVariants, resolveWhatsAppUserContext, type WhatsAppIdentity } from './whatsapp-identity'
 import { normaliseLocationDisplayName } from './location-format'
 import { parseProviderOpportunityArrivalText } from './provider-opportunity-whatsapp'
 import {
@@ -213,6 +213,27 @@ const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in',
 
 // Keywords that trigger re-booking from the last completed job
 const REBOOK_KEYWORDS = ['rebook', 'book again', 'same job', 'repeat', 'book same']
+const IDENTITY_VERIFY_TEXT_TRIGGERS = ['verify', 'verification', 'verify identity', 'complete verification']
+const ACTIVE_IDENTITY_VERIFICATION_STATUSES = [
+  'NOT_STARTED',
+  'STARTED',
+  'CONSENTED',
+  'AWAITING_IDENTIFIER',
+  'AWAITING_DOCUMENT',
+  'AWAITING_SELFIE',
+  'SUBMITTED',
+  'PROCESSING',
+  'NEEDS_MANUAL_REVIEW',
+  'RETRY_REQUIRED',
+] as const
+type ActiveIdentityVerificationContext = {
+  id: string
+  status: string
+  channel: string
+  providerId: string | null
+  providerApplicationId: string | null
+  updatedAt: Date
+}
 const ACTIVE_FLOW_NAMES: FlowName[] = [
   'job_request',
   'registration',
@@ -564,6 +585,75 @@ function isStatelessNotificationReply(
     id.startsWith('status_req_') ||
     (!id && (rawText === 'accept' || rawText === 'decline'))
   )
+}
+
+function isIdentityVerifyIntent(reply: ReturnType<typeof parseInbound>, rawText: string) {
+  if (reply.id === 'provider_verify_identity') return true
+  if (reply.id) return false
+  return IDENTITY_VERIFY_TEXT_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k + ' '))
+}
+
+async function resolveActiveIdentityVerificationContext(phone: string, identity: WhatsAppIdentity) {
+  const phoneVariants = identity.phoneVariants?.length ? identity.phoneVariants : phoneLookupVariants(phone)
+  const or: Prisma.ProviderIdentityVerificationWhereInput[] = []
+  if (identity.providerId) {
+    or.push({ providerId: identity.providerId })
+  }
+  if (identity.applicationId) {
+    or.push({ providerApplicationId: identity.applicationId })
+  }
+  if (phoneVariants.length > 0) {
+    or.push({ provider: { is: { phone: { in: phoneVariants } } } })
+    or.push({ providerApplication: { is: { phone: { in: phoneVariants } } } })
+  }
+  if (or.length === 0) return null
+
+  return db.providerIdentityVerification.findFirst({
+    where: {
+      status: { in: [...ACTIVE_IDENTITY_VERIFICATION_STATUSES] },
+      OR: or,
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: {
+      id: true,
+      status: true,
+      channel: true,
+      providerId: true,
+      providerApplicationId: true,
+      updatedAt: true,
+    },
+  })
+}
+
+function logIdentityVerificationRoute(params: {
+  messageId: string
+  rawPhone: string
+  normalizedPhone: string
+  identity: WhatsAppIdentity
+  verification: ActiveIdentityVerificationContext | null
+  branch: string
+}) {
+  console.info('[whatsapp-bot] identity verification route resolved', {
+    traceId: params.identity.traceId,
+    messageId: params.messageId,
+    rawPhone: maskedPhone(params.rawPhone),
+    normalizedPhone: maskedPhone(params.normalizedPhone),
+    phoneVariants: params.identity.phoneVariants.map(maskedPhone),
+    matchedCustomerId: params.identity.customerId ?? null,
+    matchedProviderId: params.identity.providerId ?? params.verification?.providerId ?? null,
+    matchedApplicationId: params.identity.applicationId ?? params.verification?.providerApplicationId ?? null,
+    matchedRoles: {
+      customer: Boolean(params.identity.customerId),
+      provider: Boolean(params.identity.providerId),
+      application: Boolean(params.identity.applicationId),
+      primary: params.identity.role,
+      conflict: params.identity.conflict,
+    },
+    verificationSessionStatus: params.verification?.status ?? null,
+    verificationSessionId: params.verification?.id ?? null,
+    verificationChannel: params.verification?.channel ?? null,
+    selectedRoutingBranch: params.branch,
+  })
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
@@ -1074,6 +1164,51 @@ async function processInboundMessageUnlocked(
     const isCustomerRole = identity.role === 'customer'
     const isProviderRole = identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive'
     recoveryRole = isCustomerRole ? 'customer' : isProviderRole ? 'provider' : 'unknown'
+    const isVerifyIntent = isIdentityVerifyIntent(reply, rawText)
+    const activeIdentityVerification = isVerifyIntent
+      ? await resolveActiveIdentityVerificationContext(phone, identity)
+      : null
+    const hasRecoverableIdentityContext = Boolean(
+      isVerifyIntent &&
+      (
+        identity.providerId ||
+        activeIdentityVerification?.providerId ||
+        (identity.applicationId && activeIdentityVerification)
+      )
+    )
+
+    if (isVerifyIntent && !hasRecoverableIdentityContext) {
+      logIdentityVerificationRoute({
+        messageId: message.id,
+        rawPhone: message.from,
+        normalizedPhone: phone,
+        identity,
+        verification: activeIdentityVerification,
+        branch: 'safe_fallback_no_identity_context',
+      })
+      await sendText(
+        phone,
+        "We couldn't find an active identity verification for this WhatsApp number.\n\nIf you are applying as a provider, reply *Join* to start registration. If you already registered with another number, contact support so we can link your profile safely.",
+      )
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (isVerifyIntent && hasRecoverableIdentityContext) {
+      logIdentityVerificationRoute({
+        messageId: message.id,
+        rawPhone: message.from,
+        normalizedPhone: phone,
+        identity,
+        verification: activeIdentityVerification,
+        branch: 'provider_identity_verification',
+      })
+      flow = 'provider_journey'
+      step = 'pj_verify_identity'
+      data = {}
+      recoveryRole = 'provider'
+    }
+
     const isCustomerJourneyAction = Boolean(
       ['book', 'browse_categories', 'status', 'my_booking', 'start_reschedule', 'start_cancel'].includes(reply.id ?? '') ||
       flow === 'job_request' ||
@@ -1092,7 +1227,7 @@ async function processInboundMessageUnlocked(
       flow === 'provider_job'
     )
 
-    if (isProviderRole && isCustomerJourneyAction && !isStatelessReply) {
+    if (isProviderRole && isCustomerJourneyAction && !isStatelessReply && !hasRecoverableIdentityContext) {
       console.info('[whatsapp-bot] blocked provider from customer journey', {
         traceId: identity.traceId,
         messageId: message.id,
@@ -1112,7 +1247,7 @@ async function processInboundMessageUnlocked(
       return
     }
 
-    if (isCustomerRole && isProviderJourneyAction && !isStatelessReply) {
+    if (isCustomerRole && isProviderJourneyAction && !isStatelessReply && !hasRecoverableIdentityContext) {
       console.info('[whatsapp-bot] blocked customer from provider journey', {
         traceId: identity.traceId,
         messageId: message.id,
@@ -1136,7 +1271,14 @@ async function processInboundMessageUnlocked(
     // Stateless notification replies must bypass this guard: these button IDs carry
     // all routing context needed to process the action even when the conversation
     // session has timed out.
-    if (isExpired && conversation.flow !== 'idle' && !isReset && !isStatelessReply && !isProviderMenuReply) {
+    if (
+      isExpired &&
+      conversation.flow !== 'idle' &&
+      !isReset &&
+      !isStatelessReply &&
+      !isProviderMenuReply &&
+      !hasRecoverableIdentityContext
+    ) {
       const oldFlow = conversation.flow as FlowName
       const oldData = conversation.data as ConversationData
 
@@ -1915,7 +2057,7 @@ async function processInboundMessageUnlocked(
         reply.title = providerCommand.command
       }
       data = providerCommand.flow === 'provider_journey' ? {} : data
-    } else if ((isReset || isExpired) && !isProviderMenuReply) {
+    } else if ((isReset || isExpired) && !isProviderMenuReply && !hasRecoverableIdentityContext) {
       flow = 'idle'
       step = 'welcome'
       data = {}
@@ -1924,7 +2066,7 @@ async function processInboundMessageUnlocked(
       step = 'tech_job_list'
     } else if (
       flow === 'idle' &&
-      ['verify', 'verification', 'verify identity', 'complete verification'].some((k) => rawText === k)
+      IDENTITY_VERIFY_TEXT_TRIGGERS.some((k) => rawText === k)
     ) {
       flow = 'provider_journey'
       step = 'pj_verify_identity'
@@ -1954,8 +2096,7 @@ async function processInboundMessageUnlocked(
       return
     } else if (PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) && flow === 'idle') {
       flow = 'provider_journey'
-      const VERIFY_TRIGGERS = ['verify', 'verification', 'verify identity', 'complete verification']
-      step = VERIFY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))
+      step = IDENTITY_VERIFY_TEXT_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))
         ? 'pj_verify_identity'
         : 'pj_menu'
     } else if ((isRegistration || reply.id === 'find_work') && flow === 'idle') {

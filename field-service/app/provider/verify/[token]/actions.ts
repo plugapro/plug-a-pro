@@ -7,7 +7,7 @@ import { hashIdentifier, identifierLast4 } from '@/lib/identity-verification/cry
 import { validateIdentityDocumentDetails } from '@/lib/identity-verification/document-validation'
 import { logIdentityVerificationEvent } from '@/lib/identity-verification/log'
 import { transitionIdentityVerification } from '@/lib/identity-verification/orchestrator'
-import { getRequiredDocumentKinds, type IdentityBasis, type IdentityDocumentKind, type VerificationStatus } from '@/lib/identity-verification/types'
+import { getRequiredDocumentKinds, isIdentityBasis, type IdentityBasis, type IdentityDocumentKind, type VerificationStatus } from '@/lib/identity-verification/types'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 
 const IdentityBasisSchema = z.enum([
@@ -33,6 +33,11 @@ export type SubmitIdentityBasisAndIdentifierInput = z.infer<typeof IdentifierSch
 export type IdentifierActionResult =
   | { ok: true }
   | { ok: false; code: 'INVALID_INPUT' | 'INVALID_DETAILS'; message: string }
+
+export type DocumentActionResult =
+  | { ok: true; alreadyAdvanced?: boolean }
+  | { ok: false; code: 'MISSING_DOCUMENTS'; missingDocuments: IdentityDocumentKind[] }
+  | { ok: false; code: 'INVALID_IDENTITY_BASIS' }
 
 export async function acceptIdentityConsent(token: string) {
   const verification = await resolveProviderVerificationToken(token)
@@ -124,7 +129,7 @@ export async function submitIdentityBasisAndIdentifier(
   return { ok: true as const }
 }
 
-export async function submitIdentityDocuments(token: string) {
+export async function submitIdentityDocuments(token: string): Promise<DocumentActionResult> {
   const verification = await resolveProviderVerificationToken(token)
 
   // Idempotent / stale-safe: if the step already advanced (e.g. a double submit
@@ -139,8 +144,18 @@ export async function submitIdentityDocuments(token: string) {
     return { ok: true as const, alreadyAdvanced: true }
   }
 
+  if (!isIdentityBasis(verification.identityBasis)) {
+    logIdentityVerificationEvent('verify.documents.invalid_basis', {
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      status: verification.status,
+      identityBasis: verification.identityBasis,
+    })
+    return { ok: false as const, code: 'INVALID_IDENTITY_BASIS' }
+  }
+
   const existingKinds = await getUploadedDocumentKinds(verification.id)
-  const missingDocuments = requiredKindsForStep(verification.identityBasis as IdentityBasis, 'documents')
+  const missingDocuments = requiredKindsForStep(verification.identityBasis, 'documents')
     .filter((kind) => !existingKinds.has(kind))
 
   if (missingDocuments.length > 0) {
@@ -218,10 +233,20 @@ export async function submitIdentitySelfie(token: string) {
   return { ok: true as const }
 }
 
-export async function submitIdentityVerificationForReview(token: string) {
+export async function submitIdentityVerificationForReview(token: string): Promise<DocumentActionResult> {
   const verification = await resolveProviderVerificationToken(token)
+  if (!isIdentityBasis(verification.identityBasis)) {
+    logIdentityVerificationEvent('verify.review.invalid_basis', {
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      status: verification.status,
+      identityBasis: verification.identityBasis,
+    })
+    return { ok: false as const, code: 'INVALID_IDENTITY_BASIS' }
+  }
+
   const existingKinds = await getUploadedDocumentKinds(verification.id)
-  const missingDocuments = getRequiredDocumentKinds(verification.identityBasis as IdentityBasis)
+  const missingDocuments = getRequiredDocumentKinds(verification.identityBasis)
     .filter((kind) => !existingKinds.has(kind))
 
   if (missingDocuments.length > 0) {

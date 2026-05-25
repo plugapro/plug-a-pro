@@ -5,7 +5,7 @@
 // Customer record (if one exists), or creates a fresh Customer row.
 //
 // Body: { phone: string; name?: string }
-// Returns: { customerId: string, isNew: boolean, isProvider: boolean }
+// Returns: { customerId: string | null, isNew: boolean, isProvider: boolean }
 //
 // Security: userId is sourced from the server-verified session cookie, not the
 // request body, so a caller cannot impersonate another user.
