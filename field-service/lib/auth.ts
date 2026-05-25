@@ -273,11 +273,20 @@ export async function getCustomerSession(): Promise<AuthUser | null> {
 // to link their Supabase Auth user to the existing Customer record.
 // After this point both channels resolve to the same row — no duplicate records.
 
+// `isProviderOnly` is returned when the authenticated user is a provider and has
+// no pre-existing Customer record. In that case NO customer row is created — the
+// caller (POST /api/auth/link) blocks the customer journey instead. This prevents
+// a spurious "Customer" record from being auto-created for a provider, which would
+// wrongly mark them multi-role and surface them as a Customer on /profile.
+export type LinkCustomerAccountResult =
+  | { id: string; isNew: boolean; isProviderOnly?: false }
+  | { id: null; isNew: false; isProviderOnly: true }
+
 export async function linkCustomerAccount(params: {
   userId: string
   phone: string     // E.164 format, e.g. "+27821234567"
   name?: string     // Optionally update name if it's still the WhatsApp placeholder
-}): Promise<{ id: string; isNew: boolean }> {
+}): Promise<LinkCustomerAccountResult> {
   const { db } = await import('./db')
   const { createTestCohortContext } = await import('./internal-test-cohort')
   const cohort = createTestCohortContext(params.phone)
@@ -311,7 +320,20 @@ export async function linkCustomerAccount(params: {
     return { id: existing.id, isNew: false }
   }
 
-  // No prior WhatsApp record — create fresh customer linked from the start
+  // Do NOT auto-create a customer profile for a provider-only account. A provider
+  // who reaches the customer sign-in/OTP flow must be blocked by the caller (see
+  // /api/auth/link → isProvider), not silently given a placeholder "Customer"
+  // record — that record would mark them multi-role across the PWA and render them
+  // as a Customer on /profile.
+  const providerForUser = await db.provider.findFirst({
+    where: { userId: params.userId },
+    select: { id: true },
+  })
+  if (providerForUser) {
+    return { id: null, isNew: false, isProviderOnly: true }
+  }
+
+  // No prior WhatsApp record and not a provider — create fresh customer linked from the start
   const created = await db.customer.create({
     data: {
       userId: params.userId,

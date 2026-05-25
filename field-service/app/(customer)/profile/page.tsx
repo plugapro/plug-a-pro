@@ -95,6 +95,19 @@ export default async function ProfilePage() {
   const session = await getSession()
   if (!session) redirect(`/sign-in?next=${encodeURIComponent('/profile')}`)
 
+  // Role-aware: a provider's account lives on the provider profile. Never render a
+  // provider through the customer account page (which labels everyone "Customer").
+  // This runs on every server render, so it also covers manual URL edits, deep
+  // links, and refreshes — not just navigation through the bottom nav.
+  if (session.role === 'provider') {
+    console.log('[profile] provider session routed to /provider/profile', {
+      userId: session.id,
+      phone: session.phone,
+      role: session.role,
+    })
+    redirect('/provider/profile')
+  }
+
   const customer = await resolveCustomerForSession(db, session)
   const requestCount = customer
     ? await db.jobRequest.count({ where: { customerId: customer.id } })

@@ -41,8 +41,15 @@ export async function POST(request: NextRequest) {
 
     const result = await linkCustomerAccount({ userId: session.id, phone, name })
 
-    // Detect provider-only accounts so the client can show a blocking message
-    // instead of redirecting into the customer journey with a provider role.
+    // Provider-only account: linkCustomerAccount deliberately did NOT create a
+    // Customer record. Tell the client to block the customer journey instead of
+    // routing a provider into it.
+    if (result.isProviderOnly) {
+      return NextResponse.json({ customerId: null, isNew: false, isProvider: true })
+    }
+
+    // A customer record exists or was linked. A Provider record may ALSO exist
+    // (genuine multi-role) — surface isProvider so the client can still block.
     const provider = await db.provider.findFirst({
       where: { userId: session.id },
       select: { id: true },

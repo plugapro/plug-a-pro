@@ -71,8 +71,26 @@ describe('POST /api/auth/link — isProvider flag', () => {
     expect(body.customerId).toBe('cust-existing')
   })
 
-  it('provider-only phone — isNew: true, isProvider: true', async () => {
-    mockLinkCustomerAccount.mockResolvedValue({ id: 'cust-from-provider', isNew: true })
+  it('provider-only phone — no customer created, customerId null, isProvider: true', async () => {
+    // linkCustomerAccount now refuses to create a customer for a provider-only
+    // account and returns the provider-only sentinel. The route must NOT fall
+    // through to a customerId, and must flag isProvider so the client blocks.
+    mockLinkCustomerAccount.mockResolvedValue({ id: null, isNew: false, isProviderOnly: true })
+
+    const { POST } = await import('../../../../app/api/auth/link/route')
+    const res = await POST(makeRequest())
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.isNew).toBe(false)
+    expect(body.isProvider).toBe(true)
+    expect(body.customerId).toBeNull()
+    // The provider-only sentinel is sufficient; no extra provider lookup needed.
+    expect(mockDbProviderFindFirst).not.toHaveBeenCalled()
+  })
+
+  it('multi-role (existing customer + provider) — links customer and flags isProvider', async () => {
+    mockLinkCustomerAccount.mockResolvedValue({ id: 'cust-existing', isNew: false })
     mockDbProviderFindFirst.mockResolvedValue({ id: 'prov-001' })
 
     const { POST } = await import('../../../../app/api/auth/link/route')
@@ -80,9 +98,8 @@ describe('POST /api/auth/link — isProvider flag', () => {
 
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.isNew).toBe(true)
     expect(body.isProvider).toBe(true)
-    expect(body.customerId).toBe('cust-from-provider')
+    expect(body.customerId).toBe('cust-existing')
   })
 
   it('re-call after first link is idempotent — isNew: false, no duplicates', async () => {
