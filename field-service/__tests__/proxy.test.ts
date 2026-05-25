@@ -252,6 +252,16 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('allows provider identity verification guidance without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/verification'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
   it('allows signed review-first provider profiles without an OTP session', async () => {
     const { proxy } = await import('../proxy')
 

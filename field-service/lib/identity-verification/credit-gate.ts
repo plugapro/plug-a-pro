@@ -1,6 +1,22 @@
 import { db } from '../db'
 import { isEnabled } from '../flags'
 
+export type IdentityVerificationLookupClient = {
+  providerIdentityVerification: {
+    findFirst(args: {
+      where: {
+        providerId: string
+        status: 'PASSED'
+        decision: 'PASS'
+        assuranceLevel: 'HIGH'
+        OR: Array<{ expiresAt: null } | { expiresAt: { gt: Date } }>
+      }
+      orderBy: { updatedAt: 'desc' }
+      select: { id: true; providerId: true }
+    }): Promise<{ id: string; providerId: string | null } | null>
+  }
+}
+
 export class IdentityCreditGateError extends Error {
   readonly code = 'IDENTITY_NOT_VERIFIED'
 
@@ -12,12 +28,13 @@ export class IdentityCreditGateError extends Error {
 
 export async function assertIdentityVerifiedForCredits(
   providerId: string,
+  client: IdentityVerificationLookupClient = db,
 ): Promise<{ providerId: string; verificationId: string | null }> {
   if (!(await isEnabled('provider.identity.verification'))) {
     return { providerId, verificationId: null }
   }
 
-  const verification = await db.providerIdentityVerification.findFirst({
+  const verification = await client.providerIdentityVerification.findFirst({
     where: {
       providerId,
       status: 'PASSED',

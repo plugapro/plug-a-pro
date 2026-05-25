@@ -54,6 +54,23 @@ describe('paid credit identity gate', () => {
     })
   })
 
+  it('uses the supplied Prisma client when checking inside a transaction', async () => {
+    const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
+    const txFindFirst = vi.fn().mockResolvedValue({ id: 'ver-tx', providerId: 'provider-1' })
+
+    await expect(
+      assertIdentityVerifiedForCredits('provider-1', {
+        providerIdentityVerification: { findFirst: txFindFirst },
+      }),
+    ).resolves.toEqual({
+      providerId: 'provider-1',
+      verificationId: 'ver-tx',
+    })
+
+    expect(txFindFirst).toHaveBeenCalledTimes(1)
+    expect(mockFindFirst).not.toHaveBeenCalled()
+  })
+
   it('short-circuits when the identity verification feature flag is disabled', async () => {
     const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
     mockIsEnabled.mockResolvedValue(false)

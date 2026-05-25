@@ -3,6 +3,7 @@ import { KycStatus, Prisma, type PaymentIntent } from '@prisma/client'
 import { db } from './db'
 import {
   IdentityCreditGateError,
+  type IdentityVerificationLookupClient,
   assertIdentityVerifiedForCredits as assertHighAssuranceIdentityVerifiedForCredits,
 } from './identity-verification/credit-gate'
 import { isEnabled } from './flags'
@@ -106,7 +107,10 @@ function creditsForAmount(amountCents: number) {
   return amountCents / PLUG_A_PRO_CREDIT_VALUE_CENTS
 }
 
-async function assertProviderVerifiedForPaidTopUp(provider: { id: string; kycStatus: KycStatus }) {
+async function assertProviderVerifiedForPaidTopUp(
+  provider: { id: string; kycStatus: KycStatus },
+  client: IdentityVerificationLookupClient = db,
+) {
   // Short-circuit when the feature is disabled — allows rollback without a deploy.
   if (!(await isEnabled('provider.identity.verification'))) return
   if (provider.kycStatus !== KycStatus.VERIFIED) {
@@ -116,7 +120,7 @@ async function assertProviderVerifiedForPaidTopUp(provider: { id: string; kycSta
     )
   }
   try {
-    await assertHighAssuranceIdentityVerifiedForCredits(provider.id)
+    await assertHighAssuranceIdentityVerifiedForCredits(provider.id, client)
   } catch (err) {
     if (err instanceof IdentityCreditGateError) {
       throw new ProviderCreditPaymentIntentError(
@@ -265,7 +269,7 @@ export async function createManualEftTopUpIntent(
         'Provider account not found.',
       )
     }
-    await assertProviderVerifiedForPaidTopUp(provider)
+    await assertProviderVerifiedForPaidTopUp(provider, tx)
 
     const paymentReference = await createUniquePaymentReference(tx, referenceGenerator)
 
@@ -426,7 +430,7 @@ export async function createPayatTopUpIntent(
         'Provider account not found.',
       )
     }
-    await assertProviderVerifiedForPaidTopUp(provider)
+    await assertProviderVerifiedForPaidTopUp(provider, tx)
 
     console.info(JSON.stringify({
       event: 'payat.provider_resolved',
@@ -669,7 +673,7 @@ export async function createPayfastTopUpIntent(
         'Provider account not found.',
       )
     }
-    await assertProviderVerifiedForPaidTopUp(provider)
+    await assertProviderVerifiedForPaidTopUp(provider, tx)
 
     // Use the intent ID as the Payfast m_payment_id and as the internal
     // payment reference. For Payfast there is no human-readable bank

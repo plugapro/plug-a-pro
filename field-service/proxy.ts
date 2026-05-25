@@ -33,6 +33,7 @@ const PUBLIC_PATHS = [
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
   '/provider/terms',       // provider credit rules are linked before login/application
+  '/provider/verification', // WhatsApp identity step-up CTA must load before provider login
   '/track',                // public customer tracking landing pages
   '/for-providers',        // public provider acquisition page
   '/credit-terms',         // public provider credit terms page
