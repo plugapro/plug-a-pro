@@ -702,24 +702,30 @@ export async function clearLock(
   })
 }
 
+export type CompleteStepUpResult =
+  | { ok: true }
+  | { ok: false; reason: 'locked' | 'not_required' }
+
 export async function completeStepUp(
   phoneE164: string,
   userId?: string | null,
-): Promise<void> {
-  await serviceDb().$transaction(async (client) => {
-    await client.accountSecurityState.upsert({
+): Promise<CompleteStepUpResult> {
+  const now = new Date()
+
+  return serviceDb().$transaction(async (client) => {
+    const state = await client.accountSecurityState.findUnique({ where: { phoneE164 } })
+
+    if (!state?.stepUpRequired) {
+      return { ok: false, reason: 'not_required' }
+    }
+
+    if (state.lockedUntil && state.lockedUntil > now) {
+      return { ok: false, reason: 'locked' }
+    }
+
+    await client.accountSecurityState.update({
       where: { phoneE164 },
-      create: {
-        phoneE164,
-        userId: userId ?? null,
-        lockedUntil: null,
-        lockReason: null,
-        stepUpRequired: false,
-        stepUpSetAt: null,
-        lastReportedAt: null,
-        reportCount: 0,
-      },
-      update: {
+      data: {
         userId: userId ?? null,
         lockedUntil: null,
         lockReason: null,
@@ -755,6 +761,8 @@ export async function completeStepUp(
       },
       client,
     )
+
+    return { ok: true }
   })
 }
 

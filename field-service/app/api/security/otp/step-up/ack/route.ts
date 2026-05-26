@@ -26,7 +26,14 @@ export async function POST() {
   const decrypted = decryptPendingStepUpCookie(pending)
   if (!decrypted.ok) return invalidStepUpResponse()
 
-  await completeStepUp(decrypted.payload.phoneE164, decrypted.payload.userId)
+  let completion: Awaited<ReturnType<typeof completeStepUp>>
+  try {
+    completion = await completeStepUp(decrypted.payload.phoneE164, decrypted.payload.userId)
+  } catch {
+    return invalidStepUpResponse()
+  }
+
+  if (!completion.ok) return invalidStepUpResponse()
 
   const response = NextResponse.json({ ok: true })
   response.headers.append(

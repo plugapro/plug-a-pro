@@ -734,7 +734,10 @@ describe('otp security service', () => {
     })
 
     await applyLockAndStepUp(PHONE, USER_ID)
-    await completeStepUp(PHONE, USER_ID)
+    const stepUpState = mocks.state.accountSecurityStates.find((row) => row.phoneE164 === PHONE)!
+    stepUpState.lockedUntil = new Date('2026-05-26T09:59:00.000Z')
+
+    await expect(completeStepUp(PHONE, USER_ID)).resolves.toEqual({ ok: true })
 
     await expect(getAccountSecurityState(PHONE)).resolves.toMatchObject({
       lockedUntil: null,
@@ -755,6 +758,34 @@ describe('otp security service', () => {
         action: 'security.step_up.completed',
         entityId: '082****567',
       }),
+      expect.anything(),
+    )
+  })
+
+  it('does not complete step-up or clear state when a stale pending cookie meets an active re-lock', async () => {
+    await applyLockAndStepUp(PHONE, USER_ID)
+    const lockedState = mocks.state.accountSecurityStates.find((row) => row.phoneE164 === PHONE)!
+    lockedState.lockedUntil = new Date('2026-05-26T10:30:00.000Z')
+    lockedState.lockReason = 'admin_relock'
+    lockedState.stepUpRequired = true
+    lockedState.stepUpSetAt = new Date('2026-05-26T09:59:00.000Z')
+    mocks.state.securityEvents = []
+    vi.mocked(recordAuditLog).mockClear()
+
+    await expect(completeStepUp(PHONE, USER_ID)).resolves.toEqual({
+      ok: false,
+      reason: 'locked',
+    })
+
+    await expect(getAccountSecurityState(PHONE)).resolves.toMatchObject({
+      lockedUntil: new Date('2026-05-26T10:30:00.000Z'),
+      lockReason: 'admin_relock',
+      stepUpRequired: true,
+      stepUpSetAt: new Date('2026-05-26T09:59:00.000Z'),
+    })
+    expect(securityEvents('STEP_UP_COMPLETED')).toHaveLength(0)
+    expect(recordAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'security.step_up.completed' }),
       expect.anything(),
     )
   })
