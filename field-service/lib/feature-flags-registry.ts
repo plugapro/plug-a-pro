@@ -187,6 +187,16 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'security.otp.report': {
+    description: 'Enable unrequested OTP report tokens, report routes, security challenge tracking, locks, and step-up.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'admin.security.otp': {
+    description: 'Enable OTP security admin mutations: acknowledge, resolve, false-positive, and clear account lock.',
+    owner: 'ops',
+    defaultValue: false,
+  },
   // ─── Customer features ───────────────────────────────────────────────────────
   'feature.customer.address_book': {
     description: 'Enable multi-site address book for customers (M1-T4/T5).',

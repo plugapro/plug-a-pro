@@ -52,6 +52,19 @@ function hasDynamicPublicRlsEnabler(sql: string): boolean {
 }
 
 describe('RLS migration coverage', () => {
+  it('enables RLS for OTP fraud response security tables in their migration', () => {
+    const migration = migrationFiles().find(
+      (file) => file.name === '20260526090000_otp_fraud_response_security',
+    )
+
+    expect(migration?.sql).toBeTruthy()
+    expect(publicTablesEnabledBy(migration!.sql).sort()).toEqual([
+      'account_security_states',
+      'otp_challenges',
+      'security_events',
+    ])
+  })
+
   it('enables row level security in a later migration for every public table', () => {
     const files = migrationFiles()
     const missing: string[] = []
