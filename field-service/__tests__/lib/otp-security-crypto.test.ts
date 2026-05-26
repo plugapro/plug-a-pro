@@ -68,10 +68,16 @@ describe('otp security config and crypto helpers', () => {
 
     vi.stubEnv('OTP_HASH_PEPPER', '')
     vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('VITEST', '')
 
-    expect(() => getOtpSecurityConfig()).toThrow(
-      'OTP_HASH_PEPPER is required for OTP security in production',
-    )
+    expect(() => getOtpSecurityConfig()).toThrow(/OTP_HASH_PEPPER is required/)
+
+    // 'staging' / 'preview' / unknown envs are NOT test runtimes — pepper required.
+    vi.stubEnv('NODE_ENV', 'staging')
+    expect(() => getOtpSecurityConfig()).toThrow(/OTP_HASH_PEPPER is required/)
+
+    vi.stubEnv('NODE_ENV', 'preview')
+    expect(() => getOtpSecurityConfig()).toThrow(/OTP_HASH_PEPPER is required/)
   })
 
   it('hashes normalized OTP codes without returning the raw code', async () => {
