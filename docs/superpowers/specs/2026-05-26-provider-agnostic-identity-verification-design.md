@@ -81,6 +81,7 @@ consentVendorDisplayName     String?       // exact name shown at consent time
 consentTextHash              String?       // SHA-256 of the normalised consent text bytes shown to the user
 
 @@index([sourceCheckProvider, vendorReference])
+@@index([sourceCheckProvider, livenessSessionReference])    // webhook resolution path (§3.4)
 ```
 
 `vendorReference` joins webhook events back to this row. `consentVendorKey`, `consentVendorDisplayName`, and `consentTextHash` capture the **current/latest** accepted consent — a UI convenience for "what consent is the provider on right now?". They are NOT the audit history; see §3.1.9 for the immutable consent event log. When a vendor change mid-session forces a re-prompt, these fields are overwritten with the new consent, and the prior consent survives in the event log.
@@ -358,12 +359,18 @@ export interface ParseWebhookInput {
 export interface ParseWebhookResult {
   signatureValid: boolean
   vendorEventId: string | null
-  vendorReference: string | null
+  vendorReference: string | null           // doc/job check id from the original submitDocumentCheck call
+  livenessSessionReference: string | null  // liveness session id from createLivenessSession, when applicable
   eventType: string | null
-  payloadHash: string                    // sha256(canonical(parsed_raw_body)) — pre-redaction; see §3.1.4
+  payloadHash: string                      // sha256(canonical(parsed_raw_body)) — pre-redaction; see §3.1.4
   redactedPayload: Record<string, unknown> | null
   result: NormalizedVerificationResult | null
 }
+```
+
+Adapters MUST populate whichever reference the webhook payload identifies. Some vendors send a liveness completion webhook keyed only on the session id (no document job id); others send a unified webhook with the doc job id. The dispatcher resolves the verification by EITHER reference (see §3.4).
+
+```
 
 export interface CancelVerificationJobInput {
   verificationId: string
@@ -505,6 +512,13 @@ if (stamped.count === 0) {
       metadata: {
         orphanVendorKey:       adapter.vendorKey,
         orphanVendorReference: submit.vendorReference,
+        // If Phase 2 created a liveness session before losing the race, the session
+        // exists at the vendor but isn't attached to any verification on our side.
+        // Capture it so the reconciliation tool can cancel or follow up.
+        ...(liveness ? {
+          orphanLivenessSessionReference: liveness.vendorReference,
+          orphanLivenessSessionExpiresAt: liveness.expiresAt.toISOString(),
+        } : {}),
       },
     },
   })
@@ -605,8 +619,18 @@ POST /api/webhooks/verification/[vendor]
      await db.providerVerificationWebhookEvent.update({ id: row.id, signatureValid: false })
      return 401
 7. verification = await db.providerIdentityVerification.findFirst({
-     where: { sourceCheckProvider: vendorKey, vendorReference: parsed.vendorReference }
+     where: {
+       sourceCheckProvider: vendorKey,
+       OR: [
+         parsed.vendorReference          ? { vendorReference:          parsed.vendorReference }          : undefined,
+         parsed.livenessSessionReference ? { livenessSessionReference: parsed.livenessSessionReference } : undefined,
+       ].filter(Boolean),
+     },
    })
+   // Vendors that send liveness-completion webhooks keyed only on the session id
+   // (no doc job id) are resolved via livenessSessionReference. Vendors that send
+   // a unified webhook with the doc job id resolve via vendorReference. If both
+   // are present in the parsed event, either match works.
    if !verification:
      await db.providerVerificationWebhookEvent.update({ id: row.id, processedAt: now() })
      return 200                                     (log only, do not make vendor retry)
@@ -754,6 +778,8 @@ ALTER TABLE provider_identity_verifications
 
 CREATE INDEX provider_identity_verifications_source_check_provider_vendor_reference_idx
   ON provider_identity_verifications (source_check_provider, vendor_reference);
+CREATE INDEX provider_identity_verifications_source_check_provider_liveness_session_reference_idx
+  ON provider_identity_verifications (source_check_provider, liveness_session_reference);
 
 ALTER TYPE "VerificationStatus" ADD VALUE 'AWAITING_LIVENESS' AFTER 'PROCESSING';
 
@@ -842,7 +868,8 @@ ALTER TABLE provider_identity_consent_events ENABLE ROW LEVEL SECURITY;
 - **Webhook-arriving FAIL after pre-liveness PASS:** verification in `AWAITING_LIVENESS` with `metadata.pendingPreLivenessDecision = 'PASS'`; vendor's post-liveness webhook returns `livenessVerified = false` → `NEEDS_MANUAL_REVIEW` with `PROVIDER_LIVENESS_FAILED`.
 - **Liveness verified PASS:** `decision: PASS` with `livenessVerified === true` AND `confidence ≥ threshold` → `PASSED` + `assuranceLevel = HIGH`.
 - **Malformed adapter result (defensive):** `decision: PASS, livenessVerified === null` arrives via webhook from an adapter that should have set the flag → `NEEDS_MANUAL_REVIEW` with `PROVIDER_LIVENESS_RESULT_MISSING`.
-- **Contention path writes self-loop event:** simulate two concurrent `submitVerificationForAutomation` calls; loser's `ProviderVerificationEvent` row has `fromStatus === toStatus` and `reasonCode = ORCHESTRATOR_CONTENTION`. The verification status is NOT changed by the loser.
+- **Contention path writes self-loop event:** simulate two concurrent `submitVerificationForAutomation` calls; loser's `ProviderVerificationEvent` row has `fromStatus === toStatus` and `reasonCode = ORCHESTRATOR_CONTENTION`. The verification status is NOT changed by the loser. Metadata contains `orphanVendorKey` and `orphanVendorReference`.
+- **Contention with orphan liveness session:** loser ran Phase 2 with a vendor that creates liveness sessions (e.g., `smile_id` with `livenessRequired=true`). The orphan metadata also contains `orphanLivenessSessionReference` and `orphanLivenessSessionExpiresAt` so reconciliation can cancel or follow up on the unused session at the vendor.
 
 ### 6.3 Webhook route
 
@@ -852,7 +879,10 @@ ALTER TABLE provider_identity_consent_events ENABLE ROW LEVEL SECURITY;
 - Duplicate event with prior `processedAt = null` → reprocess in-place (this is the gap addressed in design).
 - Duplicate event with prior `signatureValid = false` → 401.
 - Invalid signature on new event → 401, event row written with `signatureValid=false`.
-- Unknown `vendorReference` → 200, event row with `verificationId=null`.
+- **Resolution by `vendorReference` only:** webhook carries `vendorReference` (doc job id) but no `livenessSessionReference` → verification found via `vendorReference` index, verdict applied.
+- **Resolution by `livenessSessionReference` only:** webhook carries `livenessSessionReference` (liveness completion event) but no `vendorReference` → verification found via the new index on `[sourceCheckProvider, livenessSessionReference]`, verdict applied.
+- **Resolution by either when both present:** webhook carries both references → still resolves to the same single verification.
+- **Unknown both references:** webhook carries neither match → 200, event row with `verificationId=null`.
 - Adapter throws during processing → 500, `processingError` set.
 
 ### 6.4 Channel changes
@@ -884,7 +914,7 @@ ALTER TABLE provider_identity_consent_events ENABLE ROW LEVEL SECURITY;
 
 - `recordConsentAcceptance` (shared service in `lib/identity-verification/consent-service.ts`) INSERTs a `ProviderIdentityConsentEvent` row with the rendered text hash; the service has no UPDATE or DELETE paths.
 - `acceptConsentAction` (PWA server action) and the WhatsApp consent-step handler both call `recordConsentAcceptance` and write nothing else to the consent table directly.
-- Grep test asserts no `prisma.providerIdentityConsentEvent.update` or `.delete` calls exist anywhere in the repo outside the service module's tests.
+- **Grep guard** asserts no `prisma.providerIdentityConsentEvent.(create|createMany|update|updateMany|upsert|delete|deleteMany)` calls exist anywhere in the repo outside `lib/identity-verification/consent-service.ts` and its own test file. The rule enforced is broader than "no updates/deletes": ALL writes to the consent table flow through the service, including creates and upserts. The grep is implemented as a Vitest unit test (`__tests__/lib/identity-verification/consent-service.guard.test.ts`) that walks the repo and fails if it finds a violating call site.
 - Vendor change mid-session: simulate `VerificationVendorConfig.active` flip after first consent → orchestrator re-prompts → second `ProviderIdentityConsentEvent` row inserted with `metadata.previousConsentEventId` set to first row's id; first row is untouched.
 - Pilot allowlist uniqueness: two rows with the same `providerId` cannot be inserted (raw SQL partial unique index); two rows with the same `providerApplicationId` cannot be inserted; a row with both `providerId IS NULL` AND `providerApplicationId IS NULL` is rejected by the CHECK constraint.
 
