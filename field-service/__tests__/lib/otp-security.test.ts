@@ -885,6 +885,12 @@ describe('otp security service', () => {
     oldActive.updatedAt = new Date('2026-04-20T10:00:00.000Z')
 
     await expect(pruneTerminalOtpChallenges(NOW)).resolves.toEqual({ deleted: 1 })
+    expect(mocks.db.otpChallenge.deleteMany).toHaveBeenCalledWith({
+      where: {
+        status: { in: ['VERIFIED', 'EXPIRED', 'CANCELLED', 'REPORTED_UNREQUESTED', 'FAILED'] },
+        updatedAt: { lt: new Date('2026-04-26T10:00:00.000Z') },
+      },
+    })
 
     expect(mocks.state.otpChallenges.map((row) => row.id)).toEqual([
       recentTerminal.id,

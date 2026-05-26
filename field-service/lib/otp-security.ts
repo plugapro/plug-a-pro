@@ -138,6 +138,13 @@ function actorUserId(userId?: string | null): string {
   return userId?.trim() || 'system'
 }
 
+function logOtpOperationalEvent(
+  event: string,
+  fields: Record<string, unknown> = {},
+): void {
+  console.info(JSON.stringify({ event, ...fields }))
+}
+
 function isActiveChallenge(challenge: OtpChallengeRow, now: Date): boolean {
   return ACTIVE_CHALLENGE_STATUSES.includes(challenge.status) && challenge.expiresAt > now
 }
@@ -257,6 +264,12 @@ async function applyLockAndStepUpWithClient(
     },
     client,
   )
+
+  logOtpOperationalEvent('otp.step_up.required', {
+    sourceChannel: 'SYSTEM',
+    phoneMasked: maskedPhoneEntity(phoneE164),
+    userIdPresent: Boolean(userId),
+  })
 }
 
 export async function recordOtpChallenge(params: {
@@ -271,7 +284,7 @@ export async function recordOtpChallenge(params: {
   const now = new Date()
   const expiresAt = addMinutes(now, getOtpSecurityConfig().otpExpiryMinutes)
 
-  return serviceDb().$transaction(async (client) => {
+  const result = await serviceDb().$transaction(async (client) => {
     // Only hashes and allowlisted context are persisted; raw OTP, IP, UA, and
     // token values remain in process memory for this request.
     const challenge = await client.otpChallenge.create({
@@ -297,6 +310,15 @@ export async function recordOtpChallenge(params: {
 
     return { challengeId: challenge.id, reportToken }
   })
+
+  logOtpOperationalEvent('otp.challenge.created', {
+    purpose: params.purpose,
+    provider: 'WHATSAPP',
+    phoneMasked: maskedPhoneEntity(params.phoneE164),
+    userIdPresent: Boolean(params.userId),
+  })
+
+  return result
 }
 
 export async function markChallengeSent(
@@ -391,6 +413,7 @@ export async function reportUnrequestedOtp(params: {
   try {
     const now = new Date()
     const tokenHash = hashReportToken(token)
+    let acceptedLogFields: Record<string, unknown> | null = null
 
     await serviceDb().$transaction(async (client) => {
       const challenge = await client.otpChallenge.findUnique({
@@ -459,7 +482,17 @@ export async function reportUnrequestedOtp(params: {
         },
         client,
       )
+
+      acceptedLogFields = {
+        sourceChannel: params.sourceChannel,
+        phoneMasked: maskedPhoneEntity(challenge.phoneE164),
+        userIdPresent: Boolean(challenge.userId),
+      }
     })
+
+    if (acceptedLogFields) {
+      logOtpOperationalEvent('otp.report.accepted', acceptedLogFields)
+    }
   } catch {
     console.warn('[otp-security] report handling failed', { reason: 'service_error' })
   }
@@ -652,6 +685,13 @@ export async function recordDeliveryRefusedDuringLock(params: {
       deduped: Boolean(existing),
     },
   })
+
+  logOtpOperationalEvent('otp.delivery.refused_during_lock', {
+    sourceChannel: 'SYSTEM',
+    phoneMasked: maskedPhoneEntity(params.phoneE164),
+    userIdPresent: Boolean(params.userId),
+    deduped: Boolean(existing),
+  })
 }
 
 export async function clearLock(
@@ -725,69 +765,81 @@ export async function completeStepUp(
 ): Promise<CompleteStepUpResult> {
   const now = new Date()
 
-  return serviceDb().$transaction(async (client) => {
-    const stateBeforeAttempt = await client.accountSecurityState.findUnique({
-      where: { phoneE164 },
-    })
-    const completion = await client.accountSecurityState.updateMany({
-      where: {
-        phoneE164,
-        stepUpRequired: true,
-        OR: [
-          { lockedUntil: null },
-          { lockedUntil: { lte: now } },
-        ],
-      },
-      data: {
-        userId: userId ?? null,
-        lockedUntil: null,
-        lockReason: null,
-        stepUpRequired: false,
-        stepUpSetAt: null,
-      },
-    })
-
-    if (completion.count !== 1) {
-      const stateAfterAttempt = await client.accountSecurityState.findUnique({
+  const result: CompleteStepUpResult = await serviceDb().$transaction(
+    async (client): Promise<CompleteStepUpResult> => {
+      const stateBeforeAttempt = await client.accountSecurityState.findUnique({
         where: { phoneE164 },
       })
-      const stateForReason = stateAfterAttempt ?? stateBeforeAttempt
-      if (stateForReason?.lockedUntil && stateForReason.lockedUntil > now) {
-        return { ok: false, reason: 'locked' }
-      }
-      return { ok: false, reason: 'not_required' }
-    }
-
-    await createSecurityEvent(client, {
-      phoneE164,
-      userId,
-      eventType: 'STEP_UP_COMPLETED',
-      severity: 'LOW',
-      sourceChannel: 'SYSTEM',
-      metadata: {
-        source: 'step_up_ack',
-        userIdPresent: Boolean(userId),
-      },
-    })
-
-    await safeAudit(
-      {
-        actorId: actorUserId(userId),
-        actorRole: userId ? 'user' : 'system',
-        action: 'security.step_up.completed',
-        entityType: 'AccountSecurityState',
-        entityId: maskedPhoneEntity(phoneE164),
-        after: {
+      const completion = await client.accountSecurityState.updateMany({
+        where: {
+          phoneE164,
+          stepUpRequired: true,
+          OR: [
+            { lockedUntil: null },
+            { lockedUntil: { lte: now } },
+          ],
+        },
+        data: {
+          userId: userId ?? null,
           lockedUntil: null,
+          lockReason: null,
           stepUpRequired: false,
+          stepUpSetAt: null,
+        },
+      })
+
+      if (completion.count !== 1) {
+        const stateAfterAttempt = await client.accountSecurityState.findUnique({
+          where: { phoneE164 },
+        })
+        const stateForReason = stateAfterAttempt ?? stateBeforeAttempt
+        if (stateForReason?.lockedUntil && stateForReason.lockedUntil > now) {
+          return { ok: false, reason: 'locked' }
+        }
+        return { ok: false, reason: 'not_required' }
+      }
+
+      await createSecurityEvent(client, {
+        phoneE164,
+        userId,
+        eventType: 'STEP_UP_COMPLETED',
+        severity: 'LOW',
+        sourceChannel: 'SYSTEM',
+        metadata: {
+          source: 'step_up_ack',
           userIdPresent: Boolean(userId),
         },
-      },
-      client,
-    )
+      })
 
-    return { ok: true }
-  })
+      await safeAudit(
+        {
+          actorId: actorUserId(userId),
+          actorRole: userId ? 'user' : 'system',
+          action: 'security.step_up.completed',
+          entityType: 'AccountSecurityState',
+          entityId: maskedPhoneEntity(phoneE164),
+          after: {
+            lockedUntil: null,
+            stepUpRequired: false,
+            userIdPresent: Boolean(userId),
+          },
+        },
+        client,
+      )
+
+      return { ok: true }
+    },
+  )
+
+  if (result.ok) {
+    logOtpOperationalEvent('otp.step_up.completed', {
+      sourceChannel: 'SYSTEM',
+      phoneMasked: maskedPhoneEntity(phoneE164),
+      userIdPresent: Boolean(userId),
+    })
+  }
+
+  return result
 }
 
 export async function pruneTerminalOtpChallenges(

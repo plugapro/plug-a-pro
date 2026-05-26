@@ -41,6 +41,10 @@
       "schedule": "0 4 * * *"
     },
     {
+      "path": "/api/cron/otp-security-prune",
+      "schedule": "15 3 * * *"
+    },
+    {
       "path": "/api/cron/expire-payment-intents",
       "schedule": "0 * * * *"
     },
