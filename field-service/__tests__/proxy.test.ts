@@ -470,6 +470,16 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('keeps /security/checkpoint public on admin domain before clean-path rewriting', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/security/checkpoint'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
   it('keeps /login alias public on admin domain', async () => {
     const { proxy } = await import('../proxy')
 

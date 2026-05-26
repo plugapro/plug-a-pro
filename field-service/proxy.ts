@@ -104,6 +104,7 @@ function toAdminInternalPath(pathname: string): string {
     pathname.startsWith('/sign-up') ||
     pathname.startsWith('/signup') ||
     pathname.startsWith('/verify') ||
+    pathname.startsWith('/security/checkpoint') ||
     pathname.startsWith('/provider-')
   ) return pathname
   return `/admin${pathname}`
