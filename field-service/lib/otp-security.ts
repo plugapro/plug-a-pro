@@ -297,8 +297,11 @@ export async function markChallengeSent(
   challengeId: string,
   providerMessageId: string | null,
 ): Promise<void> {
-  await serviceDb().otpChallenge.update({
-    where: { id: challengeId },
+  await serviceDb().otpChallenge.updateMany({
+    where: {
+      id: challengeId,
+      status: { in: ACTIVE_CHALLENGE_STATUSES },
+    },
     data: {
       status: 'SENT',
       providerMessageId,
@@ -307,8 +310,11 @@ export async function markChallengeSent(
 }
 
 export async function markChallengeSendFailed(challengeId: string): Promise<void> {
-  await serviceDb().otpChallenge.update({
-    where: { id: challengeId },
+  await serviceDb().otpChallenge.updateMany({
+    where: {
+      id: challengeId,
+      status: { in: ACTIVE_CHALLENGE_STATUSES },
+    },
     data: { status: 'FAILED' },
   })
 }
@@ -325,8 +331,11 @@ export async function markChallengeCancelled(
     deliveryRefusedReason: reason === 'delivery_refused_during_lock' ? 'locked' : undefined,
   })
 
-  await serviceDb().otpChallenge.update({
-    where: { id: challengeId },
+  await serviceDb().otpChallenge.updateMany({
+    where: {
+      id: challengeId,
+      status: { in: ACTIVE_CHALLENGE_STATUSES },
+    },
     data: {
       status: 'CANCELLED',
       requestContext: context,
@@ -507,8 +516,12 @@ export async function recordVerificationResult(params: {
   if (!challenge) return
 
   if (params.success) {
-    await client.otpChallenge.update({
-      where: { id: challenge.id },
+    await client.otpChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        status: { in: ACTIVE_CHALLENGE_STATUSES },
+        expiresAt: { gt: now },
+      },
       data: {
         status: 'VERIFIED',
         verifiedAt: now,
@@ -518,11 +531,17 @@ export async function recordVerificationResult(params: {
   }
 
   const previousAttempts = challenge.attemptCount ?? 0
-  const updated = await client.otpChallenge.update({
-    where: { id: challenge.id },
+  const update = await client.otpChallenge.updateMany({
+    where: {
+      id: challenge.id,
+      status: { in: ACTIVE_CHALLENGE_STATUSES },
+      expiresAt: { gt: now },
+    },
     data: { attemptCount: { increment: 1 } },
   })
-  const currentAttempts = updated.attemptCount ?? previousAttempts + 1
+  if (update.count !== 1) return
+
+  const currentAttempts = previousAttempts + 1
   const maxAttempts = getOtpSecurityConfig().maxVerifyAttempts
 
   if (previousAttempts < maxAttempts && currentAttempts >= maxAttempts) {

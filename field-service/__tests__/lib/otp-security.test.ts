@@ -304,6 +304,46 @@ describe('otp security service', () => {
     })
   })
 
+  it('does not let late sent, failed, or cancelled updates overwrite reported challenges', async () => {
+    const sentRace = await recordOtpChallenge({
+      phoneE164: PHONE,
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+    const failedRace = await recordOtpChallenge({
+      phoneE164: OTHER_PHONE,
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+    const cancelledRace = await recordOtpChallenge({
+      phoneE164: '+27825550124',
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+
+    mocks.state.otpChallenges.find((row) => row.id === sentRace.challengeId)!.status =
+      'REPORTED_UNREQUESTED'
+    mocks.state.otpChallenges.find((row) => row.id === failedRace.challengeId)!.status =
+      'REPORTED_UNREQUESTED'
+    mocks.state.otpChallenges.find((row) => row.id === cancelledRace.challengeId)!.status =
+      'REPORTED_UNREQUESTED'
+
+    await markChallengeSent(sentRace.challengeId, 'wamid.late')
+    await markChallengeSendFailed(failedRace.challengeId)
+    await markChallengeCancelled(cancelledRace.challengeId, 'delivery_refused_during_lock')
+
+    const sentRaceRow = mocks.state.otpChallenges.find((row) => row.id === sentRace.challengeId)!
+    expect(sentRaceRow.status).toBe('REPORTED_UNREQUESTED')
+    expect(sentRaceRow.providerMessageId).toBeUndefined()
+    expect(mocks.state.otpChallenges.find((row) => row.id === failedRace.challengeId)).toMatchObject({
+      status: 'REPORTED_UNREQUESTED',
+    })
+    expect(mocks.state.otpChallenges.find((row) => row.id === cancelledRace.challengeId)).toMatchObject({
+      status: 'REPORTED_UNREQUESTED',
+      requestContext: {},
+    })
+  })
+
   it('reports an unrequested OTP idempotently, cancels siblings, locks the phone, and creates high severity event', async () => {
     const older = await recordOtpChallenge({
       phoneE164: PHONE,
@@ -573,6 +613,67 @@ describe('otp security service', () => {
       ok: false,
       reason: 'no_active_challenge',
     })
+  })
+
+  it('does not mutate verification success or failure when guarded updates lose a concurrent race', async () => {
+    const successRace = await recordOtpChallenge({
+      phoneE164: PHONE,
+      userId: USER_ID,
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+    mocks.db.otpChallenge.updateMany.mockResolvedValueOnce({ count: 0 })
+
+    await recordVerificationResult({
+      phoneE164: PHONE,
+      userId: USER_ID,
+      success: true,
+      source: 'server_verify',
+    })
+
+    expect(mocks.db.otpChallenge.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: successRace.challengeId,
+        status: { in: ['REQUESTED', 'SENT'] },
+        expiresAt: { gt: NOW },
+      },
+      data: {
+        status: 'VERIFIED',
+        verifiedAt: NOW,
+      },
+    })
+    const successRaceRow = mocks.state.otpChallenges.find((row) => row.id === successRace.challengeId)!
+    expect(successRaceRow.status).toBe('REQUESTED')
+    expect(successRaceRow.verifiedAt).toBeUndefined()
+
+    const failureRace = await recordOtpChallenge({
+      phoneE164: OTHER_PHONE,
+      userId: USER_ID,
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+    mocks.db.otpChallenge.updateMany.mockResolvedValueOnce({ count: 0 })
+
+    await recordVerificationResult({
+      phoneE164: OTHER_PHONE,
+      userId: USER_ID,
+      success: false,
+      source: 'client_telemetry',
+    })
+
+    expect(mocks.db.otpChallenge.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: failureRace.challengeId,
+        status: { in: ['REQUESTED', 'SENT'] },
+        expiresAt: { gt: NOW },
+      },
+      data: { attemptCount: { increment: 1 } },
+    })
+    expect(mocks.state.otpChallenges.find((row) => row.id === failureRace.challengeId)).toMatchObject({
+      attemptCount: 0,
+      status: 'REQUESTED',
+    })
+    expect(securityEvents('OTP_VERIFICATION_FAILED_REPEATEDLY')).toHaveLength(0)
   })
 
   it('dedupes OTP_DELIVERY_REFUSED_DURING_LOCK within the configured window', async () => {
