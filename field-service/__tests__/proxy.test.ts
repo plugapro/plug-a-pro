@@ -499,13 +499,16 @@ describe('proxy admin access', () => {
     const report = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/report'))
     const verifyFailed = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/verify-failed'))
     const stepUp = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/step-up/ack'))
+    const stepUpNormalHost = await proxy(new NextRequest('https://app.plugapro.co.za/api/security/otp/step-up/ack'))
 
     expect(report.status).toBe(200)
     expect(report.headers.get('location')).toBeNull()
     expect(verifyFailed.status).toBe(200)
     expect(verifyFailed.headers.get('location')).toBeNull()
-    expect(stepUp.status).toBe(307)
-    expect(stepUp.headers.get('location')).toContain('/sign-in?')
+    expect(stepUp.status).toBe(200)
+    expect(stepUp.headers.get('location')).toBeNull()
+    expect(stepUpNormalHost.status).toBe(200)
+    expect(stepUpNormalHost.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 

@@ -111,4 +111,47 @@ describe('POST /api/auth/session security gate', () => {
     expect(setCookie).toContain('pap-step-up-token=pending')
     expect(setCookie).not.toContain('sb-access-token=session-token')
   })
+
+  it('issues an admin session without the OTP gate when the Supabase user has no phone', async () => {
+    mocks.createClient.mockReturnValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: {
+            user: {
+              id: 'admin_user_123',
+              phone: null,
+              email: 'admin@example.com',
+            },
+          },
+          error: null,
+        }),
+      },
+    })
+    mocks.db.adminUser.findFirst.mockResolvedValueOnce({
+      id: 'admin-row-1',
+      userId: 'admin_user_123',
+      email: 'admin@example.com',
+      role: 'OWNER',
+      active: true,
+      acceptedAt: new Date('2026-05-26T10:00:00.000Z'),
+    })
+
+    const response = await postSession({
+      accessToken: 'admin-session-token',
+      expiresIn: 7200,
+      requireAdmin: true,
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({
+      userId: 'admin_user_123',
+      adminAccess: true,
+      adminRole: 'owner',
+    })
+    expect(response.headers.get('Set-Cookie')).toBe(
+      'sb-access-token=admin-session-token; HttpOnly; SameSite=Lax; Path=/; Max-Age=7200',
+    )
+    expect(mocks.issueGate).not.toHaveBeenCalled()
+  })
 })

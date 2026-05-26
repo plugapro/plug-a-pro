@@ -85,6 +85,7 @@ const PUBLIC_SIGNED_PROVIDER_API_ROUTE = /^\/api\/provider\/leads\/[^/]+\/contac
 const PUBLIC_UNSIGNED_LEGACY_LEAD_ROUTE = /^\/leads\/[^/]+$/
 const EXACT_PUBLIC_PATHS = new Set([
   '/api/security/otp/report',
+  '/api/security/otp/step-up/ack',
   '/api/security/otp/verify-failed',
 ])
 

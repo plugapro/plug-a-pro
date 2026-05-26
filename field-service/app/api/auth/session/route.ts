@@ -14,7 +14,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
+import { buildSessionCookieHeader, resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
 import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
 import { normalizePhone } from '@/lib/utils'
 
@@ -126,7 +126,9 @@ export async function POST(request: NextRequest) {
     const phoneE164 = phoneE164FromSupabase(user.phone)
 
     if (!phoneE164) {
-      return NextResponse.json({ error: 'Phone required for OTP session' }, { status: 400 })
+      const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
+      response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
+      return response
     }
 
     const gated = await issueAuthSessionWithSecurityGate({

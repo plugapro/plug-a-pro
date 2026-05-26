@@ -368,6 +368,11 @@ Step-up factor (per decision): **Re-OTP + in-app acknowledgement**. The fresh
 post-lock OTP login is the re-OTP; the ack endpoint records explicit consent and
 issues the full session.
 
+The checkpoint page does **not** ask for another OTP code. Code entry already
+happened on the normal `/verify` or `/provider-verify` screen immediately before
+the session gate returned `STEP_UP_REQUIRED`; the checkpoint button is only the
+explicit acknowledgement step.
+
 `POST /api/security/otp/step-up/ack` is the only endpoint that consumes the
 pending cookie:
 - read `pap-step-up-token`; if missing, invalid, or expired, clear it and return
