@@ -4,28 +4,46 @@ import { trustedClientIp, trustedClientIpFromHeaders } from '@/lib/request-ip'
 describe('trusted request IP helpers', () => {
   it('uses the leftmost public x-forwarded-for address', () => {
     const headers = new Headers({
-      'x-forwarded-for': '198.51.100.23, 203.0.113.9',
-      'x-real-ip': '203.0.113.10',
+      'x-forwarded-for': '8.8.8.8, 1.1.1.1',
+      'x-real-ip': '9.9.9.9',
     })
 
-    expect(trustedClientIpFromHeaders(headers)).toBe('198.51.100.23')
+    expect(trustedClientIpFromHeaders(headers)).toBe('8.8.8.8')
   })
 
   it('skips private, loopback, and malformed forwarded addresses', () => {
     const headers = new Headers({
-      'x-forwarded-for': '10.0.0.1, malformed, 127.0.0.1, ::1, 203.0.113.20',
+      'x-forwarded-for': '10.0.0.1, malformed, 127.0.0.1, ::1, 1.1.1.1',
     })
 
-    expect(trustedClientIpFromHeaders(headers)).toBe('203.0.113.20')
+    expect(trustedClientIpFromHeaders(headers)).toBe('1.1.1.1')
+  })
+
+  it('skips IPv4-mapped private and loopback IPv6 forwarded addresses', () => {
+    const headers = new Headers({
+      'x-forwarded-for': '::ffff:10.0.0.1, ::ffff:127.0.0.1, ::ffff:192.168.1.10, 8.8.4.4',
+      'x-real-ip': '::ffff:127.0.0.1',
+    })
+
+    expect(trustedClientIpFromHeaders(headers)).toBe('8.8.4.4')
+  })
+
+  it('skips reserved and non-global forwarded addresses', () => {
+    const headers = new Headers({
+      'x-forwarded-for':
+        '192.0.2.1, 198.51.100.23, 203.0.113.20, 100.64.0.1, 198.18.0.1, 224.0.0.1, 240.0.0.1, 2001:db8::1, ff02::1, 2606:4700:4700::1111',
+    })
+
+    expect(trustedClientIpFromHeaders(headers)).toBe('2606:4700:4700::1111')
   })
 
   it('falls back to x-real-ip when x-forwarded-for has no public address', () => {
     const headers = new Headers({
       'x-forwarded-for': '10.0.0.1, 192.168.1.10, fd00::1, malformed',
-      'x-real-ip': '198.51.100.50',
+      'x-real-ip': '9.9.9.9',
     })
 
-    expect(trustedClientIpFromHeaders(headers)).toBe('198.51.100.50')
+    expect(trustedClientIpFromHeaders(headers)).toBe('9.9.9.9')
   })
 
   it('returns null when no trusted proxy header contains a public address', () => {
@@ -38,7 +56,7 @@ describe('trusted request IP helpers', () => {
 
     const request = new Request('https://app.plugapro.co.za/api/auth/session', {
       method: 'POST',
-      body: JSON.stringify({ ip: '198.51.100.88' }),
+      body: JSON.stringify({ ip: '8.8.8.8' }),
     })
 
     expect(trustedClientIp(request)).toBeNull()
