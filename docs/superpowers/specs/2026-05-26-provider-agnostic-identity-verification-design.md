@@ -83,7 +83,7 @@ consentTextHash              String?       // SHA-256 of the normalised consent 
 @@index([sourceCheckProvider, vendorReference])
 ```
 
-`vendorReference` joins webhook events back to this row. `consentTextHash` paired with the versioned text archive at `lib/identity-verification/consent-text.ts` proves what the provider accepted even after copy changes.
+`vendorReference` joins webhook events back to this row. `consentVendorKey`, `consentVendorDisplayName`, and `consentTextHash` capture the **current/latest** accepted consent — a UI convenience for "what consent is the provider on right now?". They are NOT the audit history; see §3.1.9 for the immutable consent event log. When a vendor change mid-session forces a re-prompt, these fields are overwritten with the new consent, and the prior consent survives in the event log.
 
 #### 3.1.2 `livenessSessionUrlEncrypted` access rule
 
@@ -188,10 +188,30 @@ model ProviderIdentityVerificationPilotAllowlist {
   provider            Provider?            @relation(fields: [providerId], references: [id], onDelete: SetNull)
   providerApplication ProviderApplication? @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
 
-  @@unique([providerId, providerApplicationId])
   @@map("provider_identity_verification_pilot_allowlist")
 }
 ```
+
+**Uniqueness is enforced via raw SQL, not `@@unique`.** Postgres treats `NULL` values as distinct, so `@@unique([providerId, providerApplicationId])` would permit duplicate provider-only rows *and* rows with both columns null. Migration step adds:
+
+```sql
+-- Exactly one of provider_id / provider_application_id must be non-null.
+ALTER TABLE provider_identity_verification_pilot_allowlist
+  ADD CONSTRAINT pilot_allowlist_exactly_one_target_chk
+  CHECK ((provider_id IS NOT NULL) <> (provider_application_id IS NOT NULL));
+
+-- Each provider can appear at most once.
+CREATE UNIQUE INDEX pilot_allowlist_provider_id_uniq
+  ON provider_identity_verification_pilot_allowlist (provider_id)
+  WHERE provider_id IS NOT NULL;
+
+-- Each application can appear at most once.
+CREATE UNIQUE INDEX pilot_allowlist_provider_application_id_uniq
+  ON provider_identity_verification_pilot_allowlist (provider_application_id)
+  WHERE provider_application_id IS NOT NULL;
+```
+
+Prisma will see these as `@@index` equivalents on regenerate; treat the migration's raw SQL as the source of truth and `prisma db pull` / `prisma format` as best-effort. The `crudAction()` server action for "add to pilot allowlist" must catch unique-violation errors and return a friendly "already in allowlist" response rather than a 500.
 
 #### 3.1.7 Secrets stay in env
 
@@ -202,12 +222,43 @@ Per vendor: `<VENDOR>_API_KEY`, `<VENDOR>_WEBHOOK_SECRET`, `<VENDOR>_PARTNER_ID`
 New tables enable RLS without public policies, matching existing `provider_identity_*` tables:
 
 ```sql
-ALTER TABLE provider_verification_webhook_events  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE verification_vendor_configs           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE provider_verification_webhook_events           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE verification_vendor_configs                    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE provider_identity_verification_pilot_allowlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE provider_identity_consent_events               ENABLE ROW LEVEL SECURITY;
 ```
 
 Access is exclusively through Prisma running under the service role. The migration step that verifies posture on existing `provider_identity_verifications` should be re-run against the new tables.
+
+#### 3.1.9 New model — `ProviderIdentityConsentEvent`
+
+Immutable consent audit log. Every consent acceptance writes one row here, including the re-prompt that fires when the active vendor changes mid-session. The "current/latest accepted" snapshot on `ProviderIdentityVerification` (§3.1.1) is a convenience view; this table is the audit truth.
+
+```
+model ProviderIdentityConsentEvent {
+  id                  String   @id @default(cuid())
+  verificationId      String
+  vendorKey           String                        // matches VendorKey at acceptance time
+  vendorDisplayName   String                        // exact display name shown to user
+  consentTextHash     String                        // SHA-256 of normalised text bytes
+  consentTextVersion  String                        // semver-ish version pulled from lib/identity-verification/consent-text.ts
+  channel             VerificationChannel           // PWA | WHATSAPP | ADMIN | VENDOR
+  acceptedAt          DateTime @default(now())
+  ipAddress           String?
+  userAgent           String?
+  metadata            Json?                         // e.g., previousConsentEventId when this row supersedes a prior one
+
+  verification ProviderIdentityVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId, acceptedAt])
+  @@index([consentTextHash])
+  @@map("provider_identity_consent_events")
+}
+```
+
+**Rows are never updated or deleted** (Cascade-on-verification-delete is the only delete path, and only fires when the parent verification itself is deleted — which is rare and itself audited via existing mechanisms). The `crudAction()` write surface for consent acceptance is `recordConsentAcceptanceAction` — it does an `INSERT` only, never an `UPDATE`. A test asserts this.
+
+**Sub-task — `consentTextVersion`:** `lib/identity-verification/consent-text.ts` exports a `CURRENT_CONSENT_TEXT_VERSION` constant and a `consentTextFor(vendorDisplayName)` helper that interpolates the display name into the versioned template. The hash is computed over the rendered (post-interpolation) bytes. This way, when copy changes, the version bumps and the hash naturally changes — auditors can replay what was shown.
 
 ### 3.2 Adapter abstraction
 
@@ -243,6 +294,10 @@ export interface NormalizedVerificationResult {
   confidence: number | null              // 0..1
   documentConfidence: number | null
   livenessScore: number | null
+  livenessVerified: boolean | null       // null = adapter does not perform liveness;
+                                         // true  = liveness performed AND passed at the vendor;
+                                         // false = liveness attempted but did not pass.
+                                         // Required by the §3.3.3 invariant when config.livenessRequired = true.
   selfieMatchScore: number | null
   riskFlags: string[]                    // canonicalised enum strings; see §3.5 metrics
   reasonCode: string | null              // canonicalised enum string when not PASS
@@ -401,18 +456,32 @@ const stamped = await tx.providerIdentityVerification.updateMany({
 })
 
 if (stamped.count === 0) {
-  // contention — someone else stamped. Log orphan vendor side effect for reconciliation.
+  // Contention — someone else stamped this row first. We did NOT transition, so we must
+  // not write a misleading ProviderVerificationEvent with a toStatus we did not actually
+  // move to. Re-read first; log a self-loop event (fromStatus === toStatus === current)
+  // so the admin timeline reflects what actually happened: a no-op caused by a contention
+  // race, with the orphan vendor reference captured in metadata for reconciliation.
+  const current = await tx.providerIdentityVerification.findUniqueOrThrow({
+    where: { id: verificationId },
+    select: { status: true },
+  })
   await tx.providerVerificationEvent.create({
     data: {
       verificationId,
-      toStatus: 'NEEDS_MANUAL_REVIEW',
+      fromStatus: current.status,
+      toStatus:   current.status,                    // self-loop = explicitly not a transition
       reasonCode: 'ORCHESTRATOR_CONTENTION',
-      metadata: { vendorKey: adapter.vendorKey, vendorReference: submit.vendorReference },
+      metadata: {
+        orphanVendorKey:       adapter.vendorKey,
+        orphanVendorReference: submit.vendorReference,
+      },
     },
   })
   return readCurrentSnapshot()
 }
 ```
+
+The self-loop convention (`fromStatus === toStatus`) is allowed as a degenerate transition in `ALLOWED_TRANSITIONS` purely for the contention case; the transition helper recognises it and skips the `updateMany` while still writing the event. If the project prefers, this can be implemented as an `AdminAuditEvent` row instead — but `AdminAuditEvent` requires an `adminId`, which doesn't fit an orchestrator-initiated event. `ProviderVerificationEvent` with a self-loop is the lower-friction choice.
 
 Step B — **transition status** based on what the vendor returned. Only one of these branches runs.
 
@@ -443,9 +512,20 @@ Earlier drafts had a `decideNextStatus(submit, liveness)` helper that returned a
 
 #### 3.3.3 `applyVendorVerdict(verificationId, result, source)`
 
+**Liveness-required pre-check (runs FIRST, before the decision matrix):**
+
+If `config.livenessRequired === true` AND `result.decision === 'PASS'` AND `result.livenessVerified !== true`, the PASS is rejected — the vendor cannot clear the high-assurance gate without an explicit liveness-passed signal. The decision is overridden:
+
+- If `adapter.createLivenessSession` is defined AND the verification is currently in `SUBMITTED` / `RETRY_REQUIRED` (i.e., we have not yet attempted liveness for this attempt): transition to `NEEDS_MANUAL_REVIEW` with `failureReasonCode = PROVIDER_LIVENESS_REQUIRED_BUT_MISSING`. (The orchestrator could create a session post-hoc, but doing so out-of-band from Phase 2 reintroduces vendor I/O outside the contract; the cleaner path is admin retry, which goes through Phase 1-3 again.)
+- Otherwise (liveness was attempted and didn't pass, or adapter has no `createLivenessSession`): `NEEDS_MANUAL_REVIEW` with `failureReasonCode = PROVIDER_LIVENESS_FAILED`.
+
+The pre-check makes "document-only sync PASS without liveness" unable to satisfy a liveness-required configuration, no matter what an adapter returns.
+
+**Decision matrix (applied after the liveness pre-check passes):**
+
 | Vendor decision | Threshold | Outcome |
 |---|---|---|
-| `PASS` | `confidence ≥ threshold` | `PASSED` + `decision = PASS` + `assuranceLevel = HIGH` |
+| `PASS` | `confidence ≥ threshold` AND (livenessRequired implies livenessVerified) | `PASSED` + `decision = PASS` + `assuranceLevel = HIGH` |
 | `PASS` | `confidence < threshold` | `NEEDS_MANUAL_REVIEW` + `failureReasonCode = PROVIDER_LOW_CONFIDENCE` |
 | `FAIL` | — | `NEEDS_MANUAL_REVIEW` + `PROVIDER_FAIL` *(pilot; later config may route to direct FAILED)* |
 | `INCONCLUSIVE` | — | `NEEDS_MANUAL_REVIEW` + `PROVIDER_INCONCLUSIVE` |
@@ -553,7 +633,8 @@ Webhook-driven notifications (after async result) follow the same table. The dow
 
 - `submitIdentityVerificationForReview()` → `submitVerificationForAutomation()`.
 - New step state `awaiting_liveness` rendered in `page.tsx` with a "Complete face-match" button linking to the signed Plug A Pro URL.
-- **New `route.ts`:** `app/provider/verify/[token]/liveness/route.ts` (NOT `page.tsx`) — validates token; checks `livenessSessionExpiresAt > now()`; decrypts `livenessSessionUrlEncrypted`; logs `SIGNED_URL_ISSUED`; returns 302 with `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. When session is expired, renders a "session expired — request new link" UI with a server action that re-runs `submitVerificationForAutomation()`.
+- **New `route.ts`:** `app/provider/verify/[token]/liveness/route.ts` (NOT `page.tsx`, so response headers are controllable) — validates token; checks `livenessSessionExpiresAt > now()`. If valid: decrypts `livenessSessionUrlEncrypted`, logs `SIGNED_URL_ISSUED`, returns 302 to the vendor with `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. If expired: returns 302 to `/provider/verify/[token]/liveness/expired` (no decrypt, no log).
+- **New `page.tsx`:** `app/provider/verify/[token]/liveness/expired/page.tsx` — validates token, renders "Your face-match link has expired" UI, and exposes a server action `requestNewLivenessLinkAction` that re-invokes `submitVerificationForAutomation()` and either redirects back to `/liveness` (new session) or shows a "verification could not be retried" message if the orchestrator routed to manual review.
 - **New `page.tsx`:** `app/provider/verify/[token]/liveness/complete/page.tsx` — vendor `returnUrl` lands here; shows "We're checking your face-match" placeholder. v1 ships with a "Refresh status" button (no background polling). v2 (separate spec) can add a sanitised status endpoint.
 - `processing` state shows "We're verifying — refresh in a minute" with no spinner-hold.
 
@@ -596,19 +677,17 @@ OR (status = 'PROCESSING' AND updatedAt < now() - INTERVAL <vendor.expectedTurna
 
 > "To verify your identity, Plug A Pro shares your ID number, photographs, and selfie with `<vendor display name>`, an accredited identity-verification provider, and (where relevant) the South African Department of Home Affairs. `<vendor display name>` retains this information only as long as needed to complete the verification, after which it is deleted in line with their policy. You can withdraw consent at any time by contacting support — withdrawal cancels your verification."
 
-**Captured fields** on `ProviderIdentityVerification`:
+**Captured state:**
 
-- `consentAcceptedAt` (existing)
-- `consentVendorKey` (new)
-- `consentVendorDisplayName` (new)
-- `consentTextHash` (new)
+- **Latest/current snapshot** on `ProviderIdentityVerification`: `consentAcceptedAt` (existing), `consentVendorKey`, `consentVendorDisplayName`, `consentTextHash` (new in §3.1.1). Convenience view for "what consent is this verification on right now?".
+- **Immutable audit log** in `ProviderIdentityConsentEvent` (§3.1.9): one row per consent acceptance, INSERT-only, never updated. Includes `vendorKey`, `vendorDisplayName`, `consentTextHash`, `consentTextVersion`, channel, IP/UA, and timestamp. This is the audit truth — POPIA inquiries and consent disputes are answered from here, not from the latest-snapshot fields.
 
 **Placement:**
 
 - WhatsApp: consent step inserted between identifier capture and document upload. Button-tap or "I agree" required.
 - PWA: consent dialog at the start of `/provider/verify/[token]`, required tickbox + button.
 
-**Vendor change mid-session:** if `VerificationVendorConfig.active` changes between consent and submission, the orchestrator detects mismatch and re-prompts consent before submitting. The previous consent row is preserved; a new event is recorded.
+**Vendor change mid-session:** if `VerificationVendorConfig.active` changes between consent and submission, the orchestrator detects the mismatch (`consentVendorKey !== activeVendorKey`) and re-prompts consent before submitting. On re-acceptance: a NEW row is inserted into `ProviderIdentityConsentEvent` with `metadata.previousConsentEventId` pointing at the prior row; the latest-snapshot fields on the verification row are overwritten. The prior consent event row is untouched — full history is preserved.
 
 **Withdrawal flow:** existing admin "Cancel verification" action calls `adapter.cancelVerificationJob()`. Where the vendor supports cancellation, the response is logged with `vendorAcknowledged`. Where not (`supported: false`), an `AdminAuditEvent` is queued for manual contact to the vendor for record deletion.
 
@@ -645,8 +724,21 @@ CREATE TABLE verification_vendor_configs ( ... );
 ALTER TABLE verification_vendor_configs ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE provider_identity_verification_pilot_allowlist ( ... );
-CREATE UNIQUE INDEX ... ON ... (provider_id, provider_application_id);
+ALTER TABLE provider_identity_verification_pilot_allowlist
+  ADD CONSTRAINT pilot_allowlist_exactly_one_target_chk
+  CHECK ((provider_id IS NOT NULL) <> (provider_application_id IS NOT NULL));
+CREATE UNIQUE INDEX pilot_allowlist_provider_id_uniq
+  ON provider_identity_verification_pilot_allowlist (provider_id)
+  WHERE provider_id IS NOT NULL;
+CREATE UNIQUE INDEX pilot_allowlist_provider_application_id_uniq
+  ON provider_identity_verification_pilot_allowlist (provider_application_id)
+  WHERE provider_application_id IS NOT NULL;
 ALTER TABLE provider_identity_verification_pilot_allowlist ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE provider_identity_consent_events ( ... );
+CREATE INDEX ... ON provider_identity_consent_events (verification_id, accepted_at);
+CREATE INDEX ... ON provider_identity_consent_events (consent_text_hash);
+ALTER TABLE provider_identity_consent_events ENABLE ROW LEVEL SECURITY;
 ```
 
 **No backfill required.** Existing verifications keep `vendorReference = null`, `consent*` = null. The orchestrator only acts on new submissions (status transitions through `SUBMITTED` after this code ships).
@@ -702,6 +794,9 @@ ALTER TABLE provider_identity_verification_pilot_allowlist ENABLE ROW LEVEL SECU
 - `freeze_vendor_verdicts = true`: PASS verdict logged, status routed to `NEEDS_MANUAL_REVIEW` with `VENDOR_VERDICTS_FROZEN`.
 - `liveness.degraded_kill_switch = true`: liveness-required vendor + liveness-required case → routes to `NEEDS_MANUAL_REVIEW`; assurance never downgraded.
 - Pilot allowlist excludes a provider → orchestrator falls back to manual path.
+- **Liveness pre-check on immediate PASS:** vendor returns `decision: PASS` with `livenessVerified !== true` AND `config.livenessRequired = true` → status `NEEDS_MANUAL_REVIEW` with `PROVIDER_LIVENESS_REQUIRED_BUT_MISSING` (when adapter has `createLivenessSession` and we haven't attempted it) or `PROVIDER_LIVENESS_FAILED` (otherwise). Document-only sync PASS cannot satisfy a liveness-required configuration.
+- **Liveness verified PASS:** `decision: PASS` with `livenessVerified === true` AND `confidence ≥ threshold` → `PASSED` + `assuranceLevel = HIGH`.
+- **Contention path writes self-loop event:** simulate two concurrent `submitVerificationForAutomation` calls; loser's `ProviderVerificationEvent` row has `fromStatus === toStatus` and `reasonCode = ORCHESTRATOR_CONTENTION`. The verification status is NOT changed by the loser.
 
 ### 6.3 Webhook route
 
@@ -719,7 +814,9 @@ ALTER TABLE provider_identity_verification_pilot_allowlist ENABLE ROW LEVEL SECU
 - WhatsApp flow with `manual` config active: post-selfie status = `NEEDS_MANUAL_REVIEW` (regression on current behavior).
 - WhatsApp flow with `smile_id` + immediate PASS: status `PASSED`, neutral copy sent (no "buy credits" string in message body).
 - WhatsApp flow with vendor needing liveness: status `AWAITING_LIVENESS`, link is the signed Plug A Pro URL (no vendor URL leaked).
-- PWA liveness `route.ts`: response includes `Referrer-Policy: no-referrer`; expired session returns expiry UI, not the redirect.
+- PWA liveness `route.ts` (valid session): response is 302 with `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers set.
+- PWA liveness `route.ts` (expired session): 302 to `/provider/verify/[token]/liveness/expired`; no decrypt, no `SIGNED_URL_ISSUED` log written.
+- PWA liveness expired page: `requestNewLivenessLinkAction` server action invokes `submitVerificationForAutomation` and renders the appropriate next state.
 - Admin queue default view: excludes `signatureValid=false` rows; "invalid signatures" view includes them.
 - Admin "Retry with vendor" rejected for non-TRUST role.
 - Admin "Vendor config — adjust threshold" rejected for non-TRUST role.
@@ -734,6 +831,13 @@ ALTER TABLE provider_identity_verification_pilot_allowlist ENABLE ROW LEVEL SECU
 - Anonymous Supabase client cannot read `provider_verification_webhook_events`.
 - Anonymous Supabase client cannot read `verification_vendor_configs`.
 - Anonymous Supabase client cannot read `provider_identity_verification_pilot_allowlist`.
+- Anonymous Supabase client cannot read `provider_identity_consent_events`.
+
+### 6.7 Consent log and pilot allowlist
+
+- `recordConsentAcceptanceAction` INSERTs a `ProviderIdentityConsentEvent` row with the rendered text hash; the row is never UPDATEd or DELETEd by the action (assert via test).
+- Vendor change mid-session: simulate `VerificationVendorConfig.active` flip after first consent → orchestrator re-prompts → second `ProviderIdentityConsentEvent` row inserted with `metadata.previousConsentEventId` set to first row's id; first row is untouched.
+- Pilot allowlist uniqueness: two rows with the same `providerId` cannot be inserted (raw SQL partial unique index); two rows with the same `providerApplicationId` cannot be inserted; a row with both `providerId IS NULL` AND `providerApplicationId IS NULL` is rejected by the CHECK constraint.
 
 ---
 
