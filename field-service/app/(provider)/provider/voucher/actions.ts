@@ -41,7 +41,9 @@ export async function redeemVoucherAction(rawCode: string): Promise<RedeemVouche
       return {
         ok: true,
         creditsAwarded: result.creditsAwarded,
-        message: `Voucher redeemed. ${result.creditsAwarded} credit${result.creditsAwarded === 1 ? ' has' : 's have'} been added to your account.`,
+        // Echo the canonical form so the user sees exactly which voucher was accepted —
+        // useful when they typed it dashless or just the 8-char suffix.
+        message: `Voucher ${result.canonical} redeemed. ${result.creditsAwarded} credit${result.creditsAwarded === 1 ? ' has' : 's have'} been added to your account.`,
       }
     }
 

@@ -73,7 +73,7 @@ describe('redeemVoucher', () => {
     vi.clearAllMocks()
   })
 
-  it('succeeds: approves credit, marks voucher redeemed, and records campaign redemption', async () => {
+  it('succeeds: approves credit, marks voucher redeemed, records campaign redemption, and returns canonical', async () => {
     const tx = makeTx(makeProvider(), makeVoucher())
     setupTransaction(tx)
 
@@ -83,6 +83,9 @@ describe('redeemVoucher', () => {
     if (!result.ok) throw new Error('should be ok')
     expect(result.creditsAwarded).toBe(1)
     expect(result.ledgerEntryId).toBe('ledger_1')
+    // Canonical echo lets callers show the user the form they actually redeemed,
+    // regardless of how the input was typed (suffix-only, dashless, em-dash, ...).
+    expect(result.canonical).toBe('PAP-7KQ9-M2XD')
 
     expect(tx.promoVoucher.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -128,17 +131,98 @@ describe('redeemVoucher', () => {
     expect(result.code).toBe('PROVIDER_NOT_APPROVED')
   })
 
-  it('rejects: garbage code fails format guard before any DB call', async () => {
+  it('rejects: garbage code fails parse guard before any DB call', async () => {
     const tx = makeTx(makeProvider(), makeVoucher())
     setupTransaction(tx)
 
+    // 'not-a-real-code' strips to 'NOTAREALCODE' (12 chars after separators removed)
+    // → TOO_LONG branch — specific, actionable feedback rather than generic invalid.
     const result = await redeemVoucher('prov_1', 'not-a-real-code')
 
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('should fail')
-    expect(result.code).toBe('VOUCHER_NOT_FOUND')
+    expect(result.code).toBe('VOUCHER_CODE_TOO_LONG')
     // DB transaction must NOT have been invoked
     expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects: empty string returns VOUCHER_CODE_EMPTY (no DB call)', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', '   ')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_CODE_EMPTY')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects: too-short input returns VOUCHER_CODE_TOO_SHORT (no DB call)', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', '7KQ9')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_CODE_TOO_SHORT')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects: out-of-charset input returns VOUCHER_CODE_INVALID_CHARS (no DB call)', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    // Eight chars but the trailing '0' is one of the deliberately-excluded confusables.
+    const result = await redeemVoucher('prov_1', '7KQ9M2X0')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_CODE_INVALID_CHARS')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('accepts dashless full form (PAPXXXXXXXX) and routes to the same DB lookup', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', 'PAP7KQ9M2XD')
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('should be ok')
+    expect(result.canonical).toBe('PAP-7KQ9-M2XD')
+    expect(tx.promoVoucher.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { codeHash: CODE_HASH } })
+    )
+  })
+
+  it('accepts suffix-only input (the PAP- prefix is constant) and routes to the same DB lookup', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', '7KQ9M2XD')
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('should be ok')
+    expect(result.canonical).toBe('PAP-7KQ9-M2XD')
+    expect(tx.promoVoucher.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { codeHash: CODE_HASH } })
+    )
+  })
+
+  it('accepts em-dash autocorrect from mobile keyboards and routes to the same DB lookup', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', 'PAP—7KQ9—M2XD')
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('should be ok')
+    expect(result.canonical).toBe('PAP-7KQ9-M2XD')
+    expect(tx.promoVoucher.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { codeHash: CODE_HASH } })
+    )
   })
 
   it('rejects: code with valid format but no DB match', async () => {

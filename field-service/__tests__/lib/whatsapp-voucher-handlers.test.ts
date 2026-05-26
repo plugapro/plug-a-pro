@@ -269,7 +269,7 @@ describe('WhatsApp voucher redemption handlers', () => {
       expect(voucherRedemption.redeemVoucher).not.toHaveBeenCalled()
     })
 
-    it('valid code, redeemVoucher returns ok:true → sends success message with credit count → returns pj_credits', async () => {
+    it('valid code, redeemVoucher returns ok:true → sends success message with canonical + credit count → returns pj_credits', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
         makeActiveProvider(),
       )
@@ -277,6 +277,7 @@ describe('WhatsApp voucher redemption handlers', () => {
         ok: true,
         creditsAwarded: 5,
         ledgerEntryId: 'l_1',
+        canonical: 'PAP-7KQ9-M2XD',
       })
 
       const result = await handleProviderJourneyFlow(
@@ -284,13 +285,38 @@ describe('WhatsApp voucher redemption handlers', () => {
       )
 
       expect(voucherRedemption.redeemVoucher).toHaveBeenCalledWith('prov_1', 'PAP-7KQ9-M2XD')
+      // Canonical must appear in the success message so the user sees what was accepted —
+      // especially valuable when they typed it dashless or suffix-only.
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Voucher redeemed successfully'),
+        expect.stringContaining('PAP-7KQ9-M2XD'),
       )
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
         expect.stringContaining('5 credits have been added'),
+      )
+      expect(result.nextStep).toBe('pj_credits')
+    })
+
+    it('user types suffix-only — success message still echoes the canonical PAP-XXXX-XXXX form', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+        makeActiveProvider(),
+      )
+      ;(voucherRedemption.redeemVoucher as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
+        creditsAwarded: 1,
+        ledgerEntryId: 'l_1',
+        canonical: 'PAP-7KQ9-M2XD',
+      })
+
+      const result = await handleProviderJourneyFlow(
+        makeCtx('pj_redeem_voucher_awaiting_code', '7kq9m2xd'),
+      )
+
+      expect(voucherRedemption.redeemVoucher).toHaveBeenCalledWith('prov_1', '7kq9m2xd')
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('PAP-7KQ9-M2XD'),
       )
       expect(result.nextStep).toBe('pj_credits')
     })

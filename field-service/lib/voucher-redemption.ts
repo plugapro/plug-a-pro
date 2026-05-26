@@ -1,6 +1,25 @@
 import { db } from './db'
-import { voucherCodeToHash, VOUCHER_CODE_REGEX, type VoucherRedemptionResult } from './vouchers'
+import {
+  parseVoucherCode,
+  type VoucherParseFailureReason,
+  type VoucherRedemptionErrorCode,
+  type VoucherRedemptionResult,
+} from './vouchers'
 import { creditVoucherRedemptionInTransaction } from './provider-wallet'
+
+/**
+ * Maps a parser failure reason to its user-facing redemption error code.
+ * Kept exhaustive so adding a new parse reason becomes a compile-time prompt to map it.
+ */
+function parseFailureToErrorCode(reason: VoucherParseFailureReason): VoucherRedemptionErrorCode {
+  switch (reason) {
+    case 'EMPTY':         return 'VOUCHER_CODE_EMPTY'
+    case 'TOO_SHORT':     return 'VOUCHER_CODE_TOO_SHORT'
+    case 'TOO_LONG':      return 'VOUCHER_CODE_TOO_LONG'
+    case 'INVALID_CHARS': return 'VOUCHER_CODE_INVALID_CHARS'
+    case 'MALFORMED':     return 'VOUCHER_NOT_FOUND'
+  }
+}
 
 /**
  * Redeems a voucher for an approved provider.
@@ -27,14 +46,15 @@ export async function redeemVoucher(
   providerId: string,
   rawCode: string,
 ): Promise<VoucherRedemptionResult> {
-  // Reject garbage input before any DB call
-  const normalized = rawCode.replace(/\s+/g, '').toUpperCase()
-  if (!VOUCHER_CODE_REGEX.test(normalized)) {
-    return { ok: false, code: 'VOUCHER_NOT_FOUND', message: 'That voucher code is invalid or unavailable.' } as const
+  // Reject garbage input before any DB call. The parser is tolerant of dashless / suffix-only /
+  // em-dash / case variants so finger-errors don't silently fail at the DB-lookup stage.
+  const parsed = parseVoucherCode(rawCode)
+  if (!parsed.ok) {
+    const code = parseFailureToErrorCode(parsed.reason)
+    return { ok: false, code, message: 'That voucher code is invalid or unavailable.' } as const
   }
 
-  // Hash before any DB call — raw code must not appear in query logs
-  const codeHash = voucherCodeToHash(rawCode)
+  const { canonical, codeHash } = parsed
 
   const result = await db.$transaction(async (tx) => {
     // 1. Verify provider exists and is active/approved
@@ -131,7 +151,7 @@ export async function redeemVoucher(
 
     const ledgerEntryId = walletResult.ledgerEntries[0]?.id
     if (ledgerEntryId == null) throw new Error('creditVoucherRedemptionInTransaction returned no ledger entry')
-    return { ok: true, creditsAwarded: voucher.creditAmount, ledgerEntryId } as const
+    return { ok: true, creditsAwarded: voucher.creditAmount, ledgerEntryId, canonical } as const
   }).catch((error: unknown) => {
     // A P2002 on the campaign slot (step 6) means two concurrent requests both passed the
     // pre-check and both claimed separate vouchers, but only one can hold the campaign slot.

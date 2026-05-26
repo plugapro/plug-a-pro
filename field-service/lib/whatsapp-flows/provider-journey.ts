@@ -2007,9 +2007,11 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
 
     if (result.ok) {
       const n = result.creditsAwarded
+      // Echo the canonical form so the user sees exactly which voucher was accepted —
+      // useful when they typed dashless / suffix-only / em-dashed input.
       await sendText(
         ctx.phone,
-        `✅ Voucher redeemed successfully. ${n} credit${n === 1 ? ' has' : 's have'} been added to your account.\n\nReply *credits* to view your balance.`,
+        `✅ Voucher ${result.canonical} redeemed. ${n} credit${n === 1 ? ' has' : 's have'} been added to your account.\n\nReply *credits* to view your balance.`,
       )
     } else {
       await sendText(ctx.phone, mapVoucherRedemptionErrorToMessage(result.code))
