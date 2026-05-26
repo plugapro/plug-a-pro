@@ -40,6 +40,7 @@ import { DispatchControlButtons, ForceAssignButton } from './_components/Dispatc
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 const FLAG = 'admin.crud.dispatch'
+const CLOSE_OUT_FLAG = 'ops.v2.closeOut'
 const DISPATCH_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
 const JobRequestQueueSchema = z.object({
   jobRequestId: z.string().min(1),
@@ -228,7 +229,7 @@ export default async function AdminDispatchPage({
   }
 
   const [showCloseOut, dispatchCase] = await Promise.all([
-    isEnabled('ops.v2.closeOut'),
+    isEnabled(CLOSE_OUT_FLAG, { userId: admin.id }),
     selectedRequest
       ? getCaseByEntity('DISPATCH', 'JOB_REQUEST', selectedRequest.id).catch(() => null)
       : Promise.resolve(null),
@@ -241,6 +242,7 @@ export default async function AdminDispatchPage({
   async function closeCaseAction(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
+    if (!(await isEnabled(CLOSE_OUT_FLAG, { userId: activeAdmin.id }))) return
     const caseId = String(formData.get('caseId') ?? '')
     const reasonCode = String(formData.get('reasonCode') ?? '')
     const note = String(formData.get('note') ?? '') || undefined
@@ -253,6 +255,7 @@ export default async function AdminDispatchPage({
   async function reopenCaseAction(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
+    if (!(await isEnabled(CLOSE_OUT_FLAG, { userId: activeAdmin.id }))) return
     const caseId = String(formData.get('caseId') ?? '')
     if (!caseId) return
     await reopenCase(caseId, activeAdmin.id)
@@ -262,6 +265,7 @@ export default async function AdminDispatchPage({
   async function claimCaseAction(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
+    if (!(await isEnabled(CLOSE_OUT_FLAG, { userId: activeAdmin.id }))) return
     const caseId = String(formData.get('caseId') ?? '')
     const release = formData.get('release') === '1'
     if (!caseId) return
@@ -276,6 +280,7 @@ export default async function AdminDispatchPage({
   async function addNoteAction(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
+    if (!(await isEnabled(CLOSE_OUT_FLAG, { userId: activeAdmin.id }))) return
     const caseId = dispatchCaseFull?.id
     const body = String(formData.get('body') ?? '').trim()
     if (!caseId || !body) return

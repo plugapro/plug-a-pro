@@ -42,7 +42,10 @@ export default async function CustomerDetailPage({
   const { id } = await params
   const query = (await searchParams) ?? {}
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.customers', { userId: admin.id })
+  const [crudEnabled, whatsappPrefToggleEnabled] = await Promise.all([
+    isEnabled('admin.crud.customers', { userId: admin.id }),
+    isEnabled('admin.customers.whatsapp_pref_toggle', { userId: admin.id }),
+  ])
 
   const customer = await db.customer.findUnique({
     where: { id },
@@ -440,7 +443,7 @@ export default async function CustomerDetailPage({
             <Row label="Last source">{customer.whatsappMarketingSource}</Row>
           )}
 
-          {crudEnabled && (
+          {crudEnabled && whatsappPrefToggleEnabled && (
             <div className="pt-2 border-t">
               <WhatsAppMarketingToggle
                 customerId={customer.id}
