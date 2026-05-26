@@ -148,11 +148,13 @@ model ProviderVerificationWebhookEvent {
 }
 ```
 
+**`payloadHash` derivation:** `payloadHash = sha256(canonical(parsed_raw_body))` where `canonical` produces a canonicalised JSON serialisation (sorted keys, no insignificant whitespace) of the parsed vendor payload **before any redaction**. Hashing the un-redacted payload is deliberate: redaction necessarily collapses information (PII fields normalised to placeholders), and two distinct vendor events differing only in PII would produce the same redacted-hash. The hash never leaves the adapter and is only stored in the DB column `payload_hash` — the redacted payload goes in `raw_payload_redacted`. The raw payload itself is held only in adapter-local memory long enough to compute the hash and verify the signature, then dropped.
+
 **`idempotencyKey` derivation** (computed by adapter):
 
 - If vendor supplies a stable event id: `idempotencyKey = vendorKey + ":" + vendorEventId`.
 - Otherwise: `idempotencyKey = vendorKey + ":" + (vendorReference ?? "_") + ":" + (eventType ?? "_") + ":" + payloadHash`.
-- `payloadHash` is `sha256(canonicalRedactedPayload)` — canonicalised JSON (sorted keys, no whitespace) so duplicate webhooks with cosmetic differences still dedupe.
+- Since `payloadHash` uses the un-redacted canonical payload, two webhooks that differ only by whitespace/key-order in the same logical event will still dedupe.
 
 #### 3.1.5 New model — `VerificationVendorConfig`
 
@@ -256,7 +258,14 @@ model ProviderIdentityConsentEvent {
 }
 ```
 
-**Rows are never updated or deleted** (Cascade-on-verification-delete is the only delete path, and only fires when the parent verification itself is deleted — which is rare and itself audited via existing mechanisms). The `crudAction()` write surface for consent acceptance is `recordConsentAcceptanceAction` — it does an `INSERT` only, never an `UPDATE`. A test asserts this.
+**Rows are never updated or deleted** (Cascade-on-verification-delete is the only delete path, and only fires when the parent verification itself is deleted — which is rare and itself audited via existing mechanisms).
+
+**Write surface is a shared service, NOT `crudAction()`.** Consent is provider-initiated (WhatsApp message reply or PWA tickbox), not admin-initiated; `crudAction()` requires an authenticated admin role and is the wrong abstraction here. Instead, `lib/identity-verification/consent-service.ts` exports `recordConsentAcceptance(input)`. It is called from:
+
+- the PWA token-validated server action `acceptConsentAction` in `app/provider/verify/[token]/actions.ts`, and
+- the WhatsApp flow handler in `lib/whatsapp-flows/identity-verification.ts` when the user button-taps or replies "I agree".
+
+The service does an `INSERT` only — never `UPDATE` or `DELETE`. A test asserts the service surface has no update/delete paths and that direct DB writes outside the service are not present in the codebase (grep-style guard).
 
 **Sub-task — `consentTextVersion`:** `lib/identity-verification/consent-text.ts` exports a `CURRENT_CONSENT_TEXT_VERSION` constant and a `consentTextFor(vendorDisplayName)` helper that interpolates the display name into the versioned template. The hash is computed over the rendered (post-interpolation) bytes. This way, when copy changes, the version bumps and the hash naturally changes — auditors can replay what was shown.
 
@@ -351,7 +360,7 @@ export interface ParseWebhookResult {
   vendorEventId: string | null
   vendorReference: string | null
   eventType: string | null
-  payloadHash: string                    // sha256(canonical(rawBody))
+  payloadHash: string                    // sha256(canonical(parsed_raw_body)) — pre-redaction; see §3.1.4
   redactedPayload: Record<string, unknown> | null
   result: NormalizedVerificationResult | null
 }
@@ -422,14 +431,36 @@ db.$transaction(async (tx) => {
 ```
 const adapter = await getActiveAdapter(snapshot)
 const submit = await adapter.submitDocumentCheck({...snapshot, identifierPlaintext, ...})
+
+// Decide whether we need a liveness session for THIS submission.
+// Cases that require one (when config.livenessRequired === true):
+//   1. Async vendor — no immediate verdict yet, so liveness can/should run in parallel.
+//   2. Sync PASS that does NOT carry an affirmative livenessVerified — vendor decided
+//      on the documents alone; we still need the user to complete liveness before
+//      the PASS counts.
+// Cases that DO NOT need a session:
+//   - Sync verdict that already includes livenessVerified === true (vendor did liveness
+//     in the same call — rare but supported by the interface).
+//   - Sync non-PASS verdict (FAIL/INCONCLUSIVE/MANUAL_REVIEW/PROVIDER_UNAVAILABLE) —
+//     liveness wouldn't change the outcome.
+//   - config.livenessRequired === false.
+//   - Adapter has no createLivenessSession (handled downstream by applyVendorVerdict's
+//     pre-check; routes to NEEDS_MANUAL_REVIEW with PROVIDER_LIVENESS_REQUIRED_BUT_MISSING).
+const needsLiveness = config.livenessRequired && (
+  !submit.immediateResult ||
+  (submit.immediateResult.decision === 'PASS' && submit.immediateResult.livenessVerified !== true)
+)
+
 let liveness = null
-if (config.livenessRequired && adapter.createLivenessSession && !submit.immediateResult) {
+if (needsLiveness && adapter.createLivenessSession) {
   liveness = await adapter.createLivenessSession({
     verificationId, livenessReturnUrl,
   })
 }
 // drop identifierPlaintext
 ```
+
+This is the key automation lift: a vendor that returns a sync document PASS but cannot itself perform liveness no longer dead-ends in the manual queue — the orchestrator chains a liveness session in the same Phase 2, and the user completes it via the standard `AWAITING_LIVENESS` flow. The `applyVendorVerdict` pre-check in §3.3.3 remains as the safety net for the case where adapter has no `createLivenessSession`.
 
 **Phase 3 — Commit (single transaction, optimistic concurrency, two steps):**
 
@@ -486,16 +517,25 @@ The self-loop convention (`fromStatus === toStatus`) is allowed as a degenerate 
 Step B — **transition status** based on what the vendor returned. Only one of these branches runs.
 
 ```
-if (submit.immediateResult) {
-  // Verdict known synchronously: applyVendorVerdict handles the transition
-  // (SUBMITTED|RETRY_REQUIRED -> {PASSED, NEEDS_MANUAL_REVIEW}) and writes
-  // the ProviderVerificationEvent.
-  await applyVendorVerdict(tx, verificationId, submit.immediateResult, 'sync')
-} else if (liveness) {
+if (liveness) {
+  // We created a liveness session in Phase 2. This wins over an immediate sync verdict,
+  // because the sync verdict is only "PASS pending liveness" or "no verdict yet" —
+  // either way the next step is the user completing liveness. The vendor will return
+  // the final verdict via webhook after the liveness session completes.
   await transitionTo(tx, verificationId, 'AWAITING_LIVENESS', {
     reasonCode: 'AWAITING_LIVENESS_FROM_VENDOR',
+    metadata: submit.immediateResult ? { pendingPreLivenessDecision: submit.immediateResult.decision } : undefined,
   })
+} else if (submit.immediateResult) {
+  // Sync verdict, no liveness needed (vendor already did it, OR config doesn't require liveness,
+  // OR adapter has no createLivenessSession). applyVendorVerdict handles the transition
+  // (SUBMITTED|RETRY_REQUIRED -> {PASSED, NEEDS_MANUAL_REVIEW}) and writes the
+  // ProviderVerificationEvent. Its pre-check rejects PASS-without-liveness when config
+  // requires liveness but adapter cannot create a session.
+  await applyVendorVerdict(tx, verificationId, submit.immediateResult, 'sync')
 } else {
+  // Async vendor, no liveness needed (covers vendors that do liveness inside their own
+  // doc-check flow and don't expose a separate session).
   await transitionTo(tx, verificationId, 'PROCESSING', {
     reasonCode: 'AWAITING_VENDOR_WEBHOOK',
   })
@@ -503,6 +543,8 @@ if (submit.immediateResult) {
 
 after(() => sendDownstreamNotify(verificationId))
 ```
+
+Branch ordering matters: the `liveness` branch now runs first, so an immediate PASS verdict from a vendor that didn't perform liveness is properly held until the user completes the session we just created. The `applyVendorVerdict` immediate-PASS path now fires only when no liveness is needed, eliminating the previous "PASS-without-liveness → manual review" dead-end as long as the adapter supports session-based liveness.
 
 `transitionTo()` validates the move against `ALLOWED_TRANSITIONS` (§3.1.3) and writes a `ProviderVerificationEvent`. `applyVendorVerdict()` does the same internally — both share the same transition helper so status writes can't drift between paths.
 
@@ -514,12 +556,13 @@ Earlier drafts had a `decideNextStatus(submit, liveness)` helper that returned a
 
 **Liveness-required pre-check (runs FIRST, before the decision matrix):**
 
-If `config.livenessRequired === true` AND `result.decision === 'PASS'` AND `result.livenessVerified !== true`, the PASS is rejected — the vendor cannot clear the high-assurance gate without an explicit liveness-passed signal. The decision is overridden:
+The orchestrator (§3.3.1) already prevents most "PASS without liveness" cases by chaining a liveness session in Phase 2 when config requires liveness and the adapter supports `createLivenessSession`. This pre-check is the safety net for the residual cases:
 
-- If `adapter.createLivenessSession` is defined AND the verification is currently in `SUBMITTED` / `RETRY_REQUIRED` (i.e., we have not yet attempted liveness for this attempt): transition to `NEEDS_MANUAL_REVIEW` with `failureReasonCode = PROVIDER_LIVENESS_REQUIRED_BUT_MISSING`. (The orchestrator could create a session post-hoc, but doing so out-of-band from Phase 2 reintroduces vendor I/O outside the contract; the cleaner path is admin retry, which goes through Phase 1-3 again.)
-- Otherwise (liveness was attempted and didn't pass, or adapter has no `createLivenessSession`): `NEEDS_MANUAL_REVIEW` with `failureReasonCode = PROVIDER_LIVENESS_FAILED`.
+- **Adapter has no `createLivenessSession`** AND config requires liveness AND a `PASS` verdict arrives (sync or via webhook) with `livenessVerified !== true`: `NEEDS_MANUAL_REVIEW` with `failureReasonCode = PROVIDER_LIVENESS_REQUIRED_BUT_MISSING`. Without the ability to create a session, we cannot complete liveness for this adapter and must escalate.
+- **Liveness was attempted and did not pass** (`livenessVerified === false` arrives via webhook): `NEEDS_MANUAL_REVIEW` with `failureReasonCode = PROVIDER_LIVENESS_FAILED`.
+- **Liveness was attempted and is ambiguous** (`livenessVerified === null` arrives via webhook from an adapter that should have set it): `NEEDS_MANUAL_REVIEW` with `failureReasonCode = PROVIDER_LIVENESS_RESULT_MISSING` (defensive — protects against adapters returning malformed results).
 
-The pre-check makes "document-only sync PASS without liveness" unable to satisfy a liveness-required configuration, no matter what an adapter returns.
+In all three cases, the pre-check makes "document-only sync/async PASS without liveness" unable to satisfy a liveness-required configuration, no matter what an adapter returns and no matter how an upstream change might bypass Phase 2's chaining logic.
 
 **Decision matrix (applied after the liveness pre-check passes):**
 
@@ -794,8 +837,11 @@ ALTER TABLE provider_identity_consent_events ENABLE ROW LEVEL SECURITY;
 - `freeze_vendor_verdicts = true`: PASS verdict logged, status routed to `NEEDS_MANUAL_REVIEW` with `VENDOR_VERDICTS_FROZEN`.
 - `liveness.degraded_kill_switch = true`: liveness-required vendor + liveness-required case → routes to `NEEDS_MANUAL_REVIEW`; assurance never downgraded.
 - Pilot allowlist excludes a provider → orchestrator falls back to manual path.
-- **Liveness pre-check on immediate PASS:** vendor returns `decision: PASS` with `livenessVerified !== true` AND `config.livenessRequired = true` → status `NEEDS_MANUAL_REVIEW` with `PROVIDER_LIVENESS_REQUIRED_BUT_MISSING` (when adapter has `createLivenessSession` and we haven't attempted it) or `PROVIDER_LIVENESS_FAILED` (otherwise). Document-only sync PASS cannot satisfy a liveness-required configuration.
+- **Immediate PASS without liveness — adapter supports session:** vendor returns `decision: PASS, livenessVerified !== true` AND `config.livenessRequired = true` AND `adapter.createLivenessSession` is defined → orchestrator creates a session in Phase 2, status transitions to `AWAITING_LIVENESS` (NOT manual review). `metadata.pendingPreLivenessDecision = 'PASS'` is recorded on the transition event. This is the automation lift — PASS without liveness used to dead-end in manual review, now it routes to the user's liveness step.
+- **Immediate PASS without liveness — adapter has NO session support:** same verdict, but `adapter.createLivenessSession` undefined → `NEEDS_MANUAL_REVIEW` with `PROVIDER_LIVENESS_REQUIRED_BUT_MISSING` (the pre-check safety net).
+- **Webhook-arriving FAIL after pre-liveness PASS:** verification in `AWAITING_LIVENESS` with `metadata.pendingPreLivenessDecision = 'PASS'`; vendor's post-liveness webhook returns `livenessVerified = false` → `NEEDS_MANUAL_REVIEW` with `PROVIDER_LIVENESS_FAILED`.
 - **Liveness verified PASS:** `decision: PASS` with `livenessVerified === true` AND `confidence ≥ threshold` → `PASSED` + `assuranceLevel = HIGH`.
+- **Malformed adapter result (defensive):** `decision: PASS, livenessVerified === null` arrives via webhook from an adapter that should have set the flag → `NEEDS_MANUAL_REVIEW` with `PROVIDER_LIVENESS_RESULT_MISSING`.
 - **Contention path writes self-loop event:** simulate two concurrent `submitVerificationForAutomation` calls; loser's `ProviderVerificationEvent` row has `fromStatus === toStatus` and `reasonCode = ORCHESTRATOR_CONTENTION`. The verification status is NOT changed by the loser.
 
 ### 6.3 Webhook route
@@ -812,8 +858,9 @@ ALTER TABLE provider_identity_consent_events ENABLE ROW LEVEL SECURITY;
 ### 6.4 Channel changes
 
 - WhatsApp flow with `manual` config active: post-selfie status = `NEEDS_MANUAL_REVIEW` (regression on current behavior).
-- WhatsApp flow with `smile_id` + immediate PASS: status `PASSED`, neutral copy sent (no "buy credits" string in message body).
-- WhatsApp flow with vendor needing liveness: status `AWAITING_LIVENESS`, link is the signed Plug A Pro URL (no vendor URL leaked).
+- WhatsApp flow with `smile_id` + immediate `PASS, livenessVerified: true` + `livenessRequired: true`: status `PASSED`, neutral copy sent (no "buy credits" string in message body).
+- WhatsApp flow with `smile_id` + immediate `PASS, livenessVerified: false/null` + `livenessRequired: true`: status `AWAITING_LIVENESS`, link is the signed Plug A Pro URL (no vendor URL leaked). This is the new automation path that previously routed to manual review.
+- WhatsApp flow with vendor needing liveness (async, no immediate result): status `AWAITING_LIVENESS`, link is the signed Plug A Pro URL (no vendor URL leaked).
 - PWA liveness `route.ts` (valid session): response is 302 with `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers set.
 - PWA liveness `route.ts` (expired session): 302 to `/provider/verify/[token]/liveness/expired`; no decrypt, no `SIGNED_URL_ISSUED` log written.
 - PWA liveness expired page: `requestNewLivenessLinkAction` server action invokes `submitVerificationForAutomation` and renders the appropriate next state.
@@ -835,7 +882,9 @@ ALTER TABLE provider_identity_consent_events ENABLE ROW LEVEL SECURITY;
 
 ### 6.7 Consent log and pilot allowlist
 
-- `recordConsentAcceptanceAction` INSERTs a `ProviderIdentityConsentEvent` row with the rendered text hash; the row is never UPDATEd or DELETEd by the action (assert via test).
+- `recordConsentAcceptance` (shared service in `lib/identity-verification/consent-service.ts`) INSERTs a `ProviderIdentityConsentEvent` row with the rendered text hash; the service has no UPDATE or DELETE paths.
+- `acceptConsentAction` (PWA server action) and the WhatsApp consent-step handler both call `recordConsentAcceptance` and write nothing else to the consent table directly.
+- Grep test asserts no `prisma.providerIdentityConsentEvent.update` or `.delete` calls exist anywhere in the repo outside the service module's tests.
 - Vendor change mid-session: simulate `VerificationVendorConfig.active` flip after first consent → orchestrator re-prompts → second `ProviderIdentityConsentEvent` row inserted with `metadata.previousConsentEventId` set to first row's id; first row is untouched.
 - Pilot allowlist uniqueness: two rows with the same `providerId` cannot be inserted (raw SQL partial unique index); two rows with the same `providerApplicationId` cannot be inserted; a row with both `providerId IS NULL` AND `providerApplicationId IS NULL` is rejected by the CHECK constraint.
 
