@@ -17,11 +17,21 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function isTestRuntime(): boolean {
+  // Vitest sets VITEST=true automatically; NODE_ENV=test is the conventional
+  // Node test marker. Either is sufficient. Any other env (including
+  // 'staging', 'preview', or unset) is treated as a non-test runtime and
+  // requires a real pepper.
+  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true'
+}
+
 export function getOtpSecurityConfig(): OtpSecurityConfig {
   const pepper = process.env.OTP_HASH_PEPPER?.trim()
 
-  if (!pepper && process.env.NODE_ENV === 'production') {
-    throw new Error('OTP_HASH_PEPPER is required for OTP security in production')
+  if (!pepper && !isTestRuntime()) {
+    throw new Error(
+      'OTP_HASH_PEPPER is required outside of test runtimes (NODE_ENV=test or VITEST=true)',
+    )
   }
 
   return {

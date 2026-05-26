@@ -97,8 +97,14 @@ async function auditGateEvent(params: {
         ...params.after,
       },
     })
-  } catch {
-    console.warn('[auth-session-gate] audit write failed', { action: params.action })
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: 'audit.write_failed',
+      surface: 'auth-session-gate',
+      action: params.action,
+      sourceRoute: params.sourceRoute,
+      reason: err instanceof Error ? err.name : 'unknown',
+    }))
   }
 }
 
