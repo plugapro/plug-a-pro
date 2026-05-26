@@ -134,9 +134,15 @@ describe('POST /api/auth/provider/verify-code security gate', () => {
     expect(body).toMatchObject({
       ok: false,
       code: 'ACCOUNT_LOCKED',
+      // Provider portal must surface calm copy, not the generic "Something went
+      // wrong" fallback. Regression caught on production retest 2026-05-26
+      // when the OTP migration hadn't landed and the gate's fail-closed
+      // response flowed through workerVerifyMessageForCode's default branch.
+      message: "We couldn't complete sign in securely. Please try again in a few minutes or request a new code.",
       traceId: 'trace-provider-locked',
       error: {
         code: 'ACCOUNT_LOCKED',
+        reason: "We couldn't complete sign in securely. Please try again in a few minutes or request a new code.",
         traceId: 'trace-provider-locked',
         step: 'Worker portal verify-code',
       },

@@ -224,6 +224,13 @@ export function workerVerifyMessageForCode(code: DiagnosticCode | WorkerPortalAc
       return 'Your provider login could not be linked automatically. Please contact support.'
     case 'DUPLICATE_WORKER_PROFILE':
       return 'We found more than one provider account for this login. Please contact support.'
+    case 'ACCOUNT_LOCKED':
+      // Returned when the session-issuance security gate fails closed — either
+      // because the account has been auto-locked after an unrequested-OTP
+      // report (security.otp.report flag on) or because the gate's state
+      // lookup itself errored. Calm, non-revealing copy; "try again shortly"
+      // covers both lock-expiry and transient infra issues.
+      return "We couldn't complete sign in securely. Please try again in a few minutes or request a new code."
     default:
       return 'Something went wrong. Please try again or contact support.'
   }
@@ -255,6 +262,8 @@ export function statusForWorkerVerifyCode(code: DiagnosticCode | WorkerPortalAcc
     case 'AUTH_SESSION_MISSING':
     case 'WORKER_AUTH_IDENTITY_MISSING':
       return 401
+    case 'ACCOUNT_LOCKED':
+      return 423
     default:
       return 500
   }
