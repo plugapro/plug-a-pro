@@ -51,6 +51,9 @@ async function acceptLead(formData: FormData) {
     if (result.reason === 'PROVIDER_NOT_APPROVED') {
       redirect(`/provider/leads/${leadId}?acceptError=approval`)
     }
+    if (result.reason === 'IDENTITY_NOT_VERIFIED') {
+      redirect(`/provider/leads/${leadId}?acceptError=identity`)
+    }
     if (result.reason === 'EXPIRED') {
       redirect(`/provider/leads/${leadId}?acceptError=expired`)
     }
@@ -340,6 +343,19 @@ export default async function LeadDetailPage({
           </AlertCallout>
         )}
 
+        {resolvedSearchParams.acceptError === 'identity' && (
+          <AlertCallout
+            tone="warning"
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link href="/provider/verification">Verify identity</Link>
+              </Button>
+            }
+          >
+            Verify your identity before accepting this selected job. Customer direct contact details remain locked and no credit was deducted.
+          </AlertCallout>
+        )}
+
         {resolvedSearchParams.acceptError === 'expired' && (
           <AlertCallout tone="warning">
             This lead has expired and can no longer be accepted. No credits were used.
@@ -352,7 +368,7 @@ export default async function LeadDetailPage({
           </AlertCallout>
         )}
 
-        {resolvedSearchParams.acceptError && !['credits', 'inactive', 'approval', 'expired', 'taken'].includes(resolvedSearchParams.acceptError) && (
+        {resolvedSearchParams.acceptError && !['credits', 'inactive', 'approval', 'identity', 'expired', 'taken'].includes(resolvedSearchParams.acceptError) && (
           <AlertCallout tone="danger">
             This lead could not be accepted. It may no longer be available.
           </AlertCallout>

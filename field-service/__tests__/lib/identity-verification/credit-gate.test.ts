@@ -73,12 +73,25 @@ describe('paid credit identity gate', () => {
     })
   })
 
+  it('blocks providers whose coarse KYC status is not verified even with high-assurance verification', async () => {
+    const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
+    mockProviderFindUnique.mockResolvedValue({ kycStatus: 'SUBMITTED' })
+    mockFindFirst.mockResolvedValue({ id: 'ver-1', providerId: 'provider-1' })
+
+    await expect(assertIdentityVerifiedForCredits('provider-1')).rejects.toMatchObject({
+      code: 'IDENTITY_NOT_VERIFIED',
+    })
+    expect(mockFindFirst).not.toHaveBeenCalled()
+  })
+
   it('uses the supplied Prisma client when checking inside a transaction', async () => {
     const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
     const txFindFirst = vi.fn().mockResolvedValue({ id: 'ver-tx', providerId: 'provider-1' })
+    const txProviderFindUnique = vi.fn().mockResolvedValue({ kycStatus: 'VERIFIED' })
 
     await expect(
       assertIdentityVerifiedForCredits('provider-1', {
+        provider: { findUnique: txProviderFindUnique },
         providerIdentityVerification: { findFirst: txFindFirst },
       }),
     ).resolves.toEqual({
@@ -86,6 +99,10 @@ describe('paid credit identity gate', () => {
       verificationId: 'ver-tx',
     })
 
+    expect(txProviderFindUnique).toHaveBeenCalledWith({
+      where: { id: 'provider-1' },
+      select: { kycStatus: true },
+    })
     expect(txFindFirst).toHaveBeenCalledTimes(1)
     expect(mockFindFirst).not.toHaveBeenCalled()
   })

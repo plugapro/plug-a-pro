@@ -76,5 +76,32 @@ describe('cross-channel release harness', () => {
     expect(result.ok).toBe(false)
     expect(result.reason).toBe('provider_preview_response_consumed_credits')
   })
+
+  it('blocks identity-unverified selected provider without debiting credits or unlocking details', async () => {
+    // Simulates the selected-provider IDENTITY_NOT_VERIFIED branch:
+    // acceptSelectedProviderJob returns { ok: false, reason: 'IDENTITY_NOT_VERIFIED' },
+    // so the harness sees an ok=false acceptance with no creditDebited.
+    const providerFinalAccept = vi
+      .fn<() => Promise<{ ok: boolean; alreadyUnlocked?: boolean; creditDebited?: number }>>()
+      .mockResolvedValue({ ok: false })
+
+    const result = await runCrossChannelHarness('quick_match', {
+      selectMatchingMode: async () => undefined,
+      providerRespondAvailable: async () => ({ creditsDeducted: 0 }),
+      customerSelectProvider: async () => undefined,
+      providerFinalAccept,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('provider_final_acceptance_failed')
+    // Final-accept timeline marker must not be reached — proves the selected
+    // provider was blocked before credit debit / customer-detail unlock.
+    expect(result.timeline).not.toContain('provider_final_accepted')
+    expect(providerFinalAccept).toHaveBeenCalledTimes(1)
+    // The mocked final-accept never reports creditDebited, mirroring the
+    // selected-provider acceptance path that bails before any wallet mutation
+    // when identity verification fails.
+    expect((await providerFinalAccept.mock.results[0]!.value).creditDebited).toBeUndefined()
+  })
 })
 

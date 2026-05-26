@@ -56,6 +56,7 @@ type LeadRejected = {
     | 'EXPIRED'
     | 'TAKEN'
     | 'INSUFFICIENT_CREDITS'
+    | 'IDENTITY_NOT_VERIFIED'
     | 'PROVIDER_NOT_APPROVED'
     | 'WALLET_SUSPENDED'
     | 'CONCURRENT_UNLOCK'
@@ -252,6 +253,9 @@ export async function acceptLead(params: {
     }
     if (selectedResult.reason === 'DUPLICATE_ACCEPT_IGNORED') {
       return { ok: false, reason: 'CONCURRENT_UNLOCK' }
+    }
+    if (selectedResult.reason === 'IDENTITY_NOT_VERIFIED') {
+      return { ok: false, reason: 'IDENTITY_NOT_VERIFIED' }
     }
     return { ok: false, reason: 'LEAD_ACCEPTANCE_FAILED' }
   }
