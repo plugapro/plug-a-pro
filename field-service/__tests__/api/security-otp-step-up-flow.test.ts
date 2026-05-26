@@ -5,6 +5,7 @@ import { STEP_UP_COOKIE_NAME } from '@/lib/otp-security-crypto'
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  isEnabled: vi.fn(),
   recordAuditLog: vi.fn(),
   completeStepUp: vi.fn(),
   cookies: vi.fn(),
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }))
 vi.mock('@/lib/db', () => ({ db: mocks.db }))
+vi.mock('@/lib/flags', () => ({ isEnabled: mocks.isEnabled }))
 vi.mock('@/lib/audit', () => ({ recordAuditLog: mocks.recordAuditLog }))
 vi.mock('@/lib/otp-security', () => ({ completeStepUp: mocks.completeStepUp }))
 vi.mock('next/headers', () => ({ cookies: mocks.cookies }))
@@ -96,6 +98,7 @@ describe('OTP step-up browser flow', () => {
     })
     mocks.completeStepUp.mockResolvedValue({ ok: true })
     mocks.db.adminUser.findFirst.mockResolvedValue(null)
+    mocks.isEnabled.mockResolvedValue(true)
   })
 
   it('lets an expired-lock re-OTP reach checkpoint and complete ack into a full session', async () => {

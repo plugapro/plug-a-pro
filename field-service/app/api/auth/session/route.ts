@@ -16,6 +16,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { buildSessionCookieHeader, resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
 import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
+import { isEnabled } from '@/lib/flags'
 import { normalizePhone } from '@/lib/utils'
 
 function phoneE164FromSupabase(rawPhone: unknown): string | null {
@@ -126,6 +127,14 @@ export async function POST(request: NextRequest) {
     const phoneE164 = phoneE164FromSupabase(user.phone)
 
     if (!phoneE164) {
+      const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
+      response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
+      return response
+    }
+
+    const otpSecurityEnabled = await isEnabled('security.otp.report', { userId: user.id })
+
+    if (!otpSecurityEnabled) {
       const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
       response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
       return response
