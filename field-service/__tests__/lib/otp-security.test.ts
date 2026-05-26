@@ -151,6 +151,11 @@ const mocks = vi.hoisted(() => {
         if (!row) throw new Error(`AccountSecurityState not found: ${where.phoneE164}`)
         return applyData(row, data)
       }),
+      updateMany: vi.fn(async ({ where, data }: { where?: Row; data: Row }) => {
+        const rows = state.accountSecurityStates.filter((row) => matchesWhere(row, where))
+        rows.forEach((row) => applyData(row, data))
+        return { count: rows.length }
+      }),
     },
     $transaction: vi.fn(async (input: any) => {
       if (typeof input === 'function') return input(db)
@@ -771,6 +776,42 @@ describe('otp security service', () => {
     lockedState.stepUpSetAt = new Date('2026-05-26T09:59:00.000Z')
     mocks.state.securityEvents = []
     vi.mocked(recordAuditLog).mockClear()
+
+    await expect(completeStepUp(PHONE, USER_ID)).resolves.toEqual({
+      ok: false,
+      reason: 'locked',
+    })
+
+    await expect(getAccountSecurityState(PHONE)).resolves.toMatchObject({
+      lockedUntil: new Date('2026-05-26T10:30:00.000Z'),
+      lockReason: 'admin_relock',
+      stepUpRequired: true,
+      stepUpSetAt: new Date('2026-05-26T09:59:00.000Z'),
+    })
+    expect(securityEvents('STEP_UP_COMPLETED')).toHaveLength(0)
+    expect(recordAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'security.step_up.completed' }),
+      expect.anything(),
+    )
+  })
+
+  it('does not clear an active lock inserted between the eligibility read and guarded update', async () => {
+    await applyLockAndStepUp(PHONE, USER_ID)
+    const state = mocks.state.accountSecurityStates.find((row) => row.phoneE164 === PHONE)!
+    state.lockedUntil = null
+    state.lockReason = null
+    state.stepUpRequired = true
+    state.stepUpSetAt = new Date('2026-05-26T09:59:00.000Z')
+    mocks.state.securityEvents = []
+    vi.mocked(recordAuditLog).mockClear()
+
+    vi.mocked(mocks.db.accountSecurityState.findUnique).mockImplementationOnce(async ({ where }: { where: Row }) => {
+      const row = mocks.state.accountSecurityStates.find((item) => item.phoneE164 === where.phoneE164)!
+      const snapshotBeforeRace = { ...row }
+      row.lockedUntil = new Date('2026-05-26T10:30:00.000Z')
+      row.lockReason = 'admin_relock'
+      return snapshotBeforeRace
+    })
 
     await expect(completeStepUp(PHONE, USER_ID)).resolves.toEqual({
       ok: false,

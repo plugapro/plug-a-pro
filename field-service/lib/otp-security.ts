@@ -99,6 +99,10 @@ type OtpSecurityClient = {
       where: { phoneE164: string }
       data: Record<string, unknown>
     }): Promise<AccountSecurityState>
+    updateMany(args: {
+      where: Record<string, unknown>
+      data: Record<string, unknown>
+    }): Promise<{ count: number }>
   }
   $transaction<T>(input: (client: OtpSecurityClient) => Promise<T>): Promise<T>
 }
@@ -713,18 +717,18 @@ export async function completeStepUp(
   const now = new Date()
 
   return serviceDb().$transaction(async (client) => {
-    const state = await client.accountSecurityState.findUnique({ where: { phoneE164 } })
-
-    if (!state?.stepUpRequired) {
-      return { ok: false, reason: 'not_required' }
-    }
-
-    if (state.lockedUntil && state.lockedUntil > now) {
-      return { ok: false, reason: 'locked' }
-    }
-
-    await client.accountSecurityState.update({
+    const stateBeforeAttempt = await client.accountSecurityState.findUnique({
       where: { phoneE164 },
+    })
+    const completion = await client.accountSecurityState.updateMany({
+      where: {
+        phoneE164,
+        stepUpRequired: true,
+        OR: [
+          { lockedUntil: null },
+          { lockedUntil: { lte: now } },
+        ],
+      },
       data: {
         userId: userId ?? null,
         lockedUntil: null,
@@ -733,6 +737,17 @@ export async function completeStepUp(
         stepUpSetAt: null,
       },
     })
+
+    if (completion.count !== 1) {
+      const stateAfterAttempt = await client.accountSecurityState.findUnique({
+        where: { phoneE164 },
+      })
+      const stateForReason = stateAfterAttempt ?? stateBeforeAttempt
+      if (stateForReason?.lockedUntil && stateForReason.lockedUntil > now) {
+        return { ok: false, reason: 'locked' }
+      }
+      return { ok: false, reason: 'not_required' }
+    }
 
     await createSecurityEvent(client, {
       phoneE164,
