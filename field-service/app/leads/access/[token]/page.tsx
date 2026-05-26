@@ -64,6 +64,8 @@ function acceptErrorCode(reason: string) {
   switch (reason) {
     case 'INSUFFICIENT_CREDITS':
       return 'INSUFFICIENT_CREDITS'
+    case 'IDENTITY_NOT_VERIFIED':
+      return 'IDENTITY_NOT_VERIFIED'
     case 'PROVIDER_NOT_APPROVED':
       return 'PROVIDER_NOT_APPROVED'
     case 'EXPIRED':
@@ -205,6 +207,16 @@ async function acceptLeadWithToken(formData: FormData) {
         action: 'accept',
         traceId,
         message: 'Your provider application must be approved before you can accept leads.',
+        creditDeducted: false,
+      })
+    }
+    if (result.reason === 'IDENTITY_NOT_VERIFIED') {
+      redirectLeadActionError(token, {
+        error: 'identity',
+        errorCode: 'IDENTITY_NOT_VERIFIED',
+        action: 'accept',
+        traceId,
+        message: 'Verify your identity before accepting this selected job.',
         creditDeducted: false,
       })
     }
@@ -992,8 +1004,22 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
+        {resolvedSearchParams.error === 'identity' && (
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
+            <p className="font-medium">Identity verification is needed before accepting this selected job.</p>
+            <p className="mt-1">No credit was deducted and customer contact details remain hidden.</p>
+            <Button asChild size="sm" variant="outline" className="mt-3">
+              <Link href="/provider/verification">Verify identity</Link>
+            </Button>
+            <p className="mt-2 text-xs">
+              Error code: IDENTITY_NOT_VERIFIED
+              {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
+            </p>
+          </div>
+        )}
+
         {resolvedSearchParams.error &&
-          !['credits', 'inactive', 'approval'].includes(resolvedSearchParams.error) && (
+          !['credits', 'inactive', 'approval', 'identity'].includes(resolvedSearchParams.error) && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               <p className="font-medium">
                 {resolvedSearchParams.action === 'decline'

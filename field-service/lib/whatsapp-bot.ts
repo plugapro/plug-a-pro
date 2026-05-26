@@ -4065,6 +4065,35 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         await sendText(phone, 'Your acceptance is already being processed. Please wait a moment.')
         return
       }
+      if (result.reason === 'IDENTITY_NOT_VERIFIED') {
+        let verificationUrl = getPublicAppUrl('/provider/verification')
+        try {
+          const { issueProviderIdentityVerificationLink } = await import('./identity-verification/link')
+          const verificationLink = await issueProviderIdentityVerificationLink({
+            providerId: provider.id,
+            channel: 'WHATSAPP',
+          })
+          verificationUrl = verificationLink.verificationUrl ?? verificationUrl
+        } catch (linkError) {
+          console.error('[whatsapp-bot] selected-provider identity verification link issue failed', {
+            traceId,
+            leadId,
+            providerId: provider.id,
+            error: linkError instanceof Error ? linkError.message : String(linkError),
+          })
+        }
+
+        const body =
+          '🛡️ *Identity check required*\n\n' +
+          'Please verify your identity before accepting this selected job. No credit was deducted and the customer details remain locked.'
+
+        if (verificationUrl) {
+          await sendCtaUrl(phone, body, ctaLabelFor('identity_verification'), verificationUrl)
+        } else {
+          await sendText(phone, `${body}\n\nReply *verify identity* to continue.`)
+        }
+        return
+      }
       if (result.reason === 'CREDIT_APPLICATION_FAILED') {
         const supportNum = process.env.SUPPORT_WHATSAPP_NUMBER ?? ''
         await sendText(

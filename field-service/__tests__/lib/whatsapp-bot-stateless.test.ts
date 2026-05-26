@@ -13,6 +13,7 @@ const {
   mockSendText,
   mockSendButtons,
   mockSendCtaUrl,
+  mockIssueVerificationLink,
   mockBuildAcceptedLeadContactUrlForProvider,
 } = vi.hoisted(() => ({
   mockDb: {
@@ -43,6 +44,7 @@ const {
   mockSendText: vi.fn(),
   mockSendButtons: vi.fn(),
   mockSendCtaUrl: vi.fn(),
+  mockIssueVerificationLink: vi.fn(),
   mockBuildAcceptedLeadContactUrlForProvider: vi.fn(),
 }))
 
@@ -76,6 +78,9 @@ vi.mock('@/lib/matching-engine', () => ({ acceptLead: mockAcceptLead, declineLea
 vi.mock('@/lib/matching/service', () => ({ acceptAssignmentOffer: mockAcceptAssignmentOffer }))
 vi.mock('@/lib/selected-provider-acceptance', () => ({
   acceptSelectedProviderJob: mockAcceptSelectedProviderJob,
+}))
+vi.mock('@/lib/identity-verification/link', () => ({
+  issueProviderIdentityVerificationLink: mockIssueVerificationLink,
 }))
 vi.mock('@/lib/customer-shortlists', () => ({
   declineSelectedProviderJob: mockDeclineSelectedProviderJob,
@@ -1869,6 +1874,13 @@ describe('handleSelectedProviderConfirmation — new failure branches', () => {
     mockSendButtons.mockResolvedValue('msg-buttons')
     mockSendCtaUrl.mockResolvedValue('msg-cta')
     mockSendJourneyRecovery.mockResolvedValue(undefined)
+    mockIssueVerificationLink.mockResolvedValue({
+      verificationId: 'verification-1',
+      verificationUrl: 'https://app.plugapro.co.za/provider/verify/token-1',
+      expiresAt: new Date(Date.now() + 15 * 60_000),
+      reused: false,
+      status: 'NOT_STARTED',
+    })
     mockDb.lead.findFirst.mockResolvedValue(null)
     mockDb.providerApplication.findFirst.mockResolvedValue(null)
     mockDb.providerApplication.findUnique.mockResolvedValue(null)
@@ -1909,6 +1921,29 @@ describe('handleSelectedProviderConfirmation — new failure branches', () => {
       .join('\n')
     expect(texts).toMatch(/credit was applied/i)
     expect(texts).toMatch(/contact support/i)
+  })
+
+  it('sends identity verification CTA when IDENTITY_NOT_VERIFIED blocks confirm_accept', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'IDENTITY_NOT_VERIFIED',
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-idv-1'))
+
+    expect(mockIssueVerificationLink).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      channel: 'WHATSAPP',
+    })
+    expect(mockSendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Identity check required'),
+      'Verify identity',
+      'https://app.plugapro.co.za/provider/verify/token-1',
+    )
+    expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('Not enough credits'))
+    expect(mockSendJourneyRecovery).not.toHaveBeenCalled()
   })
 
   it('sends job-not-found message when NOT_FOUND on confirm_decline', async () => {

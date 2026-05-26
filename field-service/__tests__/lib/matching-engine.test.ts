@@ -226,6 +226,30 @@ describe('matching-engine compatibility wrappers', () => {
     expect(mockAcceptAssignmentOffer).not.toHaveBeenCalled()
   })
 
+  it('acceptLead preserves identity-verification blocks from selected-provider acceptance', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      customerSelectedAt: new Date('2026-05-10T08:00:00.000Z'),
+      jobRequest: {
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'IDENTITY_NOT_VERIFIED',
+    })
+
+    const result = await acceptLead({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'IDENTITY_NOT_VERIFIED',
+    })
+    expect(mockAcceptAssignmentOffer).not.toHaveBeenCalled()
+  })
+
   it('acceptLead blocks non-selected legacy accepts and never charges', async () => {
     mockDb.lead.findUnique.mockResolvedValue({
       id: 'lead-1',
