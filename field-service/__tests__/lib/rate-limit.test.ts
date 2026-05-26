@@ -50,6 +50,7 @@ describe('OTP rate limiting', () => {
 
     const {
       checkOtpSendLimit,
+      checkOtpReportLimit,
       checkOtpVerifyLimit,
       checkProviderLookupLimit,
       checkPublicProviderSendCodeLimit,
@@ -61,6 +62,11 @@ describe('OTP rate limiting', () => {
       retryAfterMs: 60_000,
     })
     await expect(checkOtpVerifyLimit({ phone: '+27820000000' })).resolves.toEqual({
+      ok: false,
+      code: 'limiter_unavailable',
+      retryAfterMs: 60_000,
+    })
+    await expect(checkOtpReportLimit({ ip: '203.0.113.10' })).resolves.toEqual({
       ok: false,
       code: 'limiter_unavailable',
       retryAfterMs: 60_000,
@@ -130,5 +136,19 @@ describe('OTP rate limiting', () => {
       code: 'ip_phone_limit',
     })
     await expect(checkPublicProviderSendCodeLimit({ phone: '+27820000004', ip: '203.0.113.22' })).resolves.toEqual({ ok: true })
+  })
+
+  it('limits OTP report attempts by trusted IP', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+    process.env.OTP_REPORT_LIMIT_PER_IP_HOUR = '1'
+
+    const { checkOtpReportLimit } = await import('@/lib/rate-limit')
+
+    await expect(checkOtpReportLimit({ ip: '8.8.8.8', ua: 'vitest' })).resolves.toEqual({ ok: true })
+    await expect(checkOtpReportLimit({ ip: '8.8.8.8', ua: 'vitest' })).resolves.toMatchObject({
+      ok: false,
+      code: 'ip_limit',
+    })
+    await expect(checkOtpReportLimit({ ip: '8.8.4.4', ua: 'vitest' })).resolves.toEqual({ ok: true })
   })
 })

@@ -8,6 +8,7 @@ type LimiterKey =
   | 'sendByPhone'
   | 'sendByIp'
   | 'verifyByPhone'
+  | 'otpReportByIp'
   | 'providerSendCodePublicByIpPhone'
   | 'providerLookupByPhone'
   | 'providerLookupByIp'
@@ -47,6 +48,11 @@ function configs(): Record<LimiterKey, LimitConfig> {
     verifyByPhone: {
       name: 'verifyByPhone',
       limit: envInt('OTP_VERIFY_LIMIT_PER_PHONE_HOUR', 10),
+      windowSec: HOUR,
+    },
+    otpReportByIp: {
+      name: 'otpReportByIp',
+      limit: envInt('OTP_REPORT_LIMIT_PER_IP_HOUR', 60),
       windowSec: HOUR,
     },
     providerSendCodePublicByIpPhone: {
@@ -303,6 +309,27 @@ export async function checkOtpVerifyLimit(params: {
     return {
       ok: false,
       code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'verify_limit',
+      retryAfterMs: decision.retryAfterMs,
+    }
+  }
+  return { ok: true }
+}
+
+export type CheckOtpReportLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'ip_limit' | 'limiter_unavailable'; retryAfterMs: number }
+
+export async function checkOtpReportLimit(params: {
+  ip?: string | null
+  ua?: string | null
+  context?: RateLimitContext
+}): Promise<CheckOtpReportLimitResult> {
+  const identifier = params.ip?.trim() || 'unknown'
+  const decision = await consume('otpReportByIp', `ip:${identifier}`)
+  if (!decision.ok) {
+    return {
+      ok: false,
+      code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
       retryAfterMs: decision.retryAfterMs,
     }
   }

@@ -166,6 +166,7 @@ describe('proxy admin access', () => {
     '/for-providers',
     '/credit-terms',
     '/security/checkpoint',
+    '/security/otp/report?token=report-token',
     '/api/locations/search?q=Roodepoort',
   ])('allows unauthenticated access to public baseline route %s', async (path) => {
     const { proxy } = await import('../proxy')
@@ -474,6 +475,16 @@ describe('proxy admin access', () => {
     const { proxy } = await import('../proxy')
 
     const res = await proxy(new NextRequest('https://admin.plugapro.co.za/security/checkpoint'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps /security/otp/report public on admin domain before clean-path rewriting', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/security/otp/report?token=report-token'))
 
     expect(res.status).toBe(200)
     expect(res.headers.get('location')).toBeNull()

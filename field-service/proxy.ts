@@ -40,6 +40,7 @@ const PUBLIC_PATHS = [
   '/credit-terms',         // public provider credit terms page
   '/provider-public-profile', // signed Review Providers First profile links are read-only and public
   '/security/checkpoint', // OTP step-up checkpoint reached with pap-step-up-token, before full session
+  '/security/otp/report', // signed unrequested-OTP report links must render before login
   '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
   '/technician-verify',    // legacy — server-redirects to /provider-verify
   '/providers',
@@ -105,6 +106,7 @@ function toAdminInternalPath(pathname: string): string {
     pathname.startsWith('/signup') ||
     pathname.startsWith('/verify') ||
     pathname.startsWith('/security/checkpoint') ||
+    pathname.startsWith('/security/otp/report') ||
     pathname.startsWith('/provider-')
   ) return pathname
   return `/admin${pathname}`
