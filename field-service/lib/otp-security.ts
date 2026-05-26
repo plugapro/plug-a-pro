@@ -155,8 +155,17 @@ async function safeAudit(
 ): Promise<void> {
   try {
     await recordAuditLog(params, client as Parameters<typeof recordAuditLog>[1])
-  } catch {
-    console.warn('[otp-security] audit write failed', { action: params.action })
+  } catch (err) {
+    // Structured event so the log pipeline can alert on sustained audit-write
+    // failures. Never include before/after payloads — the failure may itself
+    // be payload-related and carry sensitive context.
+    console.error(JSON.stringify({
+      event: 'audit.write_failed',
+      surface: 'otp-security',
+      action: params.action,
+      entityType: params.entityType,
+      reason: err instanceof Error ? err.name : 'unknown',
+    }))
   }
 }
 
