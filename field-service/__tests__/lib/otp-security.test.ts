@@ -49,6 +49,8 @@ const mocks = vi.hoisted(() => {
       return true
     }
 
+    if (condition === null) return value == null
+
     return value === condition
   }
 
@@ -417,6 +419,46 @@ describe('otp security service', () => {
     })
   })
 
+  it('does not create report side effects when the guarded report transition loses a concurrent race', async () => {
+    const challenge = await recordOtpChallenge({
+      phoneE164: PHONE,
+      userId: USER_ID,
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+    const reportTokenHash = latestChallenge().reportTokenHash
+
+    mocks.db.otpChallenge.updateMany.mockResolvedValueOnce({ count: 0 })
+
+    await expect(
+      reportUnrequestedOtp({
+        token: challenge.reportToken,
+        sourceChannel: 'PWA_LINK',
+      }),
+    ).resolves.toEqual({ ok: true })
+
+    expect(mocks.db.otpChallenge.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: challenge.challengeId,
+        reportTokenHash,
+        reportTokenUsedAt: null,
+        status: { in: ['REQUESTED', 'SENT'] },
+        expiresAt: { gt: NOW },
+      },
+      data: {
+        status: 'REPORTED_UNREQUESTED',
+        reportedAt: NOW,
+        reportTokenUsedAt: NOW,
+      },
+    })
+    const unchangedChallenge = mocks.state.otpChallenges.find((row) => row.id === challenge.challengeId)!
+    expect(unchangedChallenge.status).toBe('REQUESTED')
+    expect(unchangedChallenge.reportTokenUsedAt).toBeUndefined()
+    expect(mocks.state.securityEvents).toHaveLength(0)
+    await expect(getAccountSecurityState(PHONE)).resolves.toBeNull()
+    expect(recordAuditLog).not.toHaveBeenCalled()
+  })
+
   it('requires matching WhatsApp sender before reporting a signed token', async () => {
     const challenge = await recordOtpChallenge({
       phoneE164: PHONE,
@@ -594,6 +636,8 @@ describe('otp security service', () => {
     await completeStepUp(PHONE, USER_ID)
 
     await expect(getAccountSecurityState(PHONE)).resolves.toMatchObject({
+      lockedUntil: null,
+      lockReason: null,
       stepUpRequired: false,
       stepUpSetAt: null,
     })

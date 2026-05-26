@@ -388,14 +388,21 @@ export async function reportUnrequestedOtp(params: {
       if (challenge.reportTokenUsedAt) return
       if (!isActiveChallenge(challenge, now)) return
 
-      await client.otpChallenge.update({
-        where: { id: challenge.id },
+      const transition = await client.otpChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          reportTokenHash: tokenHash,
+          reportTokenUsedAt: null,
+          status: { in: ACTIVE_CHALLENGE_STATUSES },
+          expiresAt: { gt: now },
+        },
         data: {
           status: 'REPORTED_UNREQUESTED',
           reportedAt: now,
           reportTokenUsedAt: now,
         },
       })
+      if (transition.count !== 1) return
 
       await client.otpChallenge.updateMany({
         where: {
@@ -695,6 +702,8 @@ export async function completeStepUp(
       },
       update: {
         userId: userId ?? null,
+        lockedUntil: null,
+        lockReason: null,
         stepUpRequired: false,
         stepUpSetAt: null,
       },
@@ -720,6 +729,7 @@ export async function completeStepUp(
         entityType: 'AccountSecurityState',
         entityId: maskedPhoneEntity(phoneE164),
         after: {
+          lockedUntil: null,
           stepUpRequired: false,
           userIdPresent: Boolean(userId),
         },
