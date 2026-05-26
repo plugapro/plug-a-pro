@@ -10,8 +10,8 @@ import {
 import type { IdentityDocumentKind } from './types'
 
 const RAW_DOCUMENT_RETENTION_DAYS = 60
-const IDENTITY_STORAGE_PROVIDER = 'vercel_blob'
-const IDENTITY_STORAGE_BUCKET_NAME = 'identity'
+const IDENTITY_STORAGE_PROVIDER = 'supabase_storage'
+const IDENTITY_STORAGE_BUCKET_NAME = process.env.IDENTITY_DOCUMENT_BUCKET?.trim() || 'identity-documents'
 
 export async function storeIdentityDocument(params: {
   verificationId: string

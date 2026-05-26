@@ -1,10 +1,14 @@
 // ─── Vercel Blob — file storage helpers ──────────────────────────────────────
 // Used for: job request evidence, completion photos, quote attachments, and avatars.
 
+import { randomUUID } from 'crypto'
 import { put, del, get } from '@vercel/blob'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { db } from './db'
 
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
+const IDENTITY_DOCUMENT_BUCKET_DEFAULT = 'identity-documents'
+const SUPABASE_IDENTITY_REF_PREFIX = 'supabase://'
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
   'image/png',
@@ -167,17 +171,66 @@ export async function uploadIdentityDocument(params: {
   await validateFile(params.file)
 
   const ext = safeExtension(params.file)
-  const key = `identity/${params.verificationId}/${params.documentKind}-${Date.now()}.${ext}`
+  const bucket = identityDocumentBucketName()
+  const key = `identity/${params.verificationId}/${params.documentKind}-${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`
+  const supabase = createSupabaseStorageClient()
 
-  return put(key, params.file, {
-    access: 'private',
-    addRandomSuffix: true,
-    contentType: params.file.type,
-    cacheControlMaxAge: 60,
-  })
+  // Identity documents cannot use the existing Vercel Blob token because that
+  // store is public-only. Keep KYC media in a private Supabase bucket and store
+  // only an internal bucket/path reference in Postgres.
+  await ensurePrivateIdentityDocumentBucket(supabase, bucket)
+
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(key, params.file, {
+      contentType: params.file.type,
+      cacheControl: '60',
+      upsert: false,
+    })
+
+  if (error) {
+    throw new Error(`Supabase identity document upload failed: ${safeStorageErrorMessage(error)}`)
+  }
+
+  return {
+    pathname: supabaseIdentityReference(bucket, data?.path ?? key),
+    url: null,
+  }
 }
 
 export async function getIdentityDocument(blobKeyOrUrl: string) {
+  const supabaseRef = parseSupabaseIdentityReference(blobKeyOrUrl)
+  if (supabaseRef) {
+    const supabase = createSupabaseStorageClient()
+    const { data, error } = await supabase.storage
+      .from(supabaseRef.bucket)
+      .download(supabaseRef.path)
+
+    if (error || !data) {
+      return {
+        statusCode: 404,
+        stream: null,
+        blob: {
+          contentType: 'application/octet-stream',
+          size: 0,
+          contentDisposition: 'inline; filename="identity-document"',
+        },
+      }
+    }
+
+    return {
+      statusCode: 200,
+      stream: data.stream(),
+      blob: {
+        contentType: data.type || contentTypeFromFilename(supabaseRef.path),
+        size: data.size,
+        contentDisposition: `inline; filename="${safeDownloadFilename(supabaseRef.path)}"`,
+      },
+    }
+  }
+
+  // Legacy Vercel Blob references are still supported for any already-stored
+  // rows, but new identity documents use the Supabase private bucket above.
   return get(blobKeyOrUrl, {
     access: 'private',
     useCache: false,
@@ -273,4 +326,123 @@ async function fileSignatureMatches(file: File): Promise<boolean> {
 
 function ascii(bytes: Uint8Array, offset: number, length: number): string {
   return String.fromCharCode(...bytes.slice(offset, offset + length))
+}
+
+function createSupabaseStorageClient(): SupabaseClient {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error('Missing Supabase service role credentials for identity document storage')
+  }
+
+  return createClient(supabaseUrl, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
+}
+
+async function ensurePrivateIdentityDocumentBucket(
+  supabase: SupabaseClient,
+  bucket: string,
+): Promise<void> {
+  const existing = await supabase.storage.getBucket(bucket)
+  if (!existing.error && existing.data) {
+    if (existing.data.public) {
+      throw new Error(`Identity document storage bucket "${bucket}" must be private`)
+    }
+    return
+  }
+
+  if (existing.error && !isStorageNotFound(existing.error)) {
+    throw new Error(
+      `Identity document storage bucket lookup failed: ${safeStorageErrorMessage(existing.error)}`,
+    )
+  }
+
+  const created = await supabase.storage.createBucket(bucket, {
+    public: false,
+    allowedMimeTypes: [...ALLOWED_MIME_TYPES],
+    fileSizeLimit: String(MAX_PHOTO_SIZE),
+  })
+
+  if (!created.error) return
+  if (!isStorageAlreadyExists(created.error)) {
+    throw new Error(
+      `Identity document storage bucket creation failed: ${safeStorageErrorMessage(created.error)}`,
+    )
+  }
+
+  // A concurrent request may have created the bucket first. Re-read it so a
+  // public bucket never silently receives identity material.
+  const afterRace = await supabase.storage.getBucket(bucket)
+  if (afterRace.error || !afterRace.data) {
+    throw new Error(
+      `Identity document storage bucket lookup failed after create race: ${safeStorageErrorMessage(afterRace.error)}`,
+    )
+  }
+  if (afterRace.data.public) {
+    throw new Error(`Identity document storage bucket "${bucket}" must be private`)
+  }
+}
+
+function identityDocumentBucketName(): string {
+  return process.env.IDENTITY_DOCUMENT_BUCKET?.trim() || IDENTITY_DOCUMENT_BUCKET_DEFAULT
+}
+
+function supabaseIdentityReference(bucket: string, path: string): string {
+  return `${SUPABASE_IDENTITY_REF_PREFIX}${bucket}/${path}`
+}
+
+function parseSupabaseIdentityReference(
+  value: string,
+): { bucket: string; path: string } | null {
+  if (!value.startsWith(SUPABASE_IDENTITY_REF_PREFIX)) return null
+  const withoutPrefix = value.slice(SUPABASE_IDENTITY_REF_PREFIX.length)
+  const slashIndex = withoutPrefix.indexOf('/')
+  if (slashIndex <= 0 || slashIndex === withoutPrefix.length - 1) return null
+  return {
+    bucket: withoutPrefix.slice(0, slashIndex),
+    path: withoutPrefix.slice(slashIndex + 1),
+  }
+}
+
+function safeDownloadFilename(path: string): string {
+  return (path.split('/').pop() || 'identity-document')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+function contentTypeFromFilename(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase()
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'png') return 'image/png'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'pdf') return 'application/pdf'
+  return 'application/octet-stream'
+}
+
+function safeStorageErrorMessage(error: unknown): string {
+  if (!error) return 'unknown'
+  if (typeof error === 'object' && error !== null) {
+    const status = 'statusCode' in error
+      ? String((error as { statusCode?: unknown }).statusCode)
+      : undefined
+    const message = 'message' in error
+      ? String((error as { message?: unknown }).message)
+      : 'storage_error'
+    return [status, message].filter(Boolean).join(' ')
+  }
+  return String(error)
+}
+
+function isStorageNotFound(error: unknown): boolean {
+  const message = safeStorageErrorMessage(error).toLowerCase()
+  return message.includes('404') || message.includes('not found')
+}
+
+function isStorageAlreadyExists(error: unknown): boolean {
+  const message = safeStorageErrorMessage(error).toLowerCase()
+  return message.includes('already exists') || message.includes('duplicate')
 }
