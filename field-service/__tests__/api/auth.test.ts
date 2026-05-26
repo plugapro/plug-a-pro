@@ -369,7 +369,7 @@ describe('loginAction admin session gate handling', () => {
           status: 200,
           headers: {
             'Content-Type': 'application/json',
-            'Set-Cookie': 'pap-step-up-token=pending-token; HttpOnly; SameSite=Lax; Path=/; Max-Age=600',
+            'Set-Cookie': 'sb-access-token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0, pap-step-up-token=pending-token; HttpOnly; SameSite=Lax; Path=/; Max-Age=600',
           },
         },
       ),
@@ -392,12 +392,43 @@ describe('loginAction admin session gate handling', () => {
       maxAge: 600,
       secure: false,
     })
-    expect(cookieSet).not.toHaveBeenCalledWith(
-      'sb-access-token',
-      expect.any(String),
-      expect.anything(),
-    )
+    expect(cookieSet).toHaveBeenCalledWith('sb-access-token', '', {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+      secure: false,
+    })
+    expect(cookieSet).not.toHaveBeenCalledWith('sb-access-token', 'password-session-token', expect.anything())
     expect(serverActionMocks.redirect).toHaveBeenCalledWith('/security/checkpoint')
+  })
+})
+
+describe('OTP client step-up routing', () => {
+  it('provider OTP verify routes shared-gate step-up responses to the checkpoint before normal provider navigation', () => {
+    const source = readFileSync(join(process.cwd(), 'app/(auth)/provider-verify/page.tsx'), 'utf8')
+
+    const stepUpBranch = source.indexOf("payload.code === 'STEP_UP_REQUIRED'")
+    const normalNavigation = source.indexOf('router.replace(next)')
+
+    expect(source).toContain('redirectTo?: string')
+    expect(stepUpBranch).toBeGreaterThanOrEqual(0)
+    expect(source).toContain('router.replace(payload.redirectTo)')
+    expect(stepUpBranch).toBeLessThan(normalNavigation)
+  })
+
+  it('customer OTP verify honors session-gate lock and step-up responses before linking the customer account', () => {
+    const source = readFileSync(join(process.cwd(), 'app/(auth)/verify/page.tsx'), 'utf8')
+
+    const sessionGateHandling = source.indexOf('sessionPayload.stepUpRequired')
+    const customerLinking = source.indexOf("fetch('/api/auth/link'")
+
+    expect(source).toContain('const sessionResponse = await fetch')
+    expect(source).toContain('sessionPayload.locked')
+    expect(source).toContain('sessionPayload.redirectTo')
+    expect(source).toContain('router.replace(sessionPayload.redirectTo)')
+    expect(sessionGateHandling).toBeGreaterThanOrEqual(0)
+    expect(sessionGateHandling).toBeLessThan(customerLinking)
   })
 })
 

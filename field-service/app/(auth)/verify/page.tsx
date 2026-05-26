@@ -27,6 +27,14 @@ function buildCustomerVerifyHref(state: { phone: string; next?: string; name?: s
   return `/verify?${params.toString()}`
 }
 
+type SessionGatePayload = {
+  error?: string
+  locked?: boolean
+  code?: string
+  stepUpRequired?: boolean
+  redirectTo?: string
+}
+
 function WhatsAppIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
@@ -113,14 +121,34 @@ function VerifyForm() {
         return
       }
 
-      if (data.session?.access_token) {
-        await fetch('/api/auth/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: data.session.access_token, expiresIn: data.session.expires_in ?? 3600 }),
-        })
-        window.dispatchEvent(new Event('pap:auth-session-changed'))
+      if (!data.session?.access_token) {
+        setError('We could not complete sign in. Please request a new code.')
+        return
       }
+
+      const sessionResponse = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: data.session.access_token, expiresIn: data.session.expires_in ?? 3600 }),
+      })
+      const sessionPayload = await sessionResponse.json().catch(() => ({})) as SessionGatePayload
+
+      if (sessionPayload.stepUpRequired && sessionPayload.redirectTo) {
+        setDone(true)
+        router.replace(sessionPayload.redirectTo)
+        return
+      }
+
+      if (!sessionResponse.ok || sessionPayload.locked) {
+        setError(
+          sessionPayload.locked
+            ? 'We could not complete sign in securely. Please request a new code.'
+            : sessionPayload.error ?? 'We could not complete sign in. Please request a new code.',
+        )
+        return
+      }
+
+      window.dispatchEvent(new Event('pap:auth-session-changed'))
 
       const res = await fetch('/api/auth/link', {
         method: 'POST',

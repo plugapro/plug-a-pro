@@ -14,7 +14,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import { resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
 import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
 import { normalizePhone } from '@/lib/utils'
 
@@ -22,6 +22,11 @@ function phoneE164FromSupabase(rawPhone: unknown): string | null {
   if (typeof rawPhone !== 'string' || !rawPhone.trim()) return null
   const normalized = normalizePhone(rawPhone)
   return normalized.startsWith('+') ? normalized : null
+}
+
+function clearSessionCookieHeader(): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`
 }
 
 export async function GET() {
@@ -133,10 +138,12 @@ export async function POST(request: NextRequest) {
     })
 
     if (!gated.ok && gated.reason === 'LOCKED') {
-      return NextResponse.json(
+      const response = NextResponse.json(
         { locked: true, code: gated.metadata?.code ?? 'ACCOUNT_LOCKED' },
         { status: 423 },
       )
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      return response
     }
 
     if (!gated.ok && gated.reason === 'STEP_UP_REQUIRED') {
@@ -144,7 +151,8 @@ export async function POST(request: NextRequest) {
         { stepUpRequired: true, redirectTo: '/security/checkpoint' },
         { status: 200 },
       )
-      response.headers.set('Set-Cookie', gated.pendingStepUpCookie)
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      response.headers.append('Set-Cookie', gated.pendingStepUpCookie)
       return response
     }
 
@@ -160,9 +168,6 @@ export async function POST(request: NextRequest) {
 export async function DELETE() {
   // Clear the session cookie (sign out)
   const response = NextResponse.json({ ok: true })
-  response.headers.set(
-    'Set-Cookie',
-    'sb-access-token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
-  )
+  response.headers.set('Set-Cookie', clearSessionCookieHeader())
   return response
 }

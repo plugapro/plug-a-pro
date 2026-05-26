@@ -116,7 +116,7 @@ describe('POST /api/auth/provider/verify-code security gate', () => {
     })
   })
 
-  it('preserves the provider error envelope when the gate returns LOCKED', async () => {
+  it('preserves the provider error envelope and clears any existing session cookie when the gate returns LOCKED', async () => {
     mocks.issueGate.mockResolvedValueOnce({
       ok: false,
       reason: 'LOCKED',
@@ -141,10 +141,13 @@ describe('POST /api/auth/provider/verify-code security gate', () => {
         step: 'Worker portal verify-code',
       },
     })
-    expect(response.headers.get('Set-Cookie')).toBeNull()
+    const setCookie = response.headers.get('Set-Cookie') ?? ''
+    expect(setCookie).toContain('sb-access-token=')
+    expect(setCookie).toContain('Max-Age=0')
+    expect(setCookie).not.toContain('sb-access-token=provider-session-token')
   })
 
-  it('returns checkpoint metadata and only the pending cookie when step-up is required', async () => {
+  it('returns checkpoint metadata, clears full session, and sets only the pending cookie when step-up is required', async () => {
     mocks.issueGate.mockResolvedValueOnce({
       ok: false,
       reason: 'STEP_UP_REQUIRED',
@@ -165,8 +168,10 @@ describe('POST /api/auth/provider/verify-code security gate', () => {
       traceId: 'trace-provider-step-up',
       redirectTo: '/security/checkpoint',
     })
-    expect(response.headers.get('Set-Cookie')).toBe(
-      'pap-step-up-token=pending; HttpOnly; SameSite=Lax; Path=/; Max-Age=600',
-    )
+    const setCookie = response.headers.get('Set-Cookie') ?? ''
+    expect(setCookie).toContain('sb-access-token=')
+    expect(setCookie).toContain('Max-Age=0')
+    expect(setCookie).toContain('pap-step-up-token=pending')
+    expect(setCookie).not.toContain('sb-access-token=provider-session-token')
   })
 })

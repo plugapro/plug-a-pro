@@ -39,6 +39,7 @@ const PUBLIC_PATHS = [
   '/for-providers',        // public provider acquisition page
   '/credit-terms',         // public provider credit terms page
   '/provider-public-profile', // signed Review Providers First profile links are read-only and public
+  '/security/checkpoint', // OTP step-up checkpoint reached with pap-step-up-token, before full session
   '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
   '/technician-verify',    // legacy — server-redirects to /provider-verify
   '/providers',

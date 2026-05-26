@@ -188,8 +188,15 @@ export async function loginAction(
       requireAdmin: true,
     }),
   })
+  const cookieStore = await cookies()
+  const setCookieHeader = sessionRes.headers.get('Set-Cookie')
 
   if (sessionRes.status === 403) {
+    const clearedSessionCookie = parseSessionSetCookieHeader(setCookieHeader, SESSION_COOKIE_NAME)
+    if (clearedSessionCookie) {
+      cookieStore.set(clearedSessionCookie.name, clearedSessionCookie.value, clearedSessionCookie.options)
+    }
+
     try {
       await supabase.auth.signOut()
     } catch {
@@ -204,6 +211,11 @@ export async function loginAction(
   }
 
   if (!sessionRes.ok) {
+    const clearedSessionCookie = parseSessionSetCookieHeader(setCookieHeader, SESSION_COOKIE_NAME)
+    if (clearedSessionCookie) {
+      cookieStore.set(clearedSessionCookie.name, clearedSessionCookie.value, clearedSessionCookie.options)
+    }
+
     return {
       status: 'error',
       email,
@@ -215,12 +227,11 @@ export async function loginAction(
     stepUpRequired?: boolean
     redirectTo?: string
   }
-  const cookieStore = await cookies()
-  const setCookieHeader = sessionRes.headers.get('Set-Cookie')
 
   if (sessionPayload.stepUpRequired) {
+    const clearedSessionCookie = parseSessionSetCookieHeader(setCookieHeader, SESSION_COOKIE_NAME)
     const pendingCookie = parseSessionSetCookieHeader(setCookieHeader, STEP_UP_COOKIE_NAME)
-    if (!pendingCookie) {
+    if (!clearedSessionCookie || !pendingCookie) {
       return {
         status: 'error',
         email,
@@ -228,6 +239,7 @@ export async function loginAction(
       }
     }
 
+    cookieStore.set(clearedSessionCookie.name, clearedSessionCookie.value, clearedSessionCookie.options)
     cookieStore.set(pendingCookie.name, pendingCookie.value, pendingCookie.options)
     redirect(sessionPayload.redirectTo || '/security/checkpoint')
   }

@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
 import { createServiceClient } from '@/lib/auth'
-import { resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import { resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
 import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
 import { createTraceId, safeErrorMessage, timestamp } from '@/lib/support-diagnostics'
 import {
@@ -40,6 +40,11 @@ function jsonError(params: {
     },
     { status: params.status ?? statusForWorkerVerifyCode(params.code as any) },
   )
+}
+
+function clearSessionCookieHeader(): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`
 }
 
 export async function POST(request: NextRequest) {
@@ -210,7 +215,9 @@ export async function POST(request: NextRequest) {
     })
 
     if (!gated.ok && gated.reason === 'LOCKED') {
-      return jsonError({ code: 'ACCOUNT_LOCKED', traceId, status: 423 })
+      const response = jsonError({ code: 'ACCOUNT_LOCKED', traceId, status: 423 })
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      return response
     }
 
     if (!gated.ok && gated.reason === 'STEP_UP_REQUIRED') {
@@ -220,7 +227,8 @@ export async function POST(request: NextRequest) {
         traceId,
         redirectTo: '/security/checkpoint',
       })
-      response.headers.set('Set-Cookie', gated.pendingStepUpCookie)
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      response.headers.append('Set-Cookie', gated.pendingStepUpCookie)
       return response
     }
 

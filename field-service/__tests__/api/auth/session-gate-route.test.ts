@@ -75,7 +75,7 @@ describe('POST /api/auth/session security gate', () => {
     })
   })
 
-  it('returns locked without any session cookie when the shared gate fails closed', async () => {
+  it('returns locked and clears any existing session cookie when the shared gate fails closed', async () => {
     mocks.issueGate.mockResolvedValueOnce({
       ok: false,
       reason: 'LOCKED',
@@ -87,10 +87,13 @@ describe('POST /api/auth/session security gate', () => {
 
     expect(response.status).toBe(423)
     expect(body).toEqual({ locked: true, code: 'security_gate_unavailable' })
-    expect(response.headers.get('Set-Cookie')).toBeNull()
+    const setCookie = response.headers.get('Set-Cookie') ?? ''
+    expect(setCookie).toContain('sb-access-token=')
+    expect(setCookie).toContain('Max-Age=0')
+    expect(setCookie).not.toContain('sb-access-token=session-token')
   })
 
-  it('returns checkpoint redirect metadata and only the pending step-up cookie', async () => {
+  it('returns checkpoint redirect metadata, clears full session, and sets only the pending step-up cookie', async () => {
     mocks.issueGate.mockResolvedValueOnce({
       ok: false,
       reason: 'STEP_UP_REQUIRED',
@@ -102,8 +105,10 @@ describe('POST /api/auth/session security gate', () => {
 
     expect(response.status).toBe(200)
     expect(body).toEqual({ stepUpRequired: true, redirectTo: '/security/checkpoint' })
-    expect(response.headers.get('Set-Cookie')).toBe(
-      'pap-step-up-token=pending; HttpOnly; SameSite=Lax; Path=/; Max-Age=600',
-    )
+    const setCookie = response.headers.get('Set-Cookie') ?? ''
+    expect(setCookie).toContain('sb-access-token=')
+    expect(setCookie).toContain('Max-Age=0')
+    expect(setCookie).toContain('pap-step-up-token=pending')
+    expect(setCookie).not.toContain('sb-access-token=session-token')
   })
 })

@@ -165,6 +165,7 @@ describe('proxy admin access', () => {
     '/api/track/JR-123',
     '/for-providers',
     '/credit-terms',
+    '/security/checkpoint',
     '/api/locations/search?q=Roodepoort',
   ])('allows unauthenticated access to public baseline route %s', async (path) => {
     const { proxy } = await import('../proxy')

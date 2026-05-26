@@ -31,6 +31,7 @@ type VerifyCodePayload = {
   ok?: boolean
   code?: string
   message?: string
+  redirectTo?: string
   traceId?: string
   error?: {
     code?: string
@@ -160,6 +161,12 @@ function ProviderVerifyForm() {
           traceId: payload.error?.traceId ?? payload.traceId ?? traceId,
           code: errorCode,
         })
+        return
+      }
+
+      if (payload.code === 'STEP_UP_REQUIRED' && payload.redirectTo) {
+        setDone(true)
+        router.replace(payload.redirectTo)
         return
       }
 
