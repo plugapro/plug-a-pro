@@ -167,6 +167,7 @@ describe('proxy admin access', () => {
     '/credit-terms',
     '/security/checkpoint',
     '/security/otp/report?token=report-token',
+    '/api/security/otp/report',
     '/api/locations/search?q=Roodepoort',
   ])('allows unauthenticated access to public baseline route %s', async (path) => {
     const { proxy } = await import('../proxy')
@@ -488,6 +489,19 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps /api/security/otp/report public on admin domain without opening broader security APIs', async () => {
+    const { proxy } = await import('../proxy')
+
+    const report = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/report'))
+    const stepUp = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/step-up/ack'))
+
+    expect(report.status).toBe(200)
+    expect(report.headers.get('location')).toBeNull()
+    expect(stepUp.status).toBe(307)
+    expect(stepUp.headers.get('location')).toContain('/sign-in?')
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
