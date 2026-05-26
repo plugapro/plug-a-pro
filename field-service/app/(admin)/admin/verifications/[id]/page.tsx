@@ -43,6 +43,7 @@ export default async function AdminIdentityVerificationDetailPage({
 
   const canPreviewDocuments = roleAtLeast(admin.adminRole, 'TRUST')
   const approveAssurance = verification.channel === 'WHATSAPP' ? 'LOW' : 'HIGH'
+  const webhookEvents = verification.webhookEvents ?? []
 
   return (
     <div className="space-y-6">
@@ -139,10 +140,10 @@ export default async function AdminIdentityVerificationDetailPage({
           <div className="rounded-xl border bg-card p-4">
             <h2 className="font-semibold">Vendor webhook timeline</h2>
             <div className="mt-4 space-y-3">
-              {verification.webhookEvents.length === 0 ? (
+              {webhookEvents.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No provider webhooks received.</p>
               ) : null}
-              {verification.webhookEvents.map((event) => (
+              {webhookEvents.map((event) => (
                 <div key={event.id} className="rounded-md border p-3 text-sm">
                   <p className="font-mono text-xs">{event.eventType ?? 'unknown event'}</p>
                   <p className="mt-1 text-xs text-muted-foreground">

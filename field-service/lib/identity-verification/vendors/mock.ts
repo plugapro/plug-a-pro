@@ -47,7 +47,8 @@ export const mockVerificationAdapter: VerificationVendorAdapter = {
     }
   },
   async createLivenessSession(input) {
-    const base = getPublicAppUrl(`/mock/liveness/${encodeURIComponent(input.verificationId)}`) || 'https://mock.local'
+    const path = `/mock/liveness/${encodeURIComponent(input.verificationId)}`
+    const base = getPublicAppUrl(path) || `https://mock.local${path}`
     return {
       vendorReference: `mock-live:${input.verificationId}`,
       sessionUrl: `${base}?return=${encodeURIComponent(input.returnUrl)}`,

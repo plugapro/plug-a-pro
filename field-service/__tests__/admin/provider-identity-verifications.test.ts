@@ -68,6 +68,7 @@ describe('admin identity verification actions', () => {
       providerApplication: null,
       documents: [],
       events: [],
+      webhookEvents: [],
       reviews: [],
     })
     mockCrudAction.mockImplementation(async (opts) => {
