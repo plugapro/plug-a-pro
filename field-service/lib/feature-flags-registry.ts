@@ -260,6 +260,21 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.identity.verification.automation': {
+    description: 'Enable provider-agnostic automated identity verification submission after document and selfie capture.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'provider.identity.verification.liveness.degraded_kill_switch': {
+    description: 'Fail closed when liveness provider sessions are degraded; affected cases route to manual review.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'provider.identity.verification.freeze_vendor_verdicts': {
+    description: 'Store vendor webhooks but route all automated verdicts to manual review during vendor accuracy or integrity incidents.',
+    owner: 'ops',
+    defaultValue: false,
+  },
   'admin.crud.verifications': {
     description: 'Enable admin identity-verification review queue: view docs, approve/reject/request-retry. Requires TRUST or higher.',
     owner: 'ops',

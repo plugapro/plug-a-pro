@@ -17,7 +17,7 @@ import { buildMetadata } from '@/lib/metadata'
 export const metadata = buildMetadata({ title: 'Identity Verifications', noIndex: true })
 
 const FLAG = 'admin.crud.verifications'
-const STATUS_OPTIONS = ['ALL', 'NEEDS_MANUAL_REVIEW', 'SUBMITTED', 'PROCESSING', 'RETRY_REQUIRED', 'PASSED', 'FAILED'] as const
+const STATUS_OPTIONS = ['ALL', 'NEEDS_MANUAL_REVIEW', 'SUBMITTED', 'PROCESSING', 'AWAITING_LIVENESS', 'RETRY_REQUIRED', 'PASSED', 'FAILED'] as const
 const CHANNEL_OPTIONS = ['ALL', 'PWA', 'WHATSAPP', 'ADMIN', 'VENDOR'] as const
 const BASIS_OPTIONS = ['ALL', 'SA_ID', 'PASSPORT', 'REFUGEE_ID', 'ASYLUM_PERMIT', 'REFUGEE_PERMIT', 'WORK_PERMIT', 'PERMANENT_RESIDENCE_PERMIT'] as const
 const ASSURANCE_OPTIONS = ['ALL', 'LOW', 'MEDIUM', 'HIGH'] as const
@@ -26,6 +26,7 @@ const STATUS_VARIANTS: Record<string, 'warning' | 'info' | 'success' | 'danger' 
   NEEDS_MANUAL_REVIEW: 'warning',
   SUBMITTED: 'info',
   PROCESSING: 'info',
+  AWAITING_LIVENESS: 'warning',
   RETRY_REQUIRED: 'warning',
   PASSED: 'success',
   FAILED: 'danger',

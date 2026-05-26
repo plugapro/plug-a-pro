@@ -24,6 +24,7 @@
     "ops:crud:disable": "tsx scripts/seed-flags.ts --group=ops-crud",
     "seed:locations": "tsx scripts/seed-locations.ts",
     "seed:categories": "tsx scripts/seed-categories.ts",
+    "seed:verification-vendors": "tsx scripts/seed-verification-vendors.ts",
     "audit:locations": "tsx scripts/audit-locations.ts",
     "export:locations": "tsx scripts/export-locations.ts",
     "db:probe-migrations": "tsx scripts/probe-migration-state.ts",

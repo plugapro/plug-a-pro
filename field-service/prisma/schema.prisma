@@ -304,6 +304,7 @@ model Provider {
   campaignRedemptions       ProviderCampaignRedemption[]
   voucherRedemptionAttempts VoucherRedemptionAttempt[]
   identityVerifications     ProviderIdentityVerification[]
+  identityVerificationPilotAllowlist ProviderIdentityVerificationPilotAllowlist[]
 
   @@index([active, verified])
   @@index([isTestUser])
@@ -385,6 +386,7 @@ model ProviderApplication {
   provider    Provider?    @relation(fields: [providerId], references: [id])
   attachments Attachment[]
   identityVerifications ProviderIdentityVerification[]
+  identityVerificationPilotAllowlist ProviderIdentityVerificationPilotAllowlist[]
 
   @@index([approvalWhatsappSentAt])
   @@index([isTestUser, status])
@@ -987,6 +989,13 @@ model ProviderIdentityVerification {
   dhaMatchResult               String?
   immigrationStatusResult      String?
   sourceCheckProvider          String?
+  vendorReference              String?
+  livenessSessionReference     String?
+  livenessSessionUrlEncrypted  String?
+  livenessSessionExpiresAt     DateTime?
+  consentVendorKey             String?
+  consentVendorDisplayName     String?
+  consentTextHash              String?
   rawPayloadRedacted           Json?
   consentAcceptedAt            DateTime?
   reviewedById                 String?
@@ -1004,7 +1013,10 @@ model ProviderIdentityVerification {
   providerApplication   ProviderApplication?              @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
   documents             ProviderIdentityDocument[]
   events                ProviderVerificationEvent[]
+  webhookEvents         ProviderVerificationWebhookEvent[]
+  consentEvents         ProviderIdentityConsentEvent[]
   reviews               ProviderVerificationReview[]
+  securityEvents        SecurityEvent[]
   sensitiveAccessLogs   ProviderSensitiveDataAccessLog[]
 
   @@index([identifierHash])
@@ -1013,6 +1025,8 @@ model ProviderIdentityVerification {
   @@index([providerId])
   @@index([providerApplicationId])
   @@index([assuranceLevel, status])
+  @@index([sourceCheckProvider, vendorReference])
+  @@index([sourceCheckProvider, livenessSessionReference])
   @@map("provider_identity_verifications")
 }
 
@@ -1090,6 +1104,79 @@ model ProviderSensitiveDataAccessLog {
   @@index([documentId, createdAt])
   @@index([actorId, createdAt])
   @@map("provider_sensitive_data_access_logs")
+}
+
+model ProviderVerificationWebhookEvent {
+  id                       String   @id @default(cuid())
+  verificationId           String?
+  vendorKey                String
+  vendorEventId            String?
+  idempotencyKey           String   @unique
+  vendorReference          String?
+  livenessSessionReference String?
+  eventType                String?
+  signatureValid           Boolean
+  payloadHash              String?
+  rawPayloadRedacted       Json?
+  receivedAt               DateTime @default(now())
+  processedAt              DateTime?
+  processingError          String?
+
+  verification   ProviderIdentityVerification? @relation(fields: [verificationId], references: [id], onDelete: SetNull)
+  securityEvents SecurityEvent[]
+
+  @@index([verificationId, receivedAt])
+  @@index([vendorKey, vendorReference])
+  @@index([vendorKey, livenessSessionReference])
+  @@map("provider_verification_webhook_events")
+}
+
+model VerificationVendorConfig {
+  vendorKey           String   @id
+  active              Boolean  @default(false)
+  confidenceThreshold Float    @default(0.9)
+  livenessRequired    Boolean  @default(true)
+  configJson          Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("verification_vendor_configs")
+}
+
+model ProviderIdentityVerificationPilotAllowlist {
+  id                    String   @id @default(cuid())
+  providerId            String?
+  providerApplicationId String?
+  reason                String?
+  createdById           String?
+  createdAt             DateTime @default(now())
+
+  provider            Provider?            @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  providerApplication ProviderApplication? @relation(fields: [providerApplicationId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([providerApplicationId])
+  @@map("provider_identity_verification_pilot_allowlist")
+}
+
+model ProviderIdentityConsentEvent {
+  id                         String   @id @default(cuid())
+  verificationId             String
+  vendorKey                  String
+  vendorDisplayName          String
+  consentTextHash            String
+  consentTextVersion         String
+  channel                    VerificationChannel
+  acceptedAt                 DateTime @default(now())
+  acceptedByProviderId       String?
+  acceptedByApplicationId    String?
+  metadata                   Json?
+
+  verification ProviderIdentityVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId, acceptedAt])
+  @@index([consentTextHash])
+  @@map("provider_identity_consent_events")
 }
 
 // ─── Payments & Payouts ───────────────────────────────────────────────────────
@@ -1840,7 +1927,9 @@ model OtpChallenge {
 model SecurityEvent {
   id                    String              @id @default(cuid())
   userId                String?
-  phoneE164             String
+  phoneE164             String?
+  subjectVerificationId String?
+  subjectWebhookEventId String?
   eventType             SecurityEventType
   severity              SecuritySeverity
   status                SecurityEventStatus @default(NEW)
@@ -1853,9 +1942,13 @@ model SecurityEvent {
   resolvedByUserId      String?
 
   relatedOtpChallenge OtpChallenge? @relation(fields: [relatedOtpChallengeId], references: [id], onDelete: SetNull)
+  subjectVerification ProviderIdentityVerification? @relation(fields: [subjectVerificationId], references: [id], onDelete: SetNull)
+  subjectWebhookEvent ProviderVerificationWebhookEvent? @relation(fields: [subjectWebhookEventId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([phoneE164, createdAt])
+  @@index([subjectVerificationId])
+  @@index([subjectWebhookEventId])
   @@index([eventType, createdAt])
   @@map("security_events")
 }
@@ -1906,6 +1999,9 @@ enum SecurityEventType {
   ACCOUNT_LOCKED
   STEP_UP_COMPLETED
   LOCK_CLEARED_BY_ADMIN
+  WEBHOOK_AMBIGUOUS_REFERENCE_RESOLUTION
+  WEBHOOK_SIGNATURE_INVALID_REPEATED
+  IDENTITY_VERIFICATION_PILOT_BREACH
 }
 
 enum SecuritySeverity {
@@ -2530,6 +2626,7 @@ enum VerificationStatus {
   AWAITING_SELFIE
   SUBMITTED
   PROCESSING
+  AWAITING_LIVENESS
   NEEDS_MANUAL_REVIEW
   RETRY_REQUIRED
   PASSED

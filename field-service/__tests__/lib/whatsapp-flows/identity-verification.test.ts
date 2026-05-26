@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDb, mockSendButtons, mockSendList, mockSendText, mockTransition, mockDownloadIdentityMedia } = vi.hoisted(() => ({
+const {
+  mockDb,
+  mockSendButtons,
+  mockSendList,
+  mockSendText,
+  mockTransition,
+  mockSubmitAutomation,
+  mockDownloadIdentityMedia,
+  mockRecordConsent,
+} = vi.hoisted(() => ({
   mockDb: {
     provider: {
       findUnique: vi.fn(),
@@ -18,7 +27,9 @@ const { mockDb, mockSendButtons, mockSendList, mockSendText, mockTransition, moc
   mockSendList: vi.fn(),
   mockSendText: vi.fn(),
   mockTransition: vi.fn(),
+  mockSubmitAutomation: vi.fn(),
   mockDownloadIdentityMedia: vi.fn(),
+  mockRecordConsent: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
@@ -29,6 +40,11 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 }))
 vi.mock('@/lib/identity-verification/orchestrator', () => ({
   transitionIdentityVerification: mockTransition,
+  submitVerificationForAutomation: mockSubmitAutomation,
+}))
+vi.mock('@/lib/identity-verification/consent-service', () => ({
+  recordConsentAcceptance: mockRecordConsent,
+  renderIdentityConsentText: (vendorDisplayName: string) => `consent for ${vendorDisplayName}`,
 }))
 vi.mock('@/lib/whatsapp-media', () => ({
   downloadAndStoreWhatsAppIdentityDocument: mockDownloadIdentityMedia,
@@ -46,6 +62,7 @@ describe('WhatsApp identity verification fallback flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('IDENTITY_HASH_PEPPER', 'test-pepper')
+    vi.stubEnv('IDENTITY_ENC_KEY', '12345678901234567890123456789012')
     mockDb.provider.findUnique.mockResolvedValue({
       id: 'provider-1',
       phone: '+27711111111',
@@ -59,6 +76,15 @@ describe('WhatsApp identity verification fallback flow', () => {
     mockDb.providerIdentityVerification.update.mockResolvedValue({ id: 'ver-wa-1' })
     mockDb.providerIdentityDocument.findFirst.mockResolvedValue(null)
     mockTransition.mockResolvedValue({ id: 'ver-wa-1' })
+    mockSubmitAutomation.mockResolvedValue({
+      verificationId: 'ver-wa-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      vendorKey: 'manual',
+      vendorReference: 'manual:ver-wa-1',
+      livenessUrl: null,
+      livenessSessionExpiresAt: null,
+    })
+    mockRecordConsent.mockResolvedValue({ consentTextHash: 'hash-consent' })
     mockDownloadIdentityMedia.mockResolvedValue({ documentId: 'doc-1' })
   })
 
@@ -391,7 +417,7 @@ describe('WhatsApp identity verification fallback flow', () => {
     errorSpy.mockRestore()
   })
 
-  it('submits selfie media as LOW-assurance manual review', async () => {
+  it('submits selfie media to the verification automation orchestrator', async () => {
     const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
 
     const result = await handleWhatsAppIdentityVerificationFlow(
@@ -416,14 +442,38 @@ describe('WhatsApp identity verification fallback flow', () => {
       toStatus: 'SUBMITTED',
       metadata: { submittedFrom: 'whatsapp' },
     }))
-    expect(mockTransition).toHaveBeenCalledWith(expect.objectContaining({
-      verificationId: 'ver-wa-1',
-      toStatus: 'NEEDS_MANUAL_REVIEW',
-      decision: 'MANUAL_REVIEW',
-      data: { assuranceLevel: 'LOW' },
-    }))
-    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('manual review'))
+    expect(mockSubmitAutomation).toHaveBeenCalledWith('ver-wa-1')
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('review team'))
     expect(result).toEqual({ nextStep: 'done', nextData: {} })
+  })
+
+  it('sends a secure liveness link when automation requires liveness', async () => {
+    mockSubmitAutomation.mockResolvedValueOnce({
+      verificationId: 'ver-wa-1',
+      status: 'AWAITING_LIVENESS',
+      vendorKey: 'mock',
+      vendorReference: 'mock:ver-wa-1',
+      livenessUrl: 'https://app.test/provider/verify/token/liveness',
+      livenessSessionExpiresAt: new Date('2026-05-26T18:00:00.000Z'),
+    })
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_selfie',
+        { type: 'image', mediaId: 'media-selfie-1', mimeType: 'image/jpeg' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+        },
+      ),
+    )
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('https://app.test/provider/verify/token/liveness'),
+    )
+    expect(mockSendText).not.toHaveBeenCalledWith('+27711111111', expect.stringContaining('mock/liveness'))
   })
 
   it('rejects document uploads at the selfie step and keeps waiting for a facial image', async () => {

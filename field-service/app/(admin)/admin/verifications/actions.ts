@@ -6,7 +6,10 @@ import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { crudAction } from '@/lib/crud-action'
 import { decryptIdentifier } from '@/lib/identity-verification/crypto'
-import { transitionIdentityVerification } from '@/lib/identity-verification/orchestrator'
+import {
+  submitVerificationForAutomation,
+  transitionIdentityVerification,
+} from '@/lib/identity-verification/orchestrator'
 
 const FLAG = 'admin.crud.verifications'
 const REVIEW_ROLES = ['TRUST'] as const
@@ -146,6 +149,54 @@ export async function requestIdentityVerificationRetryAction(input: ReviewInput)
   return { ok: result.ok }
 }
 
+export async function retryIdentityVerificationWithVendorAction(input: ReviewInput) {
+  const admin = await requireAdmin()
+  const result = await crudAction<ReviewInput, { id: string; status: string }>({
+    entity: 'ProviderIdentityVerification',
+    entityId: input.verificationId,
+    action: 'provider_identity_verification.retry_with_vendor',
+    requiredRole: [...REVIEW_ROLES],
+    requiredFlag: FLAG,
+    schema: ReviewSchema,
+    input,
+    reason: input.notes,
+    run: async (data, tx) => {
+      const updated = await transitionIdentityVerification({
+        verificationId: data.verificationId,
+        toStatus: 'RETRY_REQUIRED',
+        decision: 'RETRY_REQUIRED',
+        reasonCode: 'ADMIN_RETRY_WITH_VENDOR',
+        actorId: admin.adminUserId ?? admin.id,
+        actorRole: admin.adminRole,
+        metadata: { retryWithVendor: true },
+        data: {
+          vendorReference: null,
+          livenessSessionReference: null,
+          livenessSessionUrlEncrypted: null,
+          livenessSessionExpiresAt: null,
+          reviewedById: admin.adminUserId ?? admin.id,
+          reviewedAt: new Date(),
+        },
+      }, tx)
+      await tx.providerVerificationReview.create({
+        data: {
+          verificationId: data.verificationId,
+          reviewerId: admin.adminUserId ?? admin.id,
+          decision: 'RETRY_REQUIRED',
+          notes: data.notes?.trim() || null,
+        },
+      })
+      return { id: data.verificationId, status: (updated as { status?: string }).status ?? 'RETRY_REQUIRED' }
+    },
+  })
+
+  if (result.ok) {
+    await submitVerificationForAutomation(input.verificationId)
+  }
+  revalidateVerificationPaths(input.verificationId)
+  return { ok: result.ok }
+}
+
 export async function revealIdentityIdentifierAction(input: RevealIdentifierInput) {
   const admin = await requireAdmin()
   const result = await crudAction<RevealIdentifierInput, { identifier: string }>({
@@ -208,6 +259,15 @@ export async function requestIdentityVerificationRetryFormAction(formData: FormD
     notes: formData.get('notes')?.toString() ?? undefined,
   })
   redirect(`/admin/verifications/${verificationId}?message=retry`)
+}
+
+export async function retryIdentityVerificationWithVendorFormAction(formData: FormData) {
+  const verificationId = formData.get('verificationId')?.toString() ?? ''
+  await retryIdentityVerificationWithVendorAction({
+    verificationId,
+    notes: formData.get('notes')?.toString() ?? undefined,
+  })
+  redirect(`/admin/verifications/${verificationId}?message=vendor-retry`)
 }
 
 function revalidateVerificationPaths(verificationId: string) {

@@ -32,7 +32,16 @@ const EVENT_TYPE_OPTIONS = [
   'ACCOUNT_LOCKED',
   'STEP_UP_COMPLETED',
   'LOCK_CLEARED_BY_ADMIN',
+  'WEBHOOK_AMBIGUOUS_REFERENCE_RESOLUTION',
+  'WEBHOOK_SIGNATURE_INVALID_REPEATED',
+  'IDENTITY_VERIFICATION_PILOT_BREACH',
 ] as const satisfies readonly SecurityEventType[]
+const CATEGORY_OPTIONS = ['ALL', 'otp', 'identity_verification'] as const
+const IDENTITY_SECURITY_EVENTS: SecurityEventType[] = [
+  'WEBHOOK_AMBIGUOUS_REFERENCE_RESOLUTION',
+  'WEBHOOK_SIGNATURE_INVALID_REPEATED',
+  'IDENTITY_VERIFICATION_PILOT_BREACH',
+]
 
 const STATUS_LABELS: Record<SecurityEventStatus, string> = {
   NEW: 'New',
@@ -56,6 +65,9 @@ const EVENT_TYPE_LABELS: Record<SecurityEventType, string> = {
   ACCOUNT_LOCKED: 'Account locked',
   STEP_UP_COMPLETED: 'Step-up completed',
   LOCK_CLEARED_BY_ADMIN: 'Lock cleared by admin',
+  WEBHOOK_AMBIGUOUS_REFERENCE_RESOLUTION: 'Identity webhook reference conflict',
+  WEBHOOK_SIGNATURE_INVALID_REPEATED: 'Repeated invalid identity webhook signature',
+  IDENTITY_VERIFICATION_PILOT_BREACH: 'Identity pilot allowlist breach',
 }
 
 function toText(value: string | string[] | undefined): string | undefined {
@@ -103,6 +115,12 @@ function badgeClass(kind: 'status' | 'severity', value: string): string {
   return 'border-slate-200 bg-slate-50 text-slate-700'
 }
 
+function categoryEventFilter(category: typeof CATEGORY_OPTIONS[number] | undefined): Prisma.EnumSecurityEventTypeFilter | SecurityEventType | undefined {
+  if (category === 'identity_verification') return { in: IDENTITY_SECURITY_EVENTS }
+  if (category === 'otp') return { notIn: IDENTITY_SECURITY_EVENTS }
+  return undefined
+}
+
 function FilterSelect<T extends string>({
   label,
   name,
@@ -140,7 +158,7 @@ function EventActionForms({
 }: {
   event: {
     id: string
-    phoneE164: string
+    phoneE164: string | null
     status: SecurityEventStatus
   }
 }) {
@@ -188,18 +206,20 @@ function EventActionForms({
           </button>
         </form>
       ) : null}
-      <form action={clearAccountLockFormAction} className="flex flex-wrap gap-2">
-        <input type="hidden" name="phoneE164" value={event.phoneE164} />
-        <input
-          name="reason"
-          placeholder="Clear lock reason"
-          required
-          className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
-        />
-        <button className="h-8 rounded-md border border-border px-3 text-xs font-medium" type="submit">
-          Clear lock
-        </button>
-      </form>
+      {event.phoneE164 ? (
+        <form action={clearAccountLockFormAction} className="flex flex-wrap gap-2">
+          <input type="hidden" name="phoneE164" value={event.phoneE164} />
+          <input
+            name="reason"
+            placeholder="Clear lock reason"
+            required
+            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
+          />
+          <button className="h-8 rounded-md border border-border px-3 text-xs font-medium" type="submit">
+            Clear lock
+          </button>
+        </form>
+      ) : null}
     </div>
   )
 }
@@ -215,11 +235,12 @@ export default async function OtpSecurityPage({
   const status = pickOption(toText(resolved.status), STATUS_OPTIONS)
   const severity = pickOption(toText(resolved.severity), SEVERITY_OPTIONS)
   const eventType = pickOption(toText(resolved.eventType), EVENT_TYPE_OPTIONS)
+  const category = pickOption(toText(resolved.category), CATEGORY_OPTIONS)
 
   const where: Prisma.SecurityEventWhereInput = {
     status,
     severity,
-    eventType,
+    eventType: eventType ?? categoryEventFilter(category),
   }
 
   const [events, canMutate] = await Promise.all([
@@ -237,6 +258,8 @@ export default async function OtpSecurityPage({
         sourceChannel: true,
         metadata: true,
         relatedOtpChallengeId: true,
+        subjectVerificationId: true,
+        subjectWebhookEventId: true,
         createdAt: true,
         resolvedAt: true,
         resolvedByUserId: true,
@@ -261,6 +284,7 @@ export default async function OtpSecurityPage({
         <FilterSelect label="Status" name="status" value={status} options={STATUS_OPTIONS} labels={STATUS_LABELS} />
         <FilterSelect label="Severity" name="severity" value={severity} options={SEVERITY_OPTIONS} labels={SEVERITY_LABELS} />
         <FilterSelect label="Event type" name="eventType" value={eventType} options={EVENT_TYPE_OPTIONS} labels={EVENT_TYPE_LABELS} />
+        <FilterSelect label="Category" name="category" value={category ?? 'ALL'} options={CATEGORY_OPTIONS} labels={{ ALL: 'All', otp: 'OTP', identity_verification: 'Identity verification' }} />
         <button className="h-9 rounded-md border border-border px-3 text-sm font-medium" type="submit">
           Apply
         </button>
@@ -300,7 +324,15 @@ export default async function OtpSecurityPage({
                   ) : null}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="font-medium">{maskPhone(event.phoneE164) ?? 'Unknown'}</div>
+                  <div className="font-medium">{event.phoneE164 ? maskPhone(event.phoneE164) : 'No phone'}</div>
+                  {event.subjectVerificationId ? (
+                    <a className="text-xs underline underline-offset-4" href={`/admin/verifications/${event.subjectVerificationId}`}>
+                      Open verification
+                    </a>
+                  ) : null}
+                  {event.subjectWebhookEventId ? (
+                    <div className="font-mono text-xs text-muted-foreground">Webhook {event.subjectWebhookEventId}</div>
+                  ) : null}
                   {event.userId ? <div className="mt-1 text-xs text-muted-foreground">User linked</div> : null}
                 </td>
                 <td className="px-4 py-3">

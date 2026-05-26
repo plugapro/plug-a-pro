@@ -3,10 +3,17 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { hashIdentifier, identifierLast4 } from '@/lib/identity-verification/crypto'
+import { encryptIdentifier, hashIdentifier, identifierLast4 } from '@/lib/identity-verification/crypto'
+import {
+  recordConsentAcceptance,
+  renderIdentityConsentText,
+} from '@/lib/identity-verification/consent-service'
 import { validateIdentityDocumentDetails } from '@/lib/identity-verification/document-validation'
 import { logIdentityVerificationEvent } from '@/lib/identity-verification/log'
-import { transitionIdentityVerification } from '@/lib/identity-verification/orchestrator'
+import {
+  submitVerificationForAutomation,
+  transitionIdentityVerification,
+} from '@/lib/identity-verification/orchestrator'
 import { getRequiredDocumentKinds, isIdentityBasis, type IdentityBasis, type IdentityDocumentKind, type VerificationStatus } from '@/lib/identity-verification/types'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 
@@ -75,6 +82,14 @@ export async function acceptIdentityConsent(token: string) {
       metadata: { consentAccepted: true },
       data: { consentAcceptedAt: new Date() },
     })
+    await recordConsentAcceptance({
+      verificationId: verification.id,
+      vendorKey: 'manual',
+      vendorDisplayName: 'Plug A Pro review team',
+      consentText: renderIdentityConsentText('Plug A Pro review team'),
+      channel: 'PWA',
+      acceptedByProviderId: verification.providerId,
+    })
   }
 
   revalidatePath(`/provider/verify/${token}`)
@@ -126,6 +141,7 @@ export async function submitIdentityBasisAndIdentifier(
       nationality: validation.nationality,
       identifierHash: hashIdentifier(validation.normalizedIdentifier, `identity:${input.identityBasis}`),
       identifierLast4: identifierLast4(validation.normalizedIdentifier),
+      identifierEncrypted: encryptIdentifier(validation.normalizedIdentifier),
       documentNumberHash: null,
       documentNumberLast4: null,
       documentExpiryDate: validation.documentExpiryDate,
@@ -304,15 +320,7 @@ export async function submitIdentityVerificationForReview(token: string): Promis
     })
   }
 
-  await transitionIdentityVerification({
-    verificationId: verification.id,
-    toStatus: 'NEEDS_MANUAL_REVIEW',
-    decision: 'MANUAL_REVIEW',
-    actorId: verification.providerId ?? undefined,
-    actorRole: 'provider',
-    metadata: { submittedForManualReview: true },
-    data: { assuranceLevel: 'MEDIUM' },
-  })
+  await submitVerificationForAutomation(verification.id)
 
   revalidatePath(`/provider/verify/${token}`)
   return { ok: true as const }
@@ -322,6 +330,7 @@ export async function submitIdentityVerificationForReview(token: string): Promis
 const REVIEW_ALREADY_SUBMITTED: readonly VerificationStatus[] = [
   'NEEDS_MANUAL_REVIEW',
   'PROCESSING',
+  'AWAITING_LIVENESS',
   'PASSED',
   'FAILED',
 ]

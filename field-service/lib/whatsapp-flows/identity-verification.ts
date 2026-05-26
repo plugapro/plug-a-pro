@@ -1,12 +1,19 @@
 import { db } from '../db'
-import { hashIdentifier, identifierLast4, normalizeIdentifier } from '../identity-verification/crypto'
+import { encryptIdentifier, hashIdentifier, identifierLast4, normalizeIdentifier } from '../identity-verification/crypto'
+import {
+  recordConsentAcceptance,
+  renderIdentityConsentText,
+} from '../identity-verification/consent-service'
 import {
   IdentityDocumentMediaError,
   safeIdentityDocumentMediaErrorLog,
   safeMediaIdSuffix,
   toIdentityDocumentMediaError,
 } from '../identity-verification/document-media-errors'
-import { transitionIdentityVerification } from '../identity-verification/orchestrator'
+import {
+  submitVerificationForAutomation,
+  transitionIdentityVerification,
+} from '../identity-verification/orchestrator'
 import { validatePassportNumber, validateSaId } from '../identity-verification/sa-id'
 import {
   getRequiredDocumentKinds,
@@ -100,6 +107,14 @@ async function handleIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
     actorRole: 'provider',
     data: { consentAcceptedAt: new Date() },
   })
+  await recordConsentAcceptance({
+    verificationId: verification.id,
+    vendorKey: 'manual',
+    vendorDisplayName: 'Plug A Pro review team',
+    consentText: renderIdentityConsentText('Plug A Pro review team'),
+    channel: 'WHATSAPP',
+    acceptedByProviderId: provider.id,
+  })
   await transitionIdentityVerification({
     verificationId: verification.id,
     toStatus: 'AWAITING_IDENTIFIER',
@@ -171,6 +186,7 @@ async function handleIdentityIdentifier(ctx: FlowContext): Promise<FlowResult> {
       identityBasis,
       identifierHash: hashIdentifier(validation.normalized, `identity:${identityBasis}`),
       identifierLast4: identifierLast4(validation.normalized),
+      identifierEncrypted: encryptIdentifier(validation.normalized),
       documentNumberHash: null,
       documentNumberLast4: null,
       ...(validation.saId ? {
@@ -448,15 +464,32 @@ async function handleIdentitySelfie(ctx: FlowContext): Promise<FlowResult> {
     toStatus: 'SUBMITTED',
     metadata: { submittedFrom: 'whatsapp' },
   })
-  await transitionIdentityVerification({
-    verificationId,
-    toStatus: 'NEEDS_MANUAL_REVIEW',
-    decision: 'MANUAL_REVIEW',
-    data: { assuranceLevel: 'LOW' },
-  })
-  await sendText(ctx.phone, 'Your identity documents were submitted for manual review. We will update you once the review is complete. Buying credits still requires the secure PWA liveness step.')
+  const automation = await submitVerificationForAutomation(verificationId)
+  await sendAutomationOutcome(ctx.phone, automation)
 
   return { nextStep: 'done', nextData: {} }
+}
+
+async function sendAutomationOutcome(
+  phone: string,
+  automation: Awaited<ReturnType<typeof submitVerificationForAutomation>>,
+) {
+  if (automation.status === 'PASSED') {
+    await sendText(phone, 'Your identity verification is complete. Your profile has been updated.')
+    return
+  }
+  if (automation.status === 'AWAITING_LIVENESS' && automation.livenessUrl) {
+    await sendText(
+      phone,
+      `One more step — tap this secure link to complete a quick face-match: ${automation.livenessUrl}. The link expires when your face-match session does.`,
+    )
+    return
+  }
+  if (automation.status === 'PROCESSING') {
+    await sendText(phone, "Thanks, we're verifying your details now — I'll message you the moment it's done.")
+    return
+  }
+  await sendText(phone, 'Thanks. Your details are with our review team — usually within 30 minutes during business hours; otherwise next working day.')
 }
 
 function identityMediaFailureReason(error: unknown) {

@@ -12,6 +12,7 @@ import {
   approveIdentityVerificationFormAction,
   rejectIdentityVerificationFormAction,
   requestIdentityVerificationRetryFormAction,
+  retryIdentityVerificationWithVendorFormAction,
 } from '../actions'
 
 export const metadata = buildMetadata({ title: 'Identity Verification Review', noIndex: true })
@@ -33,6 +34,7 @@ export default async function AdminIdentityVerificationDetailPage({
       providerApplication: { select: { id: true, name: true, phone: true, status: true } },
       documents: { orderBy: { createdAt: 'asc' } },
       events: { orderBy: { createdAt: 'asc' } },
+      webhookEvents: { orderBy: { receivedAt: 'asc' } },
       reviews: { orderBy: { createdAt: 'desc' } },
     },
   })
@@ -74,6 +76,9 @@ export default async function AdminIdentityVerificationDetailPage({
               <Field label="Channel" value={verification.channel} />
               <Field label="Assurance" value={verification.assuranceLevel} />
               <Field label="Decision" value={verification.decision ?? 'Not decided'} />
+              <Field label="Vendor" value={verification.sourceCheckProvider ?? 'None'} mono />
+              <Field label="Vendor ref" value={verification.vendorReference ?? 'None'} mono />
+              <Field label="Liveness ref" value={verification.livenessSessionReference ?? 'None'} mono />
               <Field label="Identifier" value={verification.identifierLast4 ? `****${verification.identifierLast4}` : 'Not captured'} mono />
               <Field label="Issuing country" value={verification.issuingCountry ?? 'Not captured'} />
               <Field label="Nationality" value={verification.nationality ?? 'Not captured'} />
@@ -130,6 +135,24 @@ export default async function AdminIdentityVerificationDetailPage({
               ))}
             </div>
           </div>
+
+          <div className="rounded-xl border bg-card p-4">
+            <h2 className="font-semibold">Vendor webhook timeline</h2>
+            <div className="mt-4 space-y-3">
+              {verification.webhookEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No provider webhooks received.</p>
+              ) : null}
+              {verification.webhookEvents.map((event) => (
+                <div key={event.id} className="rounded-md border p-3 text-sm">
+                  <p className="font-mono text-xs">{event.eventType ?? 'unknown event'}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {event.signatureValid ? 'signature valid' : 'invalid signature'} · {formatDate(event.receivedAt)}
+                  </p>
+                  {event.processingError ? <p className="mt-1 text-xs text-destructive">{event.processingError}</p> : null}
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         <aside className="space-y-4">
@@ -155,6 +178,12 @@ export default async function AdminIdentityVerificationDetailPage({
                 verificationId={verification.id}
                 action={requestIdentityVerificationRetryFormAction}
                 buttonLabel="Request retry"
+                variant="secondary"
+              />
+              <ReviewForm
+                verificationId={verification.id}
+                action={retryIdentityVerificationWithVendorFormAction}
+                buttonLabel="Retry with vendor"
                 variant="secondary"
               />
               <ReviewForm

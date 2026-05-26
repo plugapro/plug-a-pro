@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockResolveToken, mockTransition, mockDb } = vi.hoisted(() => ({
+const { mockResolveToken, mockTransition, mockSubmitAutomation, mockRecordConsent, mockDb } = vi.hoisted(() => ({
   mockResolveToken: vi.fn(),
   mockTransition: vi.fn(),
+  mockSubmitAutomation: vi.fn(),
+  mockRecordConsent: vi.fn(),
   mockDb: {
     providerIdentityVerification: {
       update: vi.fn(),
@@ -19,6 +21,12 @@ vi.mock('../../lib/provider-verification-token', () => ({
 
 vi.mock('../../lib/identity-verification/orchestrator', () => ({
   transitionIdentityVerification: mockTransition,
+  submitVerificationForAutomation: mockSubmitAutomation,
+}))
+
+vi.mock('../../lib/identity-verification/consent-service', () => ({
+  recordConsentAcceptance: mockRecordConsent,
+  renderIdentityConsentText: (vendorDisplayName: string) => `consent for ${vendorDisplayName}`,
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
@@ -28,6 +36,7 @@ describe('provider identity verification PWA actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('IDENTITY_HASH_PEPPER', 'test-pepper')
+    vi.stubEnv('IDENTITY_ENC_KEY', '12345678901234567890123456789012')
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',
       providerId: 'provider-1',
@@ -35,6 +44,15 @@ describe('provider identity verification PWA actions', () => {
       identityBasis: 'SA_ID',
     })
     mockTransition.mockResolvedValue({ id: 'ver-1' })
+    mockSubmitAutomation.mockResolvedValue({
+      verificationId: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      vendorKey: 'manual',
+      vendorReference: 'manual:ver-1',
+      livenessUrl: null,
+      livenessSessionExpiresAt: null,
+    })
+    mockRecordConsent.mockResolvedValue({ consentTextHash: 'hash-consent' })
     mockDb.providerIdentityVerification.update.mockResolvedValue({ id: 'ver-1' })
     mockDb.providerIdentityDocument.findMany.mockResolvedValue([
       { documentKind: 'ID_FRONT' },
@@ -250,7 +268,7 @@ describe('provider identity verification PWA actions', () => {
     expect(mockDb.providerIdentityDocument.findMany).not.toHaveBeenCalled()
   })
 
-  it('submits a complete document set for manual review without echoing identifiers', async () => {
+  it('submits a complete document set to the automation orchestrator', async () => {
     mockResolveToken.mockResolvedValue({
       id: 'ver-1',
       providerId: 'provider-1',
@@ -264,9 +282,8 @@ describe('provider identity verification PWA actions', () => {
 
     expect(mockTransition).toHaveBeenCalledWith(expect.objectContaining({
       verificationId: 'ver-1',
-      toStatus: 'NEEDS_MANUAL_REVIEW',
-      decision: 'MANUAL_REVIEW',
-      data: expect.objectContaining({ assuranceLevel: 'MEDIUM' }),
+      toStatus: 'SUBMITTED',
     }))
+    expect(mockSubmitAutomation).toHaveBeenCalledWith('ver-1')
   })
 })

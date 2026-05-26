@@ -397,6 +397,36 @@ export default async function ProviderIdentityVerifyPage({
         </section>
       ) : null}
 
+      {verification.status === 'AWAITING_LIVENESS' ? (
+        <section className="space-y-4 rounded-lg border bg-card p-4">
+          <h2 className="text-base font-semibold">Complete face-match</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Open the secure face-match session to finish automated identity verification.
+          </p>
+          <Link
+            href={`/provider/verify/${encodeURIComponent(token)}/liveness`}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Complete face-match
+          </Link>
+        </section>
+      ) : null}
+
+      {verification.status === 'PROCESSING' ? (
+        <section className="space-y-4 rounded-lg border bg-card p-4">
+          <h2 className="text-base font-semibold">Verification in progress</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            We are verifying your details now. Refresh this page in a minute to check the latest status.
+          </p>
+          <Link
+            href={`/provider/verify/${encodeURIComponent(token)}`}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-md border px-4 py-2 text-sm font-medium"
+          >
+            Refresh status
+          </Link>
+        </section>
+      ) : null}
+
       {['NEEDS_MANUAL_REVIEW', 'PASSED', 'FAILED'].includes(verification.status) ? (
         <section className="rounded-lg border bg-card p-4 text-sm leading-6">
           <h2 className="text-base font-semibold">{terminalTitle(verification.status)}</h2>
