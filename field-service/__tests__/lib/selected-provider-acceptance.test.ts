@@ -9,6 +9,21 @@ const { mockDb, state } = vi.hoisted(() => {
 const mockApplyProviderCredit = vi.hoisted(() => vi.fn())
 const mockLockAcceptedLead = vi.hoisted(() => vi.fn())
 const mockNotifyAcceptedLeadLocked = vi.hoisted(() => vi.fn())
+const { mockAssertIdentityVerifiedForCredits, MockIdentityCreditGateError } = vi.hoisted(() => {
+  class MockIdentityCreditGateError extends Error {
+    readonly code = 'IDENTITY_NOT_VERIFIED'
+
+    constructor() {
+      super('High-assurance identity verification is required before purchasing credits.')
+      this.name = 'IdentityCreditGateError'
+    }
+  }
+
+  return {
+    mockAssertIdentityVerifiedForCredits: vi.fn(),
+    MockIdentityCreditGateError,
+  }
+})
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/lead-unlocks', () => {
@@ -59,6 +74,10 @@ vi.mock('../../lib/provider-accepted-lock', () => ({
   lockAcceptedLeadAfterCreditInTransaction: mockLockAcceptedLead,
   notifyAcceptedLeadLocked: mockNotifyAcceptedLeadLocked,
   notifyNonSelectedRfpProviders: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('../../lib/identity-verification/credit-gate', () => ({
+  IdentityCreditGateError: MockIdentityCreditGateError,
+  assertIdentityVerifiedForCredits: mockAssertIdentityVerifiedForCredits,
 }))
 vi.mock('../../lib/provider-lead-access', () => ({
   getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/jobs/signed-token'),
@@ -202,6 +221,7 @@ describe('selected provider final acceptance', () => {
       }
     })
     mockNotifyAcceptedLeadLocked.mockResolvedValue(true)
+    mockAssertIdentityVerifiedForCredits.mockResolvedValue({ providerId: 'provider-1', verificationId: 'ver-1' })
   })
 
   it('records provider acceptance, checks credits, applies credit, and locks the job', async () => {
@@ -365,6 +385,26 @@ describe('selected provider final acceptance', () => {
     state.lead = makeLead({ status: 'DECLINED' })
     await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
       .resolves.toEqual({ ok: false, reason: 'LEAD_DECLINED' })
+  })
+
+  it('blocks selected-provider final acceptance before credit checks when identity is not verified', async () => {
+    mockAssertIdentityVerifiedForCredits.mockRejectedValueOnce(new MockIdentityCreditGateError())
+
+    const result = await acceptSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      source: 'whatsapp',
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'IDENTITY_NOT_VERIFIED' })
+    expect(mockAssertIdentityVerifiedForCredits).toHaveBeenCalledWith('provider-1', state.tx)
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
+    expect(state.tx.auditLog.create).not.toHaveBeenCalled()
+    expect(state.tx.providerWallet.findUnique).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
+    expect(mockNotifyAcceptedLeadLocked).not.toHaveBeenCalled()
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
   })
 
   it('blocks accept when the service request expiry has passed', async () => {

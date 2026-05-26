@@ -17,6 +17,10 @@ import {
   ProviderLeadCreditCheckResult,
   checkProviderLeadCreditBalanceInTransaction,
 } from './provider-credit-check'
+import {
+  IdentityCreditGateError,
+  assertIdentityVerifiedForCredits,
+} from './identity-verification/credit-gate'
 
 const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_TIMEOUT_MS = 20_000
 const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_MAX_WAIT_MS = 10_000
@@ -51,6 +55,7 @@ export type SelectedProviderAcceptanceResult =
         | 'LEAD_ALREADY_ACCEPTED'
         | 'LEAD_DECLINED'
         | 'DUPLICATE_ACCEPT_IGNORED'
+        | 'IDENTITY_NOT_VERIFIED'
         | 'CREDIT_CHECK_FAILED'
         | 'INSUFFICIENT_CREDITS'
         | 'CREDIT_APPLICATION_FAILED'
@@ -209,6 +214,15 @@ export async function acceptSelectedProviderJob(params: {
       }
       if (lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING') {
         return { ok: false as const, reason: 'REQUEST_NOT_AWAITING_CONFIRMATION' as const }
+      }
+
+      try {
+        await assertIdentityVerifiedForCredits(params.providerId, tx)
+      } catch (error) {
+        if (error instanceof IdentityCreditGateError) {
+          return { ok: false as const, reason: 'IDENTITY_NOT_VERIFIED' as const }
+        }
+        throw error
       }
 
       let alreadyAccepted = false
@@ -392,6 +406,9 @@ export async function acceptSelectedProviderJob(params: {
       if (error.code === 'LEAD_NOT_ACCEPTED') {
         return { ok: false, reason: 'LEAD_NOT_PROVIDER_NOTIFIED' }
       }
+    }
+    if (error instanceof IdentityCreditGateError) {
+      return { ok: false, reason: 'IDENTITY_NOT_VERIFIED' }
     }
     if (error instanceof AcceptedLeadLockError) {
       if (error.code === 'REQUEST_CANCELLED') {
