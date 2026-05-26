@@ -1,0 +1,58 @@
+name: Ops Dashboard CRUD Flags
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Enable or disable the implemented ops/admin CRUD feature-flag group.
+        required: true
+        default: enable
+        type: choice
+        options:
+          - enable
+          - disable
+
+permissions:
+  contents: read
+
+jobs:
+  rollout:
+    name: Roll out ops CRUD flags
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: field-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Apply ops CRUD flag state
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.action }}" = "enable" ]; then
+            pnpm ops:crud:enable
+          else
+            pnpm ops:crud:disable
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

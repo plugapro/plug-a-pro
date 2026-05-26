@@ -17,8 +17,26 @@ This document captures the rollout order, verification steps, and rollback proce
 - `admin.crud.validation`
 - `admin.crud.field_exceptions`
 - `admin.crud.categories`
+- `admin.categories.risk_tier`
+- `admin.crud.messages`
+- `admin.crud.verifications`
+- `admin.quotes.send`
+- `admin.invoices.actions`
+- `admin.messages.outbound`
+- `admin.customers.whatsapp_pref_toggle`
+- `admin.vouchers`
+- `ops.v2.cases`
+- `ops.v2.closeOut`
 
 These flags are seeded by [seed-flags.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle%20Holdings/Solutions/Projects/Plug A Pro/field-service/scripts/seed-flags.ts).
+
+Use the grouped rollout command for the supported ops/admin CRUD surface:
+
+```bash
+pnpm ops:crud:enable
+```
+
+The group intentionally excludes reserved or non-CRUD flags such as `admin.payments.retry`, identity-verification vendor adapters, OTP delivery, customer/provider product pilots, matching engine pilots, and qualified-shortlist rollout flags.
 
 ## Rollout order
 
@@ -35,8 +53,18 @@ These flags are seeded by [seed-flags.ts](/Users/shimane/Library/CloudStorage/Dr
 11. `admin.crud.validation`
 12. `admin.crud.field_exceptions`
 13. `admin.crud.categories`
+14. `admin.categories.risk_tier`
+15. `admin.crud.messages`
+16. `admin.crud.verifications`
+17. `admin.quotes.send`
+18. `admin.invoices.actions`
+19. `admin.messages.outbound`
+20. `admin.customers.whatsapp_pref_toggle`
+21. `admin.vouchers`
+22. `ops.v2.cases`
+23. `ops.v2.closeOut`
 
-This order keeps governance and core entity editing ahead of the queue-oriented operational pages, then leaves category configuration last because it affects matcher policy inputs.
+This order keeps governance and core entity editing ahead of the queue-oriented operational pages, then enables the follow-on finance, messaging, trust, voucher, and case-management actions.
 
 ## Shared pre-flight checks
 

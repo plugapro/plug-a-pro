@@ -2,10 +2,12 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
+import { requireAdmin } from '@/lib/auth'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { mergeCustomers, purgeArchivedCustomer } from '@/lib/customer-lifecycle'
 
 const FLAG = 'admin.crud.customers'
+const WHATSAPP_PREF_FLAG = 'admin.customers.whatsapp_pref_toggle'
 const READ_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
 const OWNER_ROLES = ['ADMIN', 'OWNER'] as const
 
@@ -69,6 +71,11 @@ const PurgeCustomerSchema = z.object({
   customerId: z.string().min(1),
 })
 
+const ToggleWhatsappMarketingSchema = z.object({
+  customerId: z.string().min(1),
+  value: z.boolean(),
+})
+
 type CreateInput = z.infer<typeof CreateCustomerSchema>
 type UpdateInput = z.infer<typeof UpdateCustomerSchema>
 type BlockInput = z.infer<typeof BlockCustomerSchema>
@@ -79,6 +86,7 @@ type ClearSuspensionInput = z.infer<typeof ClearCustomerSuspensionSchema>
 type ArchiveInput = z.infer<typeof ArchiveCustomerSchema>
 type MergeInput = z.infer<typeof MergeCustomerSchema>
 type PurgeInput = z.infer<typeof PurgeCustomerSchema>
+type ToggleWhatsappMarketingInput = z.infer<typeof ToggleWhatsappMarketingSchema>
 
 // ─── createCustomer ───────────────────────────────────────────────────────────
 
@@ -166,6 +174,62 @@ export async function updateCustomerAction(input: UpdateInput) {
       return { id: data.customerId }
     },
   })
+  revalidatePath('/admin/customers')
+  revalidatePath(`/admin/customers/${input.customerId}`)
+  return result
+}
+
+// ─── toggleWhatsappMarketing ─────────────────────────────────────────────────
+
+export async function toggleWhatsappMarketingAction(input: ToggleWhatsappMarketingInput) {
+  const admin = await requireAdmin()
+
+  const result = await crudAction<ToggleWhatsappMarketingInput, { id: string; whatsappMarketingOptIn: boolean }>({
+    entity: 'Customer',
+    entityId: input.customerId,
+    action: 'customer.whatsapp_marketing_toggle',
+    requiredRole: [...READ_ROLES],
+    requiredFlag: WHATSAPP_PREF_FLAG,
+    schema: ToggleWhatsappMarketingSchema,
+    input,
+    reason: input.value
+      ? 'Admin opted customer into WhatsApp marketing'
+      : 'Admin opted customer out of WhatsApp marketing',
+    run: async (data, tx) => {
+      const customer = await tx.customer.findUnique({
+        where: { id: data.customerId },
+        select: { id: true, whatsappMarketingOptIn: true },
+      })
+      if (!customer) throw new CrudActionError('NOT_FOUND', `Customer ${data.customerId} not found.`)
+
+      const now = new Date()
+      await tx.customer.update({
+        where: { id: data.customerId },
+        data: {
+          whatsappMarketingOptIn: data.value,
+          whatsappMarketingSource: 'admin',
+          lastWhatsappPrefSyncAt: now,
+          ...(data.value
+            ? { whatsappMarketingOptInAt: now }
+            : { whatsappMarketingOptOutAt: now }),
+        },
+      })
+      await tx.whatsappPreferenceLog.create({
+        data: {
+          customerId: data.customerId,
+          field: 'whatsappMarketingOptIn',
+          oldValue: customer.whatsappMarketingOptIn,
+          newValue: data.value,
+          source: 'admin',
+          actorId: admin.id,
+          note: 'Admin override from customer detail',
+        },
+      })
+
+      return { id: data.customerId, whatsappMarketingOptIn: data.value }
+    },
+  })
+
   revalidatePath('/admin/customers')
   revalidatePath(`/admin/customers/${input.customerId}`)
   return result
