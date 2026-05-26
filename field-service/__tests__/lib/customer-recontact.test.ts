@@ -28,6 +28,11 @@ vi.mock('@/lib/whatsapp', () => ({ sendSlotAvailable: mockSendSlotAvailable }))
 vi.mock('@/lib/job-request-access', () => ({ getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.example/ticket') }))
 vi.mock('@/lib/matching/orchestrator', () => ({ orchestrateMatch: mockOrchestrateMatch }))
 
+import {
+  checkJobsForNewProviderAvailability,
+  promptCustomersForNewProviderAvailability,
+} from '@/lib/matching/customer-recontact'
+
 describe('new provider rematch checks', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -96,7 +101,6 @@ describe('new provider rematch checks', () => {
       },
     ])
 
-    const { promptCustomersForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
     const result = await promptCustomersForNewProviderAvailability('provider-1')
 
     expect(result).toEqual({ prompted: 1, templateFallbacks: 0 })
@@ -124,7 +128,6 @@ describe('new provider rematch checks', () => {
       .mockResolvedValueOnce([])
     mockOrchestrateMatch.mockResolvedValue({ status: 'DISPATCHED', holdId: 'hold-1', providerId: 'provider-1' })
 
-    const { checkJobsForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
     const result = await checkJobsForNewProviderAvailability('provider-1')
 
     expect(result).toEqual({ dispatchedOpenJobs: 1, promptedExpiredJobs: 0, templateFallbacks: 0 })
@@ -150,7 +153,6 @@ describe('new provider rematch checks', () => {
       liveStatus: null,
     })
 
-    const { promptCustomersForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
     const result = await promptCustomersForNewProviderAvailability('provider-pending')
 
     expect(result).toEqual({ prompted: 0, templateFallbacks: 0 })

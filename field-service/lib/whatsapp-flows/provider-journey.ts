@@ -2003,7 +2003,7 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
   }
 
   try {
-    const result = await redeemVoucher(provider.id, rawCode)
+    const result = await redeemVoucher(provider.id, rawCode, { channel: 'WHATSAPP' })
 
     if (result.ok) {
       const n = result.creditsAwarded

@@ -40,6 +40,7 @@ describe('provider redeemVoucherAction', () => {
     // User types just the 8-char suffix; canonical must still appear in the toast.
     const result = await redeemVoucherAction('7kq9m2xd')
 
+    expect(redeemVoucher).toHaveBeenCalledWith('prov_1', '7kq9m2xd', { channel: 'PWA' })
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('should be ok')
     expect(result.message).toContain('PAP-7KQ9-M2XD')

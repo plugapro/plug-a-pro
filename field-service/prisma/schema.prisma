@@ -302,6 +302,7 @@ model Provider {
   promoAwards               ProviderPromoAward[]
   redeemedVouchers          PromoVoucher[]
   campaignRedemptions       ProviderCampaignRedemption[]
+  voucherRedemptionAttempts VoucherRedemptionAttempt[]
   identityVerifications     ProviderIdentityVerification[]
 
   @@index([active, verified])
@@ -1321,6 +1322,33 @@ model ProviderCampaignRedemption {
   @@map("provider_campaign_redemptions")
 }
 
+model VoucherRedemptionAttempt {
+  id                     String                                  @id @default(cuid())
+  providerId             String?
+  channel                VoucherRedemptionAttemptChannel
+  outcome                VoucherRedemptionAttemptOutcome
+  redemptionErrorCode    String?
+  parseFailureReason     String?
+  normalizedLength       Int
+  normalizedLengthBucket VoucherRedemptionAttemptLengthBucket
+  hadPapPrefix           Boolean
+  separatorBucket        VoucherRedemptionAttemptSeparatorBucket
+  separatorCount         Int                                     @default(0)
+  campaignCode           String?
+  wouldRateLimit         Boolean                                 @default(false)
+  rateLimited            Boolean                                 @default(false)
+  createdAt              DateTime                                @default(now())
+
+  provider Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([providerId, createdAt])
+  @@index([channel, outcome, createdAt])
+  @@index([parseFailureReason, createdAt])
+  @@index([campaignCode, createdAt])
+  @@map("voucher_redemption_attempts")
+}
+
 model ProviderAutoApproveSideEffectMarker {
   id            String                                @id @default(cuid())
   kind          ProviderAutoApproveSideEffectKind
@@ -2200,6 +2228,37 @@ enum VoucherStatus {
   REDEEMED
   EXPIRED
   CANCELLED
+}
+
+enum VoucherRedemptionAttemptChannel {
+  WHATSAPP
+  PWA
+}
+
+enum VoucherRedemptionAttemptOutcome {
+  SUCCESS
+  PARSE_FAILED
+  REDEMPTION_FAILED
+  RATE_LIMITED
+}
+
+enum VoucherRedemptionAttemptLengthBucket {
+  EMPTY
+  TOO_SHORT
+  EXPECTED_SUFFIX
+  EXPECTED_WITH_PREFIX
+  TOO_LONG
+  OVERSIZE
+}
+
+enum VoucherRedemptionAttemptSeparatorBucket {
+  NONE
+  DASH
+  WHITESPACE
+  DOT_OR_UNDERSCORE
+  UNICODE_DASH
+  INVISIBLE
+  MIXED
 }
 
 enum ProviderAutoApproveSideEffectKind {

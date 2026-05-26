@@ -6,6 +6,12 @@ import {
   type VoucherRedemptionResult,
 } from './vouchers'
 import { creditVoucherRedemptionInTransaction } from './provider-wallet'
+import {
+  recordVoucherRedemptionAttempt,
+  type VoucherRedemptionAttemptChannel,
+  type VoucherRedemptionAttemptOutcome,
+} from './voucher-attempt-analytics'
+import { checkVoucherRedemptionLimit } from './rate-limit'
 
 /**
  * Maps a parser failure reason to its user-facing redemption error code.
@@ -45,16 +51,48 @@ function parseFailureToErrorCode(reason: VoucherParseFailureReason): VoucherRede
 export async function redeemVoucher(
   providerId: string,
   rawCode: string,
+  context: { channel?: VoucherRedemptionAttemptChannel } = {},
 ): Promise<VoucherRedemptionResult> {
   // Reject garbage input before any DB call. The parser is tolerant of dashless / suffix-only /
   // em-dash / case variants so finger-errors don't silently fail at the DB-lookup stage.
   const parsed = parseVoucherCode(rawCode)
   if (!parsed.ok) {
     const code = parseFailureToErrorCode(parsed.reason)
-    return { ok: false, code, message: 'That voucher code is invalid or unavailable.' } as const
+    const limit = await evaluateVoucherAttemptLimit(providerId, 'malformed', context.channel)
+    const finalCode = limit.rateLimited ? 'VOUCHER_RATE_LIMITED' : code
+    await recordAttemptIfChannel({
+      providerId,
+      rawCode,
+      channel: context.channel,
+      outcome: limit.rateLimited ? 'RATE_LIMITED' : 'PARSE_FAILED',
+      redemptionErrorCode: finalCode,
+      parseFailureReason: parsed.reason,
+      wouldRateLimit: limit.wouldRateLimit,
+      rateLimited: limit.rateLimited,
+    })
+    return { ok: false, code: finalCode, message: voucherRateLimitedMessage(finalCode) } as const
   }
 
   const { canonical, codeHash } = parsed
+  const parsedAttemptLimit = await evaluateVoucherAttemptLimit(providerId, 'failed', context.channel)
+  if (parsedAttemptLimit.rateLimited) {
+    await recordAttemptIfChannel({
+      providerId,
+      rawCode,
+      channel: context.channel,
+      outcome: 'RATE_LIMITED',
+      redemptionErrorCode: 'VOUCHER_RATE_LIMITED',
+      wouldRateLimit: parsedAttemptLimit.wouldRateLimit,
+      rateLimited: true,
+    })
+    return {
+      ok: false,
+      code: 'VOUCHER_RATE_LIMITED',
+      message: voucherRateLimitedMessage('VOUCHER_RATE_LIMITED'),
+    } as const
+  }
+
+  const attemptTarget: { campaignCode?: string } = {}
 
   const result = await db.$transaction(async (tx) => {
     // 1. Verify provider exists and is active/approved
@@ -77,6 +115,7 @@ export async function redeemVoucher(
     if (!voucher) {
       return { ok: false, code: 'VOUCHER_NOT_FOUND', message: 'That voucher code is invalid or unavailable.' } as const
     }
+    attemptTarget.campaignCode = voucher.batch.campaignCode
 
     // 3. Validate voucher state — check CANCELLED before maxRedemptions to avoid information leak
     if (voucher.status === 'REDEEMED') {
@@ -164,13 +203,91 @@ export async function redeemVoucher(
     throw error
   })
 
+  if (!result.ok) {
+    await recordAttemptIfChannel({
+      providerId,
+      rawCode,
+      channel: context.channel,
+      outcome: 'REDEMPTION_FAILED',
+      redemptionErrorCode: result.code,
+      campaignCode: attemptTarget.campaignCode,
+      wouldRateLimit: parsedAttemptLimit.wouldRateLimit,
+      rateLimited: false,
+    })
+    console.info('[voucher] redemption', {
+      providerId,
+      outcome: result.code,
+      creditsAwarded: undefined,
+    })
+    return result
+  }
+
+  await recordAttemptIfChannel({
+    providerId,
+    rawCode,
+    channel: context.channel,
+    outcome: 'SUCCESS',
+    campaignCode: attemptTarget.campaignCode,
+    wouldRateLimit: parsedAttemptLimit.wouldRateLimit,
+    rateLimited: false,
+  })
+
   console.info('[voucher] redemption', {
     providerId,
-    outcome: result.ok ? 'success' : result.code,
-    creditsAwarded: result.ok ? result.creditsAwarded : undefined,
+    outcome: 'success',
+    creditsAwarded: result.creditsAwarded,
   })
 
   return result
+}
+
+type VoucherLimitReason = 'malformed' | 'failed'
+
+async function evaluateVoucherAttemptLimit(
+  providerId: string,
+  reason: VoucherLimitReason,
+  channel?: VoucherRedemptionAttemptChannel,
+): Promise<{ wouldRateLimit: boolean; rateLimited: boolean }> {
+  if (!channel) return { wouldRateLimit: false, rateLimited: false }
+  const decision = await checkVoucherRedemptionLimit({ providerId, reason })
+  const wouldRateLimit = !decision.ok && decision.code === 'rate_limited'
+  const enforcementEnabled = process.env.VOUCHER_RATE_LIMIT_ENFORCEMENT === 'true'
+  return {
+    wouldRateLimit,
+    rateLimited: enforcementEnabled && !decision.ok,
+  }
+}
+
+async function recordAttemptIfChannel(params: {
+  providerId: string
+  rawCode: string
+  channel?: VoucherRedemptionAttemptChannel
+  outcome: VoucherRedemptionAttemptOutcome
+  redemptionErrorCode?: VoucherRedemptionErrorCode
+  parseFailureReason?: VoucherParseFailureReason
+  campaignCode?: string
+  wouldRateLimit: boolean
+  rateLimited: boolean
+}): Promise<void> {
+  if (!params.channel) return
+  await recordVoucherRedemptionAttempt({
+    providerId: params.providerId,
+    channel: params.channel,
+    outcome: params.outcome,
+    rawInput: params.rawCode,
+    redemptionErrorCode: params.redemptionErrorCode,
+    parseFailureReason: params.parseFailureReason,
+    campaignCode: params.campaignCode,
+    wouldRateLimit: params.wouldRateLimit,
+    rateLimited: params.rateLimited,
+  })
+}
+
+function voucherRateLimitedMessage(code: VoucherRedemptionErrorCode): string {
+  if (code === 'VOUCHER_RATE_LIMITED') {
+    return 'Too many voucher attempts. Please wait a few minutes, then try again.'
+  }
+  return 'That voucher code is invalid or unavailable.'
 }
 
 /** Returns true when the error is a Prisma P2002 on the provider_campaign_redemptions campaign slot. */

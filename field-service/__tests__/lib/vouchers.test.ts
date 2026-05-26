@@ -126,6 +126,9 @@ describe('parseVoucherCode', () => {
       // The charset deliberately excludes these visual confusables; the message must call them out.
       for (const ch of ['O', 'I', 'L', '0', '1']) expect(msg).toContain(ch)
     })
+    it('maps VOUCHER_RATE_LIMITED to a friendly cooldown message', () => {
+      expect(mapVoucherRedemptionErrorToMessage('VOUCHER_RATE_LIMITED')).toMatch(/too many voucher attempts/i)
+    })
   })
 
   describe('hash determinism with voucherCodeToHash', () => {
