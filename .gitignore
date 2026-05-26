@@ -19,6 +19,13 @@ Thumbs.db
 # Local test artifacts
 field-service/test-results/
 
+# Voucher export files contain raw single-use codes — never commit, anywhere in the tree.
+# The per-app .gitignore in field-service/ also covers this; this is belt-and-braces.
+vouchers*.csv
+vouchers*.xlsx
+**/vouchers*.csv
+**/vouchers*.xlsx
+
 # Local cleanup archive for untracked/generated artifacts that should not be
 # committed without an explicit product/docs review.
 .local-artifacts/

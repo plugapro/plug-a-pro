@@ -13,7 +13,7 @@ export default async function AdminVouchersPage() {
           Pilot voucher batches — each code grants 1 credit on redemption.
           To generate new codes, run:{' '}
           <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
-            npx tsx scripts/generate-vouchers.ts --help
+            pnpm tsx scripts/generate-vouchers.ts --help
           </code>
         </p>
       </div>

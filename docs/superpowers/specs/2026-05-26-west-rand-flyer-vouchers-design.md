@@ -49,7 +49,11 @@ The script call documented in the design (see chat). DB writes:
 
 ### 4. Hand off the xlsx
 
-Write to repo root (already gitignored), surface to the user via `SendUserFile`, and remind them to delete the file after printing — raw codes are irrecoverable from the DB.
+Write the file inside `field-service/` (covered by `field-service/.gitignore`'s `vouchers*.xlsx` rule and the repo-root `**/vouchers*.xlsx` belt-and-braces rule). Surface to the user via `SendUserFile`, and remind them to delete the file after printing — raw codes are irrecoverable from the DB.
+
+### 5. File-before-DB ordering invariant
+
+The script writes the output file **before** the DB transaction commits. If the file write fails, no DB rows are created. If the DB transaction fails after the file is written, the file is deleted so the operator never has plaintext codes whose hashes don't exist in the DB.
 
 ## Non-goals
 
