@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ── Shared mock state ──────────────────────────────────────────────────────────
-const { mockDb, mockCreditFn } = vi.hoisted(() => {
+const { mockDb, mockCreditFn, mockRecordAttempt, mockCheckVoucherLimit } = vi.hoisted(() => {
   const mockDb = {
     $transaction: vi.fn(),
   }
   const mockCreditFn = vi.fn()
-  return { mockDb, mockCreditFn }
+  const mockRecordAttempt = vi.fn()
+  const mockCheckVoucherLimit = vi.fn()
+  return { mockDb, mockCreditFn, mockRecordAttempt, mockCheckVoucherLimit }
 })
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/provider-wallet', () => ({
   creditVoucherRedemptionInTransaction: mockCreditFn,
+}))
+vi.mock('../../lib/voucher-attempt-analytics', () => ({
+  recordVoucherRedemptionAttempt: mockRecordAttempt,
+}))
+vi.mock('../../lib/rate-limit', () => ({
+  checkVoucherRedemptionLimit: mockCheckVoucherLimit,
 }))
 
 import { redeemVoucher } from '../../lib/voucher-redemption'
@@ -71,6 +79,9 @@ function setupTransaction(tx: ReturnType<typeof makeTx>) {
 describe('redeemVoucher', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    delete process.env.VOUCHER_RATE_LIMIT_ENFORCEMENT
+    mockRecordAttempt.mockResolvedValue(undefined)
+    mockCheckVoucherLimit.mockResolvedValue({ ok: true })
   })
 
   it('succeeds: approves credit, marks voucher redeemed, records campaign redemption, and returns canonical', async () => {
@@ -170,6 +181,108 @@ describe('redeemVoucher', () => {
     expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 
+  it('records malformed WhatsApp attempts with safe analytics metadata and checks the malformed limiter', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', '7KQ9', { channel: 'WHATSAPP' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_CODE_TOO_SHORT')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+    expect(mockCheckVoucherLimit).toHaveBeenCalledWith({
+      providerId: 'prov_1',
+      reason: 'malformed',
+    })
+    expect(mockRecordAttempt).toHaveBeenCalledWith({
+      providerId: 'prov_1',
+      channel: 'WHATSAPP',
+      outcome: 'PARSE_FAILED',
+      rawInput: '7KQ9',
+      redemptionErrorCode: 'VOUCHER_CODE_TOO_SHORT',
+      parseFailureReason: 'TOO_SHORT',
+      wouldRateLimit: false,
+      rateLimited: false,
+    })
+  })
+
+  it('keeps malformed limiter in shadow mode when enforcement is disabled', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+    mockCheckVoucherLimit.mockResolvedValueOnce({
+      ok: false,
+      code: 'rate_limited',
+      retryAfterMs: 60_000,
+    })
+
+    const result = await redeemVoucher('prov_1', '7KQ9', { channel: 'PWA' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_CODE_TOO_SHORT')
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'PARSE_FAILED',
+        redemptionErrorCode: 'VOUCHER_CODE_TOO_SHORT',
+        wouldRateLimit: true,
+        rateLimited: false,
+      }),
+    )
+  })
+
+  it('returns cooldown when malformed limiter enforcement is enabled', async () => {
+    process.env.VOUCHER_RATE_LIMIT_ENFORCEMENT = 'true'
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+    mockCheckVoucherLimit.mockResolvedValueOnce({
+      ok: false,
+      code: 'rate_limited',
+      retryAfterMs: 60_000,
+    })
+
+    const result = await redeemVoucher('prov_1', '7KQ9', { channel: 'PWA' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_RATE_LIMITED')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'RATE_LIMITED',
+        redemptionErrorCode: 'VOUCHER_RATE_LIMITED',
+        parseFailureReason: 'TOO_SHORT',
+        wouldRateLimit: true,
+        rateLimited: true,
+      }),
+    )
+  })
+
+  it('fails closed when malformed limiter enforcement is enabled but the limiter is unavailable', async () => {
+    process.env.VOUCHER_RATE_LIMIT_ENFORCEMENT = 'true'
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+    mockCheckVoucherLimit.mockResolvedValueOnce({
+      ok: false,
+      code: 'limiter_unavailable',
+      retryAfterMs: 60_000,
+    })
+
+    const result = await redeemVoucher('prov_1', '7KQ9', { channel: 'PWA' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_RATE_LIMITED')
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'RATE_LIMITED',
+        redemptionErrorCode: 'VOUCHER_RATE_LIMITED',
+        wouldRateLimit: false,
+        rateLimited: true,
+      }),
+    )
+  })
+
   it('rejects: out-of-charset input returns VOUCHER_CODE_INVALID_CHARS (no DB call)', async () => {
     const tx = makeTx(makeProvider(), makeVoucher())
     setupTransaction(tx)
@@ -234,6 +347,142 @@ describe('redeemVoucher', () => {
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('should fail')
     expect(result.code).toBe('VOUCHER_NOT_FOUND')
+  })
+
+  it('records valid-code failures and checks the failed-attempt limiter', async () => {
+    const tx = makeTx(makeProvider(), null)
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', 'PAP-7KQ9-ZZZZ', { channel: 'WHATSAPP' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_NOT_FOUND')
+    expect(mockCheckVoucherLimit).toHaveBeenCalledWith({
+      providerId: 'prov_1',
+      reason: 'failed',
+    })
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'prov_1',
+        channel: 'WHATSAPP',
+        outcome: 'REDEMPTION_FAILED',
+        rawInput: 'PAP-7KQ9-ZZZZ',
+        redemptionErrorCode: 'VOUCHER_NOT_FOUND',
+        wouldRateLimit: false,
+        rateLimited: false,
+      }),
+    )
+  })
+
+  it('short-circuits parsed attempts before DB lookup when failed-attempt enforcement is over limit', async () => {
+    process.env.VOUCHER_RATE_LIMIT_ENFORCEMENT = 'true'
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+    mockCheckVoucherLimit.mockResolvedValueOnce({
+      ok: false,
+      code: 'rate_limited',
+      retryAfterMs: 60_000,
+    })
+
+    const result = await redeemVoucher('prov_1', RAW_CODE, { channel: 'WHATSAPP' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_RATE_LIMITED')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'prov_1',
+        channel: 'WHATSAPP',
+        outcome: 'RATE_LIMITED',
+        rawInput: RAW_CODE,
+        redemptionErrorCode: 'VOUCHER_RATE_LIMITED',
+        wouldRateLimit: true,
+        rateLimited: true,
+      }),
+    )
+  })
+
+  it('fails closed before DB lookup when parsed-attempt enforcement is enabled but the limiter is unavailable', async () => {
+    process.env.VOUCHER_RATE_LIMIT_ENFORCEMENT = 'true'
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+    mockCheckVoucherLimit.mockResolvedValueOnce({
+      ok: false,
+      code: 'limiter_unavailable',
+      retryAfterMs: 60_000,
+    })
+
+    const result = await redeemVoucher('prov_1', RAW_CODE, { channel: 'WHATSAPP' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_RATE_LIMITED')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'prov_1',
+        channel: 'WHATSAPP',
+        outcome: 'RATE_LIMITED',
+        rawInput: RAW_CODE,
+        redemptionErrorCode: 'VOUCHER_RATE_LIMITED',
+        wouldRateLimit: false,
+        rateLimited: true,
+      }),
+    )
+  })
+
+  it('keeps parsed-attempt limiter in shadow mode before DB lookup when enforcement is disabled', async () => {
+    const tx = makeTx(makeProvider(), null)
+    setupTransaction(tx)
+    mockCheckVoucherLimit.mockResolvedValueOnce({
+      ok: false,
+      code: 'rate_limited',
+      retryAfterMs: 60_000,
+    })
+
+    const result = await redeemVoucher('prov_1', 'PAP-7KQ9-ZZZZ', { channel: 'PWA' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('should fail')
+    expect(result.code).toBe('VOUCHER_NOT_FOUND')
+    expect(mockDb.$transaction).toHaveBeenCalledOnce()
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'prov_1',
+        channel: 'PWA',
+        outcome: 'REDEMPTION_FAILED',
+        rawInput: 'PAP-7KQ9-ZZZZ',
+        redemptionErrorCode: 'VOUCHER_NOT_FOUND',
+        wouldRateLimit: true,
+        rateLimited: false,
+      }),
+    )
+  })
+
+  it('records successful voucher redemption with campaign metadata only', async () => {
+    const tx = makeTx(makeProvider(), makeVoucher())
+    setupTransaction(tx)
+
+    const result = await redeemVoucher('prov_1', RAW_CODE, { channel: 'PWA' })
+
+    expect(result.ok).toBe(true)
+    expect(mockRecordAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'prov_1',
+        channel: 'PWA',
+        outcome: 'SUCCESS',
+        rawInput: RAW_CODE,
+        campaignCode: 'PILOT_PROVIDER_FLYER',
+        wouldRateLimit: false,
+        rateLimited: false,
+      }),
+    )
+    expect(mockCheckVoucherLimit).toHaveBeenCalledWith({
+      providerId: 'prov_1',
+      reason: 'failed',
+    })
   })
 
   it('rejects: voucher already redeemed (status)', async () => {

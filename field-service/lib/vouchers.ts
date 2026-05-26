@@ -126,6 +126,7 @@ export type VoucherRedemptionErrorCode =
   | 'VOUCHER_CODE_TOO_SHORT'
   | 'VOUCHER_CODE_TOO_LONG'
   | 'VOUCHER_CODE_INVALID_CHARS'
+  | 'VOUCHER_RATE_LIMITED'
 
 export type VoucherRedemptionResult =
   | { ok: true; creditsAwarded: number; ledgerEntryId: string; canonical: string }
@@ -156,5 +157,7 @@ export function mapVoucherRedemptionErrorToMessage(code: VoucherRedemptionErrorC
       return 'That code looks too long — voucher codes are 8 characters (like 7KQ9M2XD) or the full PAP-XXXX-XXXX.'
     case 'VOUCHER_CODE_INVALID_CHARS':
       return 'Voucher codes use A–Z and 2–9 only (no O, I, L, 0, or 1). Please re-check your code.'
+    case 'VOUCHER_RATE_LIMITED':
+      return 'Too many voucher attempts. Please wait a few minutes, then try again.'
   }
 }

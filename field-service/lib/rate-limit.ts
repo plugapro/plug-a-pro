@@ -16,13 +16,16 @@ type LimiterKey =
   | 'payatGoStatusByBookingUser'
   | 'payatGoCancelByBookingUser'
   | 'payatGoCallbackByReference'
+  | 'voucherMalformedByProvider'
+  | 'voucherFailedByProvider'
 
 type RateLimitDecision =
   | { ok: true }
   | { ok: false; retryAfterMs: number; reason: 'limited' | 'limiter_unavailable' }
 
-type LimitConfig = { name: LimiterKey; limit: number; windowSec: number }
+type LimitConfig = { name: LimiterKey; limit: number; windowSec: number; prefix?: string }
 
+const TEN_MINUTES = 10 * 60
 const HOUR = 60 * 60
 
 function envInt(name: string, fallback: number): number {
@@ -90,6 +93,18 @@ function configs(): Record<LimiterKey, LimitConfig> {
       limit: envInt('PAYAT_GO_CALLBACK_LIMIT_PER_REFERENCE_HOUR', 120),
       windowSec: HOUR,
     },
+    voucherMalformedByProvider: {
+      name: 'voucherMalformedByProvider',
+      limit: envInt('VOUCHER_REDEMPTION_MALFORMED_LIMIT_PER_PROVIDER_10_MINUTES', 5),
+      windowSec: TEN_MINUTES,
+      prefix: 'rate_limit',
+    },
+    voucherFailedByProvider: {
+      name: 'voucherFailedByProvider',
+      limit: envInt('VOUCHER_REDEMPTION_FAILED_LIMIT_PER_PROVIDER_HOUR', 20),
+      windowSec: HOUR,
+      prefix: 'rate_limit',
+    },
   }
 }
 
@@ -156,7 +171,7 @@ function getLimiter(key: LimiterKey): Ratelimit | null {
     redis,
     limiter: Ratelimit.slidingWindow(cfg.limit, `${cfg.windowSec} s`),
     analytics: false,
-    prefix: `otp:${cfg.name}`,
+    prefix: `${cfg.prefix ?? 'otp'}:${cfg.name}`,
   })
   _limiters[key] = limiter
   return limiter
@@ -355,6 +370,37 @@ export async function checkPayAtGoLimit(params: {
 }): Promise<CheckPayAtGoLimitResult> {
   const limiterKey = PAYAT_GO_LIMIT_KEY_BY_OPERATION[params.operation]
   const decision = await consume(limiterKey, params.identifier)
+  if (!decision.ok) {
+    return {
+      ok: false,
+      code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'rate_limited',
+      retryAfterMs: decision.retryAfterMs,
+    }
+  }
+
+  return { ok: true }
+}
+
+export type CheckVoucherRedemptionLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'rate_limited' | 'limiter_unavailable'; retryAfterMs: number }
+
+type VoucherRedemptionLimitReason = 'malformed' | 'failed'
+
+const VOUCHER_REDEMPTION_LIMIT_KEY_BY_REASON: Record<
+  VoucherRedemptionLimitReason,
+  LimiterKey
+> = {
+  malformed: 'voucherMalformedByProvider',
+  failed: 'voucherFailedByProvider',
+}
+
+export async function checkVoucherRedemptionLimit(params: {
+  providerId: string
+  reason: VoucherRedemptionLimitReason
+}): Promise<CheckVoucherRedemptionLimitResult> {
+  const limiterKey = VOUCHER_REDEMPTION_LIMIT_KEY_BY_REASON[params.reason]
+  const decision = await consume(limiterKey, `provider:${params.providerId}`)
   if (!decision.ok) {
     return {
       ok: false,

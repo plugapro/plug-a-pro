@@ -32,7 +32,7 @@ export async function redeemVoucherAction(rawCode: string): Promise<RedeemVouche
   }
 
   try {
-    const result = await redeemVoucher(provider.id, rawCode.trim())
+    const result = await redeemVoucher(provider.id, rawCode.trim(), { channel: 'PWA' })
 
     if (result.ok) {
       revalidatePath('/provider/voucher')

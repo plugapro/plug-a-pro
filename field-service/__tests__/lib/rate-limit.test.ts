@@ -152,3 +152,122 @@ describe('OTP rate limiting', () => {
     await expect(checkOtpReportLimit({ ip: '8.8.4.4', ua: 'vitest' })).resolves.toEqual({ ok: true })
   })
 })
+
+describe('voucher redemption rate limiting', () => {
+  const originalEnv = { ...process.env }
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    process.env = { ...originalEnv }
+    const { resetRateLimitForTests } = await import('@/lib/rate-limit')
+    resetRateLimitForTests()
+  })
+
+  afterEach(async () => {
+    process.env = { ...originalEnv }
+    const { resetRateLimitForTests } = await import('@/lib/rate-limit')
+    resetRateLimitForTests()
+  })
+
+  it('fails closed in production when durable limiter env vars are missing', async () => {
+    process.env.VERCEL_ENV = 'production'
+    delete process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
+    delete process.env.UPSTASH_REDIS_KV_REST_API_URL
+    delete process.env.UPSTASH_REDIS_KV_REST_API_TOKEN
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
+
+    const { checkVoucherRedemptionLimit } = await import('@/lib/rate-limit')
+
+    await expect(
+      checkVoucherRedemptionLimit({
+        providerId: 'provider-voucher-production',
+        reason: 'malformed',
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      code: 'limiter_unavailable',
+      retryAfterMs: 60_000,
+    })
+  })
+
+  it('memory fallback limits malformed voucher attempts after the default threshold', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+
+    const { checkVoucherRedemptionLimit } = await import('@/lib/rate-limit')
+    const params = {
+      providerId: 'provider-voucher-malformed',
+      reason: 'malformed' as const,
+    }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(checkVoucherRedemptionLimit(params)).resolves.toEqual({ ok: true })
+    }
+    await expect(checkVoucherRedemptionLimit(params)).resolves.toMatchObject({
+      ok: false,
+      code: 'rate_limited',
+    })
+  })
+
+  it('keeps malformed and failed voucher attempt buckets independent', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+    process.env.VOUCHER_REDEMPTION_MALFORMED_LIMIT_PER_PROVIDER_10_MINUTES = '1'
+    process.env.VOUCHER_REDEMPTION_FAILED_LIMIT_PER_PROVIDER_HOUR = '1'
+
+    const { checkVoucherRedemptionLimit } = await import('@/lib/rate-limit')
+
+    await expect(
+      checkVoucherRedemptionLimit({
+        providerId: 'provider-voucher-independent',
+        reason: 'malformed',
+      }),
+    ).resolves.toEqual({ ok: true })
+    await expect(
+      checkVoucherRedemptionLimit({
+        providerId: 'provider-voucher-independent',
+        reason: 'malformed',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'rate_limited',
+    })
+    await expect(
+      checkVoucherRedemptionLimit({
+        providerId: 'provider-voucher-independent',
+        reason: 'failed',
+      }),
+    ).resolves.toEqual({ ok: true })
+    await expect(
+      checkVoucherRedemptionLimit({
+        providerId: 'provider-voucher-independent',
+        reason: 'failed',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'rate_limited',
+    })
+  })
+
+  it('reset helper clears voucher rate limit buckets', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+    process.env.VOUCHER_REDEMPTION_MALFORMED_LIMIT_PER_PROVIDER_10_MINUTES = '1'
+
+    const { checkVoucherRedemptionLimit, resetRateLimitForTests } = await import('@/lib/rate-limit')
+    const params = {
+      providerId: 'provider-voucher-reset',
+      reason: 'malformed' as const,
+    }
+
+    await expect(checkVoucherRedemptionLimit(params)).resolves.toEqual({ ok: true })
+    await expect(checkVoucherRedemptionLimit(params)).resolves.toMatchObject({
+      ok: false,
+      code: 'rate_limited',
+    })
+
+    resetRateLimitForTests()
+
+    await expect(checkVoucherRedemptionLimit(params)).resolves.toEqual({ ok: true })
+  })
+})

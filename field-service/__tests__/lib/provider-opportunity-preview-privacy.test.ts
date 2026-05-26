@@ -13,6 +13,11 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
+import {
+  getSafeProviderOpportunityPreview,
+  ProviderOpportunityResponseError,
+} from '@/lib/provider-opportunity-responses'
+
 const SAFE_LEAD = {
   id: 'lead-1',
   providerId: 'prov-1',
@@ -52,7 +57,6 @@ describe('getSafeProviderOpportunityPreview — privacy enforcement', () => {
   it('omits customer phone, street, addressLine1, unitNumber, and accessNotes before acceptance', async () => {
     mockLead.findUnique.mockResolvedValue(SAFE_LEAD)
 
-    const { getSafeProviderOpportunityPreview } = await import('@/lib/provider-opportunity-responses')
     const preview = await getSafeProviderOpportunityPreview('lead-1', 'prov-1')
 
     expect(preview).not.toBeNull()
@@ -81,7 +85,6 @@ describe('getSafeProviderOpportunityPreview — privacy enforcement', () => {
   it('returns null when lead does not exist', async () => {
     mockLead.findUnique.mockResolvedValue(null)
 
-    const { getSafeProviderOpportunityPreview } = await import('@/lib/provider-opportunity-responses')
     const preview = await getSafeProviderOpportunityPreview('ghost-lead', 'prov-1')
 
     expect(preview).toBeNull()
@@ -89,10 +92,6 @@ describe('getSafeProviderOpportunityPreview — privacy enforcement', () => {
 
   it('throws FORBIDDEN if a different provider tries to preview the lead', async () => {
     mockLead.findUnique.mockResolvedValue(SAFE_LEAD)
-
-    const { getSafeProviderOpportunityPreview, ProviderOpportunityResponseError } = await import(
-      '@/lib/provider-opportunity-responses'
-    )
 
     await expect(getSafeProviderOpportunityPreview('lead-1', 'prov-other')).rejects.toThrow(
       ProviderOpportunityResponseError,

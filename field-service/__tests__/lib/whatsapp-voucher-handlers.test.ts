@@ -284,7 +284,11 @@ describe('WhatsApp voucher redemption handlers', () => {
         makeCtx('pj_redeem_voucher_awaiting_code', 'PAP-7KQ9-M2XD'),
       )
 
-      expect(voucherRedemption.redeemVoucher).toHaveBeenCalledWith('prov_1', 'PAP-7KQ9-M2XD')
+      expect(voucherRedemption.redeemVoucher).toHaveBeenCalledWith(
+        'prov_1',
+        'PAP-7KQ9-M2XD',
+        { channel: 'WHATSAPP' },
+      )
       // Canonical must appear in the success message so the user sees what was accepted —
       // especially valuable when they typed it dashless or suffix-only.
       expect(wa.sendText).toHaveBeenCalledWith(
@@ -313,7 +317,11 @@ describe('WhatsApp voucher redemption handlers', () => {
         makeCtx('pj_redeem_voucher_awaiting_code', '7kq9m2xd'),
       )
 
-      expect(voucherRedemption.redeemVoucher).toHaveBeenCalledWith('prov_1', '7kq9m2xd')
+      expect(voucherRedemption.redeemVoucher).toHaveBeenCalledWith(
+        'prov_1',
+        '7kq9m2xd',
+        { channel: 'WHATSAPP' },
+      )
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
         expect.stringContaining('PAP-7KQ9-M2XD'),
