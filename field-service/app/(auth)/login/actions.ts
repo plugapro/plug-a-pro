@@ -5,7 +5,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { getSafeAdminNextPath } from '@/lib/safe-redirect'
 import { normalizeEmailInput, normalizePasswordInput } from '@/lib/auth-input'
-import { SESSION_COOKIE_NAME, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import { SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
+import { STEP_UP_COOKIE_NAME } from '@/lib/otp-security-crypto'
 
 type ErrorCode =
   | 'err/auth/invalid-request'
@@ -54,6 +55,64 @@ function classifyError(errorMessage: string | undefined): {
   }
 
   return { code: 'err/auth/invalid-request', locked: false }
+}
+
+type SessionCookieName = typeof SESSION_COOKIE_NAME | typeof STEP_UP_COOKIE_NAME
+
+function parseSessionSetCookieHeader(
+  setCookieHeader: string | null,
+  expectedName: SessionCookieName,
+): {
+  name: SessionCookieName
+  value: string
+  options: {
+    httpOnly: boolean
+    sameSite: 'lax'
+    path: string
+    maxAge: number
+    secure: boolean
+  }
+} | null {
+  if (!setCookieHeader) return null
+
+  const cookieHeaders = setCookieHeader.split(
+    /,(?=\s*(?:sb-access-token|pap-step-up-token)=)/,
+  )
+
+  for (const header of cookieHeaders) {
+    const parts = header.split(';').map((part) => part.trim()).filter(Boolean)
+    const [nameValue, ...attributes] = parts
+    if (!nameValue) continue
+
+    const separator = nameValue.indexOf('=')
+    if (separator <= 0) continue
+
+    const name = nameValue.slice(0, separator)
+    if (name !== expectedName) continue
+
+    const maxAgeAttribute = attributes.find((attribute) =>
+      attribute.toLowerCase().startsWith('max-age='),
+    )
+    const parsedMaxAge = Number.parseInt(maxAgeAttribute?.slice('max-age='.length) ?? '', 10)
+    if (!Number.isFinite(parsedMaxAge)) return null
+
+    const pathAttribute = attributes.find((attribute) =>
+      attribute.toLowerCase().startsWith('path='),
+    )
+    return {
+      name: expectedName,
+      value: nameValue.slice(separator + 1),
+      options: {
+        httpOnly: attributes.some((attribute) => attribute.toLowerCase() === 'httponly'),
+        sameSite: 'lax',
+        path: pathAttribute?.slice('path='.length) || '/',
+        maxAge: parsedMaxAge,
+        secure: attributes.some((attribute) => attribute.toLowerCase() === 'secure'),
+      },
+    }
+  }
+
+  return null
 }
 
 export async function loginAction(
@@ -129,8 +188,15 @@ export async function loginAction(
       requireAdmin: true,
     }),
   })
+  const cookieStore = await cookies()
+  const setCookieHeader = sessionRes.headers.get('Set-Cookie')
 
   if (sessionRes.status === 403) {
+    const clearedSessionCookie = parseSessionSetCookieHeader(setCookieHeader, SESSION_COOKIE_NAME)
+    if (clearedSessionCookie) {
+      cookieStore.set(clearedSessionCookie.name, clearedSessionCookie.value, clearedSessionCookie.options)
+    }
+
     try {
       await supabase.auth.signOut()
     } catch {
@@ -145,6 +211,11 @@ export async function loginAction(
   }
 
   if (!sessionRes.ok) {
+    const clearedSessionCookie = parseSessionSetCookieHeader(setCookieHeader, SESSION_COOKIE_NAME)
+    if (clearedSessionCookie) {
+      cookieStore.set(clearedSessionCookie.name, clearedSessionCookie.value, clearedSessionCookie.options)
+    }
+
     return {
       status: 'error',
       email,
@@ -152,14 +223,36 @@ export async function loginAction(
     }
   }
 
-  const cookieStore = await cookies()
-  cookieStore.set(SESSION_COOKIE_NAME, data.session.access_token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: resolveSessionMaxAge(data.session.expires_in),
-    secure: process.env.NODE_ENV === 'production',
-  })
+  const sessionPayload = await sessionRes.json().catch(() => ({})) as {
+    stepUpRequired?: boolean
+    redirectTo?: string
+  }
 
+  if (sessionPayload.stepUpRequired) {
+    const clearedSessionCookie = parseSessionSetCookieHeader(setCookieHeader, SESSION_COOKIE_NAME)
+    const pendingCookie = parseSessionSetCookieHeader(setCookieHeader, STEP_UP_COOKIE_NAME)
+    if (!clearedSessionCookie || !pendingCookie) {
+      return {
+        status: 'error',
+        email,
+        errorCode: 'err/auth/service-unavailable',
+      }
+    }
+
+    cookieStore.set(clearedSessionCookie.name, clearedSessionCookie.value, clearedSessionCookie.options)
+    cookieStore.set(pendingCookie.name, pendingCookie.value, pendingCookie.options)
+    redirect(sessionPayload.redirectTo || '/security/checkpoint')
+  }
+
+  const sessionCookie = parseSessionSetCookieHeader(setCookieHeader, SESSION_COOKIE_NAME)
+  if (!sessionCookie) {
+    return {
+      status: 'error',
+      email,
+      errorCode: 'err/auth/service-unavailable',
+    }
+  }
+
+  cookieStore.set(sessionCookie.name, sessionCookie.value, sessionCookie.options)
   redirect(next)
 }

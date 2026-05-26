@@ -1779,7 +1779,127 @@ model OtpDeliveryAttempt {
   @@map("otp_delivery_attempts")
 }
 
+model OtpChallenge {
+  id                     String             @id @default(cuid())
+  userId                 String?
+  phoneE164              String
+  purpose                OtpPurpose
+  codeHash               String?
+  status                 OtpChallengeStatus @default(REQUESTED)
+  expiresAt              DateTime
+  verifiedAt             DateTime?
+  reportedAt             DateTime?
+  attemptCount           Int                @default(0)
+  provider               String             @default("WHATSAPP")
+  providerMessageId      String?
+  requestedIpHash        String?
+  requestedUserAgentHash String?
+  requestContext         Json               @default("{}")
+  reportTokenHash        String?
+  reportTokenUsedAt      DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  securityEvents SecurityEvent[]
+
+  @@index([phoneE164, status])
+  @@index([phoneE164, createdAt])
+  @@index([status, createdAt])
+  @@index([userId])
+  @@map("otp_challenges")
+}
+
+model SecurityEvent {
+  id                    String              @id @default(cuid())
+  userId                String?
+  phoneE164             String
+  eventType             SecurityEventType
+  severity              SecuritySeverity
+  status                SecurityEventStatus @default(NEW)
+  relatedOtpChallengeId String?
+  sourceChannel         SecuritySourceChannel
+  metadata              Json                @default("{}")
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  resolvedAt            DateTime?
+  resolvedByUserId      String?
+
+  relatedOtpChallenge OtpChallenge? @relation(fields: [relatedOtpChallengeId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([phoneE164, createdAt])
+  @@index([eventType, createdAt])
+  @@map("security_events")
+}
+
+model AccountSecurityState {
+  id             String    @id @default(cuid())
+  phoneE164      String    @unique
+  userId         String?
+  lockedUntil    DateTime?
+  lockReason     String?
+  stepUpRequired Boolean   @default(false)
+  stepUpSetAt    DateTime?
+  lastReportedAt DateTime?
+  reportCount    Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([lockedUntil])
+  @@map("account_security_states")
+}
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum OtpPurpose {
+  LOGIN
+  SIGNUP
+  BOOKING_CONFIRMATION
+  PAYMENT_CONFIRMATION
+  TECHNICIAN_ACCESS
+  PROFILE_CHANGE
+}
+
+enum OtpChallengeStatus {
+  REQUESTED
+  SENT
+  VERIFIED
+  EXPIRED
+  CANCELLED
+  REPORTED_UNREQUESTED
+  FAILED
+}
+
+enum SecurityEventType {
+  OTP_REPORTED_UNREQUESTED
+  OTP_RATE_LIMIT_EXCEEDED
+  OTP_VERIFICATION_FAILED_REPEATEDLY
+  OTP_DELIVERY_REFUSED_DURING_LOCK
+  ACCOUNT_LOCKED
+  STEP_UP_COMPLETED
+  LOCK_CLEARED_BY_ADMIN
+}
+
+enum SecuritySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SecurityEventStatus {
+  NEW
+  ACKNOWLEDGED
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+enum SecuritySourceChannel {
+  WHATSAPP_BUTTON
+  PWA_LINK
+  ADMIN
+  SYSTEM
+}
 
 enum JobRequestStatus {
   PENDING_VALIDATION // just submitted, platform reviewing

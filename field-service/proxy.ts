@@ -39,6 +39,8 @@ const PUBLIC_PATHS = [
   '/for-providers',        // public provider acquisition page
   '/credit-terms',         // public provider credit terms page
   '/provider-public-profile', // signed Review Providers First profile links are read-only and public
+  '/security/checkpoint', // OTP step-up checkpoint reached with pap-step-up-token, before full session
+  '/security/otp/report', // signed unrequested-OTP report links must render before login
   '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
   '/technician-verify',    // legacy — server-redirects to /provider-verify
   '/providers',
@@ -81,6 +83,11 @@ const PUBLIC_SIGNED_PROVIDER_TOKEN_ROUTE = /^\/provider\/(?:handoff|job|lead)\/[
 const PUBLIC_CUSTOMER_HANDOVER_ROUTE = /^\/customer\/requests\/[^/]+\/provider-handover$/
 const PUBLIC_SIGNED_PROVIDER_API_ROUTE = /^\/api\/provider\/leads\/[^/]+\/contact-customer$/
 const PUBLIC_UNSIGNED_LEGACY_LEAD_ROUTE = /^\/leads\/[^/]+$/
+const EXACT_PUBLIC_PATHS = new Set([
+  '/api/security/otp/report',
+  '/api/security/otp/step-up/ack',
+  '/api/security/otp/verify-failed',
+])
 
 // Routes that require provider role
 const PROVIDER_PATHS = ['/provider', '/technician', '/api/provider']
@@ -103,6 +110,8 @@ function toAdminInternalPath(pathname: string): string {
     pathname.startsWith('/sign-up') ||
     pathname.startsWith('/signup') ||
     pathname.startsWith('/verify') ||
+    pathname.startsWith('/security/checkpoint') ||
+    pathname.startsWith('/security/otp/report') ||
     pathname.startsWith('/provider-')
   ) return pathname
   return `/admin${pathname}`
@@ -256,6 +265,7 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_CUSTOMER_HANDOVER_ROUTE.test(pathname)) return true
   if (PUBLIC_SIGNED_PROVIDER_API_ROUTE.test(pathname)) return true
   if (PUBLIC_UNSIGNED_LEGACY_LEAD_ROUTE.test(pathname)) return true
+  if (EXACT_PUBLIC_PATHS.has(pathname)) return true
 
   return PUBLIC_PATHS.some((path) => {
     if (path === '/') return pathname === '/'

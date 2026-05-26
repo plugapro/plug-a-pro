@@ -14,7 +14,20 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { buildSessionCookieHeader, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import { buildSessionCookieHeader, resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
+import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
+import { normalizePhone } from '@/lib/utils'
+
+function phoneE164FromSupabase(rawPhone: unknown): string | null {
+  if (typeof rawPhone !== 'string' || !rawPhone.trim()) return null
+  const normalized = normalizePhone(rawPhone)
+  return normalized.startsWith('+') ? normalized : null
+}
+
+function clearSessionCookieHeader(): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`
+}
 
 export async function GET() {
   try {
@@ -110,9 +123,43 @@ export async function POST(request: NextRequest) {
     }
 
     const maxAge = resolveSessionMaxAge(expiresIn)
+    const phoneE164 = phoneE164FromSupabase(user.phone)
+
+    if (!phoneE164) {
+      const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
+      response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
+      return response
+    }
+
+    const gated = await issueAuthSessionWithSecurityGate({
+      accessToken,
+      phoneE164,
+      userId: user.id,
+      maxAge,
+      sourceRoute: '/api/auth/session',
+    })
+
+    if (!gated.ok && gated.reason === 'LOCKED') {
+      const response = NextResponse.json(
+        { locked: true, code: gated.metadata?.code ?? 'ACCOUNT_LOCKED' },
+        { status: 423 },
+      )
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      return response
+    }
+
+    if (!gated.ok && gated.reason === 'STEP_UP_REQUIRED') {
+      const response = NextResponse.json(
+        { stepUpRequired: true, redirectTo: '/security/checkpoint' },
+        { status: 200 },
+      )
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      response.headers.append('Set-Cookie', gated.pendingStepUpCookie)
+      return response
+    }
 
     const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
-    response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
+    response.headers.set('Set-Cookie', gated.setCookie)
     return response
   } catch (err) {
     console.error('[api/auth/session] POST error:', err)
@@ -123,9 +170,6 @@ export async function POST(request: NextRequest) {
 export async function DELETE() {
   // Clear the session cookie (sign out)
   const response = NextResponse.json({ ok: true })
-  response.headers.set(
-    'Set-Cookie',
-    'sb-access-token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
-  )
+  response.headers.set('Set-Cookie', clearSessionCookieHeader())
   return response
 }

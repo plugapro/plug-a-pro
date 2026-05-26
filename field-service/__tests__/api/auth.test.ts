@@ -6,6 +6,25 @@ import { resetRateLimitForTests } from '@/lib/rate-limit'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
+const serverActionMocks = vi.hoisted(() => ({
+  headers: vi.fn(),
+  cookies: vi.fn(),
+  redirect: vi.fn((url: string) => {
+    const error = new Error(`NEXT_REDIRECT:${url}`)
+    ;(error as Error & { digest: string }).digest = `NEXT_REDIRECT;replace;${url}`
+    throw error
+  }),
+}))
+
+vi.mock('next/headers', () => ({
+  headers: serverActionMocks.headers,
+  cookies: serverActionMocks.cookies,
+}))
+
+vi.mock('next/navigation', () => ({
+  redirect: serverActionMocks.redirect,
+}))
+
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
 }))
@@ -28,11 +47,22 @@ vi.mock('@/lib/db', () => ({
     providerApplication: {
       findFirst: vi.fn(),
     },
+    accountSecurityState: {
+      findUnique: vi.fn(),
+    },
+    otpChallenge: {
+      findFirst: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    auditLog: {
+      create: vi.fn(),
+    },
   },
 }))
 
 vi.mock('../../lib/auth', () => ({
   getSession: vi.fn(),
+  createServiceClient: vi.fn(),
   linkCustomerAccount: vi.fn(),
 }))
 
@@ -85,6 +115,10 @@ describe('POST /api/auth/session', () => {
     const { db } = await import('@/lib/db')
     ;(db.adminUser.findFirst as any).mockResolvedValue(null)
     ;(db.adminUser.update as any).mockResolvedValue(null)
+    ;(db.accountSecurityState.findUnique as any).mockResolvedValue(null)
+    ;(db.otpChallenge.findFirst as any).mockResolvedValue(null)
+    ;(db.otpChallenge.updateMany as any).mockResolvedValue({ count: 0 })
+    ;(db.auditLog.create as any).mockResolvedValue({})
   })
 
   it('rejects missing accessToken', async () => {
@@ -123,7 +157,7 @@ describe('POST /api/auth/session', () => {
     ;(createClient as any).mockReturnValue({
       auth: {
         getUser: vi.fn().mockResolvedValue({
-          data: { user: { id: 'user-123', user_metadata: { role: 'admin' } } },
+          data: { user: { id: 'user-123', phone: '27825550000', user_metadata: { role: 'admin' } } },
           error: null,
         }),
       },
@@ -155,7 +189,7 @@ describe('POST /api/auth/session', () => {
     ;(createClient as any).mockReturnValue({
       auth: {
         getUser: vi.fn().mockResolvedValue({
-          data: { user: { id: 'user-123' } },
+          data: { user: { id: 'user-123', phone: '27825550000' } },
           error: null,
         }),
       },
@@ -185,6 +219,7 @@ describe('POST /api/auth/session', () => {
           data: {
             user: {
               id: 'user-ops-1',
+              phone: '27825550000',
               email: 'ops@plugapro.co.za',
               user_metadata: { role: 'customer' },
             },
@@ -235,6 +270,7 @@ describe('POST /api/auth/session', () => {
           data: {
             user: {
               id: 'legacy-admin-1',
+              phone: '27825550000',
               email: 'legacy-admin@plugapro.co.za',
               user_metadata: { role: 'owner' },
             },
@@ -271,6 +307,128 @@ describe('DELETE /api/auth/session', () => {
     expect(setCookie).toContain('sb-access-token=')
     expect(setCookie).toContain('Max-Age=0')
     expect(setCookie).toContain('HttpOnly')
+  })
+})
+
+// ─── admin login server action ────────────────────────────────────────────────
+
+describe('loginAction admin session gate handling', () => {
+  const originalEnv = { ...process.env }
+  let fetchMock: ReturnType<typeof vi.fn>
+  let cookieSet: ReturnType<typeof vi.fn>
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    process.env = {
+      ...originalEnv,
+      NEXT_PUBLIC_SUPABASE_URL: 'https://supabase.test',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+    }
+
+    serverActionMocks.headers.mockResolvedValue({
+      get: (name: string) => {
+        if (name === 'host') return 'app.test'
+        if (name === 'x-forwarded-proto') return 'https'
+        return null
+      },
+    })
+    cookieSet = vi.fn()
+    serverActionMocks.cookies.mockResolvedValue({ set: cookieSet })
+
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithPassword: vi.fn().mockResolvedValue({
+          data: {
+            user: { id: 'admin-user-1', email: 'ops@plugapro.co.za' },
+            session: {
+              access_token: 'password-session-token',
+              expires_in: 7200,
+            },
+          },
+          error: null,
+        }),
+        signOut: vi.fn().mockResolvedValue({ error: null }),
+      },
+    })
+
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    process.env = { ...originalEnv }
+  })
+
+  it('propagates step-up checkpoint cookies without minting sb-access-token from password login', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ stepUpRequired: true, redirectTo: '/security/checkpoint' }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Set-Cookie': 'sb-access-token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0, pap-step-up-token=pending-token; HttpOnly; SameSite=Lax; Path=/; Max-Age=600',
+          },
+        },
+      ),
+    )
+
+    const { loginAction } = await import('../../app/(auth)/login/actions')
+    const formData = new FormData()
+    formData.set('email', 'ops@plugapro.co.za')
+    formData.set('password', 'correct-password')
+    formData.set('next', '/admin')
+
+    await expect(loginAction({ status: 'idle' }, formData)).rejects.toThrow(
+      'NEXT_REDIRECT:/security/checkpoint',
+    )
+
+    expect(cookieSet).toHaveBeenCalledWith('pap-step-up-token', 'pending-token', {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 600,
+      secure: false,
+    })
+    expect(cookieSet).toHaveBeenCalledWith('sb-access-token', '', {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+      secure: false,
+    })
+    expect(cookieSet).not.toHaveBeenCalledWith('sb-access-token', 'password-session-token', expect.anything())
+    expect(serverActionMocks.redirect).toHaveBeenCalledWith('/security/checkpoint')
+  })
+})
+
+describe('OTP client step-up routing', () => {
+  it('provider OTP verify routes shared-gate step-up responses to the checkpoint before normal provider navigation', () => {
+    const source = readFileSync(join(process.cwd(), 'app/(auth)/provider-verify/page.tsx'), 'utf8')
+
+    const stepUpBranch = source.indexOf("payload.code === 'STEP_UP_REQUIRED'")
+    const normalNavigation = source.indexOf('router.replace(next)')
+
+    expect(source).toContain('redirectTo?: string')
+    expect(stepUpBranch).toBeGreaterThanOrEqual(0)
+    expect(source).toContain('router.replace(payload.redirectTo)')
+    expect(stepUpBranch).toBeLessThan(normalNavigation)
+  })
+
+  it('customer OTP verify honors session-gate lock and step-up responses before linking the customer account', () => {
+    const source = readFileSync(join(process.cwd(), 'app/(auth)/verify/page.tsx'), 'utf8')
+
+    const sessionGateHandling = source.indexOf('sessionPayload.stepUpRequired')
+    const customerLinking = source.indexOf("fetch('/api/auth/link'")
+
+    expect(source).toContain('const sessionResponse = await fetch')
+    expect(source).toContain('sessionPayload.locked')
+    expect(source).toContain('sessionPayload.redirectTo')
+    expect(source).toContain('router.replace(sessionPayload.redirectTo)')
+    expect(sessionGateHandling).toBeGreaterThanOrEqual(0)
+    expect(sessionGateHandling).toBeLessThan(customerLinking)
   })
 })
 
@@ -1186,8 +1344,13 @@ describe('POST /api/auth/provider/verify-code', () => {
       name: 'Approved Provider',
     }))
     ;(db.providerApplication.findFirst as any).mockResolvedValue(null)
+    ;(db.accountSecurityState.findUnique as any).mockResolvedValue(null)
+    ;(db.otpChallenge.findFirst as any).mockResolvedValue(null)
+    ;(db.otpChallenge.updateMany as any).mockResolvedValue({ count: 0 })
+    ;(db.auditLog.create as any).mockResolvedValue({})
 
     const { createClient } = await import('@supabase/supabase-js')
+    const { createServiceClient } = await import('../../lib/auth')
     ;(createClient as any).mockReturnValue({
       auth: {
         verifyOtp: vi.fn().mockResolvedValue({
@@ -1204,6 +1367,10 @@ describe('POST /api/auth/provider/verify-code', () => {
           },
           error: null,
         }),
+      },
+    })
+    ;(createServiceClient as any).mockReturnValue({
+      auth: {
         admin: {
           updateUserById: vi.fn().mockResolvedValue({ error: null }),
         },

@@ -4,6 +4,15 @@ import { isEnabled, FLAG_KEYS } from '@/lib/flags'
 import { verifyStandardWebhookSignature } from '@/lib/supabase-hook-auth'
 import { checkOtpSendLimit } from '@/lib/rate-limit'
 import { deliverOtp, OtpDeliveryError } from '@/lib/otp-delivery'
+import { trustedClientIp } from '@/lib/request-ip'
+import {
+  isDeliveryAllowed,
+  markChallengeCancelled,
+  markChallengeSendFailed,
+  markChallengeSent,
+  recordDeliveryRefusedDuringLock,
+  recordOtpChallenge,
+} from '@/lib/otp-security'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,13 +36,58 @@ function errorResponse(httpCode: number, message: HookErrorMessage) {
   )
 }
 
-function clientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get('x-forwarded-for')
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim()
-    if (first) return first
+function deliveryErrorResponse(err: unknown, hookRequestId: string) {
+  if (err instanceof OtpDeliveryError) {
+    switch (err.code) {
+      case 'TEMPLATE_NOT_APPROVED':
+        return errorResponse(503, 'template_not_approved')
+      case 'WA_AUTH_FAILED':
+        return errorResponse(503, 'wa_auth_failed')
+      case 'WA_TRANSIENT':
+        return errorResponse(503, 'wa_transient')
+      case 'UNSUPPORTED_COUNTRY_CODE':
+        return errorResponse(400, 'unsupported_country')
+      case 'INVALID_PHONE_NUMBER':
+        return errorResponse(400, 'invalid_phone')
+    }
   }
-  return request.headers.get('x-real-ip')?.trim() || null
+
+  console.error('[send-sms-hook] unexpected error', {
+    hookRequestId,
+    message: err instanceof Error ? err.message : String(err),
+  })
+  return errorResponse(503, 'wa_transient')
+}
+
+async function markSentBestEffort(params: {
+  challengeId: string
+  whatsappMessageId: string | null
+  hookRequestId: string
+}): Promise<void> {
+  try {
+    await markChallengeSent(params.challengeId, params.whatsappMessageId)
+  } catch (err) {
+    console.warn('[send-sms-hook] challenge sent update failed', {
+      hookRequestId: params.hookRequestId,
+      challengeId: params.challengeId,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+async function markFailedBestEffort(params: {
+  challengeId: string
+  hookRequestId: string
+}): Promise<void> {
+  try {
+    await markChallengeSendFailed(params.challengeId)
+  } catch (err) {
+    console.warn('[send-sms-hook] challenge failed update failed', {
+      hookRequestId: params.hookRequestId,
+      challengeId: params.challengeId,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -91,7 +145,7 @@ export async function POST(request: NextRequest) {
     return errorResponse(503, 'otp_whatsapp_disabled')
   }
 
-  const ip = clientIp(request)
+  const ip = trustedClientIp(request)
   const rateCheck = await checkOtpSendLimit({
     phone,
     ip,
@@ -112,32 +166,69 @@ export async function POST(request: NextRequest) {
       : errorResponse(429, 'rate_limited')
   }
 
+  const securityOn = await isEnabled('security.otp.report', {
+    userId: userId ?? undefined,
+  })
+  const ua = request.headers.get('user-agent')
+  let challengeId: string | null = null
+  let reportToken: string | null = null
+
+  if (securityOn) {
+    const challenge = await recordOtpChallenge({
+      phoneE164: phone,
+      userId,
+      purpose: 'LOGIN',
+      code: otp,
+      ip,
+      ua,
+      context: {
+        traceId: hookRequestId,
+        hookRequestId,
+        source: 'send_sms_hook',
+      },
+    })
+    challengeId = challenge.challengeId
+    reportToken = challenge.reportToken
+
+    const deliveryAllowed = await isDeliveryAllowed(phone)
+    if (!deliveryAllowed.allowed) {
+      await recordDeliveryRefusedDuringLock({
+        phoneE164: phone,
+        userId,
+        challengeId,
+        ip,
+        ua,
+      })
+      await markChallengeCancelled(challengeId, 'delivery_refused_during_lock')
+      return NextResponse.json({}, { status: 200 })
+    }
+  }
+
+  // reportToken is persisted for the separate security template / deep-link path.
+  // Do not inject it into otp_login; that Meta authentication template stays unchanged.
+  void reportToken
+
+  let delivery: Awaited<ReturnType<typeof deliverOtp>>
   try {
-    await deliverOtp({
+    delivery = await deliverOtp({
       phone,
       code: otp,
       context: { userId, hookRequestId, traceId: hookRequestId },
     })
-    return NextResponse.json({}, { status: 200 })
   } catch (err) {
-    if (err instanceof OtpDeliveryError) {
-      switch (err.code) {
-        case 'TEMPLATE_NOT_APPROVED':
-          return errorResponse(503, 'template_not_approved')
-        case 'WA_AUTH_FAILED':
-          return errorResponse(503, 'wa_auth_failed')
-        case 'WA_TRANSIENT':
-          return errorResponse(503, 'wa_transient')
-        case 'UNSUPPORTED_COUNTRY_CODE':
-          return errorResponse(400, 'unsupported_country')
-        case 'INVALID_PHONE_NUMBER':
-          return errorResponse(400, 'invalid_phone')
-      }
+    if (challengeId) {
+      await markFailedBestEffort({ challengeId, hookRequestId })
     }
-    console.error('[send-sms-hook] unexpected error', {
-      hookRequestId,
-      message: err instanceof Error ? err.message : String(err),
-    })
-    return errorResponse(503, 'wa_transient')
+    return deliveryErrorResponse(err, hookRequestId)
   }
+
+  if (challengeId) {
+    await markSentBestEffort({
+      challengeId,
+      whatsappMessageId: delivery.whatsappMessageId ?? null,
+      hookRequestId,
+    })
+  }
+
+  return NextResponse.json({}, { status: 200 })
 }

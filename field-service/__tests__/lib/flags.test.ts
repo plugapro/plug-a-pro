@@ -8,6 +8,7 @@ import {
   validateFeatureFlagsEnv,
   _resetEnvFlagsWarnedForTests,
 } from '@/lib/flags'
+import { FEATURE_FLAGS_REGISTRY } from '@/lib/feature-flags-registry'
 
 // Mock the DB — flags.ts imports db directly
 vi.mock('@/lib/db', () => ({
@@ -22,6 +23,19 @@ import { db } from '@/lib/db'
 const mockFindMany = db.featureFlag.findMany as ReturnType<typeof vi.fn>
 
 const ENV_KEY = 'FEATURE_FLAGS'
+
+describe('feature flag registry', () => {
+  it('registers OTP security flags disabled by default', () => {
+    expect(FEATURE_FLAGS_REGISTRY['security.otp.report']).toMatchObject({
+      owner: 'eng',
+      defaultValue: false,
+    })
+    expect(FEATURE_FLAGS_REGISTRY['admin.security.otp']).toMatchObject({
+      owner: 'ops',
+      defaultValue: false,
+    })
+  })
+})
 
 describe('isEnabled — default behaviour', () => {
   beforeEach(() => {

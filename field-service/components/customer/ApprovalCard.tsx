@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { formatCurrency } from '@/lib/payments'
+import { formatCurrency } from '@/lib/currency'
 
 interface Props {
   token: string

@@ -12,6 +12,7 @@ import { db } from './db'
 import { OPS_QUEUE_TYPES, claimOpsQueueItem } from './ops-queue'
 import { notifyCustomerPaymentFailed } from './client-pwa-submission-notifications'
 import { createPayAtGoBookingPaymentRequest } from './payat-go'
+export { formatCurrency } from './currency'
 
 export type PaymentCollectionMode = 'bypass' | 'checkout'
 
@@ -681,14 +682,4 @@ export async function issueRefund(params: {
   }
 
   return result
-}
-
-// ─── Formatting helpers ───────────────────────────────────────────────────────
-
-export function formatCurrency(amountRand: number, currency = 'ZAR'): string {
-  return new Intl.NumberFormat('en-ZA', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amountRand)
 }

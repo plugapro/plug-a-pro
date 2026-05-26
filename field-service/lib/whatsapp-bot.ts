@@ -91,6 +91,9 @@ const CUSTOMER_PHOTO_BATCH_WINDOW_MS =
 const PROVIDER_EVIDENCE_BATCH_WINDOW_MS =
   Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || MEDIA_UPLOAD_BATCH_WINDOW_MS
 const CITY_TEXT_SUPERSEDE_WINDOW_MS = Number(process.env.WHATSAPP_CITY_TEXT_SUPERSEDE_WINDOW_MS) || 800
+const OTP_REPORT_BUTTON_PREFIX = 'otp_report_'
+const OTP_REPORT_CONFIRMATION_TEXT =
+  "We've blocked that verification attempt. Your Plug A Pro account is protected. If you are trying to sign in, please start again from the app."
 const phoneMessageQueues = new Map<string, Promise<void>>()
 const {
   customerPhotoBatches,
@@ -1006,13 +1009,32 @@ async function processInboundMessageUnlocked(
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = normalizePhone(message.from)
   const reply = parseInbound(message)
-  const providerLeadResponse = parseProviderLeadResponseAction(message)
   let flow: FlowName = 'idle'
   let step: FlowStep = 'welcome'
   let data: ConversationData = {}
   let recoveryRole: JourneyUserRole = 'unknown'
 
   try {
+    if (
+      reply.type === 'button_reply' &&
+      reply.id?.startsWith(OTP_REPORT_BUTTON_PREFIX)
+    ) {
+      const token = reply.id.slice(OTP_REPORT_BUTTON_PREFIX.length)
+      try {
+        const { reportUnrequestedOtpFromWhatsApp } = await import('./otp-security')
+        await reportUnrequestedOtpFromWhatsApp({ token, fromPhoneE164: phone })
+      } catch (error) {
+        console.error('[whatsapp-bot] otp_report: handler failed', {
+          messageId: message.id,
+          phone: maskedPhone(phone),
+          errorName: error instanceof Error ? error.name : typeof error,
+        })
+      }
+      await sendText(phone, OTP_REPORT_CONFIRMATION_TEXT)
+      return
+    }
+
+    const providerLeadResponse = parseProviderLeadResponseAction(message)
     if (providerLeadResponse.ok && providerLeadResponse.parsed.actionType === 'provider_lead_response') {
       await handleProviderLeadResponseFromParsedAction(phone, providerLeadResponse)
       return

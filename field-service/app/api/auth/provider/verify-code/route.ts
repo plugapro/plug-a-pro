@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
 import { createServiceClient } from '@/lib/auth'
+import { resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
+import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
 import { createTraceId, safeErrorMessage, timestamp } from '@/lib/support-diagnostics'
 import {
   classifyWorkerOtpVerifyError,
@@ -12,14 +14,6 @@ import {
 } from '@/lib/worker-provider-auth'
 import { checkOtpVerifyLimit } from '@/lib/rate-limit'
 import { recordAuditLog } from '@/lib/audit'
-
-const DEFAULT_SESSION_MAX_AGE = 60 * 60
-const MAX_SESSION_MAX_AGE = 60 * 60 * 24
-
-function buildCookieHeader(token: string, maxAge: number): string {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
-  return `sb-access-token=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`
-}
 
 function jsonError(params: {
   code: ReturnType<typeof classifyWorkerOtpVerifyError> | string
@@ -46,6 +40,11 @@ function jsonError(params: {
     },
     { status: params.status ?? statusForWorkerVerifyCode(params.code as any) },
   )
+}
+
+function clearSessionCookieHeader(): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`
 }
 
 export async function POST(request: NextRequest) {
@@ -206,14 +205,32 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const requestedMaxAge =
-      typeof data.session.expires_in === 'number' && Number.isFinite(data.session.expires_in)
-        ? data.session.expires_in
-        : DEFAULT_SESSION_MAX_AGE
-    const maxAge = Math.min(
-      MAX_SESSION_MAX_AGE,
-      Math.max(DEFAULT_SESSION_MAX_AGE, Math.floor(requestedMaxAge)),
-    )
+    const maxAge = resolveSessionMaxAge(data.session.expires_in)
+    const gated = await issueAuthSessionWithSecurityGate({
+      accessToken,
+      phoneE164: resolved.normalizedPhone,
+      userId: data.user.id,
+      maxAge,
+      sourceRoute: '/api/auth/provider/verify-code',
+    })
+
+    if (!gated.ok && gated.reason === 'LOCKED') {
+      const response = jsonError({ code: 'ACCOUNT_LOCKED', traceId, status: 423 })
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      return response
+    }
+
+    if (!gated.ok && gated.reason === 'STEP_UP_REQUIRED') {
+      const response = NextResponse.json({
+        ok: true,
+        code: 'STEP_UP_REQUIRED',
+        traceId,
+        redirectTo: '/security/checkpoint',
+      })
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      response.headers.append('Set-Cookie', gated.pendingStepUpCookie)
+      return response
+    }
 
     const response = NextResponse.json({
       ok: true,
@@ -222,7 +239,7 @@ export async function POST(request: NextRequest) {
       providerId: resolved.provider.id,
       linkedProviderNow: resolved.linkedProviderNow,
     })
-    response.headers.set('Set-Cookie', buildCookieHeader(accessToken, maxAge))
+    response.headers.set('Set-Cookie', gated.setCookie)
     return response
   } catch (error) {
     console.error('[provider-verify-code] unexpected error', {
