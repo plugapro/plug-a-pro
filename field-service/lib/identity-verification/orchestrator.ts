@@ -37,6 +37,16 @@ export type SubmitVerificationForAutomationResult = {
   livenessSessionExpiresAt: Date | null
 }
 
+export type SubmitVerificationForAutomationOptions = {
+  existingToken?: string
+  refreshExpiredLiveness?: boolean
+}
+
+export type IdentityVerificationConsentVendor = {
+  vendorKey: VendorKey
+  vendorDisplayName: string
+}
+
 type IdentityVerificationClient = {
   providerIdentityVerification: {
     findUnique(args: {
@@ -85,8 +95,28 @@ export class IdentityVerificationTransitionError extends Error {
 export async function submitVerificationForAutomation(
   verificationId: string,
   client = db,
+  options: SubmitVerificationForAutomationOptions = {},
 ): Promise<SubmitVerificationForAutomationResult> {
   const snapshot = await loadAutomationSnapshot(verificationId, client)
+
+  if (options.refreshExpiredLiveness && shouldRefreshExpiredLiveness(snapshot)) {
+    await transitionIdentityVerification({
+      verificationId,
+      toStatus: 'RETRY_REQUIRED',
+      reasonCode: 'LIVENESS_SESSION_EXPIRED',
+      metadata: { refreshExpiredLiveness: true },
+      data: {
+        vendorReference: null,
+        livenessSessionReference: null,
+        livenessSessionUrlEncrypted: null,
+        livenessSessionExpiresAt: null,
+      },
+    }, client)
+    return submitVerificationForAutomation(verificationId, client, {
+      ...options,
+      refreshExpiredLiveness: false,
+    })
+  }
 
   if (snapshot.vendorReference && ['PROCESSING', 'AWAITING_LIVENESS'].includes(snapshot.status)) {
     return automationResultFromSnapshot(snapshot, snapshot.sourceCheckProvider ?? 'manual')
@@ -97,6 +127,12 @@ export async function submitVerificationForAutomation(
   }
 
   const activeConfig = await resolveActiveVendorConfig(snapshot, client)
+  if (!hasConsentForVendor(snapshot, activeConfig.vendorKey)) {
+    return transitionToManualReview(verificationId, 'PROVIDER_CONSENT_REQUIRED', {
+      sourceCheckProvider: 'manual',
+      vendorReference: null,
+    }, client)
+  }
   if (
     activeConfig.livenessRequired &&
     await isEnabled('provider.identity.verification.liveness.degraded_kill_switch', { userId: snapshot.providerId ?? undefined })
@@ -106,9 +142,22 @@ export async function submitVerificationForAutomation(
       vendorReference: null,
     }, client)
   }
-  const adapter = getAdapter(activeConfig.vendorKey)
+  let adapter
+  try {
+    adapter = getAdapter(activeConfig.vendorKey)
+  } catch (error) {
+    console.warn('[identity-verification] vendor adapter unavailable', {
+      verificationId,
+      vendorKey: activeConfig.vendorKey,
+      reason: error instanceof Error ? error.name : 'unknown',
+    })
+    return transitionToManualReview(verificationId, 'PROVIDER_UNAVAILABLE', {
+      sourceCheckProvider: activeConfig.vendorKey,
+      vendorReference: null,
+    }, client)
+  }
   const identifierPlaintext = await revealIdentifierForSubmission(snapshot, client)
-  const { token } = await issueProviderVerificationToken({ verificationId })
+  const token = options.existingToken ?? (await issueProviderVerificationToken({ verificationId })).token
   const documentInput = buildSubmitDocumentInput(snapshot, activeConfig.vendorKey, identifierPlaintext, token)
 
   let submitResult
@@ -215,6 +264,31 @@ export async function submitVerificationForAutomation(
     vendorReference: submitResult.vendorReference,
     livenessUrl: null,
     livenessSessionExpiresAt: null,
+  }
+}
+
+export async function resolveIdentityVerificationConsentVendor(
+  verificationId: string,
+  client = db,
+): Promise<IdentityVerificationConsentVendor> {
+  const snapshot = await loadAutomationSnapshot(verificationId, client)
+  return resolveIdentityVerificationConsentVendorForSubject({
+    providerId: snapshot.providerId,
+    providerApplicationId: snapshot.providerApplicationId,
+  }, client)
+}
+
+export async function resolveIdentityVerificationConsentVendorForSubject(
+  subject: { providerId?: string | null; providerApplicationId?: string | null },
+  client = db,
+): Promise<IdentityVerificationConsentVendor> {
+  const activeConfig = await resolveActiveVendorConfig({
+    providerId: subject.providerId ?? null,
+    providerApplicationId: subject.providerApplicationId ?? null,
+  }, client)
+  return {
+    vendorKey: activeConfig.vendorKey,
+    vendorDisplayName: await resolveVendorDisplayName(activeConfig.vendorKey, client),
   }
 }
 
@@ -416,7 +490,10 @@ async function loadAutomationSnapshot(verificationId: string, client = db) {
   })
 }
 
-async function resolveActiveVendorConfig(snapshot: Awaited<ReturnType<typeof loadAutomationSnapshot>>, client = db) {
+async function resolveActiveVendorConfig(
+  snapshot: { providerId?: string | null; providerApplicationId?: string | null },
+  client = db,
+) {
   const automationEnabled = await isEnabled('provider.identity.verification.automation', { userId: snapshot.providerId ?? undefined })
   if (!automationEnabled) return manualConfig()
 
@@ -465,6 +542,44 @@ async function resolveVendorConfigForVerdict(sourceCheckProvider: string | null,
   return row
     ? { vendorKey, confidenceThreshold: row.confidenceThreshold, livenessRequired: row.livenessRequired }
     : manualConfig()
+}
+
+async function resolveVendorDisplayName(vendorKey: VendorKey, client = db) {
+  if (vendorKey === 'manual') return 'Plug A Pro review team'
+  const row = await client.verificationVendorConfig.findUnique({
+    where: { vendorKey },
+    select: { configJson: true },
+  })
+  const displayName = readDisplayName(row?.configJson)
+  if (displayName) return displayName
+  if (vendorKey === 'smile_id') return 'Smile ID'
+  if (vendorKey === 'thisisme') return 'ThisIsMe'
+  if (vendorKey === 'datanamix') return 'Datanamix'
+  if (vendorKey === 'omnicheck') return 'OmniCheck'
+  return 'Mock identity provider'
+}
+
+function readDisplayName(configJson: unknown): string | null {
+  if (!configJson || typeof configJson !== 'object' || Array.isArray(configJson)) return null
+  const displayName = (configJson as { displayName?: unknown }).displayName
+  return typeof displayName === 'string' && displayName.trim() ? displayName.trim() : null
+}
+
+function hasConsentForVendor(
+  snapshot: { consentVendorKey?: string | null },
+  vendorKey: VendorKey,
+) {
+  if (vendorKey === 'manual') return true
+  return snapshot.consentVendorKey === vendorKey
+}
+
+function shouldRefreshExpiredLiveness(snapshot: {
+  status: VerificationStatus
+  livenessSessionExpiresAt?: Date | null
+}) {
+  return snapshot.status === 'AWAITING_LIVENESS' &&
+    Boolean(snapshot.livenessSessionExpiresAt) &&
+    snapshot.livenessSessionExpiresAt! <= new Date()
 }
 
 async function revealIdentifierForSubmission(snapshot: Awaited<ReturnType<typeof loadAutomationSnapshot>>, client = db) {

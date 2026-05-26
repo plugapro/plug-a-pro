@@ -85,12 +85,22 @@ export const smileIdVerificationAdapter: VerificationVendorAdapter = {
   },
 }
 
-function redactPayload(value: Record<string, unknown>) {
-  const redacted = { ...value }
-  for (const key of Object.keys(redacted)) {
-    if (/id_number|identifier|document|selfie|image|token|secret/i.test(key)) {
-      redacted[key] = '[redacted]'
-    }
-  }
-  return redacted
+function redactPayload(value: unknown): Record<string, unknown> {
+  const redacted = redactValue(value)
+  return redacted && typeof redacted === 'object' && !Array.isArray(redacted)
+    ? redacted as Record<string, unknown>
+    : { payload: '[redacted]' }
+}
+
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactValue)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+      key,
+      /id_number|identifier|document|selfie|image|token|secret|url/i.test(key)
+        ? '[redacted]'
+        : redactValue(nested),
+    ]),
+  )
 }

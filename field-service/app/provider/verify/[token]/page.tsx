@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { renderIdentityConsentText } from '@/lib/identity-verification/consent-service'
+import { resolveIdentityVerificationConsentVendor } from '@/lib/identity-verification/orchestrator'
 import { getRequiredDocumentKinds, isIdentityBasis, type IdentityBasis } from '@/lib/identity-verification/types'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 import {
@@ -161,6 +163,9 @@ export default async function ProviderIdentityVerifyPage({
   const feedback = buildFeedback(searchParams ? await searchParams : undefined)
   const verification = await resolveForPage(token)
   if (!verification) return <ExpiredLink />
+  const consentVendor = ['NOT_STARTED', 'STARTED'].includes(verification.status)
+    ? await resolveIdentityVerificationConsentVendor(verification.id)
+    : null
 
   const documents = await db.providerIdentityDocument.findMany({
     where: { verificationId: verification.id, deletedAt: null },
@@ -269,8 +274,9 @@ export default async function ProviderIdentityVerifyPage({
           <div>
             <h2 className="text-base font-semibold">Consent</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Plug A Pro will use your identity details only to verify your provider account, manage trust reviews, and
-              meet legal or platform safety obligations.
+              {consentVendor
+                ? renderIdentityConsentText(consentVendor.vendorDisplayName)
+                : 'Plug A Pro will use your identity details only to verify your provider account, manage trust reviews, and meet legal or platform safety obligations.'}
             </p>
           </div>
           <form action={acceptConsentAction}>

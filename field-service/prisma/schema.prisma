@@ -1942,8 +1942,8 @@ model SecurityEvent {
   resolvedByUserId      String?
 
   relatedOtpChallenge OtpChallenge? @relation(fields: [relatedOtpChallengeId], references: [id], onDelete: SetNull)
-  subjectVerification ProviderIdentityVerification? @relation(fields: [subjectVerificationId], references: [id], onDelete: SetNull)
-  subjectWebhookEvent ProviderVerificationWebhookEvent? @relation(fields: [subjectWebhookEventId], references: [id], onDelete: SetNull)
+  subjectVerification ProviderIdentityVerification? @relation(fields: [subjectVerificationId], references: [id], onDelete: Restrict)
+  subjectWebhookEvent ProviderVerificationWebhookEvent? @relation(fields: [subjectWebhookEventId], references: [id], onDelete: Restrict)
 
   @@index([status, createdAt])
   @@index([phoneE164, createdAt])

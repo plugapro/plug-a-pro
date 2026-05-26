@@ -108,6 +108,85 @@ describe('provider identity verification orchestrator', () => {
     expect(client.state.verification.livenessSessionUrlEncrypted).not.toContain('vendor.test')
   })
 
+  it('reuses an existing PWA token instead of rotating the active verification link', async () => {
+    const expiresAt = new Date('2026-05-26T12:30:00.000Z')
+    const client = makeClient({ livenessRequired: true })
+    mocks.getAdapter.mockReturnValue(vendorAdapter({
+      vendorReference: 'mock:job_2',
+      immediateResult: vendorResult({ livenessVerified: false, confidence: 0.98 }),
+      expectsWebhook: true,
+      liveness: {
+        vendorReference: 'mock:live_2',
+        sessionUrl: 'https://vendor.test/session/secret',
+        expiresAt,
+      },
+    }))
+
+    const result = await submitVerificationForAutomation('ver_1', client, { existingToken: 'current-token' })
+
+    expect(mocks.issueProviderVerificationToken).not.toHaveBeenCalled()
+    expect(result.livenessUrl).toBe('https://plug.test/provider/verify/current-token/liveness')
+  })
+
+  it('requires consent for the active external vendor before sharing identity data', async () => {
+    const client = makeClient({ consentVendorKey: 'manual' })
+    mocks.getAdapter.mockReturnValue(vendorAdapter({
+      vendorReference: 'mock:unused',
+      expectsWebhook: false,
+    }))
+
+    const result = await submitVerificationForAutomation('ver_1', client)
+
+    expect(result.status).toBe('NEEDS_MANUAL_REVIEW')
+    expect(mocks.getAdapter).not.toHaveBeenCalled()
+    expect(client.state.verification.failureReasonCode).toBe('PROVIDER_CONSENT_REQUIRED')
+  })
+
+  it('routes to manual review if the configured adapter cannot be loaded safely', async () => {
+    const client = makeClient()
+    mocks.getAdapter.mockImplementationOnce(() => {
+      throw new Error('Mock verification provider cannot be used in production')
+    })
+
+    const result = await submitVerificationForAutomation('ver_1', client)
+
+    expect(result.status).toBe('NEEDS_MANUAL_REVIEW')
+    expect(client.state.verification.failureReasonCode).toBe('PROVIDER_UNAVAILABLE')
+  })
+
+  it('can refresh an expired liveness session without invalidating the current PWA token', async () => {
+    const expiresAt = new Date('2026-05-26T12:30:00.000Z')
+    const client = makeClient({
+      status: 'AWAITING_LIVENESS',
+      sourceCheckProvider: 'mock',
+      vendorReference: 'mock:old-job',
+      livenessRequired: true,
+      livenessSessionExpiresAt: new Date('2026-05-26T10:30:00.000Z'),
+    })
+    mocks.getAdapter.mockReturnValue(vendorAdapter({
+      vendorReference: 'mock:new-job',
+      expectsWebhook: true,
+      liveness: {
+        vendorReference: 'mock:new-live',
+        sessionUrl: 'https://vendor.test/session/new-secret',
+        expiresAt,
+      },
+    }))
+
+    const result = await submitVerificationForAutomation('ver_1', client, {
+      existingToken: 'current-token',
+      refreshExpiredLiveness: true,
+    })
+
+    expect(mocks.issueProviderVerificationToken).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      status: 'AWAITING_LIVENESS',
+      livenessUrl: 'https://plug.test/provider/verify/current-token/liveness',
+    })
+    expect(client.state.verification.vendorReference).toBe('mock:new-job')
+    expect(client.state.verification.livenessSessionReference).toBe('mock:new-live')
+  })
+
   it('freezes vendor verdicts into manual review when the incident flag is active', async () => {
     const client = makeClient({
       status: 'PROCESSING',
@@ -157,6 +236,8 @@ function makeClient(options: {
   sourceCheckProvider?: string | null
   vendorReference?: string | null
   livenessRequired?: boolean
+  livenessSessionExpiresAt?: Date | null
+  consentVendorKey?: string | null
 } = {}) {
   const state = {
     verification: {
@@ -170,7 +251,8 @@ function makeClient(options: {
       vendorReference: options.vendorReference ?? null,
       livenessSessionReference: null,
       livenessSessionUrlEncrypted: null,
-      livenessSessionExpiresAt: null,
+      livenessSessionExpiresAt: options.livenessSessionExpiresAt ?? null,
+      consentVendorKey: options.consentVendorKey ?? 'mock',
       identityBasis: 'SA_ID',
       issuingCountry: 'ZA',
       identifierHash: 'hash_1',

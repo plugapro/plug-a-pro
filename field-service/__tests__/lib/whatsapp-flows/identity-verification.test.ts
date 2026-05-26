@@ -7,6 +7,8 @@ const {
   mockSendText,
   mockTransition,
   mockSubmitAutomation,
+  mockResolveConsentVendor,
+  mockResolveConsentVendorForSubject,
   mockDownloadIdentityMedia,
   mockRecordConsent,
 } = vi.hoisted(() => ({
@@ -17,6 +19,7 @@ const {
     },
     providerIdentityVerification: {
       create: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
     },
     providerIdentityDocument: {
@@ -28,6 +31,8 @@ const {
   mockSendText: vi.fn(),
   mockTransition: vi.fn(),
   mockSubmitAutomation: vi.fn(),
+  mockResolveConsentVendor: vi.fn(),
+  mockResolveConsentVendorForSubject: vi.fn(),
   mockDownloadIdentityMedia: vi.fn(),
   mockRecordConsent: vi.fn(),
 }))
@@ -41,6 +46,8 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 vi.mock('@/lib/identity-verification/orchestrator', () => ({
   transitionIdentityVerification: mockTransition,
   submitVerificationForAutomation: mockSubmitAutomation,
+  resolveIdentityVerificationConsentVendor: mockResolveConsentVendor,
+  resolveIdentityVerificationConsentVendorForSubject: mockResolveConsentVendorForSubject,
 }))
 vi.mock('@/lib/identity-verification/consent-service', () => ({
   recordConsentAcceptance: mockRecordConsent,
@@ -73,6 +80,9 @@ describe('WhatsApp identity verification fallback flow', () => {
       id: 'ver-wa-1',
       status: 'NOT_STARTED',
     })
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      status: 'AWAITING_DOCUMENT',
+    })
     mockDb.providerIdentityVerification.update.mockResolvedValue({ id: 'ver-wa-1' })
     mockDb.providerIdentityDocument.findFirst.mockResolvedValue(null)
     mockTransition.mockResolvedValue({ id: 'ver-wa-1' })
@@ -83,6 +93,14 @@ describe('WhatsApp identity verification fallback flow', () => {
       vendorReference: 'manual:ver-wa-1',
       livenessUrl: null,
       livenessSessionExpiresAt: null,
+    })
+    mockResolveConsentVendor.mockResolvedValue({
+      vendorKey: 'mock',
+      vendorDisplayName: 'Mock identity provider',
+    })
+    mockResolveConsentVendorForSubject.mockResolvedValue({
+      vendorKey: 'mock',
+      vendorDisplayName: 'Mock identity provider',
     })
     mockRecordConsent.mockResolvedValue({ consentTextHash: 'hash-consent' })
     mockDownloadIdentityMedia.mockResolvedValue({ documentId: 'doc-1' })
@@ -97,13 +115,19 @@ describe('WhatsApp identity verification fallback flow', () => {
 
     expect(mockSendButtons).toHaveBeenCalledWith(
       '+27711111111',
-      expect.stringContaining('POPIA'),
+      expect.stringContaining('Mock identity provider'),
       [
         { id: 'iv_consent_accept', title: 'I agree' },
         { id: 'iv_consent_decline', title: 'Not now' },
       ],
     )
-    expect(result).toEqual({ nextStep: 'pj_identity_consent' })
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_consent',
+      nextData: {
+        identityConsentVendorKey: 'mock',
+        identityConsentVendorDisplayName: 'Mock identity provider',
+      },
+    })
     expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
   })
 
@@ -125,6 +149,13 @@ describe('WhatsApp identity verification fallback flow', () => {
       },
       select: { id: true, status: true },
     })
+    expect(mockRecordConsent).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      vendorKey: 'mock',
+      vendorDisplayName: 'Mock identity provider',
+      consentText: 'consent for Mock identity provider',
+      channel: 'WHATSAPP',
+    }))
     expect(mockTransition).toHaveBeenCalledWith(expect.objectContaining({
       verificationId: 'ver-wa-1',
       toStatus: 'STARTED',
@@ -377,6 +408,31 @@ describe('WhatsApp identity verification fallback flow', () => {
         identityVerificationDocumentIds: ['doc-existing'],
       },
     })
+  })
+
+  it('does not repeat the document transition when Continue arrives after state already advanced', async () => {
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+    mockDb.providerIdentityDocument.findFirst.mockResolvedValueOnce({ id: 'doc-existing' })
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({ status: 'AWAITING_SELFIE' })
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_document',
+        { type: 'button_reply', id: 'flow_continue' },
+        {
+          identityVerificationId: 'ver-wa-1',
+          identityVerificationBasis: 'SA_ID',
+          identityVerificationDocumentKinds: ['ID_FRONT'],
+        },
+      ),
+    )
+
+    expect(mockTransition).not.toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      toStatus: 'AWAITING_SELFIE',
+    }))
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('selfie'))
+    expect(result).toMatchObject({ nextStep: 'pj_identity_selfie' })
   })
 
   it('logs state update failures after a document save and lets the provider continue safely later', async () => {

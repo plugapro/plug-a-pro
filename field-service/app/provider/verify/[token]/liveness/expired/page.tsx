@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { submitVerificationForAutomation } from '@/lib/identity-verification/orchestrator'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
+import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,10 @@ export default async function ExpiredLivenessPage({
   async function requestNewLivenessLinkAction() {
     'use server'
     const verification = await resolveProviderVerificationToken(token)
-    await submitVerificationForAutomation(verification.id)
+    await submitVerificationForAutomation(verification.id, db, {
+      existingToken: token,
+      refreshExpiredLiveness: true,
+    })
     redirect(`/provider/verify/${encodeURIComponent(token)}`)
   }
 

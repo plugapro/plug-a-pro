@@ -11,6 +11,8 @@ import {
   toIdentityDocumentMediaError,
 } from '../identity-verification/document-media-errors'
 import {
+  resolveIdentityVerificationConsentVendor,
+  resolveIdentityVerificationConsentVendorForSubject,
   submitVerificationForAutomation,
   transitionIdentityVerification,
 } from '../identity-verification/orchestrator'
@@ -58,16 +60,28 @@ export async function handleWhatsAppIdentityVerificationFlow(ctx: FlowContext): 
 }
 
 async function promptIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await findProviderForIdentity(ctx.phone)
+  const consentVendor = provider
+    ? await resolveIdentityVerificationConsentVendorForSubject({ providerId: provider.id })
+    : { vendorKey: 'manual' as const, vendorDisplayName: 'Plug A Pro review team' }
+  const consentText = renderIdentityConsentText(consentVendor.vendorDisplayName)
   await sendButtons(
     ctx.phone,
-    'POPIA consent: To verify your provider profile in WhatsApp, Plug A Pro will collect your ID/passport/permit details, document photo, and selfie for manual review. Do you agree?',
+    `POPIA consent: ${consentText} Do you agree?`,
     [
       { id: 'iv_consent_accept', title: 'I agree' },
       { id: 'iv_consent_decline', title: 'Not now' },
     ],
   )
 
-  return { nextStep: 'pj_identity_consent' }
+  return {
+    nextStep: 'pj_identity_consent',
+    nextData: {
+      identityConsentVendorKey: consentVendor.vendorKey,
+      identityConsentVendorDisplayName: consentVendor.vendorDisplayName,
+      identityConsentText: consentText,
+    },
+  }
 }
 
 async function handleIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
@@ -93,6 +107,7 @@ async function handleIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
     },
     select: { id: true, status: true },
   })
+  const consentVendor = await resolveConsentVendorForWhatsApp(verification.id, ctx)
 
   await transitionIdentityVerification({
     verificationId: verification.id,
@@ -109,9 +124,9 @@ async function handleIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
   })
   await recordConsentAcceptance({
     verificationId: verification.id,
-    vendorKey: 'manual',
-    vendorDisplayName: 'Plug A Pro review team',
-    consentText: renderIdentityConsentText('Plug A Pro review team'),
+    vendorKey: consentVendor.vendorKey,
+    vendorDisplayName: consentVendor.vendorDisplayName,
+    consentText: consentVendor.consentText,
     channel: 'WHATSAPP',
     acceptedByProviderId: provider.id,
   })
@@ -342,11 +357,17 @@ async function continueAfterIdentityDocumentStored(params: {
   }
 
   try {
-    await transitionIdentityVerification({
-      verificationId,
-      toStatus: 'AWAITING_SELFIE',
-      metadata: { channel: 'whatsapp', identityBasis },
+    const current = await db.providerIdentityVerification.findUnique({
+      where: { id: verificationId },
+      select: { status: true },
     })
+    if (!current || current.status === 'AWAITING_DOCUMENT') {
+      await transitionIdentityVerification({
+        verificationId,
+        toStatus: 'AWAITING_SELFIE',
+        metadata: { channel: 'whatsapp', identityBasis },
+      })
+    }
   } catch (error) {
     const classified = new IdentityDocumentMediaError({
       code: 'VERIFICATION_STATE_UPDATE_FAILED',
@@ -386,6 +407,32 @@ async function continueAfterIdentityDocumentStored(params: {
         documentId,
       ],
     },
+  }
+}
+
+async function resolveConsentVendorForWhatsApp(
+  verificationId: string,
+  ctx: FlowContext,
+): Promise<{ vendorKey: string; vendorDisplayName: string; consentText: string }> {
+  const vendorKey = typeof ctx.data.identityConsentVendorKey === 'string'
+    ? ctx.data.identityConsentVendorKey
+    : null
+  const vendorDisplayName = typeof ctx.data.identityConsentVendorDisplayName === 'string'
+    ? ctx.data.identityConsentVendorDisplayName
+    : null
+  const consentText = typeof ctx.data.identityConsentText === 'string'
+    ? ctx.data.identityConsentText
+    : null
+
+  if (vendorKey && vendorDisplayName && consentText) {
+    return { vendorKey, vendorDisplayName, consentText }
+  }
+
+  const consentVendor = await resolveIdentityVerificationConsentVendor(verificationId)
+  return {
+    vendorKey: consentVendor.vendorKey,
+    vendorDisplayName: consentVendor.vendorDisplayName,
+    consentText: renderIdentityConsentText(consentVendor.vendorDisplayName),
   }
 }
 

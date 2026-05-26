@@ -61,4 +61,40 @@ describe('identity verification vendor adapters', () => {
       expiresAt: expect.any(Date),
     })
   })
+
+  it('Smile ID webhook parsing redacts nested identity payload fields', async () => {
+    vi.stubEnv('SMILE_ID_WEBHOOK_SECRET', 'secret')
+    const { createHmac } = await import('crypto')
+    const { smileIdVerificationAdapter } = await import('../../../lib/identity-verification/vendors/smile-id')
+    const rawBody = JSON.stringify({
+      event_id: 'evt-1',
+      job_id: 'job-1',
+      result: {
+        decision: 'PASS',
+        confidence: 0.99,
+        nested: {
+          document_url: 'https://vendor.example/doc-secret',
+          selfie_image: 'base64-secret',
+        },
+      },
+    })
+    const signature = createHmac('sha256', 'secret').update(rawBody).digest('hex')
+
+    const parsed = await smileIdVerificationAdapter.parseWebhook({
+      rawBody,
+      headers: { 'x-smile-signature': signature },
+    })
+
+    expect(parsed.signatureValid).toBe(true)
+    expect(JSON.stringify(parsed.redactedPayload)).not.toContain('doc-secret')
+    expect(JSON.stringify(parsed.redactedPayload)).not.toContain('base64-secret')
+    expect(parsed.redactedPayload).toMatchObject({
+      result: {
+        nested: {
+          document_url: '[redacted]',
+          selfie_image: '[redacted]',
+        },
+      },
+    })
+  })
 })

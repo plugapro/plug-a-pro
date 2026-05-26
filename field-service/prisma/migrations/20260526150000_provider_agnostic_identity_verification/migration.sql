@@ -154,7 +154,7 @@ DO $$
 BEGIN
   ALTER TABLE "security_events"
     ADD CONSTRAINT "security_events_subjectVerificationId_fkey"
-    FOREIGN KEY ("subjectVerificationId") REFERENCES "provider_identity_verifications"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    FOREIGN KEY ("subjectVerificationId") REFERENCES "provider_identity_verifications"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
@@ -163,7 +163,7 @@ DO $$
 BEGIN
   ALTER TABLE "security_events"
     ADD CONSTRAINT "security_events_subjectWebhookEventId_fkey"
-    FOREIGN KEY ("subjectWebhookEventId") REFERENCES "provider_verification_webhook_events"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    FOREIGN KEY ("subjectWebhookEventId") REFERENCES "provider_verification_webhook_events"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;

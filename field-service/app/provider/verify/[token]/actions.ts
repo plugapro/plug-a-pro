@@ -11,6 +11,7 @@ import {
 import { validateIdentityDocumentDetails } from '@/lib/identity-verification/document-validation'
 import { logIdentityVerificationEvent } from '@/lib/identity-verification/log'
 import {
+  resolveIdentityVerificationConsentVendor,
   submitVerificationForAutomation,
   transitionIdentityVerification,
 } from '@/lib/identity-verification/orchestrator'
@@ -74,6 +75,7 @@ export async function acceptIdentityConsent(token: string) {
   }
 
   if (verification.status !== 'CONSENTED') {
+    const consentVendor = await resolveIdentityVerificationConsentVendor(verification.id)
     await transitionIdentityVerification({
       verificationId: verification.id,
       toStatus: 'CONSENTED',
@@ -84,9 +86,9 @@ export async function acceptIdentityConsent(token: string) {
     })
     await recordConsentAcceptance({
       verificationId: verification.id,
-      vendorKey: 'manual',
-      vendorDisplayName: 'Plug A Pro review team',
-      consentText: renderIdentityConsentText('Plug A Pro review team'),
+      vendorKey: consentVendor.vendorKey,
+      vendorDisplayName: consentVendor.vendorDisplayName,
+      consentText: renderIdentityConsentText(consentVendor.vendorDisplayName),
       channel: 'PWA',
       acceptedByProviderId: verification.providerId,
     })
@@ -320,7 +322,7 @@ export async function submitIdentityVerificationForReview(token: string): Promis
     })
   }
 
-  await submitVerificationForAutomation(verification.id)
+  await submitVerificationForAutomation(verification.id, db, { existingToken: token })
 
   revalidatePath(`/provider/verify/${token}`)
   return { ok: true as const }

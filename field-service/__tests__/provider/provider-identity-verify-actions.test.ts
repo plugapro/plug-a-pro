@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockResolveToken, mockTransition, mockSubmitAutomation, mockRecordConsent, mockDb } = vi.hoisted(() => ({
+const { mockResolveToken, mockTransition, mockSubmitAutomation, mockResolveConsentVendor, mockRecordConsent, mockDb } = vi.hoisted(() => ({
   mockResolveToken: vi.fn(),
   mockTransition: vi.fn(),
   mockSubmitAutomation: vi.fn(),
+  mockResolveConsentVendor: vi.fn(),
   mockRecordConsent: vi.fn(),
   mockDb: {
     providerIdentityVerification: {
@@ -22,6 +23,7 @@ vi.mock('../../lib/provider-verification-token', () => ({
 vi.mock('../../lib/identity-verification/orchestrator', () => ({
   transitionIdentityVerification: mockTransition,
   submitVerificationForAutomation: mockSubmitAutomation,
+  resolveIdentityVerificationConsentVendor: mockResolveConsentVendor,
 }))
 
 vi.mock('../../lib/identity-verification/consent-service', () => ({
@@ -44,6 +46,10 @@ describe('provider identity verification PWA actions', () => {
       identityBasis: 'SA_ID',
     })
     mockTransition.mockResolvedValue({ id: 'ver-1' })
+    mockResolveConsentVendor.mockResolvedValue({
+      vendorKey: 'mock',
+      vendorDisplayName: 'Mock identity provider',
+    })
     mockSubmitAutomation.mockResolvedValue({
       verificationId: 'ver-1',
       status: 'NEEDS_MANUAL_REVIEW',
@@ -74,6 +80,13 @@ describe('provider identity verification PWA actions', () => {
       metadata: { consentAccepted: true },
       data: expect.objectContaining({ consentAcceptedAt: expect.any(Date) }),
     })
+    expect(mockRecordConsent).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-1',
+      vendorKey: 'mock',
+      vendorDisplayName: 'Mock identity provider',
+      consentText: 'consent for Mock identity provider',
+      channel: 'PWA',
+    }))
   })
 
   it('treats consent as a no-op when the flow already advanced past consent', async () => {
@@ -284,6 +297,6 @@ describe('provider identity verification PWA actions', () => {
       verificationId: 'ver-1',
       toStatus: 'SUBMITTED',
     }))
-    expect(mockSubmitAutomation).toHaveBeenCalledWith('ver-1')
+    expect(mockSubmitAutomation).toHaveBeenCalledWith('ver-1', mockDb, { existingToken: 'token-1' })
   })
 })
