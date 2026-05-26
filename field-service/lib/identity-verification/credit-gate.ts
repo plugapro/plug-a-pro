@@ -3,6 +3,12 @@ import { db } from '../db'
 import { isEnabled } from '../flags'
 
 export type IdentityVerificationLookupClient = {
+  provider: {
+    findUnique(args: {
+      where: { id: string }
+      select: { kycStatus: true }
+    }): Promise<{ kycStatus: KycStatus } | null>
+  }
   providerIdentityVerification: {
     findFirst(args: {
       where: {
@@ -24,16 +30,7 @@ type IdentityVerificationFindFirstArgs = Parameters<
 
 export type HighAssuranceCreditVerificationWhere = IdentityVerificationFindFirstArgs['where']
 
-// Injectable DB client type for isProviderEligibleForCredits; needs both
-// provider and providerIdentityVerification.
-export type EligibilityLookupClient = IdentityVerificationLookupClient & {
-  provider: {
-    findUnique(args: {
-      where: { id: string }
-      select: { kycStatus: true }
-    }): Promise<{ kycStatus: KycStatus } | null>
-  }
-}
+export type EligibilityLookupClient = IdentityVerificationLookupClient
 
 export function buildHighAssuranceCreditVerificationWhere(
   providerId: string,
@@ -57,12 +54,17 @@ export class IdentityCreditGateError extends Error {
   }
 }
 
-export async function assertIdentityVerifiedForCredits(
+async function findEligibleCreditIdentity(
   providerId: string,
-  client: IdentityVerificationLookupClient = db,
-): Promise<{ providerId: string; verificationId: string | null }> {
-  if (!(await isEnabled('provider.identity.verification'))) {
-    return { providerId, verificationId: null }
+  client: IdentityVerificationLookupClient,
+): Promise<{ providerId: string; verificationId: string } | null> {
+  const provider = await client.provider.findUnique({
+    where: { id: providerId },
+    select: { kycStatus: true },
+  })
+
+  if (!provider || provider.kycStatus !== KycStatus.VERIFIED) {
+    return null
   }
 
   const verification = await client.providerIdentityVerification.findFirst({
@@ -72,10 +74,27 @@ export async function assertIdentityVerifiedForCredits(
   })
 
   if (!verification) {
+    return null
+  }
+
+  return { providerId, verificationId: verification.id }
+}
+
+export async function assertIdentityVerifiedForCredits(
+  providerId: string,
+  client: IdentityVerificationLookupClient = db,
+): Promise<{ providerId: string; verificationId: string | null }> {
+  if (!(await isEnabled('provider.identity.verification'))) {
+    return { providerId, verificationId: null }
+  }
+
+  const eligibleIdentity = await findEligibleCreditIdentity(providerId, client)
+
+  if (!eligibleIdentity) {
     throw new IdentityCreditGateError()
   }
 
-  return { providerId: verification.providerId!, verificationId: verification.id }
+  return eligibleIdentity
 }
 
 // Non-throwing eligibility check (display gating).
@@ -85,7 +104,9 @@ export async function assertIdentityVerifiedForCredits(
 //
 // IMPORTANT: the verification where-clause is built by
 // buildHighAssuranceCreditVerificationWhere and shared with the throwing gate.
-// Change that builder when the paid-credit verification predicate changes.
+// The full kycStatus + verification-row predicate is shared through
+// findEligibleCreditIdentity. Change that helper when the paid-credit
+// verification predicate changes.
 //
 // Returns true when:
 //   - the flag 'provider.identity.verification' is off (no-op; current behaviour)
@@ -100,20 +121,5 @@ export async function isProviderEligibleForCredits(
     return true
   }
 
-  const provider = await client.provider.findUnique({
-    where: { id: providerId },
-    select: { kycStatus: true },
-  })
-
-  if (!provider || provider.kycStatus !== KycStatus.VERIFIED) {
-    return false
-  }
-
-  const verification = await client.providerIdentityVerification.findFirst({
-    where: buildHighAssuranceCreditVerificationWhere(providerId),
-    orderBy: { updatedAt: 'desc' },
-    select: { id: true, providerId: true },
-  })
-
-  return Boolean(verification)
+  return Boolean(await findEligibleCreditIdentity(providerId, client))
 }
