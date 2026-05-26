@@ -6,12 +6,16 @@ const {
   mockClearLock,
   mockRevalidatePath,
   mockSecurityEventUpdate,
+  mockSecurityEventUpdateMany,
+  mockSecurityEventFindUnique,
 } = vi.hoisted(() => ({
   mockCrudAction: vi.fn(),
   mockRequireAdmin: vi.fn(),
   mockClearLock: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockSecurityEventUpdate: vi.fn(),
+  mockSecurityEventUpdateMany: vi.fn(),
+  mockSecurityEventFindUnique: vi.fn(),
 }))
 
 vi.mock('next/cache', () => ({ revalidatePath: mockRevalidatePath }))
@@ -44,6 +48,16 @@ async function executeCrudActionWith(tx: unknown) {
   })
 }
 
+function securityEventTx() {
+  return {
+    securityEvent: {
+      update: mockSecurityEventUpdate,
+      updateMany: mockSecurityEventUpdateMany,
+      findUnique: mockSecurityEventFindUnique,
+    },
+  }
+}
+
 describe('admin OTP security actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -56,11 +70,18 @@ describe('admin OTP security actions', () => {
       id: 'event-1',
       status: 'ACKNOWLEDGED',
     })
+    mockSecurityEventUpdateMany.mockResolvedValue({ count: 1 })
+    mockSecurityEventFindUnique.mockResolvedValue({
+      id: 'event-1',
+      status: 'ACKNOWLEDGED',
+      resolvedAt: null,
+      resolvedByUserId: null,
+    })
     mockClearLock.mockResolvedValue(undefined)
   })
 
   it('acknowledges a security event through crudAction with admin.security.otp', async () => {
-    await executeCrudActionWith({ securityEvent: { update: mockSecurityEventUpdate } })
+    await executeCrudActionWith(securityEventTx())
     const { acknowledgeSecurityEventAction } = await import(
       '../../app/(admin)/admin/otp-security/actions'
     )
@@ -77,16 +98,25 @@ describe('admin OTP security actions', () => {
       requiredFlag: 'admin.security.otp',
       reason: 'Reviewed by trust desk',
     }))
-    expect(mockSecurityEventUpdate).toHaveBeenCalledWith({
-      where: { id: 'event-1' },
-      data: { status: 'ACKNOWLEDGED' },
-      select: expect.any(Object),
+    expect(mockSecurityEventUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'event-1', status: 'NEW' },
+      data: {
+        status: 'ACKNOWLEDGED',
+        resolvedAt: null,
+        resolvedByUserId: null,
+      },
     })
     expect(mockRevalidatePath).toHaveBeenCalledWith('/admin/otp-security')
   })
 
   it('resolves a security event through crudAction', async () => {
-    await executeCrudActionWith({ securityEvent: { update: mockSecurityEventUpdate } })
+    mockSecurityEventFindUnique.mockResolvedValue({
+      id: 'event-1',
+      status: 'RESOLVED',
+      resolvedAt: new Date('2026-05-26T10:00:00.000Z'),
+      resolvedByUserId: 'admin-1',
+    })
+    await executeCrudActionWith(securityEventTx())
     const { resolveSecurityEventAction } = await import(
       '../../app/(admin)/admin/otp-security/actions'
     )
@@ -99,19 +129,24 @@ describe('admin OTP security actions', () => {
       requiredRole: ['TRUST', 'ADMIN', 'OWNER'],
       requiredFlag: 'admin.security.otp',
     }))
-    expect(mockSecurityEventUpdate).toHaveBeenCalledWith({
-      where: { id: 'event-1' },
+    expect(mockSecurityEventUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'event-1', status: { in: ['NEW', 'ACKNOWLEDGED'] } },
       data: {
         status: 'RESOLVED',
         resolvedAt: expect.any(Date),
         resolvedByUserId: 'admin-1',
       },
-      select: expect.any(Object),
     })
   })
 
   it('marks a false positive through crudAction', async () => {
-    await executeCrudActionWith({ securityEvent: { update: mockSecurityEventUpdate } })
+    mockSecurityEventFindUnique.mockResolvedValue({
+      id: 'event-1',
+      status: 'FALSE_POSITIVE',
+      resolvedAt: new Date('2026-05-26T10:00:00.000Z'),
+      resolvedByUserId: 'admin-1',
+    })
+    await executeCrudActionWith(securityEventTx())
     const { markFalsePositiveAction } = await import(
       '../../app/(admin)/admin/otp-security/actions'
     )
@@ -124,19 +159,49 @@ describe('admin OTP security actions', () => {
       requiredRole: ['TRUST', 'ADMIN', 'OWNER'],
       requiredFlag: 'admin.security.otp',
     }))
-    expect(mockSecurityEventUpdate).toHaveBeenCalledWith({
-      where: { id: 'event-1' },
+    expect(mockSecurityEventUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'event-1', status: { in: ['NEW', 'ACKNOWLEDGED'] } },
       data: {
         status: 'FALSE_POSITIVE',
         resolvedAt: expect.any(Date),
         resolvedByUserId: 'admin-1',
       },
-      select: expect.any(Object),
     })
   })
 
+  it('rejects forged terminal status transitions without mutating the row', async () => {
+    const { CrudActionError } = await import('../../lib/crud-action')
+    mockSecurityEventUpdateMany.mockResolvedValue({ count: 0 })
+    await executeCrudActionWith(securityEventTx())
+    const {
+      acknowledgeSecurityEventAction,
+      resolveSecurityEventAction,
+      markFalsePositiveAction,
+    } = await import('../../app/(admin)/admin/otp-security/actions')
+
+    await expect(
+      acknowledgeSecurityEventAction({ eventId: 'resolved-event', reason: 'forged' }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+    } satisfies Partial<InstanceType<typeof CrudActionError>>)
+    await expect(
+      resolveSecurityEventAction({ eventId: 'terminal-event', reason: 'forged' }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+    } satisfies Partial<InstanceType<typeof CrudActionError>>)
+    await expect(
+      markFalsePositiveAction({ eventId: 'terminal-event', reason: 'forged' }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+    } satisfies Partial<InstanceType<typeof CrudActionError>>)
+
+    expect(mockSecurityEventUpdate).not.toHaveBeenCalled()
+    expect(mockSecurityEventFindUnique).not.toHaveBeenCalled()
+  })
+
   it('clears account lock and step-up through crudAction for TRUST or higher', async () => {
-    await executeCrudActionWith({})
+    const tx = { accountSecurityState: {}, securityEvent: {} }
+    await executeCrudActionWith(tx)
     const { clearAccountLockAction } = await import(
       '../../app/(admin)/admin/otp-security/actions'
     )
@@ -154,7 +219,10 @@ describe('admin OTP security actions', () => {
       requiredFlag: 'admin.security.otp',
       reason: 'Verified customer identity by callback',
     }))
-    expect(mockClearLock).toHaveBeenCalledWith('+27821234567', { byAdminId: 'admin-1' })
+    expect(mockClearLock).toHaveBeenCalledWith('+27821234567', {
+      byAdminId: 'admin-1',
+      client: tx,
+    })
     expect(mockRevalidatePath).toHaveBeenCalledWith('/admin/otp-security')
   })
 

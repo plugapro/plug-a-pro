@@ -107,6 +107,8 @@ type OtpSecurityClient = {
   $transaction<T>(input: (client: OtpSecurityClient) => Promise<T>): Promise<T>
 }
 
+export type OtpSecurityTransactionClient = Omit<OtpSecurityClient, '$transaction'>
+
 const ACTIVE_CHALLENGE_STATUSES: OtpChallengeStatus[] = ['REQUESTED', 'SENT']
 const TERMINAL_CHALLENGE_STATUSES: OtpChallengeStatus[] = [
   'VERIFIED',
@@ -152,7 +154,7 @@ async function safeAudit(
 }
 
 async function createSecurityEvent(
-  client: OtpSecurityClient,
+  client: OtpSecurityTransactionClient,
   params: {
     phoneE164: string
     userId?: string | null
@@ -654,11 +656,11 @@ export async function recordDeliveryRefusedDuringLock(params: {
 
 export async function clearLock(
   phoneE164: string,
-  params: { byAdminId: string },
+  params: { byAdminId: string; client?: OtpSecurityTransactionClient },
 ): Promise<void> {
   const now = new Date()
 
-  await serviceDb().$transaction(async (client) => {
+  const clearWithClient = async (client: OtpSecurityTransactionClient) => {
     await client.accountSecurityState.upsert({
       where: { phoneE164 },
       create: {
@@ -703,7 +705,14 @@ export async function clearLock(
       },
       client,
     )
-  })
+  }
+
+  if (params.client) {
+    await clearWithClient(params.client)
+    return
+  }
+
+  await serviceDb().$transaction(clearWithClient)
 }
 
 export type CompleteStepUpResult =

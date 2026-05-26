@@ -4,8 +4,8 @@ import type { SecurityEventStatus } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
-import { crudAction } from '@/lib/crud-action'
-import { clearLock } from '@/lib/otp-security'
+import { crudAction, CrudActionError } from '@/lib/crud-action'
+import { clearLock, type OtpSecurityTransactionClient } from '@/lib/otp-security'
 
 const FLAG = 'admin.security.otp'
 const TRUST_ROLES = ['TRUST', 'ADMIN', 'OWNER'] as const
@@ -55,6 +55,7 @@ async function updateSecurityEventStatus(
     action: string
     status: SecurityEventStatus
     terminal: boolean
+    currentStatus: SecurityEventStatus | { in: SecurityEventStatus[] }
   },
 ) {
   const admin = await requireAdmin()
@@ -71,15 +72,30 @@ async function updateSecurityEventStatus(
     reason: normalizeReason(input.reason),
     run: async (data, tx) => {
       const now = new Date()
-      const updated = await tx.securityEvent.update({
-        where: { id: data.eventId },
+      const updatedCount = await tx.securityEvent.updateMany({
+        where: { id: data.eventId, status: params.currentStatus },
         data: params.terminal
           ? {
               status: params.status,
               resolvedAt: now,
               resolvedByUserId: actorId,
             }
-          : { status: params.status },
+          : {
+              status: params.status,
+              resolvedAt: null,
+              resolvedByUserId: null,
+            },
+      })
+
+      if (updatedCount.count !== 1) {
+        throw new CrudActionError(
+          'CONFLICT',
+          'Security event is no longer actionable.',
+        )
+      }
+
+      const updated = await tx.securityEvent.findUnique({
+        where: { id: data.eventId },
         select: {
           id: true,
           status: true,
@@ -87,6 +103,9 @@ async function updateSecurityEventStatus(
           resolvedByUserId: true,
         },
       })
+      if (!updated) {
+        throw new CrudActionError('NOT_FOUND', `Security event ${data.eventId} not found.`)
+      }
 
       return updated
     },
@@ -101,6 +120,7 @@ export async function acknowledgeSecurityEventAction(input: SecurityEventActionI
     action: 'security_event.acknowledge',
     status: 'ACKNOWLEDGED',
     terminal: false,
+    currentStatus: 'NEW',
   })
 }
 
@@ -109,6 +129,7 @@ export async function resolveSecurityEventAction(input: SecurityEventActionInput
     action: 'security_event.resolve',
     status: 'RESOLVED',
     terminal: true,
+    currentStatus: { in: ['NEW', 'ACKNOWLEDGED'] },
   })
 }
 
@@ -117,6 +138,7 @@ export async function markFalsePositiveAction(input: SecurityEventActionInput) {
     action: 'security_event.mark_false_positive',
     status: 'FALSE_POSITIVE',
     terminal: true,
+    currentStatus: { in: ['NEW', 'ACKNOWLEDGED'] },
   })
 }
 
@@ -133,8 +155,11 @@ export async function clearAccountLockAction(input: ClearAccountLockInput) {
     schema: ClearAccountLockSchema,
     input,
     reason: input.reason.trim(),
-    run: async (data) => {
-      await clearLock(data.phoneE164, { byAdminId: actorId })
+    run: async (data, tx) => {
+      await clearLock(data.phoneE164, {
+        byAdminId: actorId,
+        client: tx as unknown as OtpSecurityTransactionClient,
+      })
       return { phoneE164: data.phoneE164, cleared: true }
     },
   })

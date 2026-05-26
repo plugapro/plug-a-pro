@@ -767,6 +767,35 @@ describe('otp security service', () => {
     )
   })
 
+  it('clears lock inside a caller-provided transaction client', async () => {
+    await applyLockAndStepUp(PHONE, USER_ID)
+    ;(mocks.db.$transaction as any).mockClear()
+    vi.mocked(recordAuditLog).mockClear()
+
+    const txClient = {
+      accountSecurityState: mocks.db.accountSecurityState,
+      securityEvent: mocks.db.securityEvent,
+    }
+
+    await clearLock(PHONE, { byAdminId: 'admin_1', client: txClient } as any)
+
+    expect(mocks.db.$transaction).not.toHaveBeenCalled()
+    await expect(getAccountSecurityState(PHONE)).resolves.toMatchObject({
+      lockedUntil: null,
+      lockReason: null,
+      stepUpRequired: false,
+      stepUpSetAt: null,
+    })
+    expect(securityEvents('LOCK_CLEARED_BY_ADMIN')).toHaveLength(1)
+    expect(recordAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin_1',
+        action: 'security.account.lock_cleared',
+      }),
+      txClient,
+    )
+  })
+
   it('does not complete step-up or clear state when a stale pending cookie meets an active re-lock', async () => {
     await applyLockAndStepUp(PHONE, USER_ID)
     const lockedState = mocks.state.accountSecurityStates.find((row) => row.phoneE164 === PHONE)!
