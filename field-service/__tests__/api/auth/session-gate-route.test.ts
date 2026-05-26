@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getSession: vi.fn(),
+  isEnabled: vi.fn(),
   issueGate: vi.fn(),
   db: {
     adminUser: {
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }))
 vi.mock('@/lib/auth', () => ({ getSession: mocks.getSession }))
 vi.mock('@/lib/db', () => ({ db: mocks.db }))
+vi.mock('@/lib/flags', () => ({ isEnabled: mocks.isEnabled }))
 vi.mock('@/lib/auth-session-gate', () => ({
   issueAuthSessionWithSecurityGate: mocks.issueGate,
 }))
@@ -51,6 +53,7 @@ describe('POST /api/auth/session security gate', () => {
       },
     })
     mocks.db.adminUser.findFirst.mockResolvedValue(null)
+    mocks.isEnabled.mockResolvedValue(true)
     mocks.issueGate.mockResolvedValue({
       ok: true,
       setCookie: 'sb-access-token=session-token; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600',
@@ -73,6 +76,21 @@ describe('POST /api/auth/session security gate', () => {
       maxAge: 7200,
       sourceRoute: '/api/auth/session',
     })
+  })
+
+  it('skips the OTP security gate and issues a session cookie when otp reporting is disabled', async () => {
+    mocks.isEnabled.mockResolvedValueOnce(false)
+
+    const response = await postSession({ accessToken: 'session-token', expiresIn: 7200 })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({ userId: USER.id, adminAccess: false, adminRole: null })
+    expect(response.headers.get('Set-Cookie')).toBe(
+      'sb-access-token=session-token; HttpOnly; SameSite=Lax; Path=/; Max-Age=7200',
+    )
+    expect(mocks.isEnabled).toHaveBeenCalledWith('security.otp.report', { userId: USER.id })
+    expect(mocks.issueGate).not.toHaveBeenCalled()
   })
 
   it('returns locked and clears any existing session cookie when the shared gate fails closed', async () => {

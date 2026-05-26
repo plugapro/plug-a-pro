@@ -2,8 +2,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
 import { createServiceClient } from '@/lib/auth'
-import { resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
+import { buildSessionCookieHeader, resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
 import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
+import { isEnabled } from '@/lib/flags'
 import { createTraceId, safeErrorMessage, timestamp } from '@/lib/support-diagnostics'
 import {
   classifyWorkerOtpVerifyError,
@@ -206,6 +207,20 @@ export async function POST(request: NextRequest) {
     }
 
     const maxAge = resolveSessionMaxAge(data.session.expires_in)
+    const otpSecurityEnabled = await isEnabled('security.otp.report', { userId: data.user.id })
+
+    if (!otpSecurityEnabled) {
+      const response = NextResponse.json({
+        ok: true,
+        code: 'OK',
+        traceId,
+        providerId: resolved.provider.id,
+        linkedProviderNow: resolved.linkedProviderNow,
+      })
+      response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
+      return response
+    }
+
     const gated = await issueAuthSessionWithSecurityGate({
       accessToken,
       phoneE164: resolved.normalizedPhone,
