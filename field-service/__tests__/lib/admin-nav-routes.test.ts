@@ -1,0 +1,23 @@
+import { describe, it, expect } from 'vitest'
+import { ADMIN_NAV_ITEMS, ADMIN_SMOKE_ROUTES } from '../../lib/admin-nav-routes'
+
+describe('ADMIN_NAV_ITEMS', () => {
+  it('exposes the Verifications page so operators can reach the identity-verification queue from the sidebar', () => {
+    const entry = ADMIN_NAV_ITEMS.find((item) => item.href === '/admin/verifications')
+    expect(entry, '/admin/verifications must be present in ADMIN_NAV_ITEMS').toBeDefined()
+    expect(entry?.label).toBe('Verifications')
+  })
+
+  it('places the Verifications entry immediately after Applications so identity review follows application approval visually', () => {
+    const applicationsIdx = ADMIN_NAV_ITEMS.findIndex((item) => item.href === '/admin/applications')
+    const verificationsIdx = ADMIN_NAV_ITEMS.findIndex((item) => item.href === '/admin/verifications')
+    expect(applicationsIdx, '/admin/applications must precede /admin/verifications').toBeGreaterThanOrEqual(0)
+    expect(verificationsIdx).toBe(applicationsIdx + 1)
+  })
+
+  it('propagates Verifications into ADMIN_SMOKE_ROUTES so post-deploy smoke catches regressions', () => {
+    // ADMIN_SMOKE_ROUTES is derived from ADMIN_NAV_ITEMS — adding to the nav should
+    // automatically extend smoke coverage without a second edit site.
+    expect(ADMIN_SMOKE_ROUTES).toContain('/admin/verifications')
+  })
+})
