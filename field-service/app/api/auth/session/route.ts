@@ -14,7 +14,15 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { buildSessionCookieHeader, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import { resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
+import { normalizePhone } from '@/lib/utils'
+
+function phoneE164FromSupabase(rawPhone: unknown): string | null {
+  if (typeof rawPhone !== 'string' || !rawPhone.trim()) return null
+  const normalized = normalizePhone(rawPhone)
+  return normalized.startsWith('+') ? normalized : null
+}
 
 export async function GET() {
   try {
@@ -110,9 +118,38 @@ export async function POST(request: NextRequest) {
     }
 
     const maxAge = resolveSessionMaxAge(expiresIn)
+    const phoneE164 = phoneE164FromSupabase(user.phone)
+
+    if (!phoneE164) {
+      return NextResponse.json({ error: 'Phone required for OTP session' }, { status: 400 })
+    }
+
+    const gated = await issueAuthSessionWithSecurityGate({
+      accessToken,
+      phoneE164,
+      userId: user.id,
+      maxAge,
+      sourceRoute: '/api/auth/session',
+    })
+
+    if (!gated.ok && gated.reason === 'LOCKED') {
+      return NextResponse.json(
+        { locked: true, code: gated.metadata?.code ?? 'ACCOUNT_LOCKED' },
+        { status: 423 },
+      )
+    }
+
+    if (!gated.ok && gated.reason === 'STEP_UP_REQUIRED') {
+      const response = NextResponse.json(
+        { stepUpRequired: true, redirectTo: '/security/checkpoint' },
+        { status: 200 },
+      )
+      response.headers.set('Set-Cookie', gated.pendingStepUpCookie)
+      return response
+    }
 
     const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
-    response.headers.set('Set-Cookie', buildSessionCookieHeader(accessToken, maxAge))
+    response.headers.set('Set-Cookie', gated.setCookie)
     return response
   } catch (err) {
     console.error('[api/auth/session] POST error:', err)
