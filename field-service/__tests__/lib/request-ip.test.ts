@@ -28,6 +28,23 @@ describe('trusted request IP helpers', () => {
     expect(trustedClientIpFromHeaders(headers)).toBe('8.8.4.4')
   })
 
+  it('skips zero-padded full IPv4-mapped loopback private and reserved addresses', () => {
+    const headers = new Headers({
+      'x-forwarded-for':
+        '0000:0000:0000:0000:0000:ffff:7f00:0001, 0000:0000:0000:0000:0000:ffff:0a00:0001, 0000:0000:0000:0000:0000:ffff:c000:0201, 1.0.0.1',
+    })
+
+    expect(trustedClientIpFromHeaders(headers)).toBe('1.0.0.1')
+  })
+
+  it('normalizes zero-padded full IPv4-mapped global addresses', () => {
+    const headers = new Headers({
+      'x-forwarded-for': '0000:0000:0000:0000:0000:ffff:0808:0808, 1.1.1.1',
+    })
+
+    expect(trustedClientIpFromHeaders(headers)).toBe('8.8.8.8')
+  })
+
   it('skips reserved and non-global forwarded addresses', () => {
     const headers = new Headers({
       'x-forwarded-for':

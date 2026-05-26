@@ -69,6 +69,20 @@ function normalizeIpv4MappedAddress(value: string): string | null {
   return [...high, ...low].join('.')
 }
 
+function mappedIpv4FromGroups(groups: number[]): string | null {
+  if (groups.length !== 8) return null
+  if (!groups.slice(0, 5).every((group) => group === 0) || groups[5] !== 0xffff) {
+    return null
+  }
+
+  return [
+    groups[6] >> 8,
+    groups[6] & 0xff,
+    groups[7] >> 8,
+    groups[7] & 0xff,
+  ].join('.')
+}
+
 function ipv6Groups(value: string): number[] | null {
   if (isIP(value) !== 6 || value.includes('.')) return null
 
@@ -103,6 +117,7 @@ function ipv6Groups(value: string): number[] | null {
 function isGlobalIpv6(value: string): boolean {
   const groups = ipv6Groups(value)
   if (!groups) return false
+  if (mappedIpv4FromGroups(groups)) return false
 
   // Reject local, documentation, multicast, and other non-global IPv6 ranges.
   if (groups.every((group) => group === 0)) return false
@@ -128,6 +143,14 @@ function normalizePublicIp(value: string): string | null {
 
   const mappedIpv4 = normalizeIpv4MappedAddress(ip)
   if (mappedIpv4) return isGlobalIpv4(mappedIpv4) ? mappedIpv4 : null
+
+  const mappedIpv4FromIpv6Groups = ipv6Groups(ip)
+  if (mappedIpv4FromIpv6Groups) {
+    const parsedMappedIpv4 = mappedIpv4FromGroups(mappedIpv4FromIpv6Groups)
+    if (parsedMappedIpv4) {
+      return isGlobalIpv4(parsedMappedIpv4) ? parsedMappedIpv4 : null
+    }
+  }
 
   if (isGlobalIpv4(ip)) return ip
   if (isGlobalIpv6(ip)) return ip

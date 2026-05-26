@@ -24,8 +24,8 @@ function fixedStepUpKey(fill: number): string {
   return Buffer.alloc(32, fill).toString('base64url')
 }
 
-function alterLastCharacter(value: string): string {
-  return `${value.slice(0, -1)}${value.endsWith('A') ? 'B' : 'A'}`
+function alterEncodedByte(value: string): string {
+  return `${value.startsWith('A') ? 'B' : 'A'}${value.slice(1)}`
 }
 
 function basePayload(overrides: Partial<PendingStepUpPayload> = {}): PendingStepUpPayload {
@@ -104,7 +104,7 @@ describe('otp security config and crypto helpers', () => {
   it('rejects tampered and expired report tokens', async () => {
     const validToken = mintReportToken('challenge_123', new Date(Date.now() + 10 * 60 * 1000))
     const parts = validToken.split('.')
-    const tamperedPayload = `${alterLastCharacter(parts[0])}.${parts[1]}`
+    const tamperedPayload = `${alterEncodedByte(parts[0])}.${parts[1]}`
     const expiredToken = mintReportToken('challenge_123', new Date(Date.now() - 1000))
 
     expect(verifyReportToken(tamperedPayload)).toMatchObject({ ok: false })
@@ -140,10 +140,10 @@ describe('otp security config and crypto helpers', () => {
     expect(decryptPendingStepUpCookie(token)).toMatchObject({ ok: false })
 
     process.env.STEP_UP_COOKIE_KEY = fixedStepUpKey(1)
-    expect(decryptPendingStepUpCookie(`${iv}.${alterLastCharacter(ciphertext)}.${authTag}`)).toMatchObject({
+    expect(decryptPendingStepUpCookie(`${iv}.${alterEncodedByte(ciphertext)}.${authTag}`)).toMatchObject({
       ok: false,
     })
-    expect(decryptPendingStepUpCookie(`${iv}.${ciphertext}.${alterLastCharacter(authTag)}`)).toMatchObject({
+    expect(decryptPendingStepUpCookie(`${iv}.${ciphertext}.${alterEncodedByte(authTag)}`)).toMatchObject({
       ok: false,
     })
 
