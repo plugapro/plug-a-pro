@@ -323,6 +323,7 @@ Reads + validates env (fail-closed in production if `OTP_HASH_PEPPER` missing):
 | `STEP_UP_COOKIE_KEY` | optional | dedicated 32-byte key for pending cookie encryption |
 | `SECURITY_EVENTS_ADMIN_ALERT_THRESHOLD` | `3` | admin alert trigger |
 | `OTP_LOCK_REFUSAL_EVENT_WINDOW_MINUTES` | `15` | lock-refusal event dedupe window |
+| `OTP_CHALLENGE_RETENTION_DAYS` | `30` | retention for terminal challenge telemetry |
 
 Per-phone / per-IP **request** limits **reuse the existing limiters**
 `OTP_SEND_LIMIT_PER_PHONE_HOUR` / `OTP_SEND_LIMIT_PER_IP_HOUR`
