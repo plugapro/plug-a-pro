@@ -52,7 +52,7 @@ beforeEach(async () => {
   consoleSpies.info.mockClear()
   consoleSpies.warn.mockClear()
   consoleSpies.error.mockClear()
-  vi.mocked(isEnabled).mockResolvedValue(true)
+  vi.mocked(isEnabled).mockImplementation(async (key) => key === 'auth.otp.whatsapp')
   vi.mocked(checkOtpSendLimit).mockResolvedValue({ ok: true })
   if (!POST) {
     POST = (await import('@/app/api/auth/hooks/send-sms/route')).POST

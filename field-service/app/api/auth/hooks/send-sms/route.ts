@@ -4,6 +4,15 @@ import { isEnabled, FLAG_KEYS } from '@/lib/flags'
 import { verifyStandardWebhookSignature } from '@/lib/supabase-hook-auth'
 import { checkOtpSendLimit } from '@/lib/rate-limit'
 import { deliverOtp, OtpDeliveryError } from '@/lib/otp-delivery'
+import { trustedClientIp } from '@/lib/request-ip'
+import {
+  isDeliveryAllowed,
+  markChallengeCancelled,
+  markChallengeSendFailed,
+  markChallengeSent,
+  recordDeliveryRefusedDuringLock,
+  recordOtpChallenge,
+} from '@/lib/otp-security'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,15 +34,6 @@ function errorResponse(httpCode: number, message: HookErrorMessage) {
     { error: { http_code: httpCode, message } },
     { status: httpCode },
   )
-}
-
-function clientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get('x-forwarded-for')
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim()
-    if (first) return first
-  }
-  return request.headers.get('x-real-ip')?.trim() || null
 }
 
 export async function POST(request: NextRequest) {
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     return errorResponse(503, 'otp_whatsapp_disabled')
   }
 
-  const ip = clientIp(request)
+  const ip = trustedClientIp(request)
   const rateCheck = await checkOtpSendLimit({
     phone,
     ip,
@@ -112,14 +112,62 @@ export async function POST(request: NextRequest) {
       : errorResponse(429, 'rate_limited')
   }
 
+  const securityOn = await isEnabled('security.otp.report', {
+    userId: userId ?? undefined,
+  })
+  const ua = request.headers.get('user-agent')
+  let challengeId: string | null = null
+  let reportToken: string | null = null
+
+  if (securityOn) {
+    const challenge = await recordOtpChallenge({
+      phoneE164: phone,
+      userId,
+      purpose: 'LOGIN',
+      code: otp,
+      ip,
+      ua,
+      context: {
+        traceId: hookRequestId,
+        hookRequestId,
+        source: 'send_sms_hook',
+      },
+    })
+    challengeId = challenge.challengeId
+    reportToken = challenge.reportToken
+
+    const deliveryAllowed = await isDeliveryAllowed(phone)
+    if (!deliveryAllowed.allowed) {
+      await recordDeliveryRefusedDuringLock({
+        phoneE164: phone,
+        userId,
+        challengeId,
+        ip,
+        ua,
+      })
+      await markChallengeCancelled(challengeId, 'delivery_refused_during_lock')
+      return NextResponse.json({}, { status: 200 })
+    }
+  }
+
+  // reportToken is persisted for the separate security template / deep-link path.
+  // Do not inject it into otp_login; that Meta authentication template stays unchanged.
+  void reportToken
+
   try {
-    await deliverOtp({
+    const delivery = await deliverOtp({
       phone,
       code: otp,
       context: { userId, hookRequestId, traceId: hookRequestId },
     })
+    if (challengeId) {
+      await markChallengeSent(challengeId, delivery.whatsappMessageId ?? null)
+    }
     return NextResponse.json({}, { status: 200 })
   } catch (err) {
+    if (challengeId) {
+      await markChallengeSendFailed(challengeId)
+    }
     if (err instanceof OtpDeliveryError) {
       switch (err.code) {
         case 'TEMPLATE_NOT_APPROVED':
