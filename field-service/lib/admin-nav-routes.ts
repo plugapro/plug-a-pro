@@ -23,6 +23,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: '/admin/messages', label: 'Messages', icon: 'messages' as const },
   { href: '/admin/team', label: 'Team', icon: 'users' as const },
   { href: '/admin/settings', label: 'Settings', icon: 'settings' as const },
+  { href: '/admin/otp-security', label: 'OTP Security', icon: 'workflow' as const },
   { href: '/admin/audit-log', label: 'Audit Log', icon: 'workflow' as const },
 ] as const
 
