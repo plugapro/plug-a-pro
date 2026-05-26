@@ -157,6 +157,16 @@ function buttonMessage(id: string, from = RAW_WHATSAPP_PHONE) {
   }
 }
 
+function rawButtonPayloadMessage(payload: string, from = RAW_WHATSAPP_PHONE) {
+  return {
+    from,
+    id: `wamid.raw.${payload}`,
+    type: 'button',
+    button: { payload, text: payload },
+    timestamp: String(Date.now()),
+  }
+}
+
 describe('WhatsApp OTP report button replies', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -205,6 +215,19 @@ describe('WhatsApp OTP report button replies', () => {
     expect(mockSendText).toHaveBeenCalledWith(PHONE_E164, GENERIC_CONFIRMATION)
     expect(mockDb.conversation.upsert).not.toHaveBeenCalled()
     expect(mockShowMainMenu).not.toHaveBeenCalled()
+  })
+
+  it('handles raw WhatsApp button payloads normalized by parseInbound', async () => {
+    const token = 'signed.raw.button.token'
+
+    await processInboundMessage(rawButtonPayloadMessage(`otp_report_${token}`))
+
+    expect(mockReportUnrequestedOtpFromWhatsApp).toHaveBeenCalledWith({
+      token,
+      fromPhoneE164: PHONE_E164,
+    })
+    expect(mockSendText).toHaveBeenCalledWith(PHONE_E164, GENERIC_CONFIRMATION)
+    expect(mockDb.conversation.upsert).not.toHaveBeenCalled()
   })
 
   it('passes normalized inbound from phone so wrong-sender rejection stays in the service', async () => {

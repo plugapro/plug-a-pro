@@ -1016,7 +1016,6 @@ async function processInboundMessageUnlocked(
 
   try {
     if (
-      message.type === 'interactive' &&
       reply.type === 'button_reply' &&
       reply.id?.startsWith(OTP_REPORT_BUTTON_PREFIX)
     ) {
