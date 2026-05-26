@@ -28,3 +28,7 @@ node_modules/.prisma/
 
 # Supabase local config (project ref, pooler url — per-machine)
 supabase/.temp/
+
+# Voucher export files contain raw single-use codes — never commit
+vouchers*.csv
+vouchers*.xlsx
