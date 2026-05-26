@@ -113,6 +113,11 @@ function VerifyForm() {
 
       if (verifyError || !data.user) {
         setError(getOtpVerifyErrorMessage(verifyError?.message))
+        void fetch('/api/security/otp/verify-failed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneE164: phone }),
+        }).catch(() => undefined)
         if (verifyError) {
           console.error('[verify] OTP verification error:', verifyError.message)
         } else {
