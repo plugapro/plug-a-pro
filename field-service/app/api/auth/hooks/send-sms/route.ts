@@ -36,6 +36,60 @@ function errorResponse(httpCode: number, message: HookErrorMessage) {
   )
 }
 
+function deliveryErrorResponse(err: unknown, hookRequestId: string) {
+  if (err instanceof OtpDeliveryError) {
+    switch (err.code) {
+      case 'TEMPLATE_NOT_APPROVED':
+        return errorResponse(503, 'template_not_approved')
+      case 'WA_AUTH_FAILED':
+        return errorResponse(503, 'wa_auth_failed')
+      case 'WA_TRANSIENT':
+        return errorResponse(503, 'wa_transient')
+      case 'UNSUPPORTED_COUNTRY_CODE':
+        return errorResponse(400, 'unsupported_country')
+      case 'INVALID_PHONE_NUMBER':
+        return errorResponse(400, 'invalid_phone')
+    }
+  }
+
+  console.error('[send-sms-hook] unexpected error', {
+    hookRequestId,
+    message: err instanceof Error ? err.message : String(err),
+  })
+  return errorResponse(503, 'wa_transient')
+}
+
+async function markSentBestEffort(params: {
+  challengeId: string
+  whatsappMessageId: string | null
+  hookRequestId: string
+}): Promise<void> {
+  try {
+    await markChallengeSent(params.challengeId, params.whatsappMessageId)
+  } catch (err) {
+    console.warn('[send-sms-hook] challenge sent update failed', {
+      hookRequestId: params.hookRequestId,
+      challengeId: params.challengeId,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+async function markFailedBestEffort(params: {
+  challengeId: string
+  hookRequestId: string
+}): Promise<void> {
+  try {
+    await markChallengeSendFailed(params.challengeId)
+  } catch (err) {
+    console.warn('[send-sms-hook] challenge failed update failed', {
+      hookRequestId: params.hookRequestId,
+      challengeId: params.challengeId,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 export async function POST(request: NextRequest) {
   const hookRequestId = randomUUID()
   const body = await request.text()
@@ -154,38 +208,27 @@ export async function POST(request: NextRequest) {
   // Do not inject it into otp_login; that Meta authentication template stays unchanged.
   void reportToken
 
+  let delivery: Awaited<ReturnType<typeof deliverOtp>>
   try {
-    const delivery = await deliverOtp({
+    delivery = await deliverOtp({
       phone,
       code: otp,
       context: { userId, hookRequestId, traceId: hookRequestId },
     })
-    if (challengeId) {
-      await markChallengeSent(challengeId, delivery.whatsappMessageId ?? null)
-    }
-    return NextResponse.json({}, { status: 200 })
   } catch (err) {
     if (challengeId) {
-      await markChallengeSendFailed(challengeId)
+      await markFailedBestEffort({ challengeId, hookRequestId })
     }
-    if (err instanceof OtpDeliveryError) {
-      switch (err.code) {
-        case 'TEMPLATE_NOT_APPROVED':
-          return errorResponse(503, 'template_not_approved')
-        case 'WA_AUTH_FAILED':
-          return errorResponse(503, 'wa_auth_failed')
-        case 'WA_TRANSIENT':
-          return errorResponse(503, 'wa_transient')
-        case 'UNSUPPORTED_COUNTRY_CODE':
-          return errorResponse(400, 'unsupported_country')
-        case 'INVALID_PHONE_NUMBER':
-          return errorResponse(400, 'invalid_phone')
-      }
-    }
-    console.error('[send-sms-hook] unexpected error', {
-      hookRequestId,
-      message: err instanceof Error ? err.message : String(err),
-    })
-    return errorResponse(503, 'wa_transient')
+    return deliveryErrorResponse(err, hookRequestId)
   }
+
+  if (challengeId) {
+    await markSentBestEffort({
+      challengeId,
+      whatsappMessageId: delivery.whatsappMessageId ?? null,
+      hookRequestId,
+    })
+  }
+
+  return NextResponse.json({}, { status: 200 })
 }

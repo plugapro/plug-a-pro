@@ -212,6 +212,21 @@ describe('POST /api/auth/hooks/send-sms security gate', () => {
     expect(markChallengeCancelled).not.toHaveBeenCalled()
   })
 
+  it('returns 200 when markChallengeSent fails after successful delivery', async () => {
+    vi.mocked(markChallengeSent).mockRejectedValueOnce(new Error('shadow sent failed'))
+
+    const res = await POST(buildSignedRequest())
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({})
+    expect(deliverOtp).toHaveBeenCalledTimes(1)
+    expect(markChallengeSent).toHaveBeenCalledWith(
+      TEST_CHALLENGE_ID,
+      'wamid.test.1',
+    )
+    expect(markChallengeSendFailed).not.toHaveBeenCalled()
+  })
+
   it('marks challenge FAILED when deliverOtp throws', async () => {
     vi.mocked(deliverOtp).mockRejectedValueOnce(
       new OtpDeliveryError('WA_TRANSIENT', 'transient failure'),
@@ -226,6 +241,24 @@ describe('POST /api/auth/hooks/send-sms security gate', () => {
     expect(markChallengeSendFailed).toHaveBeenCalledWith(TEST_CHALLENGE_ID)
     expect(markChallengeSent).not.toHaveBeenCalled()
     expect(markChallengeCancelled).not.toHaveBeenCalled()
+  })
+
+  it('returns the provider-mapped error when markChallengeSendFailed throws', async () => {
+    vi.mocked(deliverOtp).mockRejectedValueOnce(
+      new OtpDeliveryError('TEMPLATE_NOT_APPROVED', 'template is not approved'),
+    )
+    vi.mocked(markChallengeSendFailed).mockRejectedValueOnce(
+      new Error('shadow failed update failed'),
+    )
+
+    const res = await POST(buildSignedRequest())
+
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toEqual({
+      error: { http_code: 503, message: 'template_not_approved' },
+    })
+    expect(markChallengeSendFailed).toHaveBeenCalledWith(TEST_CHALLENGE_ID)
+    expect(markChallengeSent).not.toHaveBeenCalled()
   })
 
   it('returns hook-success shape, records CANCELLED, and does not call deliverOtp when locked', async () => {
