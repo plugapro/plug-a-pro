@@ -5,11 +5,13 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { crudAction } from '@/lib/crud-action'
+import { db } from '@/lib/db'
 import { decryptIdentifier } from '@/lib/identity-verification/crypto'
 import {
   submitVerificationForAutomation,
   transitionIdentityVerification,
 } from '@/lib/identity-verification/orchestrator'
+import { sendText } from '@/lib/whatsapp'
 
 const FLAG = 'admin.crud.verifications'
 const REVIEW_ROLES = ['TRUST'] as const
@@ -66,7 +68,11 @@ export async function approveIdentityVerificationAction(input: ReviewInput) {
   })
 
   revalidateVerificationPaths(input.verificationId)
-  return { ok: result.ok }
+  let notification: IdentityApprovalNotificationResult = 'skipped'
+  if (result.ok) {
+    notification = await notifyProviderIdentityApproval(input.verificationId)
+  }
+  return { ok: result.ok, notification }
 }
 
 export async function rejectIdentityVerificationAction(input: ReviewInput) {
@@ -235,12 +241,18 @@ export async function revealIdentityIdentifierAction(input: RevealIdentifierInpu
 
 export async function approveIdentityVerificationFormAction(formData: FormData) {
   const verificationId = formData.get('verificationId')?.toString() ?? ''
-  await approveIdentityVerificationAction({
+  const result = await approveIdentityVerificationAction({
     verificationId,
     notes: formData.get('notes')?.toString() ?? undefined,
     assuranceLevel: formData.get('assuranceLevel')?.toString() as ReviewInput['assuranceLevel'],
   })
-  redirect(`/admin/verifications/${verificationId}?message=approved`)
+  const message =
+    result.notification === 'failed'
+      ? 'approved-notification-failed'
+      : result.notification === 'skipped'
+        ? 'approved-notification-skipped'
+        : 'approved'
+  redirect(`/admin/verifications/${verificationId}?message=${message}`)
 }
 
 export async function rejectIdentityVerificationFormAction(formData: FormData) {
@@ -270,7 +282,61 @@ export async function retryIdentityVerificationWithVendorFormAction(formData: Fo
   redirect(`/admin/verifications/${verificationId}?message=vendor-retry`)
 }
 
+type IdentityApprovalNotificationResult = 'sent' | 'failed' | 'skipped'
+
 function revalidateVerificationPaths(verificationId: string) {
   revalidatePath('/admin/verifications')
   revalidatePath(`/admin/verifications/${verificationId}`)
+}
+
+async function notifyProviderIdentityApproval(
+  verificationId: string,
+): Promise<IdentityApprovalNotificationResult> {
+  const verification = await db.providerIdentityVerification.findUnique({
+    where: { id: verificationId },
+    select: {
+      id: true,
+      provider: { select: { id: true, name: true, phone: true } },
+    },
+  })
+
+  const providerPhone = verification?.provider?.phone
+  if (!providerPhone) return 'skipped'
+
+  const body = 'Your identity verification is complete. Your profile has been updated.'
+  const metadata = {
+    verificationId,
+    providerId: verification.provider?.id ?? null,
+    source: 'admin_identity_verification_approval',
+  }
+
+  try {
+    await sendText({
+      to: providerPhone,
+      text: body,
+      templateName: 'identity_verification_approved',
+      metadata,
+    })
+    return 'sent'
+  } catch (error) {
+    const failureReason = error instanceof Error ? error.message : String(error)
+    console.warn('[admin/verifications] identity approval notification failed', {
+      verificationId,
+      providerId: verification.provider?.id ?? null,
+      failureReason,
+    })
+    await db.messageEvent.create({
+      data: {
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: 'identity_verification_approved',
+        body,
+        to: providerPhone,
+        status: 'FAILED',
+        failureReason,
+        metadata,
+      },
+    }).catch(() => undefined)
+    return 'failed'
+  }
 }

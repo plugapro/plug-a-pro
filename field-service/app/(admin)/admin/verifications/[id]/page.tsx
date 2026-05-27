@@ -44,6 +44,7 @@ export default async function AdminIdentityVerificationDetailPage({
   const canPreviewDocuments = roleAtLeast(admin.adminRole, 'TRUST')
   const approveAssurance = verification.channel === 'WHATSAPP' ? 'LOW' : 'HIGH'
   const webhookEvents = verification.webhookEvents ?? []
+  const reviewMessage = reviewActionMessage(message)
 
   return (
     <div className="space-y-6">
@@ -62,9 +63,9 @@ export default async function AdminIdentityVerificationDetailPage({
         </Badge>
       </div>
 
-      {message ? (
-        <div className="tone-success rounded-xl border px-4 py-3 text-sm">
-          Review action recorded: {message}.
+      {reviewMessage ? (
+        <div className={`${reviewMessage.tone} rounded-xl border px-4 py-3 text-sm`}>
+          {reviewMessage.text}
         </div>
       ) : null}
 
@@ -252,6 +253,31 @@ function ReviewForm({
       <button className={className}>{buttonLabel}</button>
     </form>
   )
+}
+
+function reviewActionMessage(message?: string) {
+  switch (message) {
+    case 'approved':
+      return { tone: 'tone-success', text: 'Approval recorded and provider notification sent to WhatsApp.' }
+    case 'approved-notification-failed':
+      return {
+        tone: 'tone-warning',
+        text: 'Approval recorded, but the provider notification failed. Check Admin Messages for the failed WhatsApp event.',
+      }
+    case 'approved-notification-skipped':
+      return {
+        tone: 'tone-warning',
+        text: 'Approval recorded, but no provider phone was available for the WhatsApp notification.',
+      }
+    case 'rejected':
+      return { tone: 'tone-success', text: 'Rejection recorded.' }
+    case 'retry':
+      return { tone: 'tone-success', text: 'Retry request recorded.' }
+    case 'vendor-retry':
+      return { tone: 'tone-success', text: 'Vendor retry requested.' }
+    default:
+      return null
+  }
 }
 
 function Field({ label: labelText, value, mono }: { label: string; value: string; mono?: boolean }) {

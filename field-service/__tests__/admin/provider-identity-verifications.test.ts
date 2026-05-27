@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb } = vi.hoisted(() => ({
+const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb, mockSendText } = vi.hoisted(() => ({
   mockCrudAction: vi.fn(),
   mockTransition: vi.fn(),
   mockRequireAdmin: vi.fn(),
+  mockSendText: vi.fn(),
   mockDb: {
     providerIdentityVerification: {
       findUnique: vi.fn(),
@@ -13,6 +14,9 @@ const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb } = vi.hoisted(
       create: vi.fn(),
     },
     providerSensitiveDataAccessLog: {
+      create: vi.fn(),
+    },
+    messageEvent: {
       create: vi.fn(),
     },
   },
@@ -25,6 +29,8 @@ vi.mock('../../lib/identity-verification/orchestrator', () => ({
 }))
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('../../lib/whatsapp', () => ({ sendText: mockSendText }))
+vi.mock('@/lib/whatsapp', () => ({ sendText: mockSendText }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(() => {
@@ -40,8 +46,10 @@ describe('admin identity verification actions', () => {
     vi.clearAllMocks()
     mockRequireAdmin.mockResolvedValue({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'TRUST' })
     mockTransition.mockResolvedValue({ id: 'ver-1', status: 'PASSED' })
+    mockSendText.mockResolvedValue('wamid.identity-approved')
     mockDb.providerVerificationReview.create.mockResolvedValue({ id: 'review-1' })
     mockDb.providerSensitiveDataAccessLog.create.mockResolvedValue({ id: 'access-log-1' })
+    mockDb.messageEvent.create.mockResolvedValue({ id: 'message-1' })
     mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
       id: 'ver-1',
       identityBasis: 'SA_ID',
@@ -89,7 +97,7 @@ describe('admin identity verification actions', () => {
 
     await expect(
       approveIdentityVerificationAction({ verificationId: 'ver-1', notes: 'Document and selfie match.' }),
-    ).resolves.toEqual({ ok: true })
+    ).resolves.toEqual({ ok: true, notification: 'sent' })
 
     expect(mockCrudAction).toHaveBeenCalledWith(expect.objectContaining({
       entity: 'ProviderIdentityVerification',
@@ -111,6 +119,41 @@ describe('admin identity verification actions', () => {
         verificationId: 'ver-1',
         decision: 'PASS',
         notes: 'Document and selfie match.',
+      }),
+    })
+    expect(mockSendText).toHaveBeenCalledWith({
+      to: '+27820000000',
+      text: 'Your identity verification is complete. Your profile has been updated.',
+      templateName: 'identity_verification_approved',
+      metadata: {
+        verificationId: 'ver-1',
+        providerId: 'provider-1',
+        source: 'admin_identity_verification_approval',
+      },
+    })
+  })
+
+  it('keeps approval successful and logs a failed message event when approval notification fails', async () => {
+    mockSendText.mockRejectedValueOnce(new Error('WhatsApp send failed'))
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await expect(
+      approveIdentityVerificationAction({ verificationId: 'ver-1', notes: 'Document and selfie match.' }),
+    ).resolves.toEqual({ ok: true, notification: 'failed' })
+
+    expect(mockDb.messageEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: 'identity_verification_approved',
+        to: '+27820000000',
+        status: 'FAILED',
+        failureReason: 'WhatsApp send failed',
+        metadata: expect.objectContaining({
+          verificationId: 'ver-1',
+          providerId: 'provider-1',
+          source: 'admin_identity_verification_approval',
+        }),
       }),
     })
   })
@@ -148,6 +191,33 @@ describe('admin identity verification actions', () => {
     expect(html).toContain('Risk flags')
     expect(html).toContain('nameMismatch')
     expect(html).toContain('true')
+  })
+
+  it('renders a warning when approval succeeds but provider notification fails', async () => {
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({ message: 'approved-notification-failed' }),
+      }),
+    )
+
+    expect(html).toContain('Approval recorded, but the provider notification failed.')
+    expect(html).toContain('Check Admin Messages')
+  })
+
+  it('renders a warning when approval succeeds but provider notification is skipped', async () => {
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({ message: 'approved-notification-skipped' }),
+      }),
+    )
+
+    expect(html).toContain('Approval recorded, but no provider phone was available')
   })
 
   it('reveals an encrypted identifier through audited crudAction only when one exists', async () => {
