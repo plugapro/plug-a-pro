@@ -19,7 +19,12 @@ const SEND_VELOCITY_WINDOW_MS = 60 * 60_000
 const SEND_VELOCITY_THRESHOLD = 3
 const IP_DIVERSITY_WINDOW_MS = 30 * 60_000
 const IP_DIVERSITY_THRESHOLD = 2
-const PRIOR_EVENT_WINDOW_MS = 90 * 24 * 60 * 60_000
+// Shortened from 90d → 14d. The 90d window meant a single false-positive
+// security_event spammed the security-check prompt for ~270 sign-ins
+// (90d × 3 sign-ins/day) before naturally aging out. 14d still catches a
+// repeat-attempt-after-the-first-strike pattern; admins typically resolve
+// or acknowledge events within a fortnight, after which the signal stops.
+const PRIOR_EVENT_WINDOW_MS = 14 * 24 * 60 * 60_000
 const SIGNAL_LOOKUP_TIMEOUT_MS = 1500
 
 type SignalsClient = {
@@ -44,14 +49,17 @@ function signalsDb(): SignalsClient {
   return db as unknown as SignalsClient
 }
 
-async function withTimeout<T>(promise: Promise<T>): Promise<T> {
+async function withTimeout<T>(
+  promise: Promise<T>,
+  signalName: SecurityCheckTrigger,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
       promise,
       new Promise<T>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error('otp_security_signals_timeout')),
+          () => reject(new Error(`otp_security_signals_timeout:${signalName}`)),
           SIGNAL_LOOKUP_TIMEOUT_MS,
         )
       }),
@@ -85,6 +93,7 @@ export async function shouldSendSecurityCheck(params: {
           createdAt: { gte: new Date(now.getTime() - SEND_VELOCITY_WINDOW_MS) },
         },
       }),
+      'send_velocity',
     )
     if (sendCountLastHour >= SEND_VELOCITY_THRESHOLD) {
       return {
@@ -111,6 +120,7 @@ export async function shouldSendSecurityCheck(params: {
         select: { requestedIpHash: true },
         take: 50,
       }),
+      'ip_diversity',
     )
     const distinctIps = new Set<string>()
     for (const row of recentRows) {
@@ -138,6 +148,7 @@ export async function shouldSendSecurityCheck(params: {
         select: { id: true },
         orderBy: { createdAt: 'desc' },
       }),
+      'prior_event',
     )
     if (priorEvent) {
       return {

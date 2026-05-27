@@ -233,34 +233,51 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Phase-2: signal-gated security check prompt. Only fires when fraud signals
-  // match (send velocity ≥3/h, IP diversity ≥2/30m, or any unresolved security
-  // event in the last 90 days for this phone). The OTP delivery above is
-  // already complete; this is a best-effort follow-up message that MUST NOT
-  // block or fail the hook response.
+  // Phase-2: signal-gated security check prompt. Detached via Next.js after()
+  // so the response returns to Supabase IMMEDIATELY — the signal evaluation
+  // and template send happen post-response. Without this, the phase-2 block
+  // could add up to ~4.5s of signal-eval latency + ~10s of Meta-API latency
+  // BEFORE the hook returns 200, easily exceeding Supabase's ~5s auth-hook
+  // timeout. A timed-out hook causes Supabase to retry the OTP send, which
+  // would double-record challenges and deliver two otp_login messages to
+  // the user. The OTP delivery above is already complete; the security
+  // check is a best-effort follow-up that MUST NOT block the response.
   if (securityOn && reportToken) {
-    try {
-      const signal = await shouldSendSecurityCheck({ phoneE164: phone })
-      if (signal.trigger) {
-        await sendOtpSecurityCheckBestEffort({
-          phone,
-          reportToken,
-          trigger: signal.trigger,
-          hookRequestId,
-          userId,
-        })
+    const phaseTwoWork = async () => {
+      try {
+        const signal = await shouldSendSecurityCheck({ phoneE164: phone })
+        if (signal.trigger) {
+          await sendOtpSecurityCheckBestEffort({
+            phone,
+            reportToken: reportToken!,
+            trigger: signal.trigger,
+            hookRequestId,
+            userId,
+          })
+        }
+      } catch (err) {
+        // shouldSendSecurityCheck and sendOtpSecurityCheckBestEffort both fail
+        // closed already, but defence in depth: never propagate.
+        console.warn(
+          JSON.stringify({
+            event: 'otp.security_check.evaluation_failed',
+            hookRequestId,
+            phoneMasked,
+            reason: err instanceof Error ? err.name : 'unknown',
+          }),
+        )
       }
-    } catch (err) {
-      // shouldSendSecurityCheck and sendOtpSecurityCheckBestEffort both fail
-      // closed already, but defence in depth: never propagate to the hook
-      // response.
-      console.warn(
-        JSON.stringify({
-          event: 'otp.security_check.evaluation_failed',
-          hookRequestId,
-          reason: err instanceof Error ? err.name : 'unknown',
-        }),
-      )
+    }
+
+    try {
+      const { after } = await import('next/server')
+      after(phaseTwoWork)
+    } catch {
+      // after() not available in this execution context (nested in another
+      // after() callback, or a test runtime). Fall back to fire-and-forget;
+      // the work still runs but we lose Vercel's guarantee that the runtime
+      // stays alive until completion. Acceptable: phase-2 is best-effort.
+      void phaseTwoWork()
     }
   }
 
