@@ -9,6 +9,16 @@ This document records how Smile ID's actual contract maps onto the vendor-agnost
 
 > **Revision 2026-05-27 — implementation-readiness fixes.** Seven issues found in review (3 blockers, 3 highs, 1 medium). The biggest is that `createLivenessSession` cannot access the partner job id returned by `submitDocumentCheck` because the orchestrator hasn't stamped it yet. Fix requires extending the parent spec's `CreateLivenessSessionInput` with two fields — see **§15 Parent spec dependencies**. Other fixes: EVD result codes (0810 PASS, not 1012); SA id_type `IDENTITY_CARD` not `NATIONAL_ID`; cancel is `PUT … {is_disabled:true}` not `PATCH … {is_single_use_completed:true}`; `callback_url` is required per request; `crypto.randomUUID()` for partner job id; redaction list expanded; `IsFinalResult` may be absent on EVD callbacks (fallback to terminal-code detection).
 
+> **Revision 2026-05-27 (post-doc-research) — Smile API specifics corrected.**
+> The earlier revision fixed architectural gaps; this revision corrects Smile API specifics that were plausible-but-unverified:
+> - Response field on POST /v1/smile_links is `link_url`, not `link`.
+> - `user_id` is nested INSIDE `partner_params`, not a top-level request field.
+> - `verification_method` for EVD on Smile Links uses `doc_verification` (the DocV string), with EVD selected by partner product config. NOT `enhanced_document_verification`.
+> - ResultCode `1014` is REJECTED ("Unsupported ID number format"), NOT inconclusive.
+> - `IsFinalResult` returns as a STRING `"true"` / `"false"` (per smile-identity-core SDK), not boolean. The parser handles both.
+> - SA EVD currently only supports `IDENTITY_CARD` for `id_type`; broader DocV id-types are not confirmed for EVD.
+> - Security: in-body HMAC scheme doesn't cover the body. Adapter adds a 5-minute timestamp freshness window in `parseSmileWebhook` (via `isTimestampFresh` in `signing.ts`) to mitigate replay of captured (timestamp, signature) pairs.
+
 ---
 
 ## 1. Scope
@@ -80,7 +90,9 @@ expected = base64( HMAC-SHA256( SMILE_ID_API_KEY,
 signatureValid = timingSafeEqual(expected, payload.signature)
 ```
 
-If the official `smile-identity-core-js` SDK is used, the helper `Signature.confirm_signature(timestamp, signature)` does this; the adapter wraps it to expose `verifySignature(headers, rawBody)`.
+The official `smile-identity-core` v3.1.0 SDK provides both signature compute and verify helpers (`Signature.generate_signature` and `Signature.confirm_signature`). The adapter uses `node:crypto` HMAC directly with the same algorithm — `signing.ts` documents the SDK as the reference implementation. This avoids pulling in the SDK's runtime surface (HTTP client, axios, etc.) for what is essentially 30 lines of HMAC.
+
+**Replay-resistance note.** The legacy `/v1/*` in-body HMAC signs only `timestamp + partner_id + "sid_request"` — it does NOT cover the request body. A captured (timestamp, signature) pair could be replayed against a fabricated body. The adapter mitigates this by enforcing a 5-minute timestamp freshness window in `parseSmileWebhook` via `isTimestampFresh` in `signing.ts`; signature validity requires both HMAC match AND a timestamp within the window.
 
 ---
 
@@ -167,15 +179,18 @@ async createLivenessSession(input: CreateLivenessSessionInput): Promise<CreateLi
     company_name:  'Plug A Pro',
     id_types: [{
       country: 'ZA',
-      id_type: 'IDENTITY_CARD',                       // SA National ID and Greenbook (see Smile EVD docs).
-                                                       // NATIONAL_ID is rejected for ZA on the EVD product.
-      verification_method: 'enhanced_document_verification',
+      id_type: 'IDENTITY_CARD',                       // SA EVD currently only supports IDENTITY_CARD for
+                                                       // id_type; broader DocV id-types are not confirmed
+                                                       // for EVD. NATIONAL_ID is rejected for ZA on EVD.
+      verification_method: 'doc_verification',        // The DocV string. EVD is selected by partner product
+                                                       // config in the Smile portal — NOT by passing
+                                                       // 'enhanced_document_verification' here.
     }],
     callback_url:  input.webhookCallbackUrl,           // REQUIRED per Smile Links API; do not omit.
                                                        // Portal-level config is a fallback, not a substitute.
     is_single_use: true,
-    user_id:       input.providerId ?? input.verificationId,
     partner_params: {
+      user_id:         input.providerId ?? input.verificationId,  // nested INSIDE partner_params, not top-level
       verification_id: input.verificationId,           // travels back on every callback
       job_id:          partnerJobId,
       job_type:        11,                             // Enhanced Document Verification
@@ -191,12 +206,13 @@ async createLivenessSession(input: CreateLivenessSessionInput): Promise<CreateLi
 
   if (!resp.ok) throw new VendorApiError('smile_id', resp.status, await resp.text())
 
-  const json = await resp.json()  // { link, ref_id, expires_at, ... }
+  const json = await resp.json()  // { link_url, ref_id, expires_at, ... }
 
   return {
     vendorReference: json.ref_id,                     // Smile Link id; stored on
                                                        // ProviderIdentityVerification.livenessSessionReference
-    sessionUrl:      json.link,                        // contains session material; encrypted at rest by orchestrator
+    sessionUrl:      json.link_url,                    // Response field is `link_url`, NOT `link`.
+                                                       // Encrypted at rest by orchestrator.
     expiresAt:       new Date(json.expires_at),
   }
 }
@@ -225,7 +241,13 @@ async parseWebhook({ headers, rawBody }): Promise<ParseWebhookResult> {
   //
   // OPEN ITEM (§14): confirm with Smile whether EVD callbacks always carry IsFinalResult.
   // If they do, the fallback is harmless; if they don't, the fallback is load-bearing.
-  const isFinal: boolean = payload.IsFinalResult === true || isTerminalResultCode(payload.ResultCode)
+  //
+  // NOTE: per the smile-identity-core SDK, IsFinalResult is delivered as a STRING ("true" /
+  // "false"), not a boolean. The parser accepts both forms (boolean true, string "true").
+  const isFinal: boolean =
+       payload.IsFinalResult === true
+    || payload.IsFinalResult === 'true'
+    || isTerminalResultCode(payload.ResultCode)
   const eventType = isFinal ? 'final' : 'interim'
 
   // 2. Identifiers
@@ -279,7 +301,7 @@ Smile's `ResultCode` is a 4-digit string. The mapping below uses **Enhanced Docu
 | `0811` | Document not verified | `FAIL` |
 | `0812` | Selfie does not match ID | `FAIL` |
 | `0816` | Multiple authenticity checks failed | `FAIL` |
-| `1014` | Provider data lookup failed (DHA unreachable / not found) | `INCONCLUSIVE` |
+| `1014` | Unsupported ID number format (also fires on sandbox data hitting prod) | `FAIL` (REJECTED) |
 | Any other `0813`–`0820` | EVD-specific quality / processing failures | `FAIL` |
 | Any other `08xx` (unmapped) | Unmapped EVD code | `INCONCLUSIVE` |
 | Anything else | Unmapped global code | `INCONCLUSIVE` |
@@ -291,6 +313,7 @@ export const SMILE_ID_EVD_PASS_RESULT_CODES: ReadonlySet<string> = new Set(['081
 
 export const SMILE_ID_EVD_FAIL_RESULT_CODES: ReadonlySet<string> = new Set([
   '0811', '0812', '0816',
+  '1014',                          // Unsupported ID number format — REJECTED, not inconclusive.
 ])
 
 // "Terminal" = Smile has finished processing for the job, regardless of outcome.
@@ -298,11 +321,10 @@ export const SMILE_ID_EVD_FAIL_RESULT_CODES: ReadonlySet<string> = new Set([
 export const SMILE_ID_EVD_TERMINAL_RESULT_CODES: ReadonlySet<string> = new Set([
   ...SMILE_ID_EVD_PASS_RESULT_CODES,
   ...SMILE_ID_EVD_FAIL_RESULT_CODES,
-  '1014',
 ])
 ```
 
-`deriveDecision` returns `'PASS'` if `code in SMILE_ID_EVD_PASS_RESULT_CODES`, `'FAIL'` if in `SMILE_ID_EVD_FAIL_RESULT_CODES`, `'INCONCLUSIVE'` for `1014`, else the unmapped fallback above. **The full EVD ResultCode list at the Smile EVD page should be reviewed before stage-2 rollout; a unit test asserts every documented EVD code has a mapping, and `npm run check:smile-id-codes` (a small script under `scripts/`) re-fetches the result-code page and warns on diffs.**
+`deriveDecision` returns `'PASS'` if `code in SMILE_ID_EVD_PASS_RESULT_CODES`, `'FAIL'` if in `SMILE_ID_EVD_FAIL_RESULT_CODES` (which now includes `1014`), else the unmapped fallback above. **The full EVD ResultCode list at the Smile EVD page should be reviewed before stage-2 rollout; a unit test asserts every documented EVD code has a mapping, and `npm run check:smile-id-codes` (a small script under `scripts/`) re-fetches the result-code page and warns on diffs.**
 
 Other Smile products (Enhanced KYC `5` uses `1020`/`1021`/`1022`; Biometric KYC `1` uses its own table) are out of scope for v1; their codes are not in `result-codes.ts`. When/if those products are added, separate `SMILE_ID_BKYC_*` / `SMILE_ID_EKYC_*` sets should be introduced rather than merging into the EVD set.
 
@@ -313,7 +335,11 @@ Smile ID does not expose a numeric confidence score (`ConfidenceValue` is deprec
 ```ts
 function deriveBinaryConfidence(payload: SmilePayload): number {
   const isPass = SMILE_ID_EVD_PASS_RESULT_CODES.has(payload.ResultCode)
-  const isFinal = payload.IsFinalResult === true || isTerminalResultCode(payload.ResultCode)
+  // IsFinalResult may be boolean true or string "true" (smile-identity-core SDK delivers as string).
+  const isFinal =
+       payload.IsFinalResult === true
+    || payload.IsFinalResult === 'true'
+    || isTerminalResultCode(payload.ResultCode)
   const livenessPassed = payload.Actions?.Liveness_Check === 'Passed'
 
   return (isPass && isFinal && livenessPassed) ? 1.0 : 0.0
@@ -403,8 +429,8 @@ The redaction function is exhaustively tested with golden payloads from Smile's 
   "expectedTurnaroundMinutes": 5,
   "smileLinkTtlMinutes": 60,              // user has 60 minutes from link creation to complete capture
   "passResultCodes": ["0810"],            // EVD codes; mirrors SMILE_ID_EVD_PASS_RESULT_CODES in result-codes.ts
-  "rejectResultCodes": ["0811", "0812", "0816"],
-  "inconclusiveResultCodes": ["1014"]
+  "rejectResultCodes": ["0811", "0812", "0816", "1014"],  // 1014 is REJECTED (unsupported ID number format), not inconclusive
+  "inconclusiveResultCodes": []
 }
 ```
 
@@ -483,7 +509,7 @@ In addition to the generic adapter tests in parent spec §6.1:
 | `parseWebhook` with `ResultCode: '0811'` | Returns `decision: 'FAIL'`. |
 | `parseWebhook` with `ResultCode: '0812'` (selfie mismatch) | Returns `decision: 'FAIL'`. |
 | `parseWebhook` with `ResultCode: '0816'` | Returns `decision: 'FAIL'`. |
-| `parseWebhook` with `ResultCode: '1014'` | Returns `decision: 'INCONCLUSIVE'`. |
+| `parseWebhook` with `ResultCode: '1014'` | Returns `decision: 'FAIL'` (REJECTED — unsupported ID number format). |
 | `parseWebhook` with unmapped EVD code | Returns `decision: 'INCONCLUSIVE'`. Unit test asserts all documented EVD codes have a mapping (`scripts/check-smile-id-codes` runs in CI). |
 | `parseWebhook` idempotency: interim then final | Two distinct rows in `ProviderVerificationWebhookEvent` (different `eventType` → different `idempotencyKey`); only the final triggers a verdict transition. |
 | `parseWebhook` idempotency: same payload retried | Same `idempotencyKey`, second insert hits unique violation, reprocess path runs only if first `processedAt = null`. |
