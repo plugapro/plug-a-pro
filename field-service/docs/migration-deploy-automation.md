@@ -21,17 +21,18 @@ This automation closes that class.
 
 After this PR merges, two things need to be configured. Both are dashboard tasks — nothing in the repo.
 
-### 1. GitHub: confirm the `production` environment exists
+### 1. GitHub: configure repository Actions secrets
 
-The workflow declares `environment: production` so you can add reviewer-approval gating or restrict secrets to it later. If the environment doesn't exist yet:
+The workflow currently uses repository-level Actions secrets, matching the existing `field-service-ci.yml` pattern:
 
-1. GitHub → repo Settings → Environments → New environment → name it `production`.
-2. (Optional, recommended) under Deployment protection rules, add yourself as a Required reviewer. Then every migrate-deploy job will pause for manual approval before running. This is the safest mode for early adoption.
-3. Confirm both database secrets are accessible to this environment:
+1. GitHub → repo Settings → Secrets and variables → Actions → Repository secrets.
+2. Confirm both database secrets exist:
    - `DATABASE_URL` — the pooled application connection string.
-   - `DIRECT_URL` — the direct/unpooled connection string required by `schema.prisma` (`directUrl = env("DIRECT_URL")`) and by Prisma migration locking.
+   - `DIRECT_URL` — the migration connection string required by `schema.prisma` (`directUrl = env("DIRECT_URL")`) and by Prisma migration locking.
 
-   The existing field-service CI workflow already uses `secrets.DATABASE_URL` for `pnpm security:rls`, and live-smoke paths already reference `secrets.DIRECT_URL`; the migrate-deploy job needs both.
+`DIRECT_URL` must not equal `DATABASE_URL` and must not point at the Supabase transaction pooler on port `6543`. Prefer the direct `db.<project-ref>.supabase.co:5432` URL when the runner has IPv6. GitHub-hosted runners cannot reach that IPv6-only direct host for this project, so the production workflow uses Supavisor session mode on port `5432`, which Supabase documents as the IPv4-compatible alternative for long-lived sessions.
+
+If reviewer approval is added later via a GitHub `production` environment, copy both `DATABASE_URL` and `DIRECT_URL` into that environment before re-adding `environment: production` to the workflow.
 
 ### 2. Vercel: configure the Ignored Build Step
 
