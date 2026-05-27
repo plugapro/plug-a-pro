@@ -100,7 +100,7 @@ describe('Smile Links client', () => {
       })).rejects.toThrow(/Smile.*400/)
     })
 
-    it('throws when SMILE_ID_API_KEY is unset', async () => {
+    it('throws when required env vars are unset', async () => {
       vi.unstubAllEnvs()
       await expect(createSmileLink({
         verificationId: 'ver-1', providerId: null,
@@ -108,6 +108,35 @@ describe('Smile Links client', () => {
         callbackUrl: 'https://app.test/cb',
         expiresAt: new Date(),
       })).rejects.toThrow(/SMILE_ID/)
+    })
+
+    it('throws SmileApiError(0) on request timeout', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+        return new Promise((_, reject) => {
+          const e = new Error('The operation was aborted due to timeout')
+          ;(e as Error).name = 'TimeoutError'
+          reject(e)
+        })
+      }))
+      await expect(createSmileLink({
+        verificationId: 'ver-1', providerId: null,
+        partnerJobId: 'pap-uuid-1',
+        callbackUrl: 'https://app.test/cb',
+        expiresAt: new Date(),
+      })).rejects.toThrow(/timeout/)
+    })
+
+    it('throws SmileApiError when response is missing link_url or ref_id', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true, status: 200,
+        json: async () => ({ link_url: null, ref_id: 'r' }),
+      }))
+      await expect(createSmileLink({
+        verificationId: 'ver-1', providerId: null,
+        partnerJobId: 'pap-uuid-1',
+        callbackUrl: 'https://app.test/cb',
+        expiresAt: new Date(),
+      })).rejects.toThrow(/unexpected response shape/)
     })
   })
 
@@ -135,6 +164,18 @@ describe('Smile Links client', () => {
     it('returns acknowledged=false on non-2xx', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => '' }))
       const result = await disableSmileLink('link-ref-bogus')
+      expect(result.acknowledged).toBe(false)
+    })
+
+    it('returns acknowledged=false on timeout (does not throw)', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+        return new Promise((_, reject) => {
+          const e = new Error('aborted')
+          ;(e as Error).name = 'TimeoutError'
+          reject(e)
+        })
+      }))
+      const result = await disableSmileLink('link-ref-1')
       expect(result.acknowledged).toBe(false)
     })
   })
