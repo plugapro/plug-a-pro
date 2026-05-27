@@ -74,9 +74,94 @@ Order matters: OTP first, then the security check. Reversing the order would let
 
 4. **Global flip** — set `feature_flags.enabled = true` for `security.otp.report`. From this point all phones get signal-gated security-check prompts.
 
-## Meta template definition (for WhatsApp Business Manager submission)
+## Submitting the Meta template
 
-Paste exactly as below when creating the template:
+Three ways, in order of preference.
+
+### Option 1 — npm script (recommended)
+
+From repo root (with production env loaded):
+
+```bash
+set -a && source field-service/.env.local && set +a
+pnpm --filter field-service template:submit:otp-security-check
+```
+
+Or inline if you don't want to source .env.local:
+
+```bash
+WHATSAPP_ACCESS_TOKEN=EAAB... pnpm --filter field-service template:submit:otp-security-check
+```
+
+What it does:
+1. POSTs the template definition (body + button label) to `https://graph.facebook.com/v18.0/<waba-id>/message_templates`.
+2. Idempotent: if the template already exists (re-running for any reason), exits 0 with `{ ok: true, alreadyExists: true }`.
+3. On success prints `{ ok: true, name, id, status, category }` — typically `status: PENDING` initially.
+4. Prints the curl one-liner you can use to poll for approval.
+5. On scope/permission failure, surfaces an actionable hint about the access token scope.
+
+Script: `field-service/scripts/submit-otp-security-check-template.ts`. Never prints the token. Hardcodes the WABA id from the 2026-05-17 migration (`995389326374131`) but accepts `WHATSAPP_BUSINESS_ACCOUNT_ID` override.
+
+### Option 2 — Direct curl
+
+If you don't have the repo locally but do have the token:
+
+```bash
+WABA_ID=995389326374131
+ACCESS_TOKEN=EAAB...   # whatsapp_business_management scope
+
+curl -s "https://graph.facebook.com/v18.0/${WABA_ID}/message_templates" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "otp_security_check",
+    "language": "en_ZA",
+    "category": "UTILITY",
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Plug A Pro security check.\n\nWe just sent you a sign-in code. If you didn'\''t request this, tap below to block it — your account stays safe."
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "QUICK_REPLY",
+            "text": "I didn'\''t request this"
+          }
+        ]
+      }
+    ]
+  }' | jq .
+```
+
+Poll for approval:
+
+```bash
+curl -s "https://graph.facebook.com/v18.0/${WABA_ID}/message_templates?name=otp_security_check" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" | jq '.data[] | {name,status,category,rejected_reason}'
+```
+
+### Option 3 — Meta Business Manager dashboard (fallback)
+
+Use this if neither programmatic option is available.
+
+| Field | Value |
+|---|---|
+| **Template name** | `otp_security_check` |
+| **Category** | Utility |
+| **Language** | English (South Africa) — `en_ZA` |
+| **Header** | _(leave blank)_ |
+| **Body** | `Plug A Pro security check.\n\nWe just sent you a sign-in code. If you didn't request this, tap below to block it — your account stays safe.` |
+| **Footer** | _(leave blank)_ |
+| **Buttons** | Quick reply, **one** button |
+| **Button label** | `I didn't request this` |
+
+The button payload variable is set at SEND time (`otp_report_<token>`), not at template definition time. No payload variable needs to be configured in the Dashboard.
+
+## Template definition (reference)
+
+Below is the exact template definition the submission script uses, in case Meta's reviewer needs to see the canonical form:
 
 | Field | Value |
 |---|---|
