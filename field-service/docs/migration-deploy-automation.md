@@ -27,7 +27,11 @@ The workflow declares `environment: production` so you can add reviewer-approval
 
 1. GitHub → repo Settings → Environments → New environment → name it `production`.
 2. (Optional, recommended) under Deployment protection rules, add yourself as a Required reviewer. Then every migrate-deploy job will pause for manual approval before running. This is the safest mode for early adoption.
-3. Confirm the secret `DATABASE_URL` is accessible to this environment. The existing field-service CI workflow already uses `secrets.DATABASE_URL` for `pnpm security:rls`; the migrate-deploy job reuses the same secret. No new secret needed.
+3. Confirm both database secrets are accessible to this environment:
+   - `DATABASE_URL` — the pooled application connection string.
+   - `DIRECT_URL` — the direct/unpooled connection string required by `schema.prisma` (`directUrl = env("DIRECT_URL")`) and by Prisma migration locking.
+
+   The existing field-service CI workflow already uses `secrets.DATABASE_URL` for `pnpm security:rls`, and live-smoke paths already reference `secrets.DIRECT_URL`; the migrate-deploy job needs both.
 
 ### 2. Vercel: configure the Ignored Build Step
 

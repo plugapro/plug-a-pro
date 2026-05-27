@@ -65,6 +65,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify migration database secrets
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL secret is required for prisma migrate deploy" >&2
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "DIRECT_URL secret is required because schema.prisma declares directUrl = env(\"DIRECT_URL\")" >&2
+            exit 1
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
       # Surface what's pending BEFORE applying anything. The exit code is
       # non-zero when migrations are pending; we capture it so the step
       # itself doesn't fail the job — we still want migrate deploy to run.
@@ -72,11 +86,13 @@ jobs:
         run: pnpm exec prisma migrate status || true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       - name: Apply pending migrations
         run: pnpm exec prisma migrate deploy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       # Verify the ledger ends up clean. This catches the case where a
       # migration "succeeded" via Prisma's view but the schema is somehow
@@ -85,3 +101,4 @@ jobs:
         run: pnpm exec prisma migrate status
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
