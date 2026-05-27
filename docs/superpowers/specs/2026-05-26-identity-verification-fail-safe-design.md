@@ -23,6 +23,10 @@
 
 **Out-of-band note (unrelated to this spec):** local Vercel CLI is at `54.4.1`; latest is `54.5.0`. Upgrade when convenient via `pnpm add -g vercel@latest`. Not blocking.
 
+**2026-05-27 — review-driven corrections (round 3):**
+12. **RESUME router maps to existing flow steps only.** Earlier draft invented `pj_identity_awaiting_identifier`, `pj_identity_awaiting_document`, `pj_identity_awaiting_selfie`, `pj_identity_awaiting_liveness`, `pj_identity_retry_offer` — none of which exist in `ProviderJourneyStep` (`lib/whatsapp-flows/types.ts:115-120`). Router now reuses `pj_identity_consent`, `pj_identity_basis`, `pj_identity_identifier`, `pj_identity_document`, `pj_identity_selfie`, plus `done`. AWAITING_LIVENESS, SUBMITTED, PROCESSING, NEEDS_MANUAL_REVIEW, and RETRY_REQUIRED all route to `done` with channel-appropriate guidance, since they require either operator action or the PWA-side liveness handler — not a WhatsApp step.
+13. **Storage helpers must be made public.** `parseSupabaseIdentityReference()` and `createSupabaseStorageClient()` in `lib/storage.ts` are currently bare `function` declarations with no `export`. The spec now explicitly calls for either exporting them (Option A) or adding a new public `deleteIdentityDocumentByBlobKey()` wrapper (Option B, recommended). The decision lives in the implementation plan, not in the spec.
+
 ## Context
 
 The current creation logic has a per-channel "reuse non-terminal" check in `lib/identity-verification/link.ts:63-71`, but the WhatsApp flow in `lib/whatsapp-flows/identity-verification.ts:85-95` creates unconditionally on every consent tap. Cross-channel concurrency isn't blocked either. There's no per-provider attempt cap. The result: providers can stack up arbitrary numbers of verification rows by re-consenting in WhatsApp or hopping between channels, each one consuming ops-review queue space and confusing the operator's view of the case.
@@ -94,9 +98,10 @@ The script writes a single `AuditLog` row per deleted verification (`actorId` fr
 
 #### Phase C — post-commit storage purge (idempotent, best-effort)
 
-10. For each entry in `purgeList`:
-    - `backend === 'supabase'` → `supabase.storage.from(bucket).remove([path])` via `createSupabaseStorageClient()` (re-use `lib/storage.ts:createSupabaseStorageClient`).
-    - `backend === 'vercel_blob'` → `import('@vercel/blob').del(url)` (re-use the pattern in `lib/storage.ts` — Vercel Blob is the legacy fallback that the existing `getIdentityDocument` still reads).
+10. For each entry in `purgeList`, call the public storage helper (`deleteIdentityDocumentByBlobKey(blobKey)` if Option B is taken, or the imported `parseSupabaseIdentityReference` + `createSupabaseStorageClient` directly if Option A). The helper internally:
+    - `parseSupabaseIdentityReference(blobKey)` → if parses, `supabase.storage.from(bucket).remove([path])`.
+    - Otherwise → `import('@vercel/blob').del(blobKey)` (legacy fallback).
+    - Returns a structured result the caller can log without re-doing the dispatch.
 11. On any delete failure: log to stderr with the verification id + blob ref + error message; append to `purge-failures-<timestamp>.json` next to the script for follow-up. **Do not retry blindly** — operator decides whether to retry, manually purge, or leave the file (storage cost only; no PII reachable since no DB row references it).
 12. Exit code reflects storage purge state: `0` if all clean, `2` if DB succeeded but some storage purges failed.
 
@@ -192,19 +197,26 @@ export type ResumeResult = { nextStep: ProviderJourneyStep; nextData?: Record<st
 export async function resumeWhatsAppIdentityVerification({ ctx, existing }: ResumeArgs): Promise<ResumeResult>
 ```
 
-| Existing status | Helper action | Next step |
+**No new flow steps are introduced.** Today's `ProviderJourneyStep` union (`lib/whatsapp-flows/types.ts:115-120`) defines exactly:
+- `pj_identity_start`, `pj_identity_consent`, `pj_identity_basis`, `pj_identity_identifier`, `pj_identity_document`, `pj_identity_selfie`
+
+The router reuses these — no `_awaiting_*` or `_retry_*` synonyms are added.
+
+| Existing status | Helper action | Next step (reused, no new step) |
 |---|---|---|
-| `NOT_STARTED`, `STARTED` | Re-emit the consent buttons (treat as fresh start; the transitions are idempotent up to `CONSENTED`) | `pj_identity_consent` |
-| `CONSENTED` | Prompt for the next missing piece based on `identityBasis` — typically `AWAITING_IDENTIFIER` → ask for ID number | matches the same prompt the fresh flow would send after consent |
-| `AWAITING_IDENTIFIER` | Re-prompt: "Please reply with your ID/passport number to continue your verification." | `pj_identity_awaiting_identifier` |
-| `AWAITING_DOCUMENT` | Re-prompt: "Please send a clear photo of your ID/passport/permit to continue your verification." | `pj_identity_awaiting_document` |
-| `AWAITING_SELFIE` | Re-prompt: "Please send a selfie holding your ID to finish your verification." | `pj_identity_awaiting_selfie` |
-| `AWAITING_LIVENESS` | Re-send the liveness session link (or "Your liveness link has expired — reply *retry* to get a fresh one." if `livenessSessionExpiresAt < now()`) | `pj_identity_awaiting_liveness` |
+| `NOT_STARTED`, `STARTED` | Re-emit the consent buttons — transitions up to `CONSENTED` are idempotent on the existing row | `pj_identity_consent` |
+| `CONSENTED` | Branch on the row's `identityBasis`: it is set at creation (default `'SA_ID'`), so route directly to the identifier prompt. If for any reason it's null (defensive), prompt for basis selection. | `pj_identity_identifier` (basis set) **or** `pj_identity_basis` (basis null) |
+| `AWAITING_IDENTIFIER` | Re-prompt: "Please reply with your ID/passport number to continue your verification." | `pj_identity_identifier` |
+| `AWAITING_DOCUMENT` | Re-prompt: "Please send a clear photo of your ID/passport/permit to continue your verification." | `pj_identity_document` |
+| `AWAITING_SELFIE` | Re-prompt: "Please send a selfie holding your ID to finish your verification." | `pj_identity_selfie` |
+| `AWAITING_LIVENESS` | Send guidance: "We're waiting on your liveness check. Please use the link we sent you, or reply *help* if it expired." No new step; conversation returns to the menu so the PWA-based liveness handler completes the flow. | `done` |
 | `SUBMITTED`, `PROCESSING` | "Your verification has been submitted and we're processing it. We'll message you when there's an update." (no action) | `done` |
 | `NEEDS_MANUAL_REVIEW` | "Your verification is with our review team. We'll message you within 1 business day. No action needed right now." | `done` |
-| `RETRY_REQUIRED` | "We need a bit more from you. Reply *retry* to restart your verification from where it left off." | `pj_identity_retry_offer` |
+| `RETRY_REQUIRED` | Send guidance: "We need a bit more from you. Please reply *verify* to start a fresh attempt." (next time the provider replies *verify*, the gate sees this row is `RETRY_REQUIRED` — a non-terminal state per `NON_TERMINAL_VERIFICATION_STATUSES` — and resumes here OR the implementation can transition this row to `STARTED` before re-entering the flow if cleaner. Decided in the plan, not the spec.) | `done` |
 
 Exhaustive `switch` over `VerificationStatus` — TypeScript enforces all non-terminal cases are handled. Terminal cases (`PASSED`, `FAILED`, `EXPIRED`, `CANCELLED`) never reach this helper because the gate would have returned `CREATE` or a `false` block instead of `RESUME`. The default branch logs a `[whatsapp-identity-resume] unreachable status` warning and falls through to a safe "Please reply *menu* for options." prompt rather than crashing.
+
+If a future change requires a true new step (e.g., a dedicated retry-confirmation step), that's an explicit additive change to `ProviderJourneyStep` in `types.ts` plus the matching handler — not silently invented in this helper.
 
 #### Credit-protected link issuance — every site must pass `purpose: 'CREDIT_TOP_UP'`
 
@@ -256,7 +268,8 @@ Per the house rule "every admin-facing feature ships behind a flag and is flippe
 | `field-service/__tests__/lib/identity-verification/gate.test.ts` (new) | unit tests for the gate decision tree |
 | `field-service/__tests__/lib/identity-verification/link.test.ts` | extend to assert the gate is called and block reasons surface as errors |
 | `field-service/__tests__/lib/whatsapp-flows/identity-verification.test.ts` | extend to assert: (a) the WhatsApp consent handler bails out cleanly on each block reason with the mapped copy, (b) `resumeWhatsAppIdentityVerification` returns the right `nextStep` for every non-terminal `VerificationStatus`, with the exhaustive switch enforced by TypeScript |
-| `field-service/scripts/cleanup-provider-identity-verifications.ts` (new) | Two-phase cleanup (DB transaction → commit → post-commit storage purge); dispatches Supabase Storage vs Vercel Blob per parsed `blobKey` |
+| `field-service/scripts/cleanup-provider-identity-verifications.ts` (new) | Two-phase cleanup (DB transaction → commit → post-commit storage purge); calls the public storage helper per blob |
+| `field-service/lib/storage.ts` | Either `export` the existing private `parseSupabaseIdentityReference` + `createSupabaseStorageClient` (Option A) **or** add a new public `deleteIdentityDocumentByBlobKey()` that wraps both (Option B, recommended) |
 
 ## Existing utilities to reuse (do NOT re-implement)
 
@@ -265,8 +278,18 @@ Per the house rule "every admin-facing feature ships behind a flag and is flippe
 - `transitionIdentityVerification` — keep the same; the gate runs *before* any transition or create, never replaces them
 - The flag-reading helper in `lib/flags.ts` — same pattern as `admin.crud.verifications`, no new infrastructure
 - `crudAction()` is NOT involved — the cleanup script writes directly to AuditLog using the same shape (`action`, `entityType`, `entityId`, `before`, `after`)
-- `parseSupabaseIdentityReference()` / `supabaseIdentityReference()` in `lib/storage.ts` — already parse and emit the polymorphic `blobKey` format; the cleanup script reuses them to route deletes to the right backend
-- `createSupabaseStorageClient()` in `lib/storage.ts` — the cleanup script reuses this for `.remove([path])` calls in Phase C; no second client
+
+#### Storage helpers — must be made public
+
+`parseSupabaseIdentityReference()` (`lib/storage.ts:399`) and `createSupabaseStorageClient()` (`lib/storage.ts:331`) are currently bare `function` declarations with no `export` keyword. The cleanup script can't import them as-is.
+
+The implementation has two acceptable paths (decide in the plan; the spec doesn't mandate one):
+
+**Option A — Export the existing helpers.** Add `export` to both functions. Minimal change; the script imports `parseSupabaseIdentityReference` + `createSupabaseStorageClient` and calls `.from(bucket).remove([path])` directly.
+
+**Option B — Add a public `deleteIdentityDocumentByBlobKey(blobKey: string): Promise<{ backend: 'supabase' | 'vercel_blob' | 'unparseable'; ok: boolean; error?: string }>` in `lib/storage.ts`.** Keeps backend-routing logic encapsulated in the storage module; cleanup script calls one function per blob. The helper internally parses the key, dispatches to Supabase `.remove([path])` or `@vercel/blob` `del(url)`, and returns a structured result for the post-commit purge log.
+
+Recommendation: **Option B** — the polymorphic dispatch lives in the storage module rather than leaking into a one-off ops script, and the same helper is reusable later for any future deletion path (e.g., GDPR-style erase requests). But either is acceptable for v1.
 
 ## Verification
 
