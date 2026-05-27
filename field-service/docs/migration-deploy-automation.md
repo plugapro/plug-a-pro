@@ -34,18 +34,19 @@ The workflow currently uses repository-level Actions secrets, matching the exist
 
 If reviewer approval is added later via a GitHub `production` environment, copy both `DATABASE_URL` and `DIRECT_URL` into that environment before re-adding `environment: production` to the workflow.
 
-### 2. Vercel: configure the Ignored Build Step
+### 2. Vercel: Ignored Build Step (wired via `vercel.json`)
 
-1. Vercel Dashboard → plug-a-pro project → Settings → Git → Ignored Build Step.
-2. Choose **"Run my Bash script"**.
-3. Paste:
+`field-service/vercel.json` declares:
 
-   ```bash
-   bash field-service/scripts/vercel-ignored-build-step.sh
-   ```
+```json
+{
+  "ignoreCommand": "bash scripts/vercel-ignored-build-step.sh"
+}
+```
 
-4. Save.
-5. (Optional) Add a Vercel env var `GH_API_TOKEN` (Production scope only) with a fine-grained PAT that has Actions read access to `plugapro/plug-a-pro`. Without it, the script falls back to anonymous GitHub API polling (60 req/hour per IP — usually fine, but tight if you push many migration-bearing commits in quick succession).
+Vercel picks this up automatically on every deploy — **no dashboard configuration required**. The Ignored Build Step is now version-controlled and ships through normal PRs alongside the workflow it gates.
+
+(Optional) Add a Vercel env var `GH_API_TOKEN` (Production scope only) with a fine-grained PAT that has Actions read access to `plugapro/plug-a-pro`. Without it, the script falls back to anonymous GitHub API polling (60 req/hour per IP — usually fine, but tight if you push many migration-bearing commits in quick succession).
 
 That's it. No code changes ever needed in this repo to maintain the gate.
 
