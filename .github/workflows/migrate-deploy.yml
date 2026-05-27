@@ -47,7 +47,16 @@ jobs:
     name: Apply pending migrations
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: production
+    # No `environment:` binding — when set, GitHub scopes secret resolution
+    # to that environment with no fallback to repo-level secrets. The previous
+    # attempt (PR #12) declared `environment: production` to enable optional
+    # reviewer-approval gating, but the production environment was only set up
+    # with DATABASE_URL, not DIRECT_URL, and the workflow failed at the
+    # preflight check. Existing field-service-ci.yml uses repo-level secrets
+    # without an environment binding; we follow the same pattern here so both
+    # workflows resolve secrets identically. Re-add `environment: production`
+    # later if/when you want a manual approval step — at that point add
+    # BOTH DATABASE_URL and DIRECT_URL to the production environment.
 
     steps:
       - uses: actions/checkout@v4
