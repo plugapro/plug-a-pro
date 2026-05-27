@@ -9,7 +9,7 @@ import {
   deriveDecision,
   isTerminalResultCode,
 } from './result-codes'
-import { verifySmileSignature } from './signing'
+import { verifySmileSignature, isTimestampFresh } from './signing'
 import { redactSmilePayload } from './redact'
 import type { SmileEvdActions, SmileEvdWebhookPayload } from './types'
 
@@ -88,9 +88,13 @@ export async function parseSmileWebhook(input: ParseWebhookInput): Promise<Parse
     }
   }
 
-  const signatureValid = typeof payload.signature === 'string' && typeof payload.timestamp === 'string'
-    ? verifySmileSignature(payload.timestamp, payload.signature)
-    : false
+  // Security: in-body HMAC doesn't cover the body, so a captured (timestamp,
+  // signature) pair could be replayed against an arbitrary body. Reject
+  // stale timestamps as a defense-in-depth mitigation.
+  const hasSig = typeof payload.signature === 'string' && typeof payload.timestamp === 'string'
+  const signatureValid = hasSig
+    && isTimestampFresh(payload.timestamp as string)
+    && verifySmileSignature(payload.timestamp as string, payload.signature as string)
 
   const isFinal = deriveIsFinal(payload)
   const eventType = isFinal ? 'final' : 'interim'

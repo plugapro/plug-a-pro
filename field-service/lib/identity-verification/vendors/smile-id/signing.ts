@@ -51,3 +51,14 @@ export function verifySmileSignature(timestamp: string, signature: string): bool
 export function currentIsoTimestamp(): string {
   return new Date().toISOString()
 }
+
+const DEFAULT_MAX_AGE_SECONDS = 300  // 5 minutes
+
+export function isTimestampFresh(timestamp: string, maxAgeSeconds: number = DEFAULT_MAX_AGE_SECONDS): boolean {
+  if (!timestamp) return false
+  const t = Date.parse(timestamp)
+  if (isNaN(t)) return false
+  const ageMs = Date.now() - t
+  if (ageMs < -60_000) return false  // future timestamps > 1 min skew → reject
+  return ageMs <= maxAgeSeconds * 1000
+}

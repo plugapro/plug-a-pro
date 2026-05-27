@@ -1,106 +1,84 @@
-import { createHash, createHmac } from 'crypto'
-import type { ParseWebhookInput, VerificationVendorAdapter } from '../types'
+import { randomUUID } from 'crypto'
+import type {
+  VerificationVendorAdapter,
+  SubmitDocumentCheckInput,
+  SubmitDocumentCheckResult,
+  CreateLivenessSessionInput,
+  CreateLivenessSessionResult,
+  ParseWebhookInput,
+  ParseWebhookResult,
+  CancelVerificationJobInput,
+  CancelVerificationJobResult,
+} from '../types'
+import { createSmileLink, disableSmileLink } from './smile-links-client'
+import { parseSmileWebhook } from './parse'
 
-function canonicalJson(rawBody: string) {
-  try {
-    return JSON.stringify(sortJson(JSON.parse(rawBody)))
-  } catch {
-    return rawBody
+const DEFAULT_SMILE_LINK_TTL_MINUTES = 60
+
+function partnerJobId(): string {
+  return `pap-${randomUUID()}`
+}
+
+function computeExpiresAt(): Date {
+  const minutes = Number(process.env.SMILE_ID_LINK_TTL_MINUTES) || DEFAULT_SMILE_LINK_TTL_MINUTES
+  return new Date(Date.now() + minutes * 60 * 1000)
+}
+
+async function submitDocumentCheck(
+  _input: SubmitDocumentCheckInput,
+): Promise<SubmitDocumentCheckResult> {
+  // Smile Links combines doc + selfie + liveness into one user flow.
+  // submitDocumentCheck merely mints the partner-side correlation id;
+  // the actual Smile API call happens in createLivenessSession.
+  return {
+    vendorReference: partnerJobId(),
+    expectsWebhook: true,
   }
 }
 
-function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJson)
-  if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, nested]) => [key, sortJson(nested)]),
-  )
+async function createLivenessSession(
+  input: CreateLivenessSessionInput,
+): Promise<CreateLivenessSessionResult> {
+  if (!input.submittedVendorReference) {
+    throw new Error(
+      'Smile ID createLivenessSession requires submittedVendorReference ' +
+      '(the partner_job_id from submitDocumentCheck)',
+    )
+  }
+
+  const created = await createSmileLink({
+    verificationId: input.verificationId,
+    providerId: input.providerId,
+    partnerJobId: input.submittedVendorReference,
+    callbackUrl: input.webhookCallbackUrl,
+    expiresAt: computeExpiresAt(),
+  })
+
+  return {
+    vendorReference: created.refId,
+    sessionUrl: created.linkUrl,
+    expiresAt: created.expiresAt ? new Date(created.expiresAt) : computeExpiresAt(),
+  }
 }
 
-function payloadHash(rawBody: string) {
-  return createHash('sha256').update(canonicalJson(rawBody)).digest('hex')
+async function parseWebhook(input: ParseWebhookInput): Promise<ParseWebhookResult> {
+  return parseSmileWebhook(input)
 }
 
-function validSignature(input: ParseWebhookInput) {
-  const secret = process.env.SMILE_ID_WEBHOOK_SECRET
-  if (!secret) return false
-  const signature = input.headers['x-smile-signature'] ?? input.headers['X-Smile-Signature']
-  if (!signature) return false
-  const expected = createHmac('sha256', secret).update(input.rawBody).digest('hex')
-  return signature === expected
+async function cancelVerificationJob(
+  input: CancelVerificationJobInput,
+): Promise<CancelVerificationJobResult> {
+  if (!input.livenessSessionReference) {
+    return { supported: false, vendorAcknowledged: false }
+  }
+  const r = await disableSmileLink(input.livenessSessionReference)
+  return { supported: true, vendorAcknowledged: r.acknowledged }
 }
 
 export const smileIdVerificationAdapter: VerificationVendorAdapter = {
   vendorKey: 'smile_id',
-  async submitDocumentCheck() {
-    if (!process.env.SMILE_ID_API_KEY || !process.env.SMILE_ID_PARTNER_ID) {
-      throw new Error('Smile ID credentials are not configured')
-    }
-    throw new Error('Smile ID document submission is scaffolded but not enabled without a provider contract implementation')
-  },
-  async createLivenessSession() {
-    if (!process.env.SMILE_ID_API_KEY || !process.env.SMILE_ID_PARTNER_ID) {
-      throw new Error('Smile ID credentials are not configured')
-    }
-    throw new Error('Smile ID liveness session creation is scaffolded but not enabled without a provider contract implementation')
-  },
-  async parseWebhook(input) {
-    const parsed = JSON.parse(input.rawBody || '{}') as Record<string, unknown>
-    const result = parsed.result && typeof parsed.result === 'object'
-      ? parsed.result as Record<string, unknown>
-      : parsed
-    const decision = result.decision === 'PASS' || result.decision === 'FAIL'
-      ? result.decision
-      : result.decision === 'INCONCLUSIVE'
-        ? 'INCONCLUSIVE'
-        : null
-    return {
-      signatureValid: validSignature(input),
-      vendorEventId: typeof parsed.event_id === 'string' ? parsed.event_id : null,
-      vendorReference: typeof parsed.job_id === 'string' ? parsed.job_id : null,
-      livenessSessionReference: typeof parsed.session_id === 'string' ? parsed.session_id : null,
-      eventType: typeof parsed.event_type === 'string' ? parsed.event_type : null,
-      payloadHash: payloadHash(input.rawBody),
-      redactedPayload: redactPayload(parsed),
-      result: decision
-        ? {
-          decision,
-          confidence: typeof result.confidence === 'number' ? result.confidence : null,
-          documentConfidence: typeof result.document_confidence === 'number' ? result.document_confidence : null,
-          livenessScore: typeof result.liveness_score === 'number' ? result.liveness_score : null,
-          selfieMatchScore: typeof result.selfie_match_score === 'number' ? result.selfie_match_score : null,
-          livenessVerified: typeof result.liveness_verified === 'boolean' ? result.liveness_verified : null,
-          riskFlags: Array.isArray(result.risk_flags) ? result.risk_flags.map(String) : [],
-          reasonCode: typeof result.reason_code === 'string' ? result.reason_code : null,
-          vendorReference: typeof parsed.job_id === 'string' ? parsed.job_id : null,
-          expiresAt: null,
-        }
-        : null,
-    }
-  },
-  async cancelVerificationJob() {
-    return { supported: false, vendorAcknowledged: false }
-  },
-}
-
-function redactPayload(value: unknown): Record<string, unknown> {
-  const redacted = redactValue(value)
-  return redacted && typeof redacted === 'object' && !Array.isArray(redacted)
-    ? redacted as Record<string, unknown>
-    : { payload: '[redacted]' }
-}
-
-function redactValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactValue)
-  if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
-      key,
-      /id_number|identifier|document|selfie|image|token|secret|url/i.test(key)
-        ? '[redacted]'
-        : redactValue(nested),
-    ]),
-  )
+  submitDocumentCheck,
+  createLivenessSession,
+  parseWebhook,
+  cancelVerificationJob,
 }
