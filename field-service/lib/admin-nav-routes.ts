@@ -20,6 +20,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: '/admin/vouchers', label: 'Vouchers', icon: 'payments' as const },
   { href: '/admin/provider-wallets', label: 'Provider Wallets', icon: 'payments' as const },
   { href: '/admin/lead-unlock-disputes', label: 'Lead Refunds', icon: 'disputes' as const },
+  { href: '/admin/commercial/provider-economics', label: 'Economics', icon: 'reports' as const },
   { href: '/admin/reports', label: 'Reports', icon: 'reports' as const },
   { href: '/admin/messages', label: 'Messages', icon: 'messages' as const },
   { href: '/admin/team', label: 'Team', icon: 'users' as const },

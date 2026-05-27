@@ -51,6 +51,16 @@ export type CreateLivenessSessionInput = {
   verificationId: string
   providerId: string | null
   returnUrl: string
+  // The partner-side reference returned by the immediately-preceding
+  // submitDocumentCheck() call. Adapters that mint a vendor session in
+  // createLivenessSession need this value at call time because the
+  // orchestrator has not yet stamped vendorReference onto the DB row
+  // (Phase 3 commit happens after both vendor calls).
+  submittedVendorReference: string | null
+  // Per-request webhook callback URL. Adapters whose link/job creation
+  // API requires callback_url as a body field (e.g., Smile Links) must
+  // send this value; portal-level fallback is fallback only.
+  webhookCallbackUrl: string
 }
 
 export type CreateLivenessSessionResult = {
