@@ -35,6 +35,13 @@ describe('feature flag registry', () => {
       defaultValue: false,
     })
   })
+
+  it('registers the provider identity verification fail-safe disabled by default', () => {
+    expect(FEATURE_FLAGS_REGISTRY['provider.identity.verification.fail_safe']).toMatchObject({
+      owner: 'eng',
+      defaultValue: false,
+    })
+  })
 })
 
 describe('isEnabled — default behaviour', () => {

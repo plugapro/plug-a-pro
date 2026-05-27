@@ -881,6 +881,11 @@ describe('handleProviderJourneyFlow', () => {
       )
 
       expect(isProviderEligibleForCredits).toHaveBeenCalledWith('prov_1')
+      expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
+        providerId: 'prov_1',
+        channel: 'PWA',
+        purpose: 'CREDIT_TOP_UP',
+      })
       expect(wa.sendCtaUrl).toHaveBeenCalledWith(
         '+27711111111',
         expect.stringContaining('Identity check required'),
@@ -899,6 +904,11 @@ describe('handleProviderJourneyFlow', () => {
       )
 
       expect(paymentIntents.createPayatTopUpIntent).not.toHaveBeenCalled()
+      expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
+        providerId: 'prov_1',
+        channel: 'PWA',
+        purpose: 'CREDIT_TOP_UP',
+      })
       expect(wa.sendCtaUrl).toHaveBeenCalledWith(
         '+27711111111',
         expect.stringContaining('Identity check required'),
@@ -965,6 +975,7 @@ describe('handleProviderJourneyFlow', () => {
       expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
         providerId: 'prov_1',
         channel: 'PWA',
+        purpose: 'CREDIT_TOP_UP',
       })
       expect(wa.sendCtaUrl).toHaveBeenCalledWith(
         '+27711111111',

@@ -1006,6 +1006,7 @@ model ProviderIdentityVerification {
   accessTokenExpiresAt         DateTime?
   accessTokenLastUsedAt        DateTime?
   accessTokenRevokedAt         DateTime?
+  countsTowardAttemptCap       Boolean                    @default(true)
   createdAt                    DateTime                   @default(now())
   updatedAt                    DateTime                   @updatedAt
 
@@ -1023,6 +1024,7 @@ model ProviderIdentityVerification {
   @@index([documentNumberHash])
   @@index([status, createdAt])
   @@index([providerId])
+  @@index([providerId, status, countsTowardAttemptCap])
   @@index([providerApplicationId])
   @@index([assuranceLevel, status])
   @@index([sourceCheckProvider, vendorReference])

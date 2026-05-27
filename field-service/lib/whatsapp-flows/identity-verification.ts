@@ -1,5 +1,10 @@
 import { db } from '../db'
+import { isEnabled } from '../flags'
 import { encryptIdentifier, hashIdentifier, identifierLast4, normalizeIdentifier } from '../identity-verification/crypto'
+import {
+  checkCanStartNewVerification,
+  type VerificationStartCheck,
+} from '../identity-verification/gate'
 import {
   recordConsentAcceptance,
   renderIdentityConsentText,
@@ -21,6 +26,8 @@ import {
   getRequiredDocumentKinds,
   type IdentityBasis,
   type IdentityDocumentKind,
+  type VerificationChannel,
+  type VerificationStatus,
 } from '../identity-verification/types'
 import { sendButtons, sendList, sendText } from '../whatsapp-interactive'
 import { downloadAndStoreWhatsAppIdentityDocument } from '../whatsapp-media'
@@ -96,6 +103,25 @@ async function handleIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done', nextData: {} }
   }
 
+  const failSafeEnabled = await isEnabled('provider.identity.verification.fail_safe', {
+    userId: provider.id,
+  })
+
+  if (failSafeEnabled) {
+    const gate = await checkCanStartNewVerification(provider.id, {
+      purpose: 'GENERAL_IDENTITY',
+    })
+
+    if (gate.ok === false) {
+      await sendText(ctx.phone, gate.message)
+      return { nextStep: 'done', nextData: {} }
+    }
+
+    if (gate.ok === 'RESUME') {
+      return resumeWhatsAppIdentityVerification(ctx, gate, { acceptedByProviderId: provider.id })
+    }
+  }
+
   const verification = await db.providerIdentityVerification.create({
     data: {
       providerId: provider.id,
@@ -141,6 +167,158 @@ async function handleIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
   return {
     nextStep: 'pj_identity_basis',
     nextData: { identityVerificationId: verification.id },
+  }
+}
+
+export async function resumeWhatsAppIdentityVerification(
+  ctx: FlowContext,
+  existing: Extract<VerificationStartCheck, { ok: 'RESUME' }>,
+  options: { acceptedByProviderId?: string } = {},
+): Promise<FlowResult> {
+  const verification = await db.providerIdentityVerification.findUnique({
+    where: { id: existing.verificationId },
+    select: {
+      id: true,
+      status: true,
+      identityBasis: true,
+      channel: true,
+    },
+  }) as {
+    id: string
+    status: VerificationStatus
+    identityBasis: IdentityBasis | null
+    channel: VerificationChannel
+  } | null
+
+  if (!verification) {
+    await sendText(ctx.phone, 'We could not find your verification session. Please start identity verification again from the provider menu.')
+    return { nextStep: 'done', nextData: {} }
+  }
+
+  switch (verification.status) {
+    case 'NOT_STARTED':
+    case 'STARTED':
+      if (!options.acceptedByProviderId) {
+        return promptIdentityConsent(ctx)
+      }
+
+      if (verification.status === 'NOT_STARTED') {
+        await transitionIdentityVerification({
+          verificationId: verification.id,
+          toStatus: 'STARTED',
+          actorId: options.acceptedByProviderId,
+          actorRole: 'provider',
+        })
+      }
+
+      {
+        const consentVendor = await resolveConsentVendorForWhatsApp(verification.id, ctx)
+        await transitionIdentityVerification({
+          verificationId: verification.id,
+          toStatus: 'CONSENTED',
+          actorId: options.acceptedByProviderId,
+          actorRole: 'provider',
+          data: { consentAcceptedAt: new Date() },
+        })
+        await recordConsentAcceptance({
+          verificationId: verification.id,
+          vendorKey: consentVendor.vendorKey,
+          vendorDisplayName: consentVendor.vendorDisplayName,
+          consentText: consentVendor.consentText,
+          channel: 'WHATSAPP',
+          acceptedByProviderId: options.acceptedByProviderId,
+        })
+        await transitionIdentityVerification({
+          verificationId: verification.id,
+          toStatus: 'AWAITING_IDENTIFIER',
+          actorId: options.acceptedByProviderId,
+          actorRole: 'provider',
+        })
+        await sendIdentityBasisList(ctx.phone)
+        return {
+          nextStep: 'pj_identity_basis',
+          nextData: { identityVerificationId: verification.id },
+        }
+      }
+
+    case 'CONSENTED':
+      if (!verification.identityBasis) {
+        await sendIdentityBasisList(ctx.phone)
+        return {
+          nextStep: 'pj_identity_basis',
+          nextData: { identityVerificationId: verification.id },
+        }
+      }
+      await sendText(ctx.phone, identifierPrompt(verification.identityBasis))
+      return {
+        nextStep: 'pj_identity_identifier',
+        nextData: {
+          identityVerificationId: verification.id,
+          identityVerificationBasis: verification.identityBasis,
+          identityVerificationDocumentKinds: requiredNonSelfieDocumentKinds(verification.identityBasis),
+        },
+      }
+
+    case 'AWAITING_IDENTIFIER':
+    case 'RETRY_REQUIRED': {
+      const identityBasis = verification.identityBasis ?? 'SA_ID'
+      await sendText(ctx.phone, identifierPrompt(identityBasis))
+      return {
+        nextStep: 'pj_identity_identifier',
+        nextData: {
+          identityVerificationId: verification.id,
+          identityVerificationBasis: identityBasis,
+          identityVerificationDocumentKinds: requiredNonSelfieDocumentKinds(identityBasis),
+        },
+      }
+    }
+
+    case 'AWAITING_DOCUMENT': {
+      const identityBasis = verification.identityBasis ?? 'SA_ID'
+      const documentKinds = requiredNonSelfieDocumentKinds(identityBasis)
+      await sendText(ctx.phone, documentPrompt(documentKinds[0], identityBasis))
+      return {
+        nextStep: 'pj_identity_document',
+        nextData: {
+          identityVerificationId: verification.id,
+          identityVerificationBasis: identityBasis,
+          identityVerificationDocumentKinds: documentKinds,
+        },
+      }
+    }
+
+    case 'AWAITING_SELFIE': {
+      const identityBasis = verification.identityBasis ?? 'SA_ID'
+      await sendText(ctx.phone, 'Now send a clear selfie photo of your face. This WhatsApp option is reviewed manually and may still require a secure PWA liveness step before buying credits.')
+      return {
+        nextStep: 'pj_identity_selfie',
+        nextData: {
+          identityVerificationId: verification.id,
+          identityVerificationBasis: identityBasis,
+        },
+      }
+    }
+
+    case 'AWAITING_LIVENESS':
+      await sendText(ctx.phone, 'Your identity check needs the secure face-match step. Please complete the latest verification link we sent you.')
+      return { nextStep: 'done', nextData: {} }
+
+    case 'SUBMITTED':
+    case 'PROCESSING':
+    case 'NEEDS_MANUAL_REVIEW':
+      await sendText(ctx.phone, "Your identity check is already in review. We'll message you when it is done.")
+      return { nextStep: 'done', nextData: {} }
+
+
+    case 'PASSED':
+      await sendText(ctx.phone, 'Your identity verification is already complete.')
+      return { nextStep: 'done', nextData: {} }
+
+    case 'FAILED':
+    case 'EXPIRED':
+    case 'CANCELLED':
+      await sendText(ctx.phone, 'Please start identity verification again from the provider menu when you are ready.')
+      return { nextStep: 'done', nextData: {} }
   }
 }
 

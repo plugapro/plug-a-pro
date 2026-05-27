@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDb, mockIssueToken, mockGetPublicAppUrl } = vi.hoisted(() => ({
+const {
+  mockDb,
+  mockIssueToken,
+  mockGetPublicAppUrl,
+  mockIsEnabled,
+  mockCheckCanStartNewVerification,
+} = vi.hoisted(() => ({
   mockDb: {
     provider: {
       findUnique: vi.fn(),
@@ -12,9 +18,17 @@ const { mockDb, mockIssueToken, mockGetPublicAppUrl } = vi.hoisted(() => ({
   },
   mockIssueToken: vi.fn(),
   mockGetPublicAppUrl: vi.fn(),
+  mockIsEnabled: vi.fn(),
+  mockCheckCanStartNewVerification: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/flags', () => ({
+  isEnabled: mockIsEnabled,
+}))
+vi.mock('@/lib/identity-verification/gate', () => ({
+  checkCanStartNewVerification: mockCheckCanStartNewVerification,
+}))
 vi.mock('@/lib/provider-verification-token', () => ({
   issueProviderVerificationToken: mockIssueToken,
 }))
@@ -36,6 +50,8 @@ describe('issueProviderIdentityVerificationLink', () => {
       expiresAt: new Date('2026-05-28T10:00:00.000Z'),
     })
     mockGetPublicAppUrl.mockReturnValue('https://app.plugapro.co.za/provider/verify/secure-token')
+    mockIsEnabled.mockResolvedValue(false)
+    mockCheckCanStartNewVerification.mockResolvedValue({ ok: 'CREATE' })
   })
 
   it('creates a new PWA verification case and returns the tokenized public URL', async () => {
@@ -99,5 +115,72 @@ describe('issueProviderIdentityVerificationLink', () => {
       reused: true,
       status: 'AWAITING_DOCUMENT',
     })
+  })
+
+  it('creates through the shared gate when the fail-safe flag is enabled', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({ ok: 'CREATE' })
+    const { issueProviderIdentityVerificationLink } = await import('@/lib/identity-verification/link')
+
+    const result = await issueProviderIdentityVerificationLink({
+      providerId: 'provider-1',
+      purpose: 'GENERAL_IDENTITY',
+    })
+
+    expect(mockCheckCanStartNewVerification).toHaveBeenCalledWith('provider-1', {
+      purpose: 'GENERAL_IDENTITY',
+      now: undefined,
+    })
+    expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
+    expect(mockDb.providerIdentityVerification.create).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({
+      verificationId: 'ver-new',
+      reused: false,
+      status: 'NOT_STARTED',
+    })
+  })
+
+  it('reissues a token for a shared-gate resume decision', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({
+      ok: 'RESUME',
+      verificationId: 'ver-cross-channel',
+      status: 'AWAITING_SELFIE',
+      channel: 'WHATSAPP',
+    })
+    const { issueProviderIdentityVerificationLink } = await import('@/lib/identity-verification/link')
+
+    const result = await issueProviderIdentityVerificationLink({ providerId: 'provider-1' })
+
+    expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
+    expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
+    expect(mockIssueToken).toHaveBeenCalledWith({
+      verificationId: 'ver-cross-channel',
+      now: undefined,
+    })
+    expect(result).toMatchObject({
+      verificationId: 'ver-cross-channel',
+      reused: true,
+      status: 'AWAITING_SELFIE',
+    })
+  })
+
+  it('throws the shared gate reason when a new link is blocked', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({
+      ok: false,
+      reason: 'VERIFICATION_LOCKED',
+      message: 'Identity verification is locked.',
+    })
+    const { issueProviderIdentityVerificationLink } = await import('@/lib/identity-verification/link')
+
+    await expect(
+      issueProviderIdentityVerificationLink({ providerId: 'provider-1' }),
+    ).rejects.toMatchObject({
+      code: 'VERIFICATION_LOCKED',
+      message: 'Identity verification is locked.',
+    })
+
+    expect(mockIssueToken).not.toHaveBeenCalled()
   })
 })

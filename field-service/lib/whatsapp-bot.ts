@@ -1511,6 +1511,7 @@ async function processInboundMessageUnlocked(
             const verificationLink = await issueProviderIdentityVerificationLink({
               providerId: provider.id,
               channel: 'PWA',
+              purpose: 'CREDIT_TOP_UP',
             })
             verificationUrl = verificationLink.verificationUrl ?? verificationUrl
           } catch (linkError) {
@@ -4117,6 +4118,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
           const verificationLink = await issueProviderIdentityVerificationLink({
             providerId: provider.id,
             channel: 'WHATSAPP',
+            purpose: 'CREDIT_TOP_UP',
           })
           verificationUrl = verificationLink.verificationUrl ?? verificationUrl
         } catch (linkError) {

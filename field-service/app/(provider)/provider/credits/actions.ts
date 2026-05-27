@@ -768,6 +768,7 @@ async function issueCreditVerificationUrl(providerId: string | null): Promise<st
     const link = await issueProviderIdentityVerificationLink({
       providerId,
       channel: 'PWA',
+      purpose: 'CREDIT_TOP_UP',
     })
     return link.verificationUrl
   } catch (error) {

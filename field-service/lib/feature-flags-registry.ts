@@ -265,6 +265,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.identity.verification.fail_safe': {
+    description: 'Enable shared identity-verification start gating: resume active attempts, cap repeated failures, and preserve credit-purpose HIGH assurance.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.identity.verification.liveness.degraded_kill_switch': {
     description: 'Fail closed when liveness provider sessions are degraded; affected cases route to manual review.',
     owner: 'eng',

@@ -11,6 +11,8 @@ const {
   mockResolveConsentVendorForSubject,
   mockDownloadIdentityMedia,
   mockRecordConsent,
+  mockIsEnabled,
+  mockCheckCanStartNewVerification,
 } = vi.hoisted(() => ({
   mockDb: {
     provider: {
@@ -35,9 +37,17 @@ const {
   mockResolveConsentVendorForSubject: vi.fn(),
   mockDownloadIdentityMedia: vi.fn(),
   mockRecordConsent: vi.fn(),
+  mockIsEnabled: vi.fn(),
+  mockCheckCanStartNewVerification: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/flags', () => ({
+  isEnabled: mockIsEnabled,
+}))
+vi.mock('@/lib/identity-verification/gate', () => ({
+  checkCanStartNewVerification: mockCheckCanStartNewVerification,
+}))
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendButtons: mockSendButtons,
   sendList: mockSendList,
@@ -81,7 +91,10 @@ describe('WhatsApp identity verification fallback flow', () => {
       status: 'NOT_STARTED',
     })
     mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-wa-1',
       status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+      channel: 'WHATSAPP',
     })
     mockDb.providerIdentityVerification.update.mockResolvedValue({ id: 'ver-wa-1' })
     mockDb.providerIdentityDocument.findFirst.mockResolvedValue(null)
@@ -104,6 +117,8 @@ describe('WhatsApp identity verification fallback flow', () => {
     })
     mockRecordConsent.mockResolvedValue({ consentTextHash: 'hash-consent' })
     mockDownloadIdentityMedia.mockResolvedValue({ documentId: 'doc-1' })
+    mockIsEnabled.mockResolvedValue(false)
+    mockCheckCanStartNewVerification.mockResolvedValue({ ok: 'CREATE' })
   })
 
   it('starts with explicit consent before asking for identity documents', async () => {
@@ -189,6 +204,157 @@ describe('WhatsApp identity verification fallback flow', () => {
       nextStep: 'pj_identity_basis',
       nextData: { identityVerificationId: 'ver-wa-1' },
     })
+  })
+
+  it('creates through the shared gate when the fail-safe flag is enabled', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({ ok: 'CREATE' })
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx('pj_identity_consent', { type: 'button_reply', id: 'iv_consent_accept' }),
+    )
+
+    expect(mockCheckCanStartNewVerification).toHaveBeenCalledWith('provider-1', {
+      purpose: 'GENERAL_IDENTITY',
+    })
+    expect(mockDb.providerIdentityVerification.create).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_basis',
+      nextData: { identityVerificationId: 'ver-wa-1' },
+    })
+  })
+
+  it('resumes an existing document step when the shared gate returns RESUME', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({
+      ok: 'RESUME',
+      verificationId: 'ver-existing',
+      status: 'AWAITING_DOCUMENT',
+      channel: 'PWA',
+    })
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      id: 'ver-existing',
+      status: 'AWAITING_DOCUMENT',
+      identityBasis: 'SA_ID',
+      channel: 'PWA',
+    })
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx('pj_identity_consent', { type: 'button_reply', id: 'iv_consent_accept' }),
+    )
+
+    expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
+    expect(mockTransition).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('photo of your South African ID'))
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_document',
+      nextData: {
+        identityVerificationId: 'ver-existing',
+        identityVerificationBasis: 'SA_ID',
+        identityVerificationDocumentKinds: ['ID_FRONT'],
+      },
+    })
+  })
+
+  it('accepts consent on an existing started verification instead of looping back to consent', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({
+      ok: 'RESUME',
+      verificationId: 'ver-started',
+      status: 'STARTED',
+      channel: 'WHATSAPP',
+    })
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      id: 'ver-started',
+      status: 'STARTED',
+      identityBasis: 'SA_ID',
+      channel: 'WHATSAPP',
+    })
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx('pj_identity_consent', { type: 'button_reply', id: 'iv_consent_accept' }),
+    )
+
+    expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
+    expect(mockRecordConsent).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-started',
+      channel: 'WHATSAPP',
+      acceptedByProviderId: 'provider-1',
+    }))
+    expect(mockTransition).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-started',
+      toStatus: 'CONSENTED',
+    }))
+    expect(mockTransition).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-started',
+      toStatus: 'AWAITING_IDENTIFIER',
+    }))
+    expect(mockSendList).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('Which document'),
+      expect.any(Array),
+      expect.objectContaining({ buttonLabel: 'Choose document' }),
+    )
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_basis',
+      nextData: { identityVerificationId: 'ver-started' },
+    })
+  })
+
+  it('routes a resumed RETRY_REQUIRED verification to identifier capture instead of telling the provider to restart', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({
+      ok: 'RESUME',
+      verificationId: 'ver-retry',
+      status: 'RETRY_REQUIRED',
+      channel: 'PWA',
+    })
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      id: 'ver-retry',
+      status: 'RETRY_REQUIRED',
+      identityBasis: 'PASSPORT',
+      channel: 'PWA',
+    })
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx('pj_identity_consent', { type: 'button_reply', id: 'iv_consent_accept' }),
+    )
+
+    expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('passport number'))
+    expect(result).toMatchObject({
+      nextStep: 'pj_identity_identifier',
+      nextData: {
+        identityVerificationId: 'ver-retry',
+        identityVerificationBasis: 'PASSPORT',
+        identityVerificationDocumentKinds: ['PASSPORT_PHOTO_PAGE'],
+      },
+    })
+  })
+
+  it('stops when the shared gate blocks a new WhatsApp verification', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockCheckCanStartNewVerification.mockResolvedValue({
+      ok: false,
+      reason: 'VERIFICATION_LOCKED',
+      message: 'Identity verification is locked after multiple failed attempts. Please contact support.',
+    })
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx('pj_identity_consent', { type: 'button_reply', id: 'iv_consent_accept' }),
+    )
+
+    expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27711111111',
+      'Identity verification is locked after multiple failed attempts. Please contact support.',
+    )
+    expect(result).toEqual({ nextStep: 'done', nextData: {} })
   })
 
   it('hashes the entered identifier without storing the raw value in conversation data', async () => {
