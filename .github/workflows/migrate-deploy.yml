@@ -1,0 +1,87 @@
+name: migrate deploy
+
+# Apply Prisma migrations to production as soon as a migration-bearing commit
+# lands on main. Vercel's "Ignored Build Step" (configured in the Vercel
+# dashboard to invoke field-service/scripts/vercel-ignored-build-step.sh) waits
+# for this workflow to succeed on the same SHA before the production build
+# starts, so the schema is always at least as far ahead as the deployed code.
+#
+# Closes the drift class that bit us on 2026-05-26: PR #6 merged the OTP
+# fraud-response code AND the migration, but only the code reached production
+# (Vercel auto-promoted) — the migration sat unapplied for hours and produced
+# user-visible "Something went wrong" errors on the provider portal until the
+# migration was applied manually via Supabase MCP.
+#
+# Security: this workflow never echoes user-controlled input (commit messages,
+# PR bodies, etc.) into run: steps. Only secrets.DATABASE_URL and github.ref
+# are referenced and both are trusted sources.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'field-service/prisma/migrations/**'
+      - 'field-service/prisma/schema.prisma'
+      - '.github/workflows/migrate-deploy.yml'
+
+# Allow only one migrate job per branch at a time. A second push that lands
+# while migrate-deploy is still running will wait for the first to finish —
+# Prisma's ledger is the source of truth and we never want two concurrent
+# `migrate deploy` runs racing against each other.
+concurrency:
+  group: migrate-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: field-service
+
+env:
+  TZ: Africa/Johannesburg
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Apply pending migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Surface what's pending BEFORE applying anything. The exit code is
+      # non-zero when migrations are pending; we capture it so the step
+      # itself doesn't fail the job — we still want migrate deploy to run.
+      - name: Migration status (pre-apply)
+        run: pnpm exec prisma migrate status || true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Apply pending migrations
+        run: pnpm exec prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # Verify the ledger ends up clean. This catches the case where a
+      # migration "succeeded" via Prisma's view but the schema is somehow
+      # not aligned (e.g., a manual reconciliation needed).
+      - name: Migration status (post-apply)
+        run: pnpm exec prisma migrate status
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
