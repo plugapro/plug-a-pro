@@ -173,6 +173,8 @@ export async function submitVerificationForAutomation(
         verificationId,
         providerId: snapshot.providerId,
         returnUrl: documentInput.livenessReturnUrl,
+        submittedVendorReference: submitResult.vendorReference,
+        webhookCallbackUrl: documentInput.webhookCallbackUrl,
       })
     }
   } catch (error) {

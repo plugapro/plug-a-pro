@@ -53,6 +53,8 @@ describe('identity verification vendor adapters', () => {
       verificationId: 'ver-1',
       providerId: 'provider-1',
       returnUrl: 'https://app.test/provider/verify/token/liveness/complete',
+      submittedVendorReference: 'mock:ver-1',
+      webhookCallbackUrl: 'https://app.test/api/webhooks/verification/mock',
     })
 
     expect(result).toMatchObject({

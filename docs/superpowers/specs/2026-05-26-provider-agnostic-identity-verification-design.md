@@ -342,7 +342,13 @@ export interface SubmitDocumentCheckResult {
 
 export interface CreateLivenessSessionInput {
   verificationId: string
-  livenessReturnUrl: string
+  providerId: string | null
+  returnUrl: string                       // user lands here after vendor session completes
+  livenessReturnUrl: string               // (alias kept for spec-narrative clarity; mirrors returnUrl)
+  submittedVendorReference: string | null // partner-side ref from preceding submitDocumentCheck;
+                                          // adapters that need the job id at link-mint time read it here.
+  webhookCallbackUrl: string              // per-request callback URL; required by vendors whose link-
+                                          // creation API rejects requests without it (e.g., Smile Links).
 }
 
 export interface CreateLivenessSessionResult {
