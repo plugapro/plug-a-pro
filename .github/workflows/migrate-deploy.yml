@@ -72,11 +72,21 @@ jobs:
         run: pnpm exec prisma migrate status || true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # schema.prisma declares directUrl = env(DIRECT_URL). Prisma migrate
+          # operations REQUIRE the direct (unpooled) URL — pooled connections
+          # via pgbouncer/Supavisor can break advisory locks and long-running
+          # migrations. Same secret used by field-service-ci.yml.
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       - name: Apply pending migrations
         run: pnpm exec prisma migrate deploy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # schema.prisma declares directUrl = env(DIRECT_URL). Prisma migrate
+          # operations REQUIRE the direct (unpooled) URL — pooled connections
+          # via pgbouncer/Supavisor can break advisory locks and long-running
+          # migrations. Same secret used by field-service-ci.yml.
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       # Verify the ledger ends up clean. This catches the case where a
       # migration "succeeded" via Prisma's view but the schema is somehow
@@ -85,3 +95,8 @@ jobs:
         run: pnpm exec prisma migrate status
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # schema.prisma declares directUrl = env(DIRECT_URL). Prisma migrate
+          # operations REQUIRE the direct (unpooled) URL — pooled connections
+          # via pgbouncer/Supavisor can break advisory locks and long-running
+          # migrations. Same secret used by field-service-ci.yml.
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
