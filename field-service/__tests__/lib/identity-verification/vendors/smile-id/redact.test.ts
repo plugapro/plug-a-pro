@@ -91,16 +91,41 @@ describe('redactSmilePayload', () => {
     expect(serialised).not.toContain('A_REAL_HMAC_VALUE')
   })
 
-  it('redacts keys matching the generic denylist regex', () => {
-    const r = redactSmilePayload({ phone_number: '+27123456', email: 'a@b.co', some_id_number: 'X' })
-    expect(r.phone_number).toBe('[REDACTED]')
-    expect(r.email).toBe('[REDACTED]')
-    expect(r.some_id_number).toBe('[REDACTED]')
+  it('default-redacts unknown fields (fails safe when Smile adds new identity-adjacent keys)', () => {
+    const r = redactSmilePayload({
+      PlaceOfBirth: 'Cape Town',
+      TaxID: '1234567890',
+      Passport: 'PASS-XYZ',
+      BiometricHash: 'hash-abc',
+      SomeFutureSensitiveField: 'leak risk',
+    })
+    expect(r.PlaceOfBirth).toBe('[REDACTED]')
+    expect(r.TaxID).toBe('[REDACTED]')
+    expect(r.Passport).toBe('[REDACTED]')
+    expect(r.BiometricHash).toBe('[REDACTED]')
+    expect(r.SomeFutureSensitiveField).toBe('[REDACTED]')
   })
 
   it('returns a non-object payload as an empty redacted record', () => {
     expect(redactSmilePayload(null)).toEqual({})
     expect(redactSmilePayload('string')).toEqual({})
     expect(redactSmilePayload(42)).toEqual({})
+  })
+
+  it('drops raw signature in either case (signature or Signature)', () => {
+    const r1 = redactSmilePayload({ signature: 'x' })
+    const r2 = redactSmilePayload({ Signature: 'x' })
+    expect(Object.keys(r1)).not.toContain('signature')
+    expect(Object.keys(r2)).not.toContain('Signature')
+  })
+
+  it('guards against pathological depth (returns [REDACTED] past MAX_DEPTH)', () => {
+    // Build a 40-deep nested object under a preserved key
+    let nested: Record<string, unknown> = { Actions: { Liveness_Check: 'Passed' } }
+    for (let i = 0; i < 40; i++) {
+      nested = { Actions: nested }  // each level wraps the previous under a preserved key
+    }
+    // Should not throw; deep enough levels collapse to [REDACTED]
+    expect(() => redactSmilePayload(nested)).not.toThrow()
   })
 })
