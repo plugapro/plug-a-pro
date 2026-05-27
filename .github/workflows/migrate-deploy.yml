@@ -81,12 +81,15 @@ jobs:
             exit 1
           fi
           if [ -z "${DIRECT_URL:-}" ]; then
-            echo "DIRECT_URL secret is required because schema.prisma declares directUrl = env(\"DIRECT_URL\")" >&2
+            echo "DIRECT_URL ended up empty even after DATABASE_URL fallback — repo secret config is broken" >&2
             exit 1
+          fi
+          if [ "$DIRECT_URL" = "$DATABASE_URL" ]; then
+            echo "::notice::DIRECT_URL is falling back to DATABASE_URL (pooled). Acceptable for short migrations. Set a dedicated DIRECT_URL repo secret to use the unpooled connection for long migrations and advisory-lock safety."
           fi
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
 
       # Surface what's pending BEFORE applying anything. The exit code is
       # non-zero when migrations are pending; we capture it so the step
@@ -95,13 +98,13 @@ jobs:
         run: pnpm exec prisma migrate status || true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
 
       - name: Apply pending migrations
         run: pnpm exec prisma migrate deploy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
 
       # Verify the ledger ends up clean. This catches the case where a
       # migration "succeeded" via Prisma's view but the schema is somehow
@@ -110,4 +113,4 @@ jobs:
         run: pnpm exec prisma migrate status
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
