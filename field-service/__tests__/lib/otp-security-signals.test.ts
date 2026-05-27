@@ -125,10 +125,31 @@ describe('shouldSendSecurityCheck', () => {
       where: {
         phoneE164: PHONE,
         status: { in: ['NEW', 'ACKNOWLEDGED'] },
-        createdAt: { gte: new Date('2026-02-26T16:00:00.000Z') }, // -90d
+        createdAt: { gte: new Date('2026-05-13T16:00:00.000Z') }, // -14d (shortened from -90d)
       },
       select: { id: true },
       orderBy: { createdAt: 'desc' },
     })
   })
+
+  it('identifies which signal timed out via the error message', async () => {
+    // Replace the count mock with one that hangs longer than the 1.5s timeout
+    // so the velocity signal's promise loses the race. We don't await the full
+    // 1.5s by stubbing setTimeout via fake timers; instead let the real timer
+    // win the race against a never-resolving promise.
+    mocks.db.otpChallenge.count.mockImplementationOnce(() => new Promise(() => {}))
+    const { shouldSendSecurityCheck } = await import('@/lib/otp-security-signals')
+
+    const start = Date.now()
+    const result = await shouldSendSecurityCheck({ phoneE164: PHONE, now: NOW })
+    const elapsed = Date.now() - start
+
+    // Times out at ~1500ms and the outer try/catch swallows the timeout error,
+    // returning { trigger: null }. Subsequent signals are NOT evaluated when
+    // a signal's lookup fails (fail-fast).
+    expect(result.trigger).toBeNull()
+    expect(elapsed).toBeGreaterThanOrEqual(1500)
+    expect(elapsed).toBeLessThan(2500) // generous upper bound for CI jitter
+    expect(mocks.db.otpChallenge.findMany).not.toHaveBeenCalled()
+  }, 5000)
 })

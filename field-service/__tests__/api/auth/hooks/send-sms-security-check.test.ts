@@ -51,6 +51,27 @@ vi.mock('@/lib/otp-security-report-prompt', () => ({
   sendOtpSecurityCheckBestEffort: vi.fn(),
 }))
 
+// after() from next/server runs the callback post-response in production.
+// In tests we don't have a request scope, so this stub schedules the
+// callback as a microtask. Tests need to flush microtasks between
+// `await POST(...)` and assertions over phase-2 work. The repo uses this
+// same pattern in create-job-request.test.ts.
+vi.mock('next/server', async (importOriginal) => {
+  const original = await importOriginal<typeof import('next/server')>()
+  return {
+    ...original,
+    after: (fn: () => void | Promise<void>) => {
+      void Promise.resolve().then(fn).catch(() => undefined)
+    },
+  }
+})
+
+async function flushPhaseTwoWork(): Promise<void> {
+  // Wait a microtask tick + a small timer to let after() run + the awaited
+  // signal/send promises resolve.
+  await new Promise<void>((resolve) => setTimeout(resolve, 10))
+}
+
 import { isEnabled } from '@/lib/flags'
 import { checkOtpSendLimit } from '@/lib/rate-limit'
 import { trustedClientIp } from '@/lib/request-ip'
@@ -138,6 +159,7 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     vi.mocked(isEnabled).mockImplementation(async (key) => key === 'auth.otp.whatsapp')
 
     const res = await POST(signed())
+    await flushPhaseTwoWork()
 
     expect(res.status).toBe(200)
     expect(shouldSendSecurityCheck).not.toHaveBeenCalled()
@@ -146,6 +168,7 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
 
   it('evaluates signals after a successful OTP delivery when security.otp.report is ON', async () => {
     await POST(signed())
+    await flushPhaseTwoWork()
 
     expect(deliverOtp).toHaveBeenCalledTimes(1)
     expect(shouldSendSecurityCheck).toHaveBeenCalledWith({ phoneE164: TEST_PHONE })
@@ -160,6 +183,7 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     })
 
     const res = await POST(signed())
+    await flushPhaseTwoWork()
 
     expect(res.status).toBe(200)
     expect(sendOtpSecurityCheckBestEffort).toHaveBeenCalledTimes(1)
@@ -176,6 +200,7 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     vi.mocked(shouldSendSecurityCheck).mockResolvedValueOnce({ trigger: null })
 
     await POST(signed())
+    await flushPhaseTwoWork()
 
     expect(sendOtpSecurityCheckBestEffort).not.toHaveBeenCalled()
   })
@@ -187,6 +212,7 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     )
 
     const res = await POST(signed())
+    await flushPhaseTwoWork()
 
     expect(res.status).toBe(503)
     expect(shouldSendSecurityCheck).not.toHaveBeenCalled()
@@ -197,6 +223,7 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     vi.mocked(shouldSendSecurityCheck).mockRejectedValueOnce(new Error('signal eval broke'))
 
     const res = await POST(signed())
+    await flushPhaseTwoWork()
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({})
@@ -213,8 +240,49 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     )
 
     const res = await POST(signed())
+    await flushPhaseTwoWork()
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({})
+  })
+
+  // HIGH-priority finding from PR #20 code review (2026-05-27): the phase-2
+  // block used to be awaited inline before the hook returned to Supabase.
+  // That added up to ~4.5s of signal-eval latency + ~10s of Meta-API
+  // latency BEFORE the response, easily exceeding Supabase's ~5s
+  // auth-hook timeout (which would trigger retries and duplicate OTP
+  // sends). The fix is to schedule the phase-2 work via Next.js after()
+  // so the response returns immediately.
+  it('returns the response BEFORE the signal evaluation runs (after() detachment)', async () => {
+    // Make shouldSendSecurityCheck take a measurable amount of time so we
+    // can prove it didn't block the response. 200ms is generous enough that
+    // any sync awaiting would be obvious.
+    let signalEvalStarted = false
+    let signalEvalCompleted = false
+    vi.mocked(shouldSendSecurityCheck).mockImplementationOnce(async () => {
+      signalEvalStarted = true
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      signalEvalCompleted = true
+      return { trigger: 'send_velocity', signalDetail: { sendCountLastHour: 5 } }
+    })
+
+    const start = Date.now()
+    const res = await POST(signed())
+    const elapsed = Date.now() - start
+
+    // Response returned in well under the 200ms eval window → not awaited.
+    expect(res.status).toBe(200)
+    expect(elapsed).toBeLessThan(150)
+    // Signal eval should NOT have completed by the time the response returned.
+    // It may have STARTED (microtask) but not completed (still waiting on its
+    // setTimeout).
+    expect(signalEvalCompleted).toBe(false)
+
+    // Now flush the after() callback to let the deferred work complete.
+    await flushPhaseTwoWork()
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(signalEvalStarted).toBe(true)
+    expect(signalEvalCompleted).toBe(true)
+    expect(sendOtpSecurityCheckBestEffort).toHaveBeenCalledTimes(1)
   })
 })
