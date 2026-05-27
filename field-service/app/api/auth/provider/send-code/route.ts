@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
+import { createServiceClient } from '@/lib/auth'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import {
   createTraceId,
@@ -407,6 +408,122 @@ async function withOtpTimeout<T>(operation: Promise<T>): Promise<T> {
   }
 }
 
+type OtpProvider = {
+  id: string
+  userId: string | null
+  phone: string
+  active: boolean
+  verified: boolean
+  status: string
+}
+
+function supabasePhoneForAuthUser(phone: string) {
+  return phone.startsWith('+') ? phone.slice(1) : phone
+}
+
+function isAuthUserAlreadyExistsError(error: unknown) {
+  const lower = safeErrorMessage(error).toLowerCase()
+  return (
+    lower.includes('already') ||
+    lower.includes('exists') ||
+    lower.includes('registered') ||
+    lower.includes('duplicate')
+  )
+}
+
+async function provisionMissingProviderAuthUser(params: {
+  provider: OtpProvider
+  phone: string
+  traceId: string
+  countryCode: string
+  rawPhone: string
+}) {
+  try {
+    const serviceClient = createServiceClient()
+    const { data, error } = await serviceClient.auth.admin.createUser({
+      phone: supabasePhoneForAuthUser(params.phone),
+      phone_confirm: true,
+      user_metadata: {
+        role: 'provider',
+        providerId: params.provider.id,
+      },
+    })
+
+    if (error) {
+      if (isAuthUserAlreadyExistsError(error)) {
+        console.warn('[provider-send-code] missing auth user provision raced with existing user', {
+          trace_id: params.traceId,
+          providerId: params.provider.id,
+          phoneMasked: maskPhone(params.phone),
+          countryCode: params.countryCode,
+          otpProviderStatus: 'auth_user_already_exists',
+          safeErrorMessage: safeLogErrorMessage(error, [params.rawPhone, params.phone]),
+          timestamp: timestamp(),
+          step: STEP,
+        })
+        return true
+      }
+
+      console.error('[provider-send-code] missing auth user provision failed', {
+        trace_id: params.traceId,
+        providerId: params.provider.id,
+        phoneMasked: maskPhone(params.phone),
+        countryCode: params.countryCode,
+        otpProviderStatus: 'auth_user_provision_failed',
+        safeErrorMessage: safeLogErrorMessage(error, [params.rawPhone, params.phone]),
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      return false
+    }
+
+    const authUserId = data?.user?.id
+    if (authUserId && params.provider.userId !== authUserId) {
+      try {
+        await db.provider.update({
+          where: { id: params.provider.id },
+          data: { userId: authUserId },
+        })
+      } catch (error) {
+        console.warn('[provider-send-code] missing auth user provision relink failed', {
+          trace_id: params.traceId,
+          providerId: params.provider.id,
+          phoneMasked: maskPhone(params.phone),
+          countryCode: params.countryCode,
+          otpProviderStatus: 'auth_user_provision_relink_failed',
+          safeErrorMessage: safeLogErrorMessage(error, [params.rawPhone, params.phone]),
+          timestamp: timestamp(),
+          step: STEP,
+        })
+      }
+    }
+
+    console.info('[provider-send-code] provisioned missing provider auth user', {
+      trace_id: params.traceId,
+      providerId: params.provider.id,
+      phoneMasked: maskPhone(params.phone),
+      countryCode: params.countryCode,
+      otpProviderStatus: 'auth_user_provisioned',
+      timestamp: timestamp(),
+      step: STEP,
+    })
+    return true
+  } catch (error) {
+    console.error('[provider-send-code] missing auth user provision threw', {
+      trace_id: params.traceId,
+      providerId: params.provider.id,
+      phoneMasked: maskPhone(params.phone),
+      countryCode: params.countryCode,
+      otpProviderStatus: 'auth_user_provision_exception',
+      safeErrorMessage: safeLogErrorMessage(error, [params.rawPhone, params.phone]),
+      stack: safeLogErrorStack(error, [params.rawPhone, params.phone]),
+      timestamp: timestamp(),
+      step: STEP,
+    })
+    return false
+  }
+}
+
 export async function POST(request: NextRequest) {
   const headerTraceId = request.headers.get('x-trace-id')
   let traceId = headerTraceId || createTraceId('auth')
@@ -650,12 +767,14 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
     otpProviderCalled = true
-    const response = await withOtpTimeout(
+    const signInWithProviderOtp = () => withOtpTimeout(
       supabase.auth.signInWithOtp({
         phone,
         options: { shouldCreateUser: false },
       }),
     )
+
+    const response = await signInWithProviderOtp()
 
     if (!response || typeof response !== 'object' || !('error' in response)) {
       console.error('[provider-send-code] OTP provider bad response', {
@@ -684,6 +803,82 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       if (isSupabaseAuthUserMissingError(error)) {
+        const provisioned = await provisionMissingProviderAuthUser({
+          provider,
+          phone,
+          traceId,
+          countryCode,
+          rawPhone,
+        })
+
+        if (provisioned) {
+          const retryResponse = await signInWithProviderOtp()
+          if (!retryResponse || typeof retryResponse !== 'object' || !('error' in retryResponse)) {
+            console.error('[provider-send-code] OTP retry after auth user provision returned bad response', {
+              trace_id: traceId,
+              providerId,
+              phoneMasked: maskPhone(phone),
+              countryCode,
+              providerLookupResult,
+              otpProviderCalled,
+              otpProviderStatus: 'bad_response',
+              safeErrorMessage: 'OTP provider retry did not return an object with an error field.',
+              timestamp: timestamp(),
+              step: STEP,
+            })
+            return errorPayload({
+              code: 'AUTH_RESPONSE_INVALID',
+              traceId,
+              phone,
+              countryCode,
+              providerId,
+              status: statusFor('AUTH_RESPONSE_INVALID'),
+            })
+          }
+
+          const retryError = (retryResponse as { error?: unknown }).error
+          if (!retryError) {
+            console.info('[provider-send-code] OTP sent after auth user provision', {
+              trace_id: traceId,
+              providerId,
+              phoneMasked: maskPhone(phone),
+              countryCode,
+              providerLookupResult,
+              otpProviderCalled,
+              otpProviderStatus: 'sent_after_auth_user_provision',
+              timestamp: timestamp(),
+              step: STEP,
+            })
+            return otpStartPayload({ traceId, phone })
+          }
+
+          if (!isSupabaseAuthUserMissingError(retryError)) {
+            const retryCode = classifyOtpError(retryError)
+            console.error('[provider-send-code] OTP retry after auth user provision failed', {
+              trace_id: traceId,
+              providerId,
+              phoneMasked: maskPhone(phone),
+              countryCode,
+              providerLookupResult,
+              otpProviderCalled,
+              otpProviderStatus: retryCode,
+              code: retryCode,
+              safeErrorMessage: safeLogErrorMessage(retryError, [rawPhone, phone]),
+              stack: safeLogErrorStack(retryError, [rawPhone, phone]),
+              timestamp: timestamp(),
+              step: STEP,
+            })
+            return errorPayload({
+              code: retryCode,
+              traceId,
+              phone,
+              countryCode,
+              providerId,
+              status: statusFor(retryCode),
+            })
+          }
+        }
+
         console.warn('[provider-send-code] OTP auth user missing; returned uniform start response', {
           trace_id: traceId,
           providerId,
