@@ -6,14 +6,22 @@
 
 ## Revision history
 
-**2026-05-27 — review-driven corrections:**
+**2026-05-27 — review-driven corrections (round 1):**
 1. Gate gains a `purpose: 'GENERAL_IDENTITY' | 'CREDIT_TOP_UP'` parameter — `PROVIDER_ALREADY_VERIFIED` is scoped to the purpose so a WhatsApp-LOW PASSED row doesn't block the PWA-HIGH upgrade required for credit top-ups (`credit-gate.ts:35-46` requires PASSED+PASS+HIGH).
 2. `VERIFICATION_IN_PROGRESS` is reframed as **resumable** — the gate returns the existing verification id so the caller can reissue a token (PWA) or pick up the row (WhatsApp), preserving the resume UX that `link.ts:63-83` provides today.
 3. Flag-off behaviour is now explicitly the legacy reuse logic, not "no gate at all" — the new code path is wrapped in the flag; when off, today's per-channel reuse-then-create is preserved verbatim.
 4. Cleanup FK plan corrected against the actual schema — `security_events.subjectVerificationId` is `Restrict` (`schema.prisma:1945`), `webhook events` + `sensitive access logs` are `SetNull`. Renamed `provider_identity_security_events` → `security_events`.
 5. Migration deploy plan now accounts for production drift — local `prisma migrate status` shows 2 disk migrations not in the production migration history (`20260526090000_otp_fraud_response_security` was applied manually via Supabase MCP; `20260526110000_add_voucher_redemption_attempt_analytics` state unknown). Blind `prisma migrate deploy` would either re-run or fail.
 6. Smoke test entry points updated — token resolution at `/provider/verify/<token>:155` is read-only and never triggered the gate. Smoke now exercises the **link issuance** entry points: WhatsApp consent-accept handler and the PWA "verify your identity" CTA on `/provider/credits`.
-7. Cleanup script now handles **storage blobs** — `provider_identity_documents.blobKey` references Vercel Blob storage; deleting the row alone orphans the blob. Script reads blob keys, deletes blobs first (or records them for purge), then deletes rows.
+7. Cleanup script now handles **storage objects** — `provider_identity_documents.blobKey` references file storage; deleting the row alone orphans the file.
+
+**2026-05-27 — review-driven corrections (round 2):**
+8. **All credit-protected link issuance sites listed and required to pass `purpose: 'CREDIT_TOP_UP'`.** Verified four existing call sites (none currently pass a purpose); each one is triggered by a credit-protected action (top-up or paid-lead accept) and would, without the fix, allow a WhatsApp-LOW PASSED to suppress the HIGH-assurance upgrade link. See the "Credit-protected link issuance" section below for the full list.
+9. **Cleanup ordering is now two-phase (commit then purge).** Storage deletes are not transactional and cannot be rolled back. Earlier draft had blob-delete inside the DB transaction — if the DB aborted, we'd be left with live DB rows pointing to missing files. New sequence: collect blob refs → run DB transaction (audit log + row delete) → commit → then call storage backend `del()` for each ref → record any purge failures to a follow-up log without re-creating the deleted DB rows.
+10. **Storage backend is Supabase Storage (private bucket), Vercel Blob is legacy fallback only.** Identity docs use `supabase_storage` per `lib/identity-verification/storage.ts:13-14` and upload via `lib/storage.ts:175-198`. The `blobKey` column is polymorphic — `parseSupabaseIdentityReference(blobKey)` returns the bucket/path for new docs; otherwise it's a legacy Vercel Blob URL (`lib/storage.ts:232-237`). Cleanup script routes each delete to the right backend.
+11. **WhatsApp RESUME path gets a concrete status router** (`resumeWhatsAppIdentityVerification`). Without it, the consent handler can re-run already-completed `STARTED → CONSENTED → AWAITING_*` transitions and either crash or strand the conversation in an inconsistent state. The router maps each non-terminal status to a specific WhatsApp prompt — explicit, no fall-through.
+
+**Out-of-band note (unrelated to this spec):** local Vercel CLI is at `54.4.1`; latest is `54.5.0`. Upgrade when convenient via `pnpm add -g vercel@latest`. Not blocking.
 
 ## Context
 
@@ -47,7 +55,7 @@ Production fix that runs once, transactionally, and is irreversible.
 
 | Table | FK behaviour | Script handles by |
 |---|---|---|
-| `provider_identity_documents` | `Cascade` | Automatic on parent delete. But the script must first **enumerate `blobKey` values and delete the storage blobs** (`@vercel/blob` `del()`) — otherwise Vercel Blob retains orphan files indefinitely. |
+| `provider_identity_documents` | `Cascade` | Automatic on parent delete. Storage objects pointed to by `blobKey` are purged **post-commit** via the two-phase flow below — Supabase Storage for new docs (parsed via `parseSupabaseIdentityReference`), Vercel Blob for legacy. Doing it pre-commit risks file deletion without corresponding DB delete if the transaction aborts. |
 | `provider_verification_reviews` | `Cascade` | Automatic on parent delete. No blob refs. |
 | `provider_verification_webhook_events` | `SetNull` (verification FK) | Auto-nullified — webhook history retained without the link. |
 | `provider_sensitive_data_access_logs` | `SetNull` | Auto-nullified — audit trail retained. |
@@ -62,14 +70,37 @@ The script writes a single `AuditLog` row per deleted verification (`actorId` fr
 - `--keep-status PASSED` — which statuses to retain
 - `--confirm` — must be passed to actually delete (otherwise dry-run prints the plan)
 
-Behaviour:
-1. Open a transaction.
-2. List target verifications + count cascade rows in each affected table.
-3. Enumerate `provider_identity_documents.blobKey` values; **delete blobs first** via `@vercel/blob` `del()` (logging successes; on blob delete failure, abort the transaction).
-4. Check `security_events` for any rows referencing the target verifications. If any exist and they have audit value (look at `eventType` — security audit events stay; everything else is fine to delete), abort with a clear listing. If none or all are deletable, delete them.
-5. Delete the target verification rows (CASCADE handles documents + reviews; SetNull handles webhooks + access logs).
-6. Write one `AuditLog` row per deleted verification with `before` capturing the full row JSON.
-7. Commit.
+**Two-phase ordering.** Storage deletes (Supabase Storage / Vercel Blob) are external side effects — they cannot be rolled back if the DB transaction aborts after them. The script therefore commits the DB changes first and purges storage afterwards.
+
+#### Phase A — pre-flight (no writes)
+
+1. Look up target verifications matching `providerId AND status != 'PASSED'` (read-only).
+2. Count cascade rows in `provider_identity_documents`, `provider_verification_reviews`, `provider_verification_webhook_events`, `provider_sensitive_data_access_logs`, `security_events`.
+3. For each `security_events` row referencing a target verification:
+   - If the row has audit value (e.g. `eventType IN ('SUSPECTED_FRAUD','ABUSE_REPORT', …)` — exact list lives in `lib/security/security-event-metadata-schema.ts` and is reused here), **abort with a clear listing**. The operator must triage manually.
+   - Otherwise, mark for delete in Phase B.
+4. Enumerate `provider_identity_documents.blobKey` values for the target verifications. For each, run `parseSupabaseIdentityReference(blobKey)`:
+   - If parsed → record `{ backend: 'supabase', bucket, path }`.
+   - Otherwise → record `{ backend: 'vercel_blob', url }`.
+   - Build the `purgeList` in memory.
+5. Print the full plan (dry-run output). If `--confirm` not passed, exit 0.
+
+#### Phase B — durable DB transaction (`db.$transaction`)
+
+6. Delete the `security_events` rows marked for delete in step 3.
+7. Delete the target verification rows. CASCADE handles `provider_identity_documents` + `provider_verification_reviews`; `SetNull` handles `provider_verification_webhook_events` + `provider_sensitive_data_access_logs` (their FK becomes NULL).
+8. Write one `AuditLog` row per deleted verification with `actorId = --admin-id`, `entityType = 'ProviderIdentityVerification'`, `entityId = <id>`, `before` = the full row JSON pre-delete, `after` = the `purgeList` for cross-reference if storage purge later fails.
+9. Commit.
+
+#### Phase C — post-commit storage purge (idempotent, best-effort)
+
+10. For each entry in `purgeList`:
+    - `backend === 'supabase'` → `supabase.storage.from(bucket).remove([path])` via `createSupabaseStorageClient()` (re-use `lib/storage.ts:createSupabaseStorageClient`).
+    - `backend === 'vercel_blob'` → `import('@vercel/blob').del(url)` (re-use the pattern in `lib/storage.ts` — Vercel Blob is the legacy fallback that the existing `getIdentityDocument` still reads).
+11. On any delete failure: log to stderr with the verification id + blob ref + error message; append to `purge-failures-<timestamp>.json` next to the script for follow-up. **Do not retry blindly** — operator decides whether to retry, manually purge, or leave the file (storage cost only; no PII reachable since no DB row references it).
+12. Exit code reflects storage purge state: `0` if all clean, `2` if DB succeeded but some storage purges failed.
+
+The DB-row deletion is the authoritative state change — once it commits, the verification is gone from the system. Storage residue is a cost/cleanup concern, not a correctness one.
 
 ### 2. Fail-safe rule — gate at the orchestrator layer
 
@@ -146,11 +177,49 @@ Both entry points read `provider.identity.verification.fail_safe` first. **When 
 - `lib/whatsapp-flows/identity-verification.ts:85-95`:
   - Flag OFF → unconditional `create` (today's behaviour, including the documented bug — but no regression).
   - Flag ON → call `checkCanStartNewVerification(provider.id, { purpose: 'GENERAL_IDENTITY' })`.
-    - `ok: 'CREATE'` → create and proceed through the consent state transitions.
-    - `ok: 'RESUME'` → skip create, pick up the existing verification id, run the `STARTED → CONSENTED → AWAITING_*` transitions against it. If the row is already past `CONSENTED`, just continue from its current state without re-emitting the consent transitions.
+    - `ok: 'CREATE'` → create and proceed through the consent state transitions (today's happy path).
+    - `ok: 'RESUME'` → delegate to **`resumeWhatsAppIdentityVerification(ctx, existing)`** (see helper below). Do NOT re-run the linear `STARTED → CONSENTED → AWAITING_*` transitions — they will throw on already-past states.
     - `ok: false` → send mapped WhatsApp message; `nextStep: 'done'`.
 
-The `purpose` value: for the credit top-up CTA on `/provider/credits`, the link issuer passes `'CREDIT_TOP_UP'`. Everywhere else (admin-issued link, general "verify your identity" CTA, WhatsApp consent flow) passes `'GENERAL_IDENTITY'`.
+#### RESUME helper — `resumeWhatsAppIdentityVerification(ctx, existing)` (new in `lib/whatsapp-flows/identity-verification.ts`)
+
+Maps each non-terminal status to a specific WhatsApp action. No fall-through, no implicit transitions. The helper is also the only place the WhatsApp side reads `existing.status` — keeps the routing logic in one place.
+
+```ts
+export type ResumeArgs = { ctx: FlowContext; existing: { id: string; status: VerificationStatus } }
+export type ResumeResult = { nextStep: ProviderJourneyStep; nextData?: Record<string, unknown> }
+
+export async function resumeWhatsAppIdentityVerification({ ctx, existing }: ResumeArgs): Promise<ResumeResult>
+```
+
+| Existing status | Helper action | Next step |
+|---|---|---|
+| `NOT_STARTED`, `STARTED` | Re-emit the consent buttons (treat as fresh start; the transitions are idempotent up to `CONSENTED`) | `pj_identity_consent` |
+| `CONSENTED` | Prompt for the next missing piece based on `identityBasis` — typically `AWAITING_IDENTIFIER` → ask for ID number | matches the same prompt the fresh flow would send after consent |
+| `AWAITING_IDENTIFIER` | Re-prompt: "Please reply with your ID/passport number to continue your verification." | `pj_identity_awaiting_identifier` |
+| `AWAITING_DOCUMENT` | Re-prompt: "Please send a clear photo of your ID/passport/permit to continue your verification." | `pj_identity_awaiting_document` |
+| `AWAITING_SELFIE` | Re-prompt: "Please send a selfie holding your ID to finish your verification." | `pj_identity_awaiting_selfie` |
+| `AWAITING_LIVENESS` | Re-send the liveness session link (or "Your liveness link has expired — reply *retry* to get a fresh one." if `livenessSessionExpiresAt < now()`) | `pj_identity_awaiting_liveness` |
+| `SUBMITTED`, `PROCESSING` | "Your verification has been submitted and we're processing it. We'll message you when there's an update." (no action) | `done` |
+| `NEEDS_MANUAL_REVIEW` | "Your verification is with our review team. We'll message you within 1 business day. No action needed right now." | `done` |
+| `RETRY_REQUIRED` | "We need a bit more from you. Reply *retry* to restart your verification from where it left off." | `pj_identity_retry_offer` |
+
+Exhaustive `switch` over `VerificationStatus` — TypeScript enforces all non-terminal cases are handled. Terminal cases (`PASSED`, `FAILED`, `EXPIRED`, `CANCELLED`) never reach this helper because the gate would have returned `CREATE` or a `false` block instead of `RESUME`. The default branch logs a `[whatsapp-identity-resume] unreachable status` warning and falls through to a safe "Please reply *menu* for options." prompt rather than crashing.
+
+#### Credit-protected link issuance — every site must pass `purpose: 'CREDIT_TOP_UP'`
+
+A `purpose` value is only useful if every link issuer triggered by a credit-gated action passes it. The following sites all currently call `issueProviderIdentityVerificationLink` with **no** purpose, and must be updated as part of this work (without this, a WhatsApp-LOW PASSED row still suppresses the HIGH-assurance upgrade link the provider needs).
+
+| File:line | Trigger | What it does today | Required change |
+|---|---|---|---|
+| `app/(provider)/provider/credits/actions.ts:765-779` (`issueCreditVerificationUrl`) | Provider hits credit top-up CTA on `/provider/credits`; `creditGate` throws `IDENTITY_NOT_VERIFIED` | Issues a PWA verification link | Pass `purpose: 'CREDIT_TOP_UP'` |
+| `app/api/provider/wallet/top-up-intents/route.ts:196-209` (`issueVerificationLink`) | POST to create a top-up intent; `creditGate` throws `IDENTITY_NOT_VERIFIED` | Issues a PWA verification link, returned in the error body for the client | Pass `purpose: 'CREDIT_TOP_UP'` |
+| `lib/whatsapp-bot.ts:1508-1521` (top-up backstop) | WhatsApp top-up flow hits `IDENTITY_NOT_VERIFIED` | Issues a PWA verification link, sends URL via WhatsApp | Pass `purpose: 'CREDIT_TOP_UP'` |
+| `lib/whatsapp-bot.ts:4113-4127` (selected-provider accept backstop) | WhatsApp paid-lead accept hits `IDENTITY_NOT_VERIFIED` | Issues a WhatsApp verification link, sends URL | Pass `purpose: 'CREDIT_TOP_UP'` (the accept consumes credit so the same HIGH-assurance gate applies) |
+
+The default (when the caller omits `purpose`) is `'GENERAL_IDENTITY'`. The general-identity verification CTA, admin-issued links, and the WhatsApp consent flow all stay on the default — they don't unlock credit-protected actions.
+
+A repository-wide grep for `issueProviderIdentityVerificationLink` is part of the implementation checklist to make sure no new call sites slip in without the right purpose.
 
 #### User-facing messages
 
@@ -174,15 +243,20 @@ Per the house rule "every admin-facing feature ships behind a flag and is flippe
 |---|---|
 | `field-service/prisma/schema.prisma` | + `countsTowardAttemptCap Boolean @default(true)` on `ProviderIdentityVerification`, + `@@index([providerId, status, countsTowardAttemptCap])` |
 | `field-service/prisma/migrations/<new>/migration.sql` | ALTER TABLE + backfill `UPDATE … SET countsTowardAttemptCap = false WHERE "createdAt" < now()` + index |
-| `field-service/lib/identity-verification/gate.ts` (new) | `checkCanStartNewVerification()` + types + messages |
-| `field-service/lib/identity-verification/link.ts` | Replace the existing per-channel reuse-check with a gate call; honour the flag |
-| `field-service/lib/whatsapp-flows/identity-verification.ts` | Call gate before unconditional create at line 85; honour the flag; render the mapped message |
+| `field-service/lib/identity-verification/gate.ts` (new) | `checkCanStartNewVerification()` + types + purpose-scoped logic + messages |
+| `field-service/lib/identity-verification/link.ts` | Accept new `purpose?: 'GENERAL_IDENTITY' \| 'CREDIT_TOP_UP'` input field; under flag-ON, replace per-channel reuse-check with gate call (RESUME → reissue token for existing id); flag-OFF preserves today's behaviour |
+| `field-service/lib/whatsapp-flows/identity-verification.ts` | Call gate before line-85 create under flag-ON; add `resumeWhatsAppIdentityVerification()` helper with exhaustive `VerificationStatus` switch; render the mapped message on `false` |
+| `field-service/app/(provider)/provider/credits/actions.ts:765` | `issueCreditVerificationUrl` passes `purpose: 'CREDIT_TOP_UP'` |
+| `field-service/app/api/provider/wallet/top-up-intents/route.ts:196` | `issueVerificationLink` passes `purpose: 'CREDIT_TOP_UP'` |
+| `field-service/lib/whatsapp-bot.ts:1508` | WhatsApp top-up backstop passes `purpose: 'CREDIT_TOP_UP'` |
+| `field-service/lib/whatsapp-bot.ts:4113` | Selected-provider accept backstop passes `purpose: 'CREDIT_TOP_UP'` |
 | `field-service/lib/feature-flags-registry.ts` | + `provider.identity.verification.fail_safe` flag entry |
 | `field-service/scripts/seed-flags.ts` | seed the new flag as disabled by default |
 | `field-service/scripts/cleanup-provider-identity-verifications.ts` (new) | One-off cleanup script (dry-run by default, `--confirm` to commit) |
 | `field-service/__tests__/lib/identity-verification/gate.test.ts` (new) | unit tests for the gate decision tree |
 | `field-service/__tests__/lib/identity-verification/link.test.ts` | extend to assert the gate is called and block reasons surface as errors |
-| `field-service/__tests__/lib/whatsapp-flows/identity-verification.test.ts` | extend to assert the WhatsApp consent handler bails out cleanly on each block reason with the mapped copy |
+| `field-service/__tests__/lib/whatsapp-flows/identity-verification.test.ts` | extend to assert: (a) the WhatsApp consent handler bails out cleanly on each block reason with the mapped copy, (b) `resumeWhatsAppIdentityVerification` returns the right `nextStep` for every non-terminal `VerificationStatus`, with the exhaustive switch enforced by TypeScript |
+| `field-service/scripts/cleanup-provider-identity-verifications.ts` (new) | Two-phase cleanup (DB transaction → commit → post-commit storage purge); dispatches Supabase Storage vs Vercel Blob per parsed `blobKey` |
 
 ## Existing utilities to reuse (do NOT re-implement)
 
@@ -191,6 +265,8 @@ Per the house rule "every admin-facing feature ships behind a flag and is flippe
 - `transitionIdentityVerification` — keep the same; the gate runs *before* any transition or create, never replaces them
 - The flag-reading helper in `lib/flags.ts` — same pattern as `admin.crud.verifications`, no new infrastructure
 - `crudAction()` is NOT involved — the cleanup script writes directly to AuditLog using the same shape (`action`, `entityType`, `entityId`, `before`, `after`)
+- `parseSupabaseIdentityReference()` / `supabaseIdentityReference()` in `lib/storage.ts` — already parse and emit the polymorphic `blobKey` format; the cleanup script reuses them to route deletes to the right backend
+- `createSupabaseStorageClient()` in `lib/storage.ts` — the cleanup script reuses this for `.remove([path])` calls in Phase C; no second client
 
 ## Verification
 
