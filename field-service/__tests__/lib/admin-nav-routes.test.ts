@@ -20,4 +20,13 @@ describe('ADMIN_NAV_ITEMS', () => {
     // automatically extend smoke coverage without a second edit site.
     expect(ADMIN_SMOKE_ROUTES).toContain('/admin/verifications')
   })
+
+  it('exposes the provider economics calculator in the admin sidebar and smoke routes', () => {
+    const href = '/admin/commercial/provider-economics'
+    const entry = ADMIN_NAV_ITEMS.find((item) => item.href === href)
+
+    expect(entry, `${href} must be present in ADMIN_NAV_ITEMS`).toBeDefined()
+    expect(entry?.label).toBe('Economics')
+    expect(ADMIN_SMOKE_ROUTES).toContain(href)
+  })
 })
