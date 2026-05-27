@@ -71,6 +71,10 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Check Smile ID result-code drift (informational, non-blocking)
+        run: pnpm check:smile-id-codes
+        continue-on-error: true
+
       - name: Verify live public-table RLS
         if: github.event_name == 'push'
         run: pnpm security:rls

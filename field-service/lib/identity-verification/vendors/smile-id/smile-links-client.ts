@@ -2,7 +2,15 @@ import { computeSmileSignature, currentIsoTimestamp } from './signing'
 import type { SmileLinksCreateRequest, SmileLinksCreateResponse } from './types'
 
 const SMILE_LINKS_PATH = '/v1/smile_links'
-const SOURCE_SDK_VERSION = '1.0.0'
+
+// Versioned so Smile support tickets and forensic queries can trace a request
+// back to a specific adapter build.  Prefer npm_package_version (set by pnpm
+// when scripts run), then the short SHA of the Vercel build, with a literal
+// fallback for environments where neither is set (e.g. some test runners).
+const SOURCE_SDK_VERSION =
+  process.env.npm_package_version ||
+  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
+  '1.0.0'
 
 // EVD verification_method. Public docs show 'doc_verification' for the
 // DocV family; EVD is the same string with the product flag set at the

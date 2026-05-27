@@ -143,6 +143,27 @@ describe('parseSmileWebhook', () => {
     expect(r.livenessSessionReference).toBe('link-ref-abc')
   })
 
+  it('falls back to PartnerParams.ref_id when top-level ref_id is absent', async () => {
+    const rawBody = signedPayload({
+      SmileJobID: 'x', ResultCode: '0810', IsFinalResult: 'true',
+      PartnerParams: { user_id: 'u', job_id: 'pap', job_type: 11, verification_id: 'v', ref_id: 'nested-ref' },
+      Actions: { Liveness_Check: 'Passed' },
+    })
+    const r = await parseSmileWebhook({ headers: {}, rawBody })
+    expect(r.livenessSessionReference).toBe('nested-ref')
+  })
+
+  it('top-level ref_id wins over PartnerParams.ref_id when both present', async () => {
+    const rawBody = signedPayload({
+      SmileJobID: 'x', ResultCode: '0810', IsFinalResult: 'true',
+      ref_id: 'top-ref',
+      PartnerParams: { user_id: 'u', job_id: 'pap', job_type: 11, verification_id: 'v', ref_id: 'nested-ref' },
+      Actions: { Liveness_Check: 'Passed' },
+    })
+    const r = await parseSmileWebhook({ headers: {}, rawBody })
+    expect(r.livenessSessionReference).toBe('top-ref')
+  })
+
   it('computes deterministic payloadHash that does not depend on key order', async () => {
     const a = await parseSmileWebhook({ headers: {}, rawBody: '{"a":1,"b":2}' })
     const b = await parseSmileWebhook({ headers: {}, rawBody: '{"b":2,"a":1}' })

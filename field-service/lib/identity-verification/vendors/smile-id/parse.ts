@@ -100,9 +100,13 @@ export async function parseSmileWebhook(input: ParseWebhookInput): Promise<Parse
   const eventType = isFinal ? 'final' : 'interim'
 
   const partnerJobId = payload.PartnerParams?.job_id ?? null
-  const refId = (typeof (payload as Record<string, unknown>).ref_id === 'string'
+  const topRefId = typeof (payload as Record<string, unknown>).ref_id === 'string'
     ? (payload as Record<string, unknown>).ref_id as string
-    : null)
+    : null
+  const partnerRefId = typeof (payload.PartnerParams as Record<string, unknown> | undefined)?.ref_id === 'string'
+    ? (payload.PartnerParams as Record<string, unknown>).ref_id as string
+    : null
+  const refId = topRefId ?? partnerRefId
 
   const payloadHash = sha256(canonicalJson(payload))
   const redactedPayload = redactSmilePayload(payload as unknown as Record<string, unknown>)
