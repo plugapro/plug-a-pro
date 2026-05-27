@@ -380,6 +380,7 @@ describe('provider credits server actions', () => {
       expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
         providerId: 'provider-1',
         channel: 'PWA',
+        purpose: 'CREDIT_TOP_UP',
       })
     })
 

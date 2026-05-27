@@ -331,6 +331,7 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     expect(mockIssueVerificationLink).toHaveBeenCalledWith({
       providerId: 'provider-1',
       channel: 'PWA',
+      purpose: 'CREDIT_TOP_UP',
     })
   })
 

@@ -35,4 +35,9 @@ describe('provider identity verification schema', () => {
     expect(schema).toContain('provider              Provider?')
     expect(schema).toContain('providerApplication   ProviderApplication?')
   })
+
+  it('marks legacy identity verification rows outside the attempt cap by defaulting new rows in', () => {
+    expect(schema).toMatch(/countsTowardAttemptCap\s+Boolean\s+@default\(true\)/)
+    expect(schema).toContain('@@index([providerId, status, countsTowardAttemptCap])')
+  })
 })

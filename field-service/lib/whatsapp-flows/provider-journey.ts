@@ -18,6 +18,7 @@ import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
 import { buildProviderCreditSummaryMessage, creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
 import { issueProviderIdentityVerificationLink } from '../identity-verification/link'
+import type { VerificationStartPurpose } from '../identity-verification/gate'
 import {
   buildHighAssuranceCreditVerificationWhere,
   isProviderEligibleForCredits,
@@ -181,11 +182,15 @@ async function providerCreditSummary(providerId: string) {
   return buildProviderCreditSummaryMessage(balance)
 }
 
-async function issueIdentityVerificationLinkForWhatsApp(providerId: string) {
+async function issueIdentityVerificationLinkForWhatsApp(
+  providerId: string,
+  purpose: VerificationStartPurpose = 'GENERAL_IDENTITY',
+) {
   try {
     return await issueProviderIdentityVerificationLink({
       providerId,
       channel: 'PWA',
+      ...(purpose === 'GENERAL_IDENTITY' ? {} : { purpose }),
     })
   } catch (error) {
     console.error('[provider-journey] identity verification link issue failed', {
@@ -1837,7 +1842,7 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
   // is redirected to verify BEFORE being shown amounts or using a stale amount button.
   const eligible = await isProviderEligibleForCredits(provider.id)
   if (!eligible) {
-    const verificationLink = await issueIdentityVerificationLinkForWhatsApp(provider.id)
+    const verificationLink = await issueIdentityVerificationLinkForWhatsApp(provider.id, 'CREDIT_TOP_UP')
     const verificationUrl = verificationLink?.verificationUrl ?? getPublicAppUrl('/provider/verification')
     if (verificationUrl) {
       await sendCtaUrl(
@@ -1929,7 +1934,7 @@ async function handleTopUpPayatCreate(
       (err as { code: unknown }).code === 'DUPLICATE_INTENT'
 
     if (isIdentityNotVerified) {
-      const verificationLink = await issueIdentityVerificationLinkForWhatsApp(provider.id)
+      const verificationLink = await issueIdentityVerificationLinkForWhatsApp(provider.id, 'CREDIT_TOP_UP')
       const verificationUrl = verificationLink?.verificationUrl ?? getPublicAppUrl('/provider/verification')
       if (verificationUrl) {
         await sendCtaUrl(

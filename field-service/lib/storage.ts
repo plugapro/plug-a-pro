@@ -239,6 +239,69 @@ export async function getIdentityDocument(blobKeyOrUrl: string) {
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
+export type IdentityDocumentDeleteResult = {
+  backend: 'supabase' | 'vercel_blob' | 'unparseable'
+  ok: boolean
+  error?: string
+}
+
+export async function deleteIdentityDocumentByBlobKey(
+  blobKey: string,
+): Promise<IdentityDocumentDeleteResult> {
+  const trimmedBlobKey = blobKey.trim()
+  if (!trimmedBlobKey) {
+    return {
+      backend: 'unparseable',
+      ok: false,
+      error: 'Missing identity document reference',
+    }
+  }
+
+  const supabaseRef = parseSupabaseIdentityReference(trimmedBlobKey)
+  if (supabaseRef) {
+    try {
+      const supabase = createSupabaseStorageClient()
+      const { error } = await supabase.storage
+        .from(supabaseRef.bucket)
+        .remove([supabaseRef.path])
+
+      if (error) {
+        return {
+          backend: 'supabase',
+          ok: false,
+          error: safeStorageErrorMessage(error),
+        }
+      }
+      return { backend: 'supabase', ok: true }
+    } catch (error) {
+      return {
+        backend: 'supabase',
+        ok: false,
+        error: safeStorageErrorMessage(error),
+      }
+    }
+  }
+
+  if (trimmedBlobKey.startsWith(SUPABASE_IDENTITY_REF_PREFIX)) {
+    return {
+      backend: 'unparseable',
+      ok: false,
+      error: 'Malformed Supabase identity document reference',
+    }
+  }
+
+  try {
+    await del(trimmedBlobKey)
+    return { backend: 'vercel_blob', ok: true }
+  } catch (error) {
+    return {
+      backend: 'vercel_blob',
+      ok: false,
+      error: safeStorageErrorMessage(error),
+    }
+  }
+}
+
 export async function deleteAttachment(attachmentId: string): Promise<void> {
   const attachment = await db.attachment.findUnique({
     where: { id: attachmentId },

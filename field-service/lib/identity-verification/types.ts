@@ -49,6 +49,20 @@ export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
 export type VerificationDecision = (typeof VERIFICATION_DECISIONS)[number]
 export type VerificationAssuranceLevel = (typeof VERIFICATION_ASSURANCE_LEVELS)[number]
 
+export const NON_TERMINAL_VERIFICATION_STATUSES = [
+  'NOT_STARTED',
+  'STARTED',
+  'CONSENTED',
+  'AWAITING_IDENTIFIER',
+  'AWAITING_DOCUMENT',
+  'AWAITING_SELFIE',
+  'SUBMITTED',
+  'PROCESSING',
+  'AWAITING_LIVENESS',
+  'NEEDS_MANUAL_REVIEW',
+  'RETRY_REQUIRED',
+] as const satisfies readonly VerificationStatus[]
+
 export type IdentityDocumentKind =
   | 'ID_FRONT'
   | 'ID_BACK'

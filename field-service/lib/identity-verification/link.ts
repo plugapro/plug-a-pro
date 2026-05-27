@@ -1,26 +1,19 @@
 import type { IdentityBasis, VerificationChannel, VerificationStatus } from '@prisma/client'
 
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
+import {
+  checkCanStartNewVerification,
+  type VerificationStartBlockReason,
+  type VerificationStartPurpose,
+} from '@/lib/identity-verification/gate'
+import { NON_TERMINAL_VERIFICATION_STATUSES } from '@/lib/identity-verification/types'
 import { getPublicAppUrl } from '@/lib/provider-credit-copy'
 import { issueProviderVerificationToken } from '@/lib/provider-verification-token'
 
-const NON_TERMINAL_VERIFICATION_STATUSES: VerificationStatus[] = [
-  'NOT_STARTED',
-  'STARTED',
-  'CONSENTED',
-  'AWAITING_IDENTIFIER',
-  'AWAITING_DOCUMENT',
-  'AWAITING_SELFIE',
-  'SUBMITTED',
-  'PROCESSING',
-  'AWAITING_LIVENESS',
-  'NEEDS_MANUAL_REVIEW',
-  'RETRY_REQUIRED',
-]
-
 export class ProviderIdentityVerificationLinkError extends Error {
   constructor(
-    public readonly code: 'PROVIDER_NOT_FOUND',
+    public readonly code: 'PROVIDER_NOT_FOUND' | VerificationStartBlockReason,
     message: string,
   ) {
     super(message)
@@ -33,6 +26,7 @@ export type IssueProviderIdentityVerificationLinkInput = {
   providerApplicationId?: string | null
   channel?: VerificationChannel
   identityBasis?: IdentityBasis
+  purpose?: VerificationStartPurpose
   now?: Date
 }
 
@@ -60,27 +54,63 @@ export async function issueProviderIdentityVerificationLink(
     )
   }
 
-  const existing = await db.providerIdentityVerification.findFirst({
-    where: {
-      providerId: input.providerId,
-      channel,
-      status: { in: NON_TERMINAL_VERIFICATION_STATUSES },
-    },
-    select: { id: true, status: true },
-    orderBy: { updatedAt: 'desc' },
+  const failSafeEnabled = await isEnabled('provider.identity.verification.fail_safe', {
+    userId: input.providerId,
   })
 
-  const verification = existing ?? await db.providerIdentityVerification.create({
-    data: {
-      providerId: input.providerId,
-      providerApplicationId: input.providerApplicationId ?? null,
-      channel,
-      identityBasis: input.identityBasis ?? 'SA_ID',
-      status: 'NOT_STARTED',
-      assuranceLevel: 'LOW',
-    },
-    select: { id: true, status: true },
-  })
+  let reused = false
+  let verification: { id: string; status: VerificationStatus }
+
+  if (failSafeEnabled) {
+    const gate = await checkCanStartNewVerification(input.providerId, {
+      purpose: input.purpose ?? 'GENERAL_IDENTITY',
+      now: input.now,
+    })
+
+    if (gate.ok === false) {
+      throw new ProviderIdentityVerificationLinkError(gate.reason, gate.message)
+    }
+
+    if (gate.ok === 'RESUME') {
+      reused = true
+      verification = { id: gate.verificationId, status: gate.status }
+    } else {
+      verification = await db.providerIdentityVerification.create({
+        data: {
+          providerId: input.providerId,
+          providerApplicationId: input.providerApplicationId ?? null,
+          channel,
+          identityBasis: input.identityBasis ?? 'SA_ID',
+          status: 'NOT_STARTED',
+          assuranceLevel: 'LOW',
+        },
+        select: { id: true, status: true },
+      })
+    }
+  } else {
+    const existing = await db.providerIdentityVerification.findFirst({
+      where: {
+        providerId: input.providerId,
+        channel,
+        status: { in: [...NON_TERMINAL_VERIFICATION_STATUSES] },
+      },
+      select: { id: true, status: true },
+      orderBy: { updatedAt: 'desc' },
+    })
+
+    reused = Boolean(existing)
+    verification = existing ?? await db.providerIdentityVerification.create({
+      data: {
+        providerId: input.providerId,
+        providerApplicationId: input.providerApplicationId ?? null,
+        channel,
+        identityBasis: input.identityBasis ?? 'SA_ID',
+        status: 'NOT_STARTED',
+        assuranceLevel: 'LOW',
+      },
+      select: { id: true, status: true },
+    })
+  }
 
   const { token, expiresAt } = await issueProviderVerificationToken({
     verificationId: verification.id,
@@ -93,7 +123,7 @@ export async function issueProviderIdentityVerificationLink(
     verificationId: verification.id,
     verificationUrl,
     expiresAt,
-    reused: Boolean(existing),
+    reused,
     status: verification.status,
   }
 }

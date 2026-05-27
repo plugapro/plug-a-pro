@@ -2137,6 +2137,7 @@ describe('handleSelectedProviderConfirmation — new failure branches', () => {
     expect(mockIssueVerificationLink).toHaveBeenCalledWith({
       providerId: 'provider-1',
       channel: 'WHATSAPP',
+      purpose: 'CREDIT_TOP_UP',
     })
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       PHONE,
