@@ -13,8 +13,8 @@ name: migrate deploy
 # migration was applied manually via Supabase MCP.
 #
 # Security: this workflow never echoes user-controlled input (commit messages,
-# PR bodies, etc.) into run: steps. Only secrets.DATABASE_URL and github.ref
-# are referenced and both are trusted sources.
+# PR bodies, etc.) into run: steps. Only GitHub refs and database secrets are
+# referenced, and the preflight logs only URL classification, not secret values.
 
 on:
   push:
@@ -47,16 +47,9 @@ jobs:
     name: Apply pending migrations
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # No `environment:` binding — when set, GitHub scopes secret resolution
-    # to that environment with no fallback to repo-level secrets. The previous
-    # attempt (PR #12) declared `environment: production` to enable optional
-    # reviewer-approval gating, but the production environment was only set up
-    # with DATABASE_URL, not DIRECT_URL, and the workflow failed at the
-    # preflight check. Existing field-service-ci.yml uses repo-level secrets
-    # without an environment binding; we follow the same pattern here so both
-    # workflows resolve secrets identically. Re-add `environment: production`
-    # later if/when you want a manual approval step — at that point add
-    # BOTH DATABASE_URL and DIRECT_URL to the production environment.
+    # Keep this on repo-level secrets for now. If reviewer approval is added
+    # later via `environment: production`, copy both DATABASE_URL and
+    # DIRECT_URL into that environment before re-enabling the binding.
 
     steps:
       - uses: actions/checkout@v4
@@ -76,20 +69,47 @@ jobs:
 
       - name: Verify migration database secrets
         run: |
-          if [ -z "${DATABASE_URL:-}" ]; then
-            echo "DATABASE_URL secret is required for prisma migrate deploy" >&2
-            exit 1
-          fi
-          if [ -z "${DIRECT_URL:-}" ]; then
-            echo "DIRECT_URL ended up empty even after DATABASE_URL fallback — repo secret config is broken" >&2
-            exit 1
-          fi
-          if [ "$DIRECT_URL" = "$DATABASE_URL" ]; then
-            echo "::notice::DIRECT_URL is falling back to DATABASE_URL (pooled). Acceptable for short migrations. Set a dedicated DIRECT_URL repo secret to use the unpooled connection for long migrations and advisory-lock safety."
-          fi
+          node <<'NODE'
+          const databaseUrl = process.env.DATABASE_URL || '';
+          const directUrl = process.env.DIRECT_URL || '';
+
+          function fail(message) {
+            console.error(message);
+            process.exit(1);
+          }
+
+          function parseUrl(name, value) {
+            try {
+              return new URL(value);
+            } catch {
+              fail(`${name} must be a valid Postgres connection URL`);
+            }
+          }
+
+          if (!databaseUrl) {
+            fail('DATABASE_URL secret is required for Prisma migrate deploy');
+          }
+          if (!directUrl) {
+            fail('DIRECT_URL secret is required. Do not fall back to DATABASE_URL; configure Supabase direct connection or Supavisor session-mode port 5432.');
+          }
+          if (directUrl === databaseUrl) {
+            fail('DIRECT_URL must not equal DATABASE_URL. DATABASE_URL is the pooled application connection and is unsafe for Prisma migrations.');
+          }
+
+          const parsed = parseUrl('DIRECT_URL', directUrl);
+          const host = parsed.hostname;
+          const port = parsed.port || '5432';
+
+          if (host.includes('pooler.supabase.com')) {
+            if (port !== '5432') {
+              fail('DIRECT_URL points at a Supabase transaction-pooler endpoint. Use direct db.<project-ref>.supabase.co:5432 when IPv6 works, or Supavisor session mode on port 5432 for GitHub Actions.');
+            }
+            console.log('::notice::DIRECT_URL uses Supavisor session mode on port 5432. Direct db.<project-ref>.supabase.co:5432 is preferred when IPv6 is available; session mode is the supported IPv4 fallback for GitHub Actions.');
+          }
+          NODE
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       # Surface what's pending BEFORE applying anything. The exit code is
       # non-zero when migrations are pending; we capture it so the step
@@ -98,13 +118,13 @@ jobs:
         run: pnpm exec prisma migrate status || true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       - name: Apply pending migrations
         run: pnpm exec prisma migrate deploy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       # Verify the ledger ends up clean. This catches the case where a
       # migration "succeeded" via Prisma's view but the schema is somehow
@@ -113,4 +133,4 @@ jobs:
         run: pnpm exec prisma migrate status
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
