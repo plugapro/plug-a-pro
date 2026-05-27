@@ -8,9 +8,9 @@
 #   exit 0 → skip this deploy (Vercel marks the deploy as "Canceled —
 #             Build skipped by Ignored Build Step")
 #
-# Configure in Vercel Dashboard:
-#   Project Settings → Git → Ignored Build Step →
-#     bash field-service/scripts/vercel-ignored-build-step.sh
+# Wired via `ignoreCommand` in field-service/vercel.json — Vercel picks it up
+# automatically on every push. No dashboard configuration required.
+# Verify with: jq '.ignoreCommand' field-service/vercel.json
 #
 # Required Vercel env vars (auto-injected; nothing to add):
 #   VERCEL_ENV                    — "production" | "preview" | "development"
