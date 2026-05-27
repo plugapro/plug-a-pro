@@ -148,6 +148,23 @@ describe('SmileIdVerificationAdapter', () => {
       const r = await smileIdVerificationAdapter.parseWebhook({ headers: {}, rawBody })
       expect(r.signatureValid).toBe(true)
     })
+
+    it('rejects future timestamps beyond 1 minute skew tolerance', async () => {
+      // The freshness guard rejects timestamps more than 1 minute in the future
+      // to prevent an attacker from extending the window by forging a future ts.
+      const { computeSmileSignature } = await import(
+        '../../../../../lib/identity-verification/vendors/smile-id/signing'
+      )
+      const futureTimestamp = new Date(Date.now() + 90 * 1000).toISOString()  // 90s in future
+      const signature = computeSmileSignature(futureTimestamp)
+      const rawBody = JSON.stringify({
+        timestamp: futureTimestamp, signature,
+        SmileJobID: 'x', ResultCode: '0810', IsFinalResult: 'true',
+        Actions: { Liveness_Check: 'Passed' },
+      })
+      const r = await smileIdVerificationAdapter.parseWebhook({ headers: {}, rawBody })
+      expect(r.signatureValid).toBe(false)
+    })
   })
 
   describe('cancelVerificationJob', () => {
