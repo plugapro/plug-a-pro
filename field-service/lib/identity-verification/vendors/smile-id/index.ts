@@ -1,5 +1,5 @@
 import { createHash, createHmac } from 'crypto'
-import type { ParseWebhookInput, VerificationVendorAdapter } from './types'
+import type { ParseWebhookInput, VerificationVendorAdapter } from '../types'
 
 function canonicalJson(rawBody: string) {
   try {
