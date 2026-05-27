@@ -31,6 +31,7 @@
     "security:rls": "node scripts/verify-rls-enabled.mjs",
     "security:secrets": "node scripts/secret-hygiene.mjs ..",
     "security:otp-prune": "tsx scripts/prune-otp-challenges.ts",
+    "template:submit:otp-security-check": "tsx scripts/submit-otp-security-check-template.ts",
     "db:backfill": "tsx scripts/backfill-location-nodes.ts",
     "db:backfill:qualified-shortlist": "tsx scripts/backfill-qualified-shortlist-foundation.ts",
     "db:backfill-cases": "tsx scripts/backfill-cases.ts",
