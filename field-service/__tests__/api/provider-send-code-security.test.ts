@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  createServiceClient: vi.fn(),
   db: {
     provider: {
       findUnique: vi.fn(),
@@ -20,6 +21,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: mocks.createClient,
+}))
+
+vi.mock('@/lib/auth', () => ({
+  createServiceClient: mocks.createServiceClient,
 }))
 
 vi.mock('@/lib/db', () => ({
@@ -91,6 +96,7 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
     process.env = { ...originalEnv }
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.test'
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key'
 
     mocks.db.provider.findUnique.mockResolvedValue(null)
     mocks.db.provider.findFirst.mockResolvedValue(null)
@@ -102,6 +108,16 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
     mocks.createClient.mockReturnValue({
       auth: {
         signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
+      },
+    })
+    mocks.createServiceClient.mockReturnValue({
+      auth: {
+        admin: {
+          createUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'auth-created' } },
+            error: null,
+          }),
+        },
       },
     })
 
@@ -260,10 +276,14 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
     })
   })
 
-  it('keeps active provider Supabase user-not-found failures indistinguishable from OTP start', async () => {
+  it('provisions a missing Supabase auth user for an active provider and retries OTP once', async () => {
     const traceId = 'provider_security_active_missing_auth_user'
-    const signInWithOtp = vi.fn().mockResolvedValue({
-      error: new Error('User not found'),
+    const signInWithOtp = vi.fn()
+      .mockResolvedValueOnce({ error: new Error('User not found') })
+      .mockResolvedValueOnce({ error: null })
+    const createUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'auth-created' } },
+      error: null,
     })
     mocks.db.provider.findUnique.mockResolvedValue({
       id: 'prov-active',
@@ -274,6 +294,9 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
       status: 'ACTIVE',
     })
     mocks.createClient.mockReturnValue({ auth: { signInWithOtp } })
+    mocks.createServiceClient.mockReturnValue({
+      auth: { admin: { createUser } },
+    })
 
     const res = await postProviderSendCode({
       phone: RAW_PHONE,
@@ -290,10 +313,105 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
       traceId,
     })
     expect(body.error).toBeUndefined()
-    expect(signInWithOtp).toHaveBeenCalledWith({
+    expect(createUser).toHaveBeenCalledWith({
+      phone: '27821234567',
+      phone_confirm: true,
+      user_metadata: {
+        role: 'provider',
+        providerId: 'prov-active',
+      },
+    })
+    expect(mocks.db.provider.update).toHaveBeenCalledWith({
+      where: { id: 'prov-active' },
+      data: { userId: 'auth-created' },
+    })
+    expect(signInWithOtp).toHaveBeenCalledTimes(2)
+    expect(signInWithOtp).toHaveBeenNthCalledWith(1, {
       phone: NORMALIZED_PHONE,
       options: { shouldCreateUser: false },
     })
+    expect(signInWithOtp).toHaveBeenNthCalledWith(2, {
+      phone: NORMALIZED_PHONE,
+      options: { shouldCreateUser: false },
+    })
+  })
+
+  it('still retries OTP when provider userId relink fails after auth user creation', async () => {
+    const traceId = 'provider_security_active_missing_auth_user_relink_failed'
+    const signInWithOtp = vi.fn()
+      .mockResolvedValueOnce({ error: new Error('User not found') })
+      .mockResolvedValueOnce({ error: null })
+    const createUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'auth-created' } },
+      error: null,
+    })
+    mocks.db.provider.findUnique.mockResolvedValue({
+      id: 'prov-active',
+      userId: null,
+      phone: NORMALIZED_PHONE,
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+    })
+    mocks.db.provider.update.mockRejectedValue(new Error('database temporarily unavailable'))
+    mocks.createClient.mockReturnValue({ auth: { signInWithOtp } })
+    mocks.createServiceClient.mockReturnValue({
+      auth: { admin: { createUser } },
+    })
+
+    const res = await postProviderSendCode({
+      phone: RAW_PHONE,
+      traceId,
+      botCheck: validBotCheck(),
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({
+      ok: true,
+      nextStep: 'verify_otp',
+      phone: NORMALIZED_PHONE,
+      traceId,
+    })
+    expect(signInWithOtp).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns a bad-response error when the OTP retry after auth user provision is malformed', async () => {
+    const traceId = 'provider_security_active_missing_auth_user_retry_bad_response'
+    const signInWithOtp = vi.fn()
+      .mockResolvedValueOnce({ error: new Error('User not found') })
+      .mockResolvedValueOnce(null)
+    const createUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'auth-created' } },
+      error: null,
+    })
+    mocks.db.provider.findUnique.mockResolvedValue({
+      id: 'prov-active',
+      userId: null,
+      phone: NORMALIZED_PHONE,
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+    })
+    mocks.createClient.mockReturnValue({ auth: { signInWithOtp } })
+    mocks.createServiceClient.mockReturnValue({
+      auth: { admin: { createUser } },
+    })
+
+    const res = await postProviderSendCode({
+      phone: RAW_PHONE,
+      traceId,
+      botCheck: validBotCheck(),
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(502)
+    expect(body).toMatchObject({
+      ok: false,
+      code: 'AUTH_RESPONSE_INVALID',
+      traceId,
+    })
+    expect(signInWithOtp).toHaveBeenCalledTimes(2)
   })
 
   it('does not leak phone values or DB internals when provider lookup fails', async () => {
