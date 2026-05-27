@@ -13,6 +13,8 @@ import {
   recordDeliveryRefusedDuringLock,
   recordOtpChallenge,
 } from '@/lib/otp-security'
+import { shouldSendSecurityCheck } from '@/lib/otp-security-signals'
+import { sendOtpSecurityCheckBestEffort } from '@/lib/otp-security-report-prompt'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -204,9 +206,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // reportToken is persisted for the separate security template / deep-link path.
-  // Do not inject it into otp_login; that Meta authentication template stays unchanged.
-  void reportToken
+  // reportToken is delivered via the SEPARATE `otp_security_check` UTILITY
+  // template after the OTP send succeeds — see the signal-gated block below.
+  // Do not inject the token into otp_login; that AUTHENTICATION template's
+  // URL button parameter MUST equal the OTP code (Meta error #131008).
 
   let delivery: Awaited<ReturnType<typeof deliverOtp>>
   try {
@@ -228,6 +231,37 @@ export async function POST(request: NextRequest) {
       whatsappMessageId: delivery.whatsappMessageId ?? null,
       hookRequestId,
     })
+  }
+
+  // Phase-2: signal-gated security check prompt. Only fires when fraud signals
+  // match (send velocity ≥3/h, IP diversity ≥2/30m, or any unresolved security
+  // event in the last 90 days for this phone). The OTP delivery above is
+  // already complete; this is a best-effort follow-up message that MUST NOT
+  // block or fail the hook response.
+  if (securityOn && reportToken) {
+    try {
+      const signal = await shouldSendSecurityCheck({ phoneE164: phone })
+      if (signal.trigger) {
+        await sendOtpSecurityCheckBestEffort({
+          phone,
+          reportToken,
+          trigger: signal.trigger,
+          hookRequestId,
+          userId,
+        })
+      }
+    } catch (err) {
+      // shouldSendSecurityCheck and sendOtpSecurityCheckBestEffort both fail
+      // closed already, but defence in depth: never propagate to the hook
+      // response.
+      console.warn(
+        JSON.stringify({
+          event: 'otp.security_check.evaluation_failed',
+          hookRequestId,
+          reason: err instanceof Error ? err.name : 'unknown',
+        }),
+      )
+    }
   }
 
   return NextResponse.json({}, { status: 200 })

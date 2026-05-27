@@ -27,6 +27,22 @@ export const TEMPLATES = {
       'Your Plug A Pro verification code is {{1}}. It expires in 5 minutes. Do not share it.',
   },
 
+  // Sent immediately after `otp_login` when the OTP send matches a fraud
+  // signal (send-velocity ≥3/h, IP-diversity ≥2 in 30m, or any NEW/ACKNOWLEDGED
+  // security_event for this phone in the last 90 days). Body is parameterless;
+  // the single quick-reply button carries a per-challenge report token in its
+  // payload variable. Inbound handler in lib/whatsapp-bot.ts already parses
+  // payloads of shape `otp_report_<token>`.
+  otp_security_check: {
+    name: 'otp_security_check',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Signal-gated security check after OTP send; one quick-reply button to report unrequested OTP.',
+    // No body parameters. Quick-reply button payload param: {{1}} = report token.
+    example:
+      "Plug A Pro security check.\n\nWe just sent you a sign-in code. If you didn't request this, tap below to block it — your account stays safe.",
+  },
+
   // ─── Customer journey — booking lifecycle ─────────────────────────────────
 
   booking_confirmation: {
