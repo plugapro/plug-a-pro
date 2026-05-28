@@ -31,9 +31,13 @@ describe('provider identity verification schema', () => {
   })
 
   it('keeps identity records related to provider and provider application records', () => {
-    expect(schema).toContain('identityVerifications ProviderIdentityVerification[]')
-    expect(schema).toContain('provider              Provider?')
-    expect(schema).toContain('providerApplication   ProviderApplication?')
+    // Whitespace-tolerant matches: Prisma's auto-formatter realigns column
+    // widths whenever the longest column name in the model changes (e.g.
+    // when a new field like vendorWorkflowId is added). The assertion is on
+    // shape, not on spacing.
+    expect(schema).toMatch(/identityVerifications\s+ProviderIdentityVerification\[\]/)
+    expect(schema).toMatch(/\bprovider\s+Provider\?\s+@relation\(fields: \[providerId\]/)
+    expect(schema).toMatch(/\bproviderApplication\s+ProviderApplication\?\s+@relation\(fields: \[providerApplicationId\]/)
   })
 
   it('marks legacy identity verification rows outside the attempt cap by defaulting new rows in', () => {

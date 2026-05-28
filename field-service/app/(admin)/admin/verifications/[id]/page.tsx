@@ -10,10 +10,25 @@ import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import {
   approveIdentityVerificationFormAction,
+  refreshDiditSessionFormAction,
   rejectIdentityVerificationFormAction,
   requestIdentityVerificationRetryFormAction,
   retryIdentityVerificationWithVendorFormAction,
 } from '../actions'
+
+const NON_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  'NOT_STARTED',
+  'STARTED',
+  'CONSENTED',
+  'AWAITING_IDENTIFIER',
+  'AWAITING_DOCUMENT',
+  'AWAITING_SELFIE',
+  'SUBMITTED',
+  'PROCESSING',
+  'AWAITING_LIVENESS',
+  'NEEDS_MANUAL_REVIEW',
+  'RETRY_REQUIRED',
+])
 
 export const metadata = buildMetadata({ title: 'Identity Verification Review', noIndex: true })
 
@@ -80,6 +95,19 @@ export default async function AdminIdentityVerificationDetailPage({
               <Field label="Decision" value={verification.decision ?? 'Not decided'} />
               <Field label="Vendor" value={verification.sourceCheckProvider ?? 'None'} mono />
               <Field label="Vendor ref" value={verification.vendorReference ?? 'None'} mono />
+              <Field label="Vendor workflow" value={verification.vendorWorkflowId ?? 'None'} mono />
+              <Field
+                label="Cost estimate"
+                value={
+                  verification.costEstimateCents != null
+                    ? `${verification.costCurrency ?? 'USD'} ${(verification.costEstimateCents / 100).toFixed(2)}`
+                    : 'Unknown'
+                }
+              />
+              <Field
+                label="Decision recorded"
+                value={verification.decisionAt ? formatDate(verification.decisionAt) : 'Not decided'}
+              />
               <Field label="Liveness ref" value={verification.livenessSessionReference ?? 'None'} mono />
               <Field label="Identifier" value={verification.identifierLast4 ? `****${verification.identifierLast4}` : 'Not captured'} mono />
               <Field label="Issuing country" value={verification.issuingCountry ?? 'Not captured'} />
@@ -166,6 +194,19 @@ export default async function AdminIdentityVerificationDetailPage({
               <Field label="Provider KYC" value={verification.provider?.kycStatus ?? 'No provider record'} />
             </div>
           </div>
+
+          {verification.sourceCheckProvider === 'didit' && NON_TERMINAL_STATUSES.has(verification.status) && roleAtLeast(admin.adminRole, 'TRUST') ? (
+            <div className="rounded-xl border bg-card p-4">
+              <h2 className="font-semibold">Didit session</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Webhook missed? Pull the latest decision from Didit and re-apply it through the orchestrator.
+              </p>
+              <form action={refreshDiditSessionFormAction} className="mt-3">
+                <input type="hidden" name="verificationId" value={verification.id} />
+                <Button type="submit" size="sm" variant="outline">Refresh from Didit</Button>
+              </form>
+            </div>
+          ) : null}
 
           {roleAtLeast(admin.adminRole, 'TRUST') ? (
             <div className="rounded-xl border bg-card p-4">

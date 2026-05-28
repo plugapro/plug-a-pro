@@ -8,6 +8,7 @@ import { getRequiredDocumentKinds, isIdentityBasis, type IdentityBasis } from '@
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 import {
   acceptIdentityConsent,
+  startHostedVerificationFromConsent,
   submitIdentityBasisAndIdentifier,
   submitIdentityDocuments,
   submitIdentitySelfie,
@@ -195,6 +196,14 @@ export default async function ProviderIdentityVerifyPage({
     let target = `/provider/verify/${token}`
     try {
       await acceptIdentityConsent(token)
+      // Hosted vendors (Didit) collect ID + selfie + liveness inside their
+      // own UI. Skip the PWA identifier/document/selfie steps and hand off
+      // straight to the internal /liveness redirect (which 302s to the
+      // decrypted Didit URL server-side, keeping the raw URL out of HTML).
+      const hosted = await startHostedVerificationFromConsent(token)
+      if (hosted.ok && !('alreadyAdvanced' in hosted)) {
+        target = `/provider/verify/${token}/liveness`
+      }
     } catch (error) {
       target = mapVerificationActionError(token, error, { step: 'consent' })
     }

@@ -1,3 +1,4 @@
+import { estimateDiditCost, type DiditWorkflowProfile } from './didit-pricing'
 import {
   CONSERVATIVE_FULL_STACK_WARNING,
   ONBOARDING_VERIFICATION_MODELS,
@@ -8,11 +9,21 @@ import {
   type SmileIdCheckKey,
 } from './smileid-pricing'
 
+export type OnboardingVendorScenario = 'SMILE_ID' | 'DIDIT'
+
 export type ProviderEconomicsInput = {
   activeProviderCount: number
   newProvidersPerMonth: number
+  // SmileID-specific inputs (used when onboardingVendorScenario !== 'DIDIT').
   onboardingVerificationModel: OnboardingVerificationModel
   smileSecureApplies: boolean
+  customCheckSelection?: SmileIdCheckKey[]
+  // Didit-specific inputs (used when onboardingVendorScenario === 'DIDIT').
+  onboardingVendorScenario?: OnboardingVendorScenario
+  diditWorkflowProfile?: DiditWorkflowProfile
+  diditIncludeDha?: boolean
+  diditIncludeAmlOngoing?: boolean
+  // Shared cost pillars.
   monthlyFixedStackCostUsd: number
   monthlyVariableCostPerProviderUsd: number
   recurringVerificationCostPerProviderUsd: number
@@ -20,11 +31,14 @@ export type ProviderEconomicsInput = {
   variableCostPerLeadUsd: number
   paidLeadConversionRate: number
   exchangeRateZarPerUsd?: number
-  customCheckSelection?: SmileIdCheckKey[]
 }
 
+export type OnboardingLineItem = { key: string; label: string; priceUsd: number }
+
 export type ProviderEconomicsResult = {
+  onboardingVendorScenario: OnboardingVendorScenario
   selectedChecks: SmileIdCheck[]
+  onboardingLineItems: OnboardingLineItem[]
   warnings: string[]
   directOnboardingCostPerProviderUsd: number
   monthlyNewProviderOnboardingCostUsd: number
@@ -67,13 +81,16 @@ export function calculateProviderEconomics(input: ProviderEconomicsInput): Provi
     throw new ProviderEconomicsValidationError(validationErrors)
   }
 
-  const selectedChecks = resolveSelectedChecks(input)
-  const warnings = input.onboardingVerificationModel === 'conservative_full_stack'
-    ? [CONSERVATIVE_FULL_STACK_WARNING]
-    : []
-  const directOnboardingCostPerProviderUsd = money(selectedChecks.reduce((sum, check) => sum + check.priceUsd, 0))
+  const scenario: OnboardingVendorScenario = input.onboardingVendorScenario ?? 'SMILE_ID'
+  const { selectedChecks, onboardingLineItems, directOnboardingCostPerProviderUsd, warnings } =
+    scenario === 'DIDIT'
+      ? resolveDiditOnboarding(input)
+      : resolveSmileIdOnboarding(input)
+
   const monthlyNewProviderOnboardingCostUsd = money(input.newProvidersPerMonth * directOnboardingCostPerProviderUsd)
-  const smileSecureMonthlyCostUsd = input.smileSecureApplies ? SMILE_SECURE_MONTHLY_SUBSCRIPTION_USD : 0
+  // SmileSecure is a SmileID-specific monthly subscription; it does not apply
+  // to the Didit scenario.
+  const smileSecureMonthlyCostUsd = scenario === 'SMILE_ID' && input.smileSecureApplies ? SMILE_SECURE_MONTHLY_SUBSCRIPTION_USD : 0
   const monthlyProviderVariableCostUsd = money(input.activeProviderCount * input.monthlyVariableCostPerProviderUsd)
   const monthlyRecurringVerificationCostUsd = money(input.activeProviderCount * input.recurringVerificationCostPerProviderUsd)
   const monthlyUpkeepCostUsd = money(
@@ -100,7 +117,9 @@ export function calculateProviderEconomics(input: ProviderEconomicsInput): Provi
     : null
 
   return {
+    onboardingVendorScenario: scenario,
     selectedChecks,
+    onboardingLineItems,
     warnings,
     directOnboardingCostPerProviderUsd,
     monthlyNewProviderOnboardingCostUsd,
@@ -153,15 +172,46 @@ export function validateProviderEconomicsInput(input: ProviderEconomicsInput): s
   return errors
 }
 
-function resolveSelectedChecks(input: ProviderEconomicsInput): SmileIdCheck[] {
+function resolveSmileIdOnboarding(input: ProviderEconomicsInput) {
   const checkKeys = input.onboardingVerificationModel === 'custom'
     ? input.customCheckSelection ?? []
     : ONBOARDING_VERIFICATION_MODELS[input.onboardingVerificationModel].checks
-
-  return checkKeys.map((key) => SMILE_ID_CHECKS[key])
+  const selectedChecks = checkKeys.map((key) => SMILE_ID_CHECKS[key])
+  const onboardingLineItems: OnboardingLineItem[] = selectedChecks.map(check => ({
+    key: check.key,
+    label: check.label,
+    priceUsd: check.priceUsd,
+  }))
+  const directOnboardingCostPerProviderUsd = money(
+    selectedChecks.reduce((sum, check) => sum + check.priceUsd, 0),
+  )
+  const warnings = input.onboardingVerificationModel === 'conservative_full_stack'
+    ? [CONSERVATIVE_FULL_STACK_WARNING]
+    : []
+  return { selectedChecks, onboardingLineItems, directOnboardingCostPerProviderUsd, warnings }
 }
 
-function buildZarResult(input: Omit<ProviderEconomicsResult, 'selectedChecks' | 'warnings' | 'zar' | 'leadsRequiredToRecoverMonthlyTechCost' | 'leadsRequiredToRecoverOneProviderOnboarding'> & {
+function resolveDiditOnboarding(input: ProviderEconomicsInput) {
+  const profile: DiditWorkflowProfile = input.diditWorkflowProfile ?? 'KYC_AUTHORITATIVE'
+  const cost = estimateDiditCost({
+    workflowProfile: profile,
+    includeDha: input.diditIncludeDha,
+    includeAmlOngoing: input.diditIncludeAmlOngoing,
+  })
+  const onboardingLineItems: OnboardingLineItem[] = cost.lineItems.map(item => ({
+    key: `DIDIT_${item.key}`,
+    label: item.label,
+    priceUsd: item.centsUsd / 100,
+  }))
+  return {
+    selectedChecks: [] as SmileIdCheck[],
+    onboardingLineItems,
+    directOnboardingCostPerProviderUsd: money(cost.centsUsd / 100),
+    warnings: [] as string[],
+  }
+}
+
+function buildZarResult(input: Omit<ProviderEconomicsResult, 'onboardingVendorScenario' | 'selectedChecks' | 'onboardingLineItems' | 'warnings' | 'zar' | 'leadsRequiredToRecoverMonthlyTechCost' | 'leadsRequiredToRecoverOneProviderOnboarding'> & {
   exchangeRateZarPerUsd: number
 }): ProviderEconomicsZarResult {
   return {

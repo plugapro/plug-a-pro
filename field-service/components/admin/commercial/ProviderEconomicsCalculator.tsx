@@ -12,8 +12,10 @@ import {
 import {
   calculateProviderEconomics,
   ProviderEconomicsValidationError,
+  type OnboardingVendorScenario,
   type ProviderEconomicsInput,
 } from '@/lib/commercial/provider-economics'
+import type { DiditWorkflowProfile } from '@/lib/commercial/didit-pricing'
 import {
   ONBOARDING_VERIFICATION_MODELS,
   SMILE_ID_CHECKS,
@@ -58,6 +60,13 @@ const DEFAULT_ASSUMPTIONS: ProviderEconomicsInput = {
   variableCostPerLeadUsd: 0,
   paidLeadConversionRate: 1,
   customCheckSelection: [],
+  onboardingVendorScenario: 'SMILE_ID',
+  diditWorkflowProfile: 'KYC_AUTHORITATIVE',
+  diditIncludeAmlOngoing: false,
+}
+
+export type ProviderEconomicsCalculatorProps = {
+  diditScenarioEnabled?: boolean
 }
 
 type FieldKey = keyof Pick<
@@ -72,9 +81,10 @@ type FieldKey = keyof Pick<
   | 'paidLeadConversionRate'
 >
 
-export function ProviderEconomicsCalculator() {
+export function ProviderEconomicsCalculator({ diditScenarioEnabled = false }: ProviderEconomicsCalculatorProps = {}) {
   const [assumptions, setAssumptions] = useState<ProviderEconomicsInput>(DEFAULT_ASSUMPTIONS)
   const [exchangeRateValue, setExchangeRateValue] = useState('')
+  const scenario: OnboardingVendorScenario = assumptions.onboardingVendorScenario ?? 'SMILE_ID'
 
   const calculationInput = useMemo<ProviderEconomicsInput>(() => ({
     ...assumptions,
@@ -151,8 +161,72 @@ export function ProviderEconomicsCalculator() {
               />
             </div>
 
+            {diditScenarioEnabled ? (
+              <label className="grid gap-2">
+                <span className="text-sm font-medium">Onboarding vendor</span>
+                <Select
+                  value={scenario}
+                  onValueChange={(value) => {
+                    setAssumptions((current) => ({
+                      ...current,
+                      onboardingVendorScenario: value as OnboardingVendorScenario,
+                    }))
+                  }}
+                >
+                  <SelectTrigger className="h-[52px] w-full rounded-[16px] px-[14px] text-[15px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DIDIT">Didit (Recommended)</SelectItem>
+                    <SelectItem value="SMILE_ID">SmileID</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+            ) : null}
+
+            {scenario === 'DIDIT' ? (
+              <div className="grid gap-3 rounded-[16px] border border-border/80 p-4">
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">Didit workflow profile</span>
+                  <Select
+                    value={assumptions.diditWorkflowProfile ?? 'KYC_AUTHORITATIVE'}
+                    onValueChange={(value) => {
+                      setAssumptions((current) => ({
+                        ...current,
+                        diditWorkflowProfile: value as DiditWorkflowProfile,
+                      }))
+                    }}
+                  >
+                    <SelectTrigger className="h-[44px] w-full rounded-[12px] px-[12px] text-[14px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="KYC_AUTHORITATIVE">Authoritative (KYC + AML + SA DHA)</SelectItem>
+                      <SelectItem value="KYC_BASIC">Basic (KYC + AML)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="flex items-start gap-3 text-sm">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={assumptions.diditIncludeAmlOngoing ?? false}
+                    onCheckedChange={(checked) => {
+                      setAssumptions((current) => ({
+                        ...current,
+                        diditIncludeAmlOngoing: checked === true,
+                      }))
+                    }}
+                  />
+                  <span className="grid gap-1">
+                    <span className="font-medium">Add ongoing AML monitoring</span>
+                    <span className="text-muted-foreground">Adds $0.07/user/year to the per-provider onboarding cost.</span>
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
             <label className="grid gap-2">
-              <span className="text-sm font-medium">Verification model</span>
+              <span className="text-sm font-medium">SmileID verification model</span>
               <Select
                 value={assumptions.onboardingVerificationModel}
                 onValueChange={(value) => {
@@ -161,6 +235,7 @@ export function ProviderEconomicsCalculator() {
                     onboardingVerificationModel: value as OnboardingVerificationModel,
                   }))
                 }}
+                disabled={scenario === 'DIDIT'}
               >
                 <SelectTrigger className="h-[52px] w-full rounded-[16px] px-[14px] text-[15px]">
                   <SelectValue />

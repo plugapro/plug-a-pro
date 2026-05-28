@@ -4,13 +4,22 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
+import { estimateDiditCost } from '@/lib/commercial/didit-pricing'
 import { crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
 import { decryptIdentifier } from '@/lib/identity-verification/crypto'
+import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import {
+  applyVendorVerdict,
   submitVerificationForAutomation,
   transitionIdentityVerification,
 } from '@/lib/identity-verification/orchestrator'
+import {
+  getDiditConfig,
+  getDiditWorkflowId,
+  type DiditWorkflowProfile,
+} from '@/lib/identity-verification/vendors/didit/config'
+import { refreshDiditSession } from '@/lib/identity-verification/vendors/didit/decision'
 import { sendText } from '@/lib/whatsapp'
 
 const FLAG = 'admin.crud.verifications'
@@ -280,6 +289,182 @@ export async function retryIdentityVerificationWithVendorFormAction(formData: Fo
     notes: formData.get('notes')?.toString() ?? undefined,
   })
   redirect(`/admin/verifications/${verificationId}?message=vendor-retry`)
+}
+
+const IssueDiditLinkSchema = z.object({
+  providerId: z.string().min(1),
+  workflowProfile: z.enum(['KYC_BASIC', 'KYC_AUTHORITATIVE']).optional(),
+})
+
+type IssueDiditLinkInput = z.infer<typeof IssueDiditLinkSchema>
+
+const RefreshDiditSchema = z.object({
+  verificationId: z.string().min(1),
+})
+
+type RefreshDiditInput = z.infer<typeof RefreshDiditSchema>
+
+/**
+ * Admin issues a Didit onboarding link for a provider. Defaults to the
+ * authoritative workflow so a successful Approved drives assuranceLevel:HIGH
+ * (which the credit gate and selected-provider acceptance both require).
+ *
+ * This action only mints the internal verify link and stamps Didit-specific
+ * fields on the verification row — it does NOT create the Didit session.
+ * Consent must be recorded by the provider in the PWA before a session is
+ * created (see startHostedVerificationFromConsent in
+ * app/provider/verify/[token]/actions.ts).
+ *
+ * Auth: crudAction handles session + role checks internally (TRUST role,
+ * admin.crud.verifications flag). Do not add a redundant requireAdmin()
+ * call here — the API route at /api/provider-verifications already uses
+ * requireAdminApi() for the HTTP boundary, and the form-action path lands
+ * directly in crudAction.
+ */
+export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput) {
+  // Two-phase pattern (mirrors retryIdentityVerificationWithVendorAction):
+  //   1. Pre-flight: validate Didit config + issue the link OUTSIDE crudAction
+  //      (issueProviderIdentityVerificationLink does not accept a tx and
+  //      writes its own ProviderVerificationEvent for audit).
+  //   2. crudAction wraps the Didit field stamping + AuditLog atomically.
+  const profile: DiditWorkflowProfile = input.workflowProfile ?? 'KYC_AUTHORITATIVE'
+  const config = getDiditConfig()
+  if (!config.enabled) {
+    return { ok: false as const, error: `Didit is not configured: ${config.reason}` }
+  }
+
+  const parsed = IssueDiditLinkSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false as const, error: 'invalid_input' }
+  }
+
+  const workflowId = getDiditWorkflowId(profile)
+  const cost = estimateDiditCost({ workflowProfile: profile })
+  const link = await issueProviderIdentityVerificationLink({
+    providerId: parsed.data.providerId,
+    channel: 'ADMIN',
+  })
+
+  const result = await crudAction<IssueDiditLinkInput, { id: string }>({
+    entity: 'ProviderIdentityVerification',
+    entityId: link.verificationId,
+    action: 'provider_identity_verification.issue_didit_link',
+    requiredRole: [...REVIEW_ROLES],
+    requiredFlag: FLAG,
+    schema: IssueDiditLinkSchema,
+    input,
+    run: async (_data, tx) => {
+      await tx.providerIdentityVerification.update({
+        where: { id: link.verificationId },
+        data: {
+          sourceCheckProvider: 'didit',
+          vendorWorkflowId: workflowId,
+          costEstimateCents: cost.centsUsd,
+          costCurrency: 'USD',
+        },
+      })
+      return { id: link.verificationId }
+    },
+  })
+
+  if (result.ok) {
+    revalidateVerificationPaths(link.verificationId)
+  }
+  return result.ok
+    ? {
+        ok: true as const,
+        verificationId: link.verificationId,
+        verificationUrl: link.verificationUrl,
+        expiresAt: link.expiresAt.toISOString(),
+      }
+    : { ok: false as const }
+}
+
+/**
+ * Admin or system poll: fetches the latest Didit decision for a verification
+ * that has a vendorReference (Didit session_id) and applies the verdict via
+ * the same orchestrator path the webhook uses. Idempotent on terminal status.
+ *
+ * Auth: crudAction handles session + role checks internally. See
+ * issueDiditOnboardingLinkAction for the rationale.
+ */
+export async function refreshDiditSessionAction(input: RefreshDiditInput) {
+  const result = await crudAction<RefreshDiditInput, { id: string; status: string; decision: string | null }>({
+    entity: 'ProviderIdentityVerification',
+    entityId: input.verificationId,
+    action: 'provider_identity_verification.refresh_didit_session',
+    requiredRole: [...REVIEW_ROLES],
+    requiredFlag: FLAG,
+    schema: RefreshDiditSchema,
+    input,
+    run: async (data, tx) => {
+      const verification = await tx.providerIdentityVerification.findUnique({
+        where: { id: data.verificationId },
+        select: {
+          id: true,
+          status: true,
+          decision: true,
+          sourceCheckProvider: true,
+          vendorReference: true,
+          vendorWorkflowId: true,
+        },
+      })
+      if (!verification) throw new Error('Verification not found')
+      if (verification.sourceCheckProvider !== 'didit') {
+        throw new Error('Refresh action only supports Didit-sourced verifications')
+      }
+      if (!verification.vendorReference) {
+        throw new Error('Verification has no Didit session_id to refresh against')
+      }
+      if (['PASSED', 'FAILED', 'EXPIRED', 'CANCELLED'].includes(verification.status)) {
+        // Already terminal — return existing snapshot, no Didit call needed.
+        return {
+          id: verification.id,
+          status: verification.status,
+          decision: verification.decision,
+        }
+      }
+
+      const refreshed = await refreshDiditSession(verification.vendorReference, {
+        storedVendorWorkflowId: verification.vendorWorkflowId,
+      })
+
+      if (refreshed.normalized.result) {
+        // Thread the crudAction transaction client so the state transition,
+        // Provider.kycStatus update, and the audit-log writes are committed
+        // atomically with the refresh action's audit row.
+        await applyVendorVerdict(verification.id, refreshed.normalized.result, 'webhook', tx)
+      }
+      const post = await tx.providerIdentityVerification.findUniqueOrThrow({
+        where: { id: verification.id },
+        select: { id: true, status: true, decision: true },
+      })
+      return { id: post.id, status: post.status, decision: post.decision }
+    },
+  })
+
+  if (result.ok) {
+    revalidateVerificationPaths(input.verificationId)
+  }
+  return result.ok
+    ? { ok: true as const, status: result.data.status, decision: result.data.decision }
+    : { ok: false as const }
+}
+
+export async function issueDiditOnboardingLinkFormAction(formData: FormData) {
+  const providerId = formData.get('providerId')?.toString() ?? ''
+  const workflowProfile = (formData.get('workflowProfile')?.toString() ?? 'KYC_AUTHORITATIVE') as DiditWorkflowProfile
+  const result = await issueDiditOnboardingLinkAction({ providerId, workflowProfile })
+  const target = result.ok && result.verificationId
+    ? `/admin/verifications/${result.verificationId}?message=didit-link-issued`
+    : '/admin/verifications?message=didit-link-failed'
+  redirect(target)
+}
+
+export async function refreshDiditSessionFormAction(formData: FormData) {
+  const verificationId = formData.get('verificationId')?.toString() ?? ''
+  await refreshDiditSessionAction({ verificationId })
+  redirect(`/admin/verifications/${verificationId}?message=didit-refreshed`)
 }
 
 type IdentityApprovalNotificationResult = 'sent' | 'failed' | 'skipped'

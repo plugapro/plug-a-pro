@@ -1,6 +1,6 @@
 import type { IdentityBasis, IdentityDocumentKind } from '@prisma/client'
 
-export type VendorKey = 'smile_id' | 'thisisme' | 'datanamix' | 'omnicheck' | 'manual' | 'mock'
+export type VendorKey = 'smile_id' | 'didit' | 'thisisme' | 'datanamix' | 'omnicheck' | 'manual' | 'mock'
 
 export type NormalizedVerificationDecision =
   | 'PASS'
@@ -20,6 +20,12 @@ export type NormalizedVerificationResult = {
   reasonCode: string | null
   vendorReference: string | null
   expiresAt: Date | null
+  // Optional adapter hint for the assurance level to record on a PASSED
+  // verdict. When unset, the orchestrator falls back to its default ('HIGH')
+  // so existing adapters (Smile ID, mock) remain unaffected. Hosted-flow
+  // vendors with multiple workflow tiers (e.g. Didit basic vs authoritative)
+  // use this to differentiate without altering shared orchestrator logic.
+  assuranceLevelHint?: 'HIGH' | 'MEDIUM' | null
 }
 
 export type SubmitDocumentCheckInput = {

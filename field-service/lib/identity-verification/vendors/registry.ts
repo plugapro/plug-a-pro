@@ -1,3 +1,4 @@
+import { diditVerificationAdapter } from './didit'
 import { manualVerificationAdapter } from './manual'
 import { mockVerificationAdapter } from './mock'
 import { smileIdVerificationAdapter } from './smile-id'
@@ -14,6 +15,9 @@ export function getAdapter(vendorKey: VendorKey): VerificationVendorAdapter {
   if (vendorKey === 'smile_id') {
     return smileIdVerificationAdapter
   }
+  if (vendorKey === 'didit') {
+    return diditVerificationAdapter
+  }
   if (vendorKey === 'thisisme' || vendorKey === 'datanamix' || vendorKey === 'omnicheck') {
     return notImplementedAdapter(vendorKey)
   }
@@ -23,6 +27,7 @@ export function getAdapter(vendorKey: VendorKey): VerificationVendorAdapter {
 export function toVendorKey(value: string | null | undefined): VendorKey | null {
   if (
     value === 'smile_id' ||
+    value === 'didit' ||
     value === 'thisisme' ||
     value === 'datanamix' ||
     value === 'omnicheck' ||
