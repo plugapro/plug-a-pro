@@ -4,6 +4,12 @@ export type OtpSecurityConfig = {
   lockMinutesAfterReport: number
   lockRefusalEventWindowMinutes: number
   challengeRetentionDays: number
+  /** Default 365 days. Drops historical security_events older than this. */
+  securityEventRetentionDays: number
+  /** Default 180 days. Drops account_security_states rows that have been
+   *  fully cleared (no active lock, no step-up pending) and haven't been
+   *  touched for this many days. */
+  accountSecurityStateRetentionDays: number
   adminAlertThreshold: number
   otpHashPepper: string
   stepUpCookieKey: string | null
@@ -40,6 +46,8 @@ export function getOtpSecurityConfig(): OtpSecurityConfig {
     lockMinutesAfterReport: envInt('OTP_LOCK_MINUTES_AFTER_UNREQUESTED_REPORT', 60),
     lockRefusalEventWindowMinutes: envInt('OTP_LOCK_REFUSAL_EVENT_WINDOW_MINUTES', 15),
     challengeRetentionDays: envInt('OTP_CHALLENGE_RETENTION_DAYS', 30),
+    securityEventRetentionDays: envInt('SECURITY_EVENT_RETENTION_DAYS', 365),
+    accountSecurityStateRetentionDays: envInt('ACCOUNT_SECURITY_STATE_RETENTION_DAYS', 180),
     adminAlertThreshold: envInt('SECURITY_EVENTS_ADMIN_ALERT_THRESHOLD', 3),
     otpHashPepper: pepper || 'test-only-otp-security-pepper',
     stepUpCookieKey: process.env.STEP_UP_COOKIE_KEY?.trim() || null,

@@ -127,6 +127,11 @@ const mocks = vi.hoisted(() => {
       findFirst: vi.fn(async ({ where, orderBy }: { where?: Row; orderBy?: Row }) => {
         return sortRows(state.securityEvents.filter((row) => matchesWhere(row, where)), orderBy)[0] ?? null
       }),
+      deleteMany: vi.fn(async ({ where }: { where?: Row }) => {
+        const before = state.securityEvents.length
+        state.securityEvents = state.securityEvents.filter((row: Row) => !matchesWhere(row, where))
+        return { count: before - state.securityEvents.length }
+      }),
     },
     accountSecurityState: {
       findUnique: vi.fn(async ({ where }: { where: Row }) => {
@@ -155,6 +160,13 @@ const mocks = vi.hoisted(() => {
         const rows = state.accountSecurityStates.filter((row) => matchesWhere(row, where))
         rows.forEach((row) => applyData(row, data))
         return { count: rows.length }
+      }),
+      deleteMany: vi.fn(async ({ where }: { where?: Row }) => {
+        const before = state.accountSecurityStates.length
+        state.accountSecurityStates = state.accountSecurityStates.filter(
+          (row: Row) => !matchesWhere(row, where),
+        )
+        return { count: before - state.accountSecurityStates.length }
       }),
     },
     $transaction: vi.fn(async (input: any) => {
@@ -192,6 +204,8 @@ import {
   markChallengeCancelled,
   markChallengeSendFailed,
   markChallengeSent,
+  pruneClearedAccountSecurityStates,
+  pruneStaleSecurityEvents,
   pruneTerminalOtpChallenges,
   recordDeliveryRefusedDuringLock,
   recordOtpChallenge,
@@ -898,5 +912,78 @@ describe('otp security service', () => {
     ])
     expect(mocks.state.securityEvents).toHaveLength(1)
     expect(mocks.state.securityEvents[0].relatedOtpChallengeId).toBe(oldTerminal.id)
+  })
+
+  it('pruneStaleSecurityEvents drops events older than SECURITY_EVENT_RETENTION_DAYS regardless of status', async () => {
+    mocks.reset()
+    // Default retention: 365 days. NOW = 2026-05-26T10:00:00Z. Cutoff:
+    // 2025-05-26T10:00:00Z. Insert one row before, one after.
+    mocks.state.securityEvents.push(
+      { id: 'evt_old_resolved', status: 'RESOLVED', createdAt: new Date('2024-01-01T00:00:00Z'), phoneE164: PHONE },
+      { id: 'evt_old_new', status: 'NEW', createdAt: new Date('2024-06-01T00:00:00Z'), phoneE164: PHONE },
+      { id: 'evt_recent_resolved', status: 'RESOLVED', createdAt: new Date('2026-01-01T00:00:00Z'), phoneE164: PHONE },
+    )
+
+    await expect(pruneStaleSecurityEvents(NOW)).resolves.toEqual({ deleted: 2 })
+    expect(mocks.db.securityEvent.deleteMany).toHaveBeenCalledWith({
+      where: {
+        createdAt: { lt: new Date('2025-05-26T10:00:00.000Z') },
+      },
+    })
+    expect(mocks.state.securityEvents.map((row) => row.id)).toEqual(['evt_recent_resolved'])
+  })
+
+  it('pruneClearedAccountSecurityStates only deletes cleared+stale rows; protects active state', async () => {
+    mocks.reset()
+    // Default retention: 180 days. NOW = 2026-05-26T10:00:00Z. Cutoff:
+    // 2025-11-27T10:00:00Z. Build a representative spread:
+    //   1. cleared + stale → deleted
+    //   2. cleared + recent → kept (not stale)
+    //   3. step-up required + stale → kept (active)
+    //   4. locked-until-future + stale → kept (active)
+    //   5. locked-until-past + cleared + stale → deleted (lock expired)
+    mocks.state.accountSecurityStates.push(
+      {
+        id: 'state_1', phoneE164: '+27821000001',
+        stepUpRequired: false, lockedUntil: null, reportCount: 1,
+        updatedAt: new Date('2025-01-01T00:00:00Z'),
+      },
+      {
+        id: 'state_2', phoneE164: '+27821000002',
+        stepUpRequired: false, lockedUntil: null, reportCount: 0,
+        updatedAt: new Date('2026-04-01T00:00:00Z'),
+      },
+      {
+        id: 'state_3_active_stepup', phoneE164: '+27821000003',
+        stepUpRequired: true, lockedUntil: null, reportCount: 1,
+        updatedAt: new Date('2024-01-01T00:00:00Z'),
+      },
+      {
+        id: 'state_4_locked', phoneE164: '+27821000004',
+        stepUpRequired: false, lockedUntil: new Date('2026-12-01T00:00:00Z'), reportCount: 1,
+        updatedAt: new Date('2024-01-01T00:00:00Z'),
+      },
+      {
+        id: 'state_5_lock_expired', phoneE164: '+27821000005',
+        stepUpRequired: false, lockedUntil: new Date('2025-01-01T00:00:00Z'), reportCount: 1,
+        updatedAt: new Date('2025-01-02T00:00:00Z'),
+      },
+    )
+
+    await expect(pruneClearedAccountSecurityStates(NOW)).resolves.toEqual({ deleted: 2 })
+    expect(mocks.db.accountSecurityState.deleteMany).toHaveBeenCalledWith({
+      where: {
+        stepUpRequired: false,
+        OR: [
+          { lockedUntil: null },
+          { lockedUntil: { lt: NOW } },
+        ],
+        updatedAt: { lt: new Date('2025-11-27T10:00:00.000Z') },
+      },
+    })
+    // Survivors: 2 (recent), 3 (active step-up), 4 (lock still active)
+    expect(mocks.state.accountSecurityStates.map((row) => row.id).sort()).toEqual([
+      'state_2', 'state_3_active_stepup', 'state_4_locked',
+    ])
   })
 })

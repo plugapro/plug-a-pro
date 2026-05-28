@@ -1,11 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockPruneTerminalOtpChallenges } = vi.hoisted(() => ({
+const {
+  mockPruneTerminalOtpChallenges,
+  mockPruneStaleSecurityEvents,
+  mockPruneClearedAccountSecurityStates,
+} = vi.hoisted(() => ({
   mockPruneTerminalOtpChallenges: vi.fn(),
+  mockPruneStaleSecurityEvents: vi.fn(),
+  mockPruneClearedAccountSecurityStates: vi.fn(),
 }))
 
 vi.mock('@/lib/otp-security', () => ({
   pruneTerminalOtpChallenges: mockPruneTerminalOtpChallenges,
+  pruneStaleSecurityEvents: mockPruneStaleSecurityEvents,
+  pruneClearedAccountSecurityStates: mockPruneClearedAccountSecurityStates,
 }))
 
 describe('GET /api/cron/otp-security-prune', () => {
@@ -17,6 +25,8 @@ describe('GET /api/cron/otp-security-prune', () => {
     vi.clearAllMocks()
     process.env = { ...ORIGINAL_ENV, CRON_SECRET }
     mockPruneTerminalOtpChallenges.mockResolvedValue({ deleted: 3 })
+    mockPruneStaleSecurityEvents.mockResolvedValue({ deleted: 7 })
+    mockPruneClearedAccountSecurityStates.mockResolvedValue({ deleted: 2 })
     infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
   })
 
@@ -38,6 +48,8 @@ describe('GET /api/cron/otp-security-prune', () => {
     expect(missing.status).toBe(401)
     expect(wrong.status).toBe(401)
     expect(mockPruneTerminalOtpChallenges).not.toHaveBeenCalled()
+    expect(mockPruneStaleSecurityEvents).not.toHaveBeenCalled()
+    expect(mockPruneClearedAccountSecurityStates).not.toHaveBeenCalled()
   })
 
   it('rejects requests when CRON_SECRET is not configured', async () => {
@@ -52,9 +64,11 @@ describe('GET /api/cron/otp-security-prune', () => {
 
     expect(response.status).toBe(401)
     expect(mockPruneTerminalOtpChallenges).not.toHaveBeenCalled()
+    expect(mockPruneStaleSecurityEvents).not.toHaveBeenCalled()
+    expect(mockPruneClearedAccountSecurityStates).not.toHaveBeenCalled()
   })
 
-  it('runs pruneTerminalOtpChallenges and returns deleted count when authorized', async () => {
+  it('runs all three prunes and returns per-table deleted counts when authorized', async () => {
     vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(1_047)
     const { GET } = await import('@/app/api/cron/otp-security-prune/route')
 
@@ -67,13 +81,17 @@ describe('GET /api/cron/otp-security-prune', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
       ok: true,
-      deleted: 3,
       durationMs: 47,
+      challenges: { deleted: 3, errored: null },
+      securityEvents: { deleted: 7, errored: null },
+      accountSecurityStates: { deleted: 2, errored: null },
     })
     expect(mockPruneTerminalOtpChallenges).toHaveBeenCalledTimes(1)
+    expect(mockPruneStaleSecurityEvents).toHaveBeenCalledTimes(1)
+    expect(mockPruneClearedAccountSecurityStates).toHaveBeenCalledTimes(1)
   })
 
-  it('logs only low-cardinality prune metadata', async () => {
+  it('emits three structured log events, one per table', async () => {
     vi.spyOn(Date, 'now').mockReturnValueOnce(2_000).mockReturnValueOnce(2_015)
     const { GET } = await import('@/app/api/cron/otp-security-prune/route')
 
@@ -83,15 +101,49 @@ describe('GET /api/cron/otp-security-prune', () => {
       }),
     )
 
-    expect(infoSpy).toHaveBeenCalledTimes(1)
-    const payload = JSON.parse(String(infoSpy.mock.calls[0]?.[0]))
-    expect(payload).toEqual({
+    expect(infoSpy).toHaveBeenCalledTimes(3)
+    const events = infoSpy.mock.calls.map((call: unknown[]) => JSON.parse(String(call[0])))
+    expect(events[0]).toEqual({
       event: 'otp.challenge.pruned',
       deleted: 3,
       durationMs: 15,
+      errored: null,
     })
-    expect(JSON.stringify(payload)).not.toContain('+27821234567')
-    expect(JSON.stringify(payload)).not.toContain('987654')
-    expect(JSON.stringify(payload).toLowerCase()).not.toContain('token')
+    expect(events[1]).toEqual({
+      event: 'otp.security_event.pruned',
+      deleted: 7,
+      errored: null,
+    })
+    expect(events[2]).toEqual({
+      event: 'otp.account_security_state.pruned',
+      deleted: 2,
+      errored: null,
+    })
+
+    const all = JSON.stringify(events)
+    expect(all).not.toContain('+27821234567')
+    expect(all).not.toContain('987654')
+    expect(all.toLowerCase()).not.toContain('token')
+  })
+
+  it('isolates failures — one prune throwing does not block the others', async () => {
+    mockPruneStaleSecurityEvents.mockRejectedValueOnce(new TypeError('forced fail'))
+    const { GET } = await import('@/app/api/cron/otp-security-prune/route')
+
+    const response = await GET(
+      new Request('http://localhost/api/cron/otp-security-prune', {
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.challenges.errored).toBeNull()
+    expect(body.securityEvents.errored).toBe('TypeError')
+    expect(body.securityEvents.deleted).toBe(0)
+    expect(body.accountSecurityStates.errored).toBeNull()
+    // The two surviving prunes still ran.
+    expect(mockPruneTerminalOtpChallenges).toHaveBeenCalledTimes(1)
+    expect(mockPruneClearedAccountSecurityStates).toHaveBeenCalledTimes(1)
   })
 })

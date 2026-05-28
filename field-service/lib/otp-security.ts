@@ -87,6 +87,7 @@ type OtpSecurityClient = {
       where: Record<string, unknown>
       orderBy: { createdAt: 'desc' }
     }): Promise<Record<string, unknown> | null>
+    deleteMany(args: { where: Record<string, unknown> }): Promise<{ count: number }>
   }
   accountSecurityState: {
     findUnique(args: { where: { phoneE164: string } }): Promise<AccountSecurityState | null>
@@ -103,6 +104,7 @@ type OtpSecurityClient = {
       where: Record<string, unknown>
       data: Record<string, unknown>
     }): Promise<{ count: number }>
+    deleteMany(args: { where: Record<string, unknown> }): Promise<{ count: number }>
   }
   $transaction<T>(input: (client: OtpSecurityClient) => Promise<T>): Promise<T>
 }
@@ -858,6 +860,56 @@ export async function pruneTerminalOtpChallenges(
   const result = await serviceDb().otpChallenge.deleteMany({
     where: {
       status: { in: TERMINAL_CHALLENGE_STATUSES },
+      updatedAt: { lt: cutoff },
+    },
+  })
+
+  return { deleted: result.count }
+}
+
+/**
+ * Drops historical security_events older than the configured retention
+ * window. Default 365 days (`SECURITY_EVENT_RETENTION_DAYS`).
+ *
+ * All event statuses are eligible — including RESOLVED and FALSE_POSITIVE
+ * — once they're past the retention horizon. The audit value of an event
+ * decays with age; for compliance / long-term audit trails the canonical
+ * `audit_logs` table remains untouched.
+ */
+export async function pruneStaleSecurityEvents(
+  now: Date = new Date(),
+): Promise<{ deleted: number }> {
+  const cutoff = addDays(now, -getOtpSecurityConfig().securityEventRetentionDays)
+  const result = await serviceDb().securityEvent.deleteMany({
+    where: {
+      createdAt: { lt: cutoff },
+    },
+  })
+
+  return { deleted: result.count }
+}
+
+/**
+ * Drops `account_security_states` rows that have been fully cleared
+ * (no active lock, no step-up pending) and haven't been touched for the
+ * configured retention window. Default 180 days
+ * (`ACCOUNT_SECURITY_STATE_RETENTION_DAYS`).
+ *
+ * Active rows — those with `lockedUntil > now` OR `stepUpRequired = true`
+ * — are NEVER pruned, regardless of `updatedAt`. This guarantees the
+ * cleanup never removes state that's actively gating a sign-in.
+ */
+export async function pruneClearedAccountSecurityStates(
+  now: Date = new Date(),
+): Promise<{ deleted: number }> {
+  const cutoff = addDays(now, -getOtpSecurityConfig().accountSecurityStateRetentionDays)
+  const result = await serviceDb().accountSecurityState.deleteMany({
+    where: {
+      stepUpRequired: false,
+      OR: [
+        { lockedUntil: null },
+        { lockedUntil: { lt: now } },
+      ],
       updatedAt: { lt: cutoff },
     },
   })
