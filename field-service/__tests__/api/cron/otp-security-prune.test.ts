@@ -102,7 +102,7 @@ describe('GET /api/cron/otp-security-prune', () => {
     )
 
     expect(infoSpy).toHaveBeenCalledTimes(3)
-    const events = infoSpy.mock.calls.map((call) => JSON.parse(String(call[0])))
+    const events = infoSpy.mock.calls.map((call: unknown[]) => JSON.parse(String(call[0])))
     expect(events[0]).toEqual({
       event: 'otp.challenge.pruned',
       deleted: 3,
