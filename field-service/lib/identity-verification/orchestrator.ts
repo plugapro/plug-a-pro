@@ -227,6 +227,23 @@ export async function submitVerificationForAutomation(
         },
       },
     })
+    // Best-effort cancel of the orphaned vendor job (and Smile Link, if any) from
+    // contention loss. Without this, the losing process's link stays live until
+    // its 60-minute TTL — risk: provider sees winner+loser URLs and clicks the
+    // wrong one. adapter.cancelVerificationJob already swallows transport errors
+    // and returns vendorAcknowledged:false on failure — no rethrow possible.
+    if (livenessResult) {
+      void adapter
+        .cancelVerificationJob({
+          verificationId,
+          vendorReference: submitResult.vendorReference,
+          livenessSessionReference: livenessResult.vendorReference,
+          reason: 'ORCHESTRATOR_CONTENTION_ORPHAN',
+        })
+        .catch(() => {
+          /* swallowed inside adapter; double-guard against an unexpected throw */
+        })
+    }
     return automationResultFromSnapshot(current, current.sourceCheckProvider ?? activeConfig.vendorKey)
   }
 

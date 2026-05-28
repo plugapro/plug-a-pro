@@ -1,0 +1,8 @@
+{
+  "acknowledged_unclassified_codes": [
+    "0813", "0814", "0815", "0817",
+    "0820", "0821", "0822", "0823", "0824", "0825",
+    "0840", "0841", "0844", "0846"
+  ],
+  "note": "These EVD codes appear in Smile's published table but haven't been classified into PASS/FAIL/INCONCLUSIVE pending sandbox probe. Tracked in PR #22 follow-ups. Once classified, move into SMILE_ID_EVD_PASS_RESULT_CODES or SMILE_ID_EVD_FAIL_RESULT_CODES and remove from this list."
+}

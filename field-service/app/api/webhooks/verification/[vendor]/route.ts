@@ -20,6 +20,15 @@ export async function POST(
   const headers = Object.fromEntries(request.headers.entries())
   const adapter = getAdapter(vendorKey)
   const parsed = await adapter.parseWebhook({ headers, rawBody })
+
+  // Signature gate FIRST — refuse to persist audit rows for unauthenticated
+  // payloads. Previously any internet scanner POSTing garbage could pollute
+  // ProviderVerificationWebhookEvent with rows carrying real-looking vendor
+  // references from the forged body.
+  if (!parsed.signatureValid) {
+    return NextResponse.json({ ok: false, code: 'INVALID_SIGNATURE' }, { status: 401 })
+  }
+
   const idempotencyKey = computeIdempotencyKey(vendorKey, parsed)
 
   let row: { id: string; signatureValid?: boolean; processedAt?: Date | null }
@@ -44,17 +53,12 @@ export async function POST(
       select: { id: true, signatureValid: true, processedAt: true },
     })
     if (!existing) throw error
+    // Defensive no-op: with the signature gate above we never write a row with
+    // signatureValid:false anymore, but keep the branch in case a legacy row
+    // exists from before this fix or a future caller bypasses the gate.
     if (existing.signatureValid === false) return NextResponse.json({ ok: false }, { status: 401 })
     if (existing.processedAt) return NextResponse.json({ ok: true })
     row = existing
-  }
-
-  if (!parsed.signatureValid) {
-    await db.providerVerificationWebhookEvent.update({
-      where: { id: row.id },
-      data: { signatureValid: false },
-    })
-    return NextResponse.json({ ok: false }, { status: 401 })
   }
 
   const candidates = await findVerificationCandidates(vendorKey, parsed)

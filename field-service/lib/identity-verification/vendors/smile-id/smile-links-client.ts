@@ -22,6 +22,25 @@ const EVD_VERIFICATION_METHOD = 'doc_verification'
 const CREATE_TIMEOUT_MS = 10_000
 const DISABLE_TIMEOUT_MS = 5_000
 
+// In production, SMILE_ID_BASE_URL must point to one of Smile's known hosts.
+// Prevents silently misrouting all verifications to the sandbox (or to an
+// attacker-controlled host) if the env var is misconfigured during a deploy.
+// Test/dev environments are unrestricted so vitest can hit local mocks.
+const KNOWN_SMILE_HOSTS: ReadonlySet<string> = new Set([
+  'https://api.smileidentity.com',
+  'https://testapi.smileidentity.com',
+])
+
+function validateBaseUrl(url: string): void {
+  if (process.env.NODE_ENV !== 'production') return
+  const normalized = url.toLowerCase().replace(/\/$/, '')
+  if (!KNOWN_SMILE_HOSTS.has(normalized)) {
+    throw new Error(
+      `SMILE_ID_BASE_URL must be one of ${[...KNOWN_SMILE_HOSTS].join(', ')} in production; got ${url}`,
+    )
+  }
+}
+
 export class SmileApiError extends Error {
   constructor(public readonly status: number, public readonly responseBody: string) {
     super(`Smile API error ${status}: ${responseBody.slice(0, 200)}`)
@@ -61,6 +80,7 @@ export type CreateSmileLinkResult = {
 
 export async function createSmileLink(input: CreateSmileLinkInput): Promise<CreateSmileLinkResult> {
   const baseUrl = requireEnv('SMILE_ID_BASE_URL')
+  validateBaseUrl(baseUrl)
 
   const body: SmileLinksCreateRequest = {
     ...signedHeader(),
@@ -124,6 +144,7 @@ export type DisableSmileLinkResult = {
 // the verification cancel flow without blocking.
 export async function disableSmileLink(refId: string): Promise<DisableSmileLinkResult> {
   const baseUrl = requireEnv('SMILE_ID_BASE_URL')
+  validateBaseUrl(baseUrl)
 
   let resp: Response
   try {

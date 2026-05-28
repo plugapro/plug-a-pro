@@ -179,4 +179,58 @@ describe('Smile Links client', () => {
       expect(result.acknowledged).toBe(false)
     })
   })
+
+  describe('base URL validation in production', () => {
+    it('rejects an unknown SMILE_ID_BASE_URL when NODE_ENV=production', async () => {
+      vi.stubEnv('NODE_ENV', 'production')
+      vi.stubEnv('SMILE_ID_BASE_URL', 'https://attacker.example.com')
+      await expect(createSmileLink({
+        verificationId: 'ver-1',
+        providerId: 'prov-1',
+        partnerJobId: 'pap-uuid-1',
+        callbackUrl: 'https://plug.test/api/webhooks/verification/smile_id',
+        expiresAt: new Date('2026-05-26T13:00:00.000Z'),
+      })).rejects.toThrow(/SMILE_ID_BASE_URL must be one of/)
+      await expect(disableSmileLink('link-ref-1'))
+        .rejects.toThrow(/SMILE_ID_BASE_URL must be one of/)
+    })
+
+    it('accepts known Smile hosts in production (trailing slash tolerated)', async () => {
+      vi.stubEnv('NODE_ENV', 'production')
+      vi.stubEnv('SMILE_ID_BASE_URL', 'https://testapi.smileidentity.com/')
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ link_url: 'https://links.smileidentity.com/X', ref_id: 'r' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const result = await createSmileLink({
+        verificationId: 'ver-1',
+        providerId: 'prov-1',
+        partnerJobId: 'pap-uuid-1',
+        callbackUrl: 'https://plug.test/api/webhooks/verification/smile_id',
+        expiresAt: new Date('2026-05-26T13:00:00.000Z'),
+      })
+      expect(result.refId).toBe('r')
+    })
+
+    it('does NOT validate when NODE_ENV is not production', async () => {
+      // Defaults to 'test' under vitest; unknown URL should pass through.
+      vi.stubEnv('SMILE_ID_BASE_URL', 'http://localhost:9999')
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ link_url: 'https://x/y', ref_id: 'r' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const result = await createSmileLink({
+        verificationId: 'ver-1',
+        providerId: 'prov-1',
+        partnerJobId: 'pap-uuid-1',
+        callbackUrl: 'https://plug.test/api/webhooks/verification/smile_id',
+        expiresAt: new Date('2026-05-26T13:00:00.000Z'),
+      })
+      expect(result.refId).toBe('r')
+    })
+  })
 })

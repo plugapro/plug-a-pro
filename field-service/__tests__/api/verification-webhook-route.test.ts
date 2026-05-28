@@ -75,6 +75,29 @@ describe('verification provider webhook route', () => {
     expect(mockApplyVendorVerdict).toHaveBeenCalledWith('ver-1', expect.objectContaining({ decision: 'PASS' }), 'webhook')
   })
 
+  it('returns 401 without writing to the webhook audit table for invalid-signature payloads', async () => {
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: false,
+      vendorEventId: 'evt-forged',
+      vendorReference: 'attacker-supplied-ref',
+      livenessSessionReference: null,
+      eventType: 'verification.completed',
+      payloadHash: 'hash-forged',
+      redactedPayload: { event: 'forged' },
+      result: null,
+    })
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-forged"}'), { params: Promise.resolve({ vendor: 'smile_id' }) })
+    const json = await response.json()
+
+    expect(response.status).toBe(401)
+    expect(json).toMatchObject({ ok: false, code: 'INVALID_SIGNATURE' })
+    expect(mockDb.providerVerificationWebhookEvent.create).not.toHaveBeenCalled()
+    expect(mockDb.providerVerificationWebhookEvent.update).not.toHaveBeenCalled()
+    expect(mockApplyVendorVerdict).not.toHaveBeenCalled()
+  })
+
   it('does not apply a verdict when vendor and liveness references resolve to different verifications', async () => {
     mockAdapter.parseWebhook.mockResolvedValue({
       signatureValid: true,

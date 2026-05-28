@@ -71,9 +71,21 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: Check Smile ID result-code drift (informational, non-blocking)
-        run: pnpm check:smile-id-codes
-        continue-on-error: true
+      - name: Check Smile ID result-code drift
+        # Exit 0 = no drift (pass); exit 1 = unclassified code found (block merge —
+        # update result-codes.ts or acknowledge in smile-id-codes-acknowledged.json);
+        # exit 2 = could not fetch docs page (soft pass, don't block on Smile's docs
+        # site being down).
+        run: |
+          set +e
+          pnpm check:smile-id-codes
+          EXIT=$?
+          set -e
+          if [ "$EXIT" -eq 2 ]; then
+            echo "::warning::Could not fetch Smile docs page (exit 2); drift check skipped this run"
+            exit 0
+          fi
+          exit $EXIT
 
       - name: Verify live public-table RLS
         if: github.event_name == 'push'

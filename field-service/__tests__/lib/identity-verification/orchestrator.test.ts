@@ -212,6 +212,67 @@ describe('provider identity verification orchestrator', () => {
     })
   })
 
+  it('cancels the orphaned vendor job when optimistic stamp loses the race with liveness in flight', async () => {
+    const expiresAt = new Date('2026-05-26T12:30:00.000Z')
+    const client = makeClient({ livenessRequired: true })
+    // Force the stamp updateMany to return count=0 to simulate the loser branch.
+    client.providerIdentityVerification.updateMany = vi.fn(async () => ({ count: 0 })) as unknown as typeof client.providerIdentityVerification.updateMany
+    const cancelSpy = vi.fn(async () => ({ supported: true, vendorAcknowledged: true }))
+    mocks.getAdapter.mockReturnValue({
+      vendorKey: 'mock',
+      submitDocumentCheck: vi.fn(async () => ({
+        vendorReference: 'mock:orphan-job',
+        immediateResult: undefined,
+        expectsWebhook: true,
+      })),
+      createLivenessSession: vi.fn(async () => ({
+        vendorReference: 'mock:orphan-live',
+        sessionUrl: 'https://vendor.test/session/orphan',
+        expiresAt,
+      })),
+      parseWebhook: vi.fn(),
+      cancelVerificationJob: cancelSpy,
+    } as unknown as VerificationVendorAdapter)
+
+    await submitVerificationForAutomation('ver_1', client)
+
+    // Best-effort cancel runs via void/Promise — wait a microtask tick.
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(cancelSpy).toHaveBeenCalledWith({
+      verificationId: 'ver_1',
+      vendorReference: 'mock:orphan-job',
+      livenessSessionReference: 'mock:orphan-live',
+      reason: 'ORCHESTRATOR_CONTENTION_ORPHAN',
+    })
+    // The contention event must still have been recorded.
+    expect(client.state.events.some((event) => {
+      const e = event as { reasonCode?: string }
+      return e.reasonCode === 'ORCHESTRATOR_CONTENTION'
+    })).toBe(true)
+  })
+
+  it('does not call cancel on contention loss when no liveness session was minted', async () => {
+    const client = makeClient({ livenessRequired: false })
+    client.providerIdentityVerification.updateMany = vi.fn(async () => ({ count: 0 })) as unknown as typeof client.providerIdentityVerification.updateMany
+    const cancelSpy = vi.fn(async () => ({ supported: true, vendorAcknowledged: true }))
+    mocks.getAdapter.mockReturnValue({
+      vendorKey: 'mock',
+      submitDocumentCheck: vi.fn(async () => ({
+        vendorReference: 'mock:orphan-job-2',
+        immediateResult: undefined,
+        expectsWebhook: true,
+      })),
+      parseWebhook: vi.fn(),
+      cancelVerificationJob: cancelSpy,
+    } as unknown as VerificationVendorAdapter)
+
+    await submitVerificationForAutomation('ver_1', client)
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(cancelSpy).not.toHaveBeenCalled()
+  })
+
   it('fails closed when liveness automation is degraded', async () => {
     const client = makeClient({ livenessRequired: true })
     mocks.isEnabled.mockImplementation(async (key: string) => (

@@ -6,16 +6,42 @@
  *
  * Exit codes:
  *   0 = no drift detected
- *   1 = drift detected (new EVD code found that's not in our sets)
- *   2 = could not fetch the page (network issue; informational)
+ *   1 = drift detected (new EVD code found that's not in our sets and not
+ *       in scripts/smile-id-codes-acknowledged.json)
+ *   2 = could not fetch the page (network issue; informational, soft pass)
  */
 
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   SMILE_ID_EVD_PASS_RESULT_CODES,
   SMILE_ID_EVD_FAIL_RESULT_CODES,
 } from '../lib/identity-verification/vendors/smile-id/result-codes'
 
 const RESULT_CODES_URL = 'https://docs.usesmileid.com/further-reading/result-codes'
+
+function resolveScriptDir(): string {
+  // tsx runs this with `module: esnext` so import.meta.url is available;
+  // fall back to process.cwd()/scripts for CommonJS-emulated edge cases.
+  try {
+    return path.dirname(fileURLToPath(import.meta.url))
+  } catch {
+    return path.join(process.cwd(), 'scripts')
+  }
+}
+
+function loadAcknowledgedCodes(): Set<string> {
+  const ackPath = path.join(resolveScriptDir(), 'smile-id-codes-acknowledged.json')
+  try {
+    const raw = readFileSync(ackPath, 'utf8')
+    const data = JSON.parse(raw) as { acknowledged_unclassified_codes?: string[] }
+    return new Set(data.acknowledged_unclassified_codes ?? [])
+  } catch (e) {
+    console.warn(`Could not read ${ackPath}: ${(e as Error).message}`)
+    return new Set()
+  }
+}
 
 async function main() {
   let html: string
@@ -38,17 +64,31 @@ async function main() {
   }
   if (/\b1014\b/.test(html)) onPage.add('1014')
 
-  const known = new Set([...SMILE_ID_EVD_PASS_RESULT_CODES, ...SMILE_ID_EVD_FAIL_RESULT_CODES])
+  const acknowledged = loadAcknowledgedCodes()
+  const known = new Set<string>([
+    ...SMILE_ID_EVD_PASS_RESULT_CODES,
+    ...SMILE_ID_EVD_FAIL_RESULT_CODES,
+    ...acknowledged,
+  ])
   const drift = [...onPage].filter(code => !known.has(code))
 
+  const classifiedCount = SMILE_ID_EVD_PASS_RESULT_CODES.size + SMILE_ID_EVD_FAIL_RESULT_CODES.size
+
   if (drift.length === 0) {
-    console.log(`No EVD result-code drift. ${onPage.size} codes on page, all accounted for.`)
+    console.log(
+      `No new EVD result-code drift. ${onPage.size} codes on page, ${acknowledged.size} acknowledged-pending, ${classifiedCount} classified.`,
+    )
     process.exit(0)
   }
 
-  console.error(`EVD result-code drift detected. Page has codes we don't map:`)
+  console.error(`EVD result-code drift detected. Page has codes not classified and not acknowledged:`)
   for (const code of drift) console.error(`  - ${code}`)
-  console.error('Update lib/identity-verification/vendors/smile-id/result-codes.ts')
+  console.error(
+    'Either classify into lib/identity-verification/vendors/smile-id/result-codes.ts',
+  )
+  console.error(
+    'or add to scripts/smile-id-codes-acknowledged.json (with a follow-up to classify).',
+  )
   process.exit(1)
 }
 
