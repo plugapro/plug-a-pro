@@ -44,7 +44,14 @@ export function verifyDiditWebhookSignature(rawBody: string, headers: Record<str
   if (!v2 && !v1) return { valid: false, reason: 'no_signature_headers' }
 
   if (v2) {
-    const canonical = canonicalJson(rawBody)
+    const canonical = canonicalJsonOrNull(rawBody)
+    // V2 implies canonical JSON. If the body is malformed JSON we MUST NOT
+    // silently fall through to a raw-body hash (which is V1's semantics) —
+    // that would let a non-JSON payload pass as V2 via accidentally matching
+    // the V1 secret. Reject and let the caller mark signatureValid:false.
+    if (canonical === null) {
+      return { valid: false, reason: 'signature_mismatch' }
+    }
     if (matchesAnySecret(canonical, v2, config.webhookSecrets)) {
       return { valid: true, algorithm: 'V2_CANONICAL' }
     }
@@ -102,12 +109,21 @@ function headerCaseInsensitive(headers: Record<string, string>, key: string): st
 }
 
 // Canonical JSON (sorted keys recursively) — must match Didit's V2 hash input.
+// Returns the raw body unchanged on parse failure so the same call site can
+// also be used by tests that want a stable hash even of malformed input.
+// Webhook signature verification uses `canonicalJsonOrNull` (below) which
+// distinguishes parse failure as a hard signature failure for V2.
 export function canonicalJson(rawBody: string): string {
+  const canonical = canonicalJsonOrNull(rawBody)
+  return canonical ?? rawBody
+}
+
+export function canonicalJsonOrNull(rawBody: string): string | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(rawBody)
   } catch {
-    return rawBody
+    return null
   }
   return JSON.stringify(sortKeys(parsed))
 }

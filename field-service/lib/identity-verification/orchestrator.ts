@@ -311,11 +311,19 @@ export async function resolveIdentityVerificationConsentVendorForSubject(
   }
 }
 
+// Accept both the singleton PrismaClient and any transaction client (the
+// `$transaction` callback parameter, or crudAction's TxClient).  Prisma's
+// `TransactionClient` is `Omit<PrismaClient, '$connect'|'$disconnect'|'$on'
+// |'$transaction'|'$use'|'$extends'>` — structurally a superset for everything
+// applyVendorVerdict uses (findUniqueOrThrow + create + update on the relevant
+// models), so a single union covers both callers cleanly.
+export type ApplyVendorVerdictClient = Prisma.TransactionClient | typeof db
+
 export async function applyVendorVerdict(
   verificationId: string,
   result: NormalizedVerificationResult,
   source: 'sync' | 'webhook',
-  client = db,
+  client: ApplyVendorVerdictClient = db,
 ): Promise<SubmitVerificationForAutomationResult> {
   const verification = await client.providerIdentityVerification.findUniqueOrThrow({
     where: { id: verificationId },
@@ -481,7 +489,7 @@ async function transitionToManualReview(
   verificationId: string,
   reasonCode: string,
   data: Prisma.ProviderIdentityVerificationUpdateInput,
-  client = db,
+  client: ApplyVendorVerdictClient = db,
 ): Promise<SubmitVerificationForAutomationResult> {
   await transitionIdentityVerification({
     verificationId,
@@ -555,7 +563,7 @@ function manualConfig() {
   }
 }
 
-async function resolveVendorConfigForVerdict(sourceCheckProvider: string | null, client = db) {
+async function resolveVendorConfigForVerdict(sourceCheckProvider: string | null, client: ApplyVendorVerdictClient = db) {
   const vendorKey = toVendorKey(sourceCheckProvider) ?? 'manual'
   if (vendorKey === 'manual') return manualConfig()
   const row = await client.verificationVendorConfig.findUnique({ where: { vendorKey } })

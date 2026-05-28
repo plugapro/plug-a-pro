@@ -8,7 +8,7 @@
 
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAdminApi } from '@/lib/auth'
+import { requireRoleApi } from '@/lib/auth'
 import { issueDiditOnboardingLinkAction } from '@/app/(admin)/admin/verifications/actions'
 
 const PostBodySchema = z.object({
@@ -17,8 +17,11 @@ const PostBodySchema = z.object({
 })
 
 export async function POST(request: Request) {
-  const unauthorized = await requireAdminApi()
-  if (unauthorized) return unauthorized
+  // crudAction inside the action enforces TRUST+ as well; pre-checking here
+  // gives the API its proper 401/403 contract instead of letting the inner
+  // requireAdmin chain attempt a redirect.
+  const guard = await requireRoleApi(['TRUST', 'ADMIN', 'OWNER'])
+  if (guard instanceof Response) return guard
 
   let body: unknown
   try {
@@ -33,7 +36,7 @@ export async function POST(request: Request) {
 
   const result = await issueDiditOnboardingLinkAction(parsed.data)
   if (!result.ok) {
-    return NextResponse.json({ error: 'issue_failed' }, { status: 500 })
+    return NextResponse.json({ error: result.error ?? 'issue_failed' }, { status: 500 })
   }
   return NextResponse.json({
     verificationId: result.verificationId,

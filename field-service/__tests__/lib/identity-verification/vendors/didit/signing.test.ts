@@ -131,6 +131,20 @@ describe('verifyDiditWebhookSignature', () => {
     expect(check.valid).toBe(false)
     expect(check.reason).toBe('no_secret')
   })
+
+  it('refuses to evaluate a V2 signature when the body is not valid JSON', () => {
+    // Even if an attacker computes the HMAC over the raw bytes and stamps
+    // it into X-Signature-V2, V2 implies canonical JSON; malformed JSON
+    // must fail closed rather than silently fall through to V1 semantics.
+    const malformed = 'not-valid-json-body'
+    const headers = {
+      'X-Timestamp': String(nowSeconds()),
+      'X-Signature-V2': signV1(malformed, PRIMARY_SECRET),
+    }
+    const check = verifyDiditWebhookSignature(malformed, headers)
+    expect(check.valid).toBe(false)
+    expect(check.reason).toBe('signature_mismatch')
+  })
 })
 
 describe('canonicalJson', () => {

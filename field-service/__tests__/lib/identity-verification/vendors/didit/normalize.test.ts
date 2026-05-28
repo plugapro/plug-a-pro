@@ -136,4 +136,21 @@ describe('normalizeDiditDecision', () => {
     expect(result).toBeNull()
     expect(unknownStatus).toBeNull()
   })
+
+  it('defaults assuranceLevelHint to MEDIUM when authoritativeWorkflowId is not configured', () => {
+    // Safe default: a missing discriminator must NOT silently upgrade an
+    // Approved verdict to HIGH (which would unlock credit-gate without the
+    // authoritative DHA workflow having actually run).
+    const payload = envelope('Approved', {
+      liveness_checks: [{ status: 'Passed' }],
+      face_matches: [{ status: 'Passed' }],
+      id_verifications: [{ status: 'Passed' }],
+    })
+    const { result } = normalizeDiditDecision(payload, {
+      storedVendorWorkflowId: BASIC_WORKFLOW_ID,
+      authoritativeWorkflowId: null,
+    })
+    expect(result?.decision).toBe('PASS')
+    expect(result?.assuranceLevelHint).toBe('MEDIUM')
+  })
 })

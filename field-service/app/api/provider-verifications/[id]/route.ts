@@ -6,12 +6,12 @@
 // isn't the admin Vendors page.
 
 import { NextResponse } from 'next/server'
-import { requireAdminApi } from '@/lib/auth'
+import { requireRoleApi } from '@/lib/auth'
 import { db } from '@/lib/db'
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const unauthorized = await requireAdminApi()
-  if (unauthorized) return unauthorized
+  const guard = await requireRoleApi(['TRUST', 'ADMIN', 'OWNER'])
+  if (guard instanceof Response) return guard
 
   const { id } = await params
   const verification = await db.providerIdentityVerification.findUnique({

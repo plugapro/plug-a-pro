@@ -223,6 +223,12 @@ function featureArray(
 }
 
 function deriveAssuranceLevelHint(ctx: DiditNormalizeContext): 'HIGH' | 'MEDIUM' {
-  if (!ctx.authoritativeWorkflowId) return 'HIGH'
+  // Safe default: when the authoritative workflow id isn't configured
+  // (dev / staging running basic-only, or env misconfigured in prod),
+  // never claim HIGH assurance. A missing discriminator means the
+  // assurance level cannot be authenticated as authoritative — MEDIUM
+  // is the conservative posture and keeps credit-gate / selected-provider
+  // acceptance properly blocked.
+  if (!ctx.authoritativeWorkflowId) return 'MEDIUM'
   return ctx.storedVendorWorkflowId === ctx.authoritativeWorkflowId ? 'HIGH' : 'MEDIUM'
 }

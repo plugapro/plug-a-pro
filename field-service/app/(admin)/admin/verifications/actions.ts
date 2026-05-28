@@ -312,38 +312,48 @@ type RefreshDiditInput = z.infer<typeof RefreshDiditSchema>
  * This action only mints the internal verify link and stamps Didit-specific
  * fields on the verification row — it does NOT create the Didit session.
  * Consent must be recorded by the provider in the PWA before a session is
- * created (see acceptConsentAndStartDiditSessionAction in
+ * created (see startHostedVerificationFromConsent in
  * app/provider/verify/[token]/actions.ts).
+ *
+ * Auth: crudAction handles session + role checks internally (TRUST role,
+ * admin.crud.verifications flag). Do not add a redundant requireAdmin()
+ * call here — the API route at /api/provider-verifications already uses
+ * requireAdminApi() for the HTTP boundary, and the form-action path lands
+ * directly in crudAction.
  */
 export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput) {
-  const admin = await requireAdmin()
+  // Two-phase pattern (mirrors retryIdentityVerificationWithVendorAction):
+  //   1. Pre-flight: validate Didit config + issue the link OUTSIDE crudAction
+  //      (issueProviderIdentityVerificationLink does not accept a tx and
+  //      writes its own ProviderVerificationEvent for audit).
+  //   2. crudAction wraps the Didit field stamping + AuditLog atomically.
   const profile: DiditWorkflowProfile = input.workflowProfile ?? 'KYC_AUTHORITATIVE'
+  const config = getDiditConfig()
+  if (!config.enabled) {
+    return { ok: false as const, error: `Didit is not configured: ${config.reason}` }
+  }
 
-  const result = await crudAction<IssueDiditLinkInput, {
-    id: string
-    verificationUrl: string | null
-    expiresAt: string
-  }>({
+  const parsed = IssueDiditLinkSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false as const, error: 'invalid_input' }
+  }
+
+  const workflowId = getDiditWorkflowId(profile)
+  const cost = estimateDiditCost({ workflowProfile: profile })
+  const link = await issueProviderIdentityVerificationLink({
+    providerId: parsed.data.providerId,
+    channel: 'ADMIN',
+  })
+
+  const result = await crudAction<IssueDiditLinkInput, { id: string }>({
     entity: 'ProviderIdentityVerification',
-    entityId: 'pending',  // overwritten by inner run() return value
+    entityId: link.verificationId,
     action: 'provider_identity_verification.issue_didit_link',
     requiredRole: [...REVIEW_ROLES],
     requiredFlag: FLAG,
     schema: IssueDiditLinkSchema,
     input,
-    run: async (data, tx) => {
-      const config = getDiditConfig()
-      if (!config.enabled) {
-        throw new Error(`Didit is not configured in this environment: ${config.reason}`)
-      }
-      const workflowId = getDiditWorkflowId(profile)
-      const cost = estimateDiditCost({ workflowProfile: profile })
-
-      const link = await issueProviderIdentityVerificationLink({
-        providerId: data.providerId,
-        channel: 'ADMIN',
-      })
-
+    run: async (_data, tx) => {
       await tx.providerIdentityVerification.update({
         where: { id: link.verificationId },
         data: {
@@ -353,20 +363,20 @@ export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput)
           costCurrency: 'USD',
         },
       })
-
-      return {
-        id: link.verificationId,
-        verificationUrl: link.verificationUrl,
-        expiresAt: link.expiresAt.toISOString(),
-      }
+      return { id: link.verificationId }
     },
   })
 
   if (result.ok) {
-    revalidateVerificationPaths(result.data.id)
+    revalidateVerificationPaths(link.verificationId)
   }
   return result.ok
-    ? { ok: true as const, verificationId: result.data.id, verificationUrl: result.data.verificationUrl, expiresAt: result.data.expiresAt }
+    ? {
+        ok: true as const,
+        verificationId: link.verificationId,
+        verificationUrl: link.verificationUrl,
+        expiresAt: link.expiresAt.toISOString(),
+      }
     : { ok: false as const }
 }
 
@@ -374,9 +384,11 @@ export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput)
  * Admin or system poll: fetches the latest Didit decision for a verification
  * that has a vendorReference (Didit session_id) and applies the verdict via
  * the same orchestrator path the webhook uses. Idempotent on terminal status.
+ *
+ * Auth: crudAction handles session + role checks internally. See
+ * issueDiditOnboardingLinkAction for the rationale.
  */
 export async function refreshDiditSessionAction(input: RefreshDiditInput) {
-  const admin = await requireAdmin()
   const result = await crudAction<RefreshDiditInput, { id: string; status: string; decision: string | null }>({
     entity: 'ProviderIdentityVerification',
     entityId: input.verificationId,
@@ -418,9 +430,10 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
       })
 
       if (refreshed.normalized.result) {
-        // applyVendorVerdict uses its own transaction internally; thread the
-        // current tx through for atomicity by re-issuing the read after.
-        await applyVendorVerdict(verification.id, refreshed.normalized.result, 'webhook')
+        // Thread the crudAction transaction client so the state transition,
+        // Provider.kycStatus update, and the audit-log writes are committed
+        // atomically with the refresh action's audit row.
+        await applyVendorVerdict(verification.id, refreshed.normalized.result, 'webhook', tx)
       }
       const post = await tx.providerIdentityVerification.findUniqueOrThrow({
         where: { id: verification.id },
@@ -433,9 +446,6 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
   if (result.ok) {
     revalidateVerificationPaths(input.verificationId)
   }
-  // Touch admin actor to silence lint; the value is also captured in the
-  // audit row written by crudAction.
-  void admin
   return result.ok
     ? { ok: true as const, status: result.data.status, decision: result.data.decision }
     : { ok: false as const }
