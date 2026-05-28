@@ -300,6 +300,16 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.identity.vendor.didit': {
+    description: 'Enable Didit as a hosted-flow identity verification vendor (KYC + liveness + AML + optional SA DHA). Default workflow is KYC_AUTHORITATIVE for provider onboarding.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'admin.commercial.economics.didit_scenario': {
+    description: 'Show the Didit onboarding-vendor scenario on the Provider Economics dashboard (companion to provider.identity.vendor.didit).',
+    owner: 'ops',
+    defaultValue: false,
+  },
   'provider.identity.vendor.thisisme': {
     description: 'Enable ThisIsMe NIIS as a live identity verification vendor for refugee/asylum-seeker paths (P3).',
     owner: 'eng',

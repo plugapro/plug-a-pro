@@ -328,6 +328,82 @@ export async function submitIdentityVerificationForReview(token: string): Promis
   return { ok: true as const }
 }
 
+/**
+ * Hosted-vendor (Didit) handoff: provider has accepted consent, now we
+ * fast-skip the PWA identifier/document/selfie steps (which don't apply when
+ * the vendor collects everything inside its own hosted UI) and let the
+ * orchestrator mint the Didit session.
+ *
+ * The skip is implemented by walking through the existing transitions
+ * (CONSENTED -> AWAITING_IDENTIFIER -> AWAITING_DOCUMENT -> AWAITING_SELFIE
+ * -> SUBMITTED) with a `hostedSkip` metadata marker so the audit log carries
+ * an honest record of what happened. No state-machine change needed.
+ */
+export async function startHostedVerificationFromConsent(token: string) {
+  const verification = await resolveProviderVerificationToken(token)
+
+  if (statusIn(verification.status, REVIEW_ALREADY_SUBMITTED)) {
+    return { ok: true as const, alreadyAdvanced: true }
+  }
+
+  const consentVendor = await resolveIdentityVerificationConsentVendor(verification.id)
+  if (consentVendor.vendorKey !== 'didit') {
+    return { ok: false as const, code: 'NOT_HOSTED_VENDOR' as const }
+  }
+  if (verification.consentVendorKey !== consentVendor.vendorKey) {
+    // Caller forgot to record consent — surface explicitly rather than
+    // silently fabricating one.
+    return { ok: false as const, code: 'CONSENT_NOT_RECORDED' as const }
+  }
+
+  const meta = { hostedSkip: true, vendor: consentVendor.vendorKey }
+  if (verification.status === 'CONSENTED') {
+    await transitionIdentityVerification({
+      verificationId: verification.id,
+      toStatus: 'AWAITING_IDENTIFIER',
+      actorId: verification.providerId ?? undefined,
+      actorRole: 'provider',
+      metadata: meta,
+    })
+  }
+  if (['CONSENTED', 'AWAITING_IDENTIFIER'].includes(verification.status as string)) {
+    await transitionIdentityVerification({
+      verificationId: verification.id,
+      toStatus: 'AWAITING_DOCUMENT',
+      actorId: verification.providerId ?? undefined,
+      actorRole: 'provider',
+      metadata: meta,
+    })
+  }
+  if (['CONSENTED', 'AWAITING_IDENTIFIER', 'AWAITING_DOCUMENT'].includes(verification.status as string)) {
+    await transitionIdentityVerification({
+      verificationId: verification.id,
+      toStatus: 'AWAITING_SELFIE',
+      actorId: verification.providerId ?? undefined,
+      actorRole: 'provider',
+      metadata: meta,
+    })
+  }
+  if (
+    ['CONSENTED', 'AWAITING_IDENTIFIER', 'AWAITING_DOCUMENT', 'AWAITING_SELFIE'].includes(
+      verification.status as string,
+    )
+  ) {
+    await transitionIdentityVerification({
+      verificationId: verification.id,
+      toStatus: 'SUBMITTED',
+      actorId: verification.providerId ?? undefined,
+      actorRole: 'provider',
+      metadata: meta,
+    })
+  }
+
+  await submitVerificationForAutomation(verification.id, db, { existingToken: token })
+
+  revalidatePath(`/provider/verify/${token}`)
+  return { ok: true as const }
+}
+
 // Statuses where review has already been submitted or a decision was reached.
 const REVIEW_ALREADY_SUBMITTED: readonly VerificationStatus[] = [
   'NEEDS_MANUAL_REVIEW',

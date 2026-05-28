@@ -15,7 +15,7 @@ import {
 export const metadata = buildMetadata({ title: 'Verification Vendors', noIndex: true })
 
 const FLAG = 'admin.crud.verifications'
-const VENDOR_KEYS = ['manual', 'mock', 'smile_id', 'thisisme', 'datanamix', 'omnicheck'] as const
+const VENDOR_KEYS = ['manual', 'mock', 'smile_id', 'didit', 'thisisme', 'datanamix', 'omnicheck'] as const
 
 type VendorKey = typeof VENDOR_KEYS[number]
 
@@ -129,6 +129,7 @@ function isScaffoldOnly(vendorKey: VendorKey) {
 
 function vendorLabel(vendorKey: VendorKey) {
   if (vendorKey === 'smile_id') return 'Smile ID'
+  if (vendorKey === 'didit') return 'Didit'
   if (vendorKey === 'thisisme') return 'ThisIsMe'
   if (vendorKey === 'datanamix') return 'Datanamix'
   if (vendorKey === 'omnicheck') return 'OmniCheck'
