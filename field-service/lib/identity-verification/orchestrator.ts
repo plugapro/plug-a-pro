@@ -374,13 +374,14 @@ export async function applyVendorVerdict(
   }
 
   if (result.decision === 'PASS' && (result.confidence ?? 0) >= config.confidenceThreshold) {
+    const assuranceLevel: VerificationAssuranceLevel = result.assuranceLevelHint ?? 'HIGH'
     await transitionIdentityVerification({
       verificationId,
       toStatus: 'PASSED',
       decision: 'PASS',
       reasonCode: result.reasonCode ?? undefined,
-      metadata: { source, vendorReference: result.vendorReference },
-      data: { ...scoreData, assuranceLevel: 'HIGH' satisfies VerificationAssuranceLevel },
+      metadata: { source, vendorReference: result.vendorReference, assuranceLevel },
+      data: { ...scoreData, assuranceLevel },
     }, client)
     return {
       verificationId,

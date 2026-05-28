@@ -15,8 +15,11 @@ describe('qualified shortlist schema foundation', () => {
     expect(schema).toContain('model ProviderLeadResponse')
     expect(schema).toContain('model ProviderShortlist')
     expect(schema).toContain('model ProviderShortlistItem')
-    expect(schema).toContain('selectedLeadInviteId String? @unique')
-    expect(schema).toContain('requestRef  String?')
+    // Whitespace-tolerant: Prisma's auto-formatter realigns column widths
+    // whenever the longest column name in a model changes (e.g. when a
+    // sibling field is added). Assert shape, not spacing.
+    expect(schema).toMatch(/\bselectedLeadInviteId\s+String\?\s+@unique/)
+    expect(schema).toMatch(/\brequestRef\s+String\?\s+@unique/)
 
     expect(migration).toContain('CREATE TABLE "provider_lead_responses"')
     expect(migration).toContain('CREATE TABLE "provider_shortlists"')
