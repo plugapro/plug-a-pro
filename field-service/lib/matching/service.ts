@@ -928,7 +928,7 @@ function getMissingRequiredCertifications(
       .map((cert) => normalizeTag(cert.certificationCode)),
   )
 
-  // WS-B.1 ProviderCertification records — verified (verifiedAt set) certs by name
+  // WS-B.1 ProviderCertification records - verified (verifiedAt set) certs by name
   const adminVerifiedCerts = new Set(
     (provider.adminCertifications ?? [])
       .filter((cert) => cert.verifiedAt != null)
@@ -949,7 +949,7 @@ function getMissingRequiredEquipmentTags(
   // Legacy equipmentTags string array (original model)
   const legacyEquipment = new Set(provider.equipmentTags.map(normalizeTag))
 
-  // WS-B.1 ProviderEquipment records — active equipment by label and category
+  // WS-B.1 ProviderEquipment records - active equipment by label and category
   const adminEquipment = new Set([
     ...(provider.equipment ?? [])
       .filter((eq) => eq.active)
@@ -982,7 +982,7 @@ function providerCoversAddress(
 ): { covers: boolean; tier: CoverageTier } {
   const activeAreas = provider.technicianServiceAreas.filter((a) => a.active)
 
-  // Tier 1 — RADIUS: haversine check (unchanged from existing logic)
+  // Tier 1 - RADIUS: haversine check (unchanged from existing logic)
   if (address.lat != null && address.lng != null) {
     const radiusAreas = activeAreas.filter(
       (area) =>
@@ -999,15 +999,15 @@ function providerCoversAddress(
     if (radiusAreas.length > 0) return { covers: true, tier: 'RADIUS' }
   }
 
-  // Tier 2 — structured path (only when address has a locationNodeId)
+  // Tier 2 - structured path (only when address has a locationNodeId)
   if (address.locationNodeId != null) {
-    // Tier 2a — SUBURB_EXACT: provider has a row with matching locationNodeId
+    // Tier 2a - SUBURB_EXACT: provider has a row with matching locationNodeId
     const exactMatch = activeAreas.some(
       (area) => area.locationNodeId === address.locationNodeId,
     )
     if (exactMatch) return { covers: true, tier: 'SUBURB_EXACT' }
 
-    // Tier 2b — REGION_FALLBACK: provider covers the same region
+    // Tier 2b - REGION_FALLBACK: provider covers the same region
     if (address.regionKey != null) {
       const regionMatch = activeAreas.some(
         (area) => area.regionKey === address.regionKey,
@@ -1015,11 +1015,11 @@ function providerCoversAddress(
       if (regionMatch) return { covers: true, tier: 'REGION_FALLBACK' }
     }
 
-    // Structured address but no match found — do NOT fall through to string matching
+    // Structured address but no match found - do NOT fall through to string matching
     return { covers: false, tier: 'NO_MATCH' }
   }
 
-  // Tier 3 — LEGACY_STRING: fallback for providers/addresses without structured areas
+  // Tier 3 - LEGACY_STRING: fallback for providers/addresses without structured areas
   // Only active during migration window (controlled by config flag)
   if (!MATCHING_CONFIG.allowLegacyStringFallback) {
     return { covers: false, tier: 'NO_MATCH' }
@@ -1098,10 +1098,10 @@ function buildScoreBreakdown(params: {
   }
 
   if (params.coverageTier === 'REGION_FALLBACK') {
-    reasons.push('Matched on region — provider may not cover this exact suburb')
+    reasons.push('Matched on region - provider may not cover this exact suburb')
   }
   if (params.coverageTier === 'LEGACY_STRING') {
-    reasons.push('Service area matched by name (legacy — structured areas not yet configured)')
+    reasons.push('Service area matched by name (legacy - structured areas not yet configured)')
   }
 
   reasons.push(
@@ -1968,7 +1968,7 @@ async function createOfferForAttempt(params: {
     console.error('[matching] Failed to notify provider of assignment offer:', error)
   })
 
-  // Template fallback — only fires when the interactive CTA message fails (e.g. provider outside 24h session window).
+  // Template fallback - only fires when the interactive CTA message fails (e.g. provider outside 24h session window).
   // Sending both would duplicate the notification; the interactive message is always preferred.
   if (!interactiveDelivered) {
     const [{ sendJobOffer }, { getProviderLeadAccessUrl }] = await Promise.all([
@@ -1980,7 +1980,7 @@ async function createOfferForAttempt(params: {
     })
     const signedUrl = await getProviderLeadAccessUrl({ leadId: lead.id, providerId: params.providerId })
     if (!signedUrl) {
-      console.error('[matching] Skipping job_offer template — no signed lead URL available', { leadId: lead.id })
+      console.error('[matching] Skipping job_offer template - no signed lead URL available', { leadId: lead.id })
     } else {
       sendJobOffer({
         providerPhone: provider.phone,
@@ -1995,7 +1995,7 @@ async function createOfferForAttempt(params: {
     }
   }
 
-  // Quick-response action buttons — same credit copy and Accept Lead / Decline
+  // Quick-response action buttons - same credit copy and Accept Lead / Decline
   // buttons as the dispatch.ts path so providers always see a consistent UI.
   if (interactiveDelivered) {
     const { sendButtons } = await import('../whatsapp-interactive')
@@ -2152,7 +2152,7 @@ async function offerNextRankedCandidate(params: {
       where: { id: params.dispatchDecisionId },
       data: { status: 'NO_MATCH', nextRetryAt: null },
     })
-    // Quick Match queue exhausted — terminate the request instead of reopening
+    // Quick Match queue exhausted - terminate the request instead of reopening
     // it for a fresh ranking loop. Use expireOpenJobRequest for guarded expiry.
     const { transitioned } = await expireOpenJobRequest(
       params.jobRequestId,
@@ -2638,7 +2638,7 @@ export async function acceptAssignmentOffer(params: {
     transactionResult.paymentAmount > 0
   ) {
     // Fire-and-forget: payment init runs after the transaction commits.
-    // A failure here must not surface as a WhatsApp/PWA error — the accept
+    // A failure here must not surface as a WhatsApp/PWA error - the accept
     // already succeeded and the credit was charged. Ops can reconcile via logs.
     initializeBookingPayment({
       bookingId: transactionResult.bookingId,
@@ -2723,7 +2723,7 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
   const recentCutoff = new Date(
     now.getTime() - MATCHING_CONFIG.quickMatchProgressUpdateMinutes * 60_000,
   )
-  // OPEN is the live status for Quick Match AUTO_ASSIGN requests — the status
+  // OPEN is the live status for Quick Match AUTO_ASSIGN requests - the status
   // never transitions to MATCHING in this flow. Also include MATCHING in case
   // a legacy transition fired. Remove the active-hold filter so updates fire
   // in the gap between holds (rotating to next provider) as well as when held.
@@ -2831,7 +2831,7 @@ export async function reconcileStaleAssignmentState(): Promise<{ corrected: numb
           expiresAt: { gt: new Date() },
         },
       })
-      .catch(() => row.activeHolds) // If count fails, keep existing value — don't corrupt
+      .catch(() => row.activeHolds) // If count fails, keep existing value - don't corrupt
 
     if (actualCount !== row.activeHolds) {
       await (db as any).providerCapacity
@@ -2911,7 +2911,7 @@ export async function rejectAssignmentOffer(params: {
   }
 
   // Decrement the provider's capacity counter now that the hold is released.
-  // Mirrors expireAssignmentOffer — must run outside the transaction so a
+  // Mirrors expireAssignmentOffer - must run outside the transaction so a
   // failure here does not roll back the decline.
   await releaseProviderCapacity(lead.assignmentHold.providerId).catch((err) =>
     console.error('[rejectAssignmentOffer] releaseProviderCapacity failed', {
@@ -2934,7 +2934,7 @@ export async function rejectAssignmentOffer(params: {
     })
     nextOfferedProviderId = next.nextOfferedProviderId
   } else {
-    // No dispatch decision on lead or hold — reset directly so cron can retry.
+    // No dispatch decision on lead or hold - reset directly so cron can retry.
     await db.jobRequest.update({
       where: { id: lead.jobRequestId },
       data: { status: 'OPEN' },
@@ -3046,7 +3046,7 @@ export async function expireAssignmentOffer(params: {
     })
   })
 
-  // Decrement the provider's capacity counter — this must happen outside the
+  // Decrement the provider's capacity counter - this must happen outside the
   // transaction so it runs even if offerNextRankedCandidate fails below.
   await releaseProviderCapacity(hold.providerId).catch((err) =>
     console.error('[expireAssignmentOffer] releaseProviderCapacity failed', { providerId: hold.providerId, err })
@@ -3085,7 +3085,7 @@ export async function expireAssignmentOffer(params: {
     })
   }
 
-  // When all candidates exhausted the job is now EXPIRED — notify the customer and last provider
+  // When all candidates exhausted the job is now EXPIRED - notify the customer and last provider
   if (!next.nextOfferedProviderId) {
     await notifyExpiredJobParties({
       jobRequestId: hold.jobRequestId,

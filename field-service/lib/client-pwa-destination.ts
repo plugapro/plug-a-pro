@@ -101,7 +101,7 @@ export type ClientPwaDestination = {
   reason: string
 }
 
-// Resolve token, request id, or job id entry points into the one current PWA destination.
+// Resolve token, request id or job id entry points into the one current PWA destination.
 export async function resolveClientPwaDestination(params: {
   token?: string | null
   requestId?: string | null

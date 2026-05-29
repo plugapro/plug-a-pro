@@ -184,7 +184,7 @@ export function buildPayatTopUpInitiatedMessage(params: {
   return compactLines([
     'Tap the button below to pay for your Plug A Pro wallet top-up.',
     `${params.amountFormatted} = ${params.creditsToIssue} credits.`,
-    'You can pay with Pay@ retail cash, QR, or the hosted payment page.',
+    'You can pay with Pay@ retail cash, QR or the hosted payment page.',
     'Credits will appear in your wallet once Pay@ confirms payment.',
     `${PROVIDER_CREDITS_PRICE_LINE} 1 credit is used only when a customer selects you and you accept that selected job.`,
   ])
@@ -205,7 +205,7 @@ export function buildLeadUnlockedProviderMessage(params: LeadUnlockNotificationC
 export function buildCustomerIntroMessage(params: {
   providerName: string
 }) {
-  return `Good news — we matched you with ${params.providerName}. They may contact you shortly.`
+  return `Good news - we matched you with ${params.providerName}. They may contact you shortly.`
 }
 
 function templateBodyComponents(parameters: string[]): WhatsAppComponent[] {
@@ -234,11 +234,11 @@ function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppCo
     // H-5: Return null so the caller omits the button entirely rather than
     // passing the raw unparseable string as a WhatsApp URL suffix (which would
     // be appended to the template base URL and produce a broken link).
-    console.error('[provider-wallet-notifications] invalid Pay@ payment link URL — omitting button component')
+    console.error('[provider-wallet-notifications] invalid Pay@ payment link URL - omitting button component')
     return null
   }
   if (url.hostname !== 'go.payat.co.za') {
-    console.error('[provider-wallet-notifications] Pay@ payment link hostname mismatch — template button may render incorrectly', { hostname: url.hostname })
+    console.error('[provider-wallet-notifications] Pay@ payment link hostname mismatch - template button may render incorrectly', { hostname: url.hostname })
   }
   const suffix = `${url.pathname.replace(/^\//, '')}${url.search}${url.hash}`
   return templateUrlButtonComponent(index, suffix)
@@ -474,7 +474,7 @@ export async function notifyProviderPaymentIntentCreated(paymentIntentId: string
 /**
  * Send a WhatsApp notification when a Payfast gateway top-up is initiated.
  * Only fires for Payfast payment methods (PAYFAST_CARD / PAYFAST_EFT / PAYFAST_SCODE).
- * Failure is non-blocking — the checkout flow must not depend on this succeeding.
+ * Failure is non-blocking - the checkout flow must not depend on this succeeding.
  *
  * NOTE: The `wallet_payfast_topup_initiated` WhatsApp template requires approval
  * before messages are delivered in production.

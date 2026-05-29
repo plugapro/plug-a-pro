@@ -677,7 +677,7 @@ export default async function ProviderLeadAccessPage({
     const reason = isInactiveProvider
       ? 'Your provider account cannot receive leads right now. Please contact support or check your provider status.'
       : isUnavailableLead
-        ? 'This lead is closed, reassigned, or no longer available for this profile.'
+        ? 'This lead is closed, reassigned or no longer available for this profile.'
         : 'We could not validate this secure lead link. Please use the latest link sent to your provider WhatsApp number.'
     console.warn('[leads/access] signed lead link invalid', {
       traceId,
@@ -1191,7 +1191,7 @@ export default async function ProviderLeadAccessPage({
           )}
           {!hasAcceptedDetails && (
             <div className="px-4 py-3 text-sm text-muted-foreground">
-              Accept this customer-selected job for {LEAD_UNLOCK_COST_CREDITS} Plug A Pro provider credit (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}) to view customer contact details, exact address, and access instructions.
+              Accept this customer-selected job for {LEAD_UNLOCK_COST_CREDITS} Plug A Pro provider credit (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}) to view customer contact details, exact address and access instructions.
             </div>
           )}
           <div className="px-4 py-3 space-y-0.5">
@@ -1344,7 +1344,7 @@ export default async function ProviderLeadAccessPage({
               </Button>
               {jr.match?.id && (
                 <div className="rounded-md border bg-card px-3 py-3 text-sm text-muted-foreground">
-                  <p>Please sign in to manage all jobs, build quotes, or update your profile.</p>
+                  <p>Please sign in to manage all jobs, build quotes or update your profile.</p>
                   <Button asChild size="lg" variant="outline" className="mt-3 w-full">
                     <a href={`/provider/quotes/${jr.match.id}`}>Sign in</a>
                   </Button>

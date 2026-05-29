@@ -38,7 +38,7 @@ export function PayatPackageSelector() {
           router.push('/provider/credits/limit')
           return
         }
-        // Server action returned a structured failure — surface the specific
+        // Server action returned a structured failure - surface the specific
         // user message instead of the generic "try again" copy.
         console.error('[PayatPackageSelector] checkout_failed', { code: response.code })
         setSelectedAmount(null)

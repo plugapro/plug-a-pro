@@ -23,7 +23,7 @@ import type { CoverageTier, MatchingAddress, MatchingJobRequest } from './types'
 // ── Exported types ────────────────────────────────────────────────────────────
 
 export type EligibleProvider = CandidatePoolEntry & {
-  // Computed during the filter pass — scoring is pure once these are attached
+  // Computed during the filter pass - scoring is pure once these are attached
   scheduleFitScore: number
   travelMinutes: number
   canMeetWindow: boolean
@@ -216,7 +216,7 @@ function providerCoversAddress(
 ): { covers: boolean; tier: CoverageTier } {
   const activeAreas = serviceAreas.filter((a) => a.active)
 
-  // Tier 1 — RADIUS: haversine check
+  // Tier 1 - RADIUS: haversine check
   if (address.lat != null && address.lng != null) {
     const radiusMatch = activeAreas.some(
       (area) =>
@@ -233,7 +233,7 @@ function providerCoversAddress(
     if (radiusMatch) return { covers: true, tier: 'RADIUS' }
   }
 
-  // Tier 2 — structured path
+  // Tier 2 - structured path
   if (address.locationNodeId != null) {
     if (activeAreas.some((a) => a.locationNodeId === address.locationNodeId)) {
       return { covers: true, tier: 'SUBURB_EXACT' }
@@ -244,7 +244,7 @@ function providerCoversAddress(
     return { covers: false, tier: 'NO_MATCH' }
   }
 
-  // Tier 3 — LEGACY_STRING fallback
+  // Tier 3 - LEGACY_STRING fallback
   if (!MATCHING_CONFIG.allowLegacyStringFallback) {
     return { covers: false, tier: 'NO_MATCH' }
   }
@@ -290,7 +290,7 @@ export async function filterEligibleProviders(
   const normalizedCategory = jobRequest.category.trim().toLowerCase()
 
   // ── Batch-fetch all detail tables in parallel ─────────────────────────────
-  // NOTE: No .catch() here — a DB failure must surface as an error so the
+  // NOTE: No .catch() here - a DB failure must surface as an error so the
   // orchestrator can return { status: 'ERROR' } rather than silently filtering
   // out every provider (which is what .catch(() => []) would cause).
   let metricsRows: MetricsRow[]
@@ -397,7 +397,7 @@ export async function filterEligibleProviders(
     ])
   } catch (err) {
     throw new MatchingFilterError(
-      `filterEligibleProviders: DB batch-fetch failed for job ${jobRequest.id} — ${err instanceof Error ? err.message : String(err)}`,
+      `filterEligibleProviders: DB batch-fetch failed for job ${jobRequest.id} - ${err instanceof Error ? err.message : String(err)}`,
       err
     )
   }
@@ -458,7 +458,7 @@ export async function filterEligibleProviders(
   const filteredOut: FilteredCandidate[] = []
   const nearMiss: NearMissProvider[] = []
 
-  // Codes that qualify a provider as a "near-miss" — they pass all hard checks
+  // Codes that qualify a provider as a "near-miss" - they pass all hard checks
   // but only fail because their schedule/window doesn't fit the requested time.
   const SCHEDULE_ONLY_CODES = new Set(['WINDOW_NOT_FEASIBLE', 'SCHEDULE_CONFLICT'])
 
@@ -509,7 +509,7 @@ export async function filterEligibleProviders(
 
     // Hard-filter on live heartbeat: if a provider has checked in at least once but
     // their last heartbeat is older than heartbeatStaleMinutes, treat them as offline.
-    // Providers who have never sent a heartbeat (null) are not penalised here —
+    // Providers who have never sent a heartbeat (null) are not penalised here -
     // they pre-date the heartbeat system and are still candidates.
     if (candidate.lastHeartbeatAt !== null) {
       const staleThreshold = new Date(Date.now() - MATCHING_CONFIG.heartbeatStaleMinutes * 60_000)
@@ -521,12 +521,12 @@ export async function filterEligibleProviders(
       filteredReasonCodes.push('TECHNICIAN_OFFLINE_LIVE')
     }
 
-    // Cooldown: provider already ghosted this job recently — skip for 12h
+    // Cooldown: provider already ghosted this job recently - skip for 12h
     if (timedOutProviderIds.has(candidate.id)) {
       filteredReasonCodes.push('OFFER_COOLDOWN_ACTIVE')
     }
 
-    // Declined: provider explicitly declined this job — never re-offer
+    // Declined: provider explicitly declined this job - never re-offer
     if (declinedProviderIds.has(candidate.id)) {
       filteredReasonCodes.push('PROVIDER_PREVIOUSLY_DECLINED')
     }

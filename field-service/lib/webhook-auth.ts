@@ -1,5 +1,5 @@
 // Pure crypto helpers for WhatsApp webhook verification.
-// No DB, no HTTP — safe for vi.importActual() in tests.
+// No DB, no HTTP - safe for vi.importActual() in tests.
 import { createHmac, timingSafeEqual } from 'crypto'
 
 /**
@@ -12,7 +12,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 export function verifyMetaSignature(rawBody: string, signature: string): boolean {
   const appSecret = process.env.WHATSAPP_APP_SECRET?.trim()
   if (!appSecret) {
-    console.error('[whatsapp] WHATSAPP_APP_SECRET not configured — rejecting webhook')
+    console.error('[whatsapp] WHATSAPP_APP_SECRET not configured - rejecting webhook')
     return false
   }
 
@@ -39,7 +39,7 @@ export function verifyWebhookChallenge(
     const bufA = Buffer.from(token)
     const bufB = Buffer.from(verifyToken)
     if (bufA.length !== bufB.length) {
-      // Lengths differ — fail but avoid early exit to prevent timing oracle
+      // Lengths differ - fail but avoid early exit to prevent timing oracle
       timingSafeEqual(bufA, Buffer.alloc(bufA.length))
       return null
     }

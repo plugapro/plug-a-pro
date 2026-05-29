@@ -331,7 +331,7 @@ async function notifyCustomerQuickMatchProviderAvailable(params: {
   const safeTicketUrl = rawUrl?.startsWith('https://') ? rawUrl : null
   if (!safeTicketUrl && rawUrl) {
     console.warn(
-      '[customer-shortlists] dropped CTA URL — non-https ticket url',
+      '[customer-shortlists] dropped CTA URL - non-https ticket url',
       { requestId: params.requestId },
     )
   }
@@ -389,7 +389,7 @@ async function notifyCustomerShortlistReady(params: {
   const safeTicketUrl = rawUrl?.startsWith('https://') ? rawUrl : null
   if (!safeTicketUrl && rawUrl) {
     console.warn(
-      '[customer-shortlists] dropped CTA URL — non-https ticket url',
+      '[customer-shortlists] dropped CTA URL - non-https ticket url',
       { requestId: params.requestId },
     )
   }
@@ -682,7 +682,7 @@ export async function selectShortlistedProviderForRequest(params: {
  * Customer cancels their request from the shortlist UI before any provider
  * has been confirmed. No credit was ever deducted, so this is a clean state
  * transition: the request moves to CANCELLED, the active shortlist is
- * superseded, and any pending lead invites are marked CANCELLED. Providers
+ * superseded and any pending lead invites are marked CANCELLED. Providers
  * will see "no longer needed" via the existing pending-lead lifecycle.
  */
 export async function cancelRequestFromShortlist(params: {
@@ -938,7 +938,7 @@ export async function sweepStaleProviderConfirmationRequests() {
 
     if (!lead || !lead.expiresAt || lead.expiresAt > now) continue
 
-    // Lead has expired — reset the request and notify the customer
+    // Lead has expired - reset the request and notify the customer
     try {
       await db.$transaction(async (tx) => {
         await tx.lead.update({
@@ -1274,7 +1274,7 @@ export async function declineSelectedProviderJob(params: {
   // Use optional access so this compiles against both the old and new type.
   const wasRfpLead = (cascadeResult as { wasRfpLead?: boolean }).wasRfpLead ?? false
   if (!cascadeResult.cascaded && !wasRfpLead && customerPhone) {
-    // Non-RFP lead: provider declined, no cascade — send the static message.
+    // Non-RFP lead: provider declined, no cascade - send the static message.
     // When wasRfpLead is true (all shortlisted providers exhausted), the cascade
     // function already sent the appropriate "all providers unavailable" message.
     sendText({
@@ -1411,7 +1411,7 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
       requestId: lead.jobRequest.id,
     }
 
-    // Guard only on notifiedAt — status is CUSTOMER_SELECTED immediately after selection,
+    // Guard only on notifiedAt - status is CUSTOMER_SELECTED immediately after selection,
     // so checking status here would suppress every notification send.
     if (lead.notifiedAt !== null) {
       console.info('[customer-shortlists.notification] already_notified', {

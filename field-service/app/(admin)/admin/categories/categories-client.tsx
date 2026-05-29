@@ -105,7 +105,7 @@ export function CategoriesClient({ categories, crudEnabled, riskTierEnabled }: P
         />
       ) : (
         <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
-          Category mutations are disabled. Enable the <code>admin.crud.categories</code> feature flag to create, edit, or delete category config.
+          Category mutations are disabled. Enable the <code>admin.crud.categories</code> feature flag to create, edit or delete category config.
         </div>
       )}
 

@@ -2,7 +2,7 @@
 // Internal values are stored verbatim in JobRequest.providerPreference.
 export type ProviderPreference = 'save_money' | 'best_value' | 'best_quality'
 
-// Legacy BudgetPreference — kept only for backward-compatible reads of old DB records.
+// Legacy BudgetPreference - kept only for backward-compatible reads of old DB records.
 // The budget preference step was removed from the active flow in the MVP simplification.
 // New requests no longer populate this field.
 export type BudgetPreference =
@@ -25,7 +25,7 @@ export function providerPreferenceFromReply(replyId?: string | null): ProviderPr
   if (replyId === 'pref_money') return 'save_money'
   if (replyId === 'pref_quality') return 'best_quality'
   if (replyId === 'pref_value') return 'best_value'
-  // Legacy IDs — map to closest MVP equivalent for in-flight session continuity
+  // Legacy IDs - map to closest MVP equivalent for in-flight session continuity
   if (replyId === 'pref_budget') return 'save_money'
   if (replyId === 'pref_experienced' || replyId === 'pref_rated') return 'best_quality'
   // Default: best_value (balanced)

@@ -199,7 +199,7 @@ export default async function QuotePage({
 
         {quoteCanBeRevised && latestQuote && (
           <AlertCallout tone="info" title="Revise and resend your quote">
-            <p>The previous quote was not accepted. Review the scope, update your pricing, and send a revised quote.</p>
+            <p>The previous quote was not accepted. Review the scope, update your pricing and send a revised quote.</p>
             {latestQuote.notes && (
               <div className="mt-3 rounded-lg border border-current/20 bg-black/10 px-3 py-2 dark:bg-white/5">
                 <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Customer feedback</p>

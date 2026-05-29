@@ -75,7 +75,7 @@ async function sendReviewFirstOutcome(params: {
   }
 
   if (params.status === 'review_options_ready') {
-    const text = `Review Providers First is ready.\n\nWe found ${params.candidateCount} matching provider${params.candidateCount === 1 ? '' : 's'} for your request.\n\nOpen your request to view their profiles and rank up to 3 providers in your preferred order. We'll contact your 1st choice first — if they can't make it, we'll automatically try your 2nd and 3rd.`
+    const text = `Review Providers First is ready.\n\nWe found ${params.candidateCount} matching provider${params.candidateCount === 1 ? '' : 's'} for your request.\n\nOpen your request to view their profiles and rank up to 3 providers in your preferred order. We'll contact your 1st choice first - if they can't make it, we'll automatically try your 2nd and 3rd.`
     const url = await getJobRequestAccessUrl(params.requestId, 'matching_status').catch((error) => {
       console.warn('[request-matching-mode] review-first CTA URL generation failed', {
         requestId: params.requestId,
@@ -124,7 +124,7 @@ async function sendReviewFirstOutcome(params: {
   if (params.status === 'review_no_candidates') {
     await sendButtons(
       params.phone,
-      "We couldn't find matching providers in your area right now.\n\nYou can try Quick Match, edit your request, or return to the main menu.",
+      "We couldn't find matching providers in your area right now.\n\nYou can try Quick Match, edit your request or return to the main menu.",
       [
         { id: `status_mode_quick_${params.requestId}`, title: 'Quick Match' },
         { id: `status_refresh_${params.requestId}`, title: 'Check status' },
@@ -204,10 +204,10 @@ export async function selectCustomerRequestMatchingMode(params: {
 
   if (activeHold) {
     if (request.assignmentMode === targetAssignmentMode) {
-      console.info('[matching-mode] noop — already in progress', { requestId: request.id, mode: params.mode })
+      console.info('[matching-mode] noop - already in progress', { requestId: request.id, mode: params.mode })
       return { requestId: request.id, mode: params.mode, status: 'already_in_progress' as const }
     }
-    console.info('[matching-mode] rejected — hold active', { requestId: request.id, mode: params.mode })
+    console.info('[matching-mode] rejected - hold active', { requestId: request.id, mode: params.mode })
     throw new RequestMatchingModeError(
       'REQUEST_NOT_EDITABLE',
       'Cannot change matching mode while a provider outreach is active.',

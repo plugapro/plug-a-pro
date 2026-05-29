@@ -156,7 +156,7 @@ export async function updateCategoryAction(input: UpdateCategoryInput) {
         if (linkedRows > 0) {
           throw new CrudActionError(
             'CONFLICT',
-            `Slug "${category.slug}" cannot be changed — ${linkedRows} provider category row(s) reference it.`,
+            `Slug "${category.slug}" cannot be changed - ${linkedRows} provider category row(s) reference it.`,
           )
         }
       }

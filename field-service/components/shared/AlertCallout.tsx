@@ -41,7 +41,7 @@ const TONE_CLASS: Record<Tone, string> = {
 
 /**
  * Tone-aware callout banner used inside cards and detail screens to
- * explain a status, warn the user, or celebrate a state change. Replaces
+ * explain a status, warn the user or celebrate a state change. Replaces
  * the older pattern of inline `bg-emerald-50 / bg-amber-50 / bg-blue-50`
  * boxes which leaked light-mode colours and didn't theme properly.
  *

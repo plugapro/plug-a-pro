@@ -1,5 +1,5 @@
-// ─── Vercel Blob — file storage helpers ──────────────────────────────────────
-// Used for: job request evidence, completion photos, quote attachments, and avatars.
+// ─── Vercel Blob - file storage helpers ──────────────────────────────────────
+// Used for: job request evidence, completion photos, quote attachments and avatars.
 
 import { randomUUID } from 'crypto'
 import { put, del, get } from '@vercel/blob'

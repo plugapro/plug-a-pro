@@ -29,7 +29,7 @@ function mapProviderIntentError(error: ProviderCreditPaymentIntentError) {
     case 'PROVIDER_NOT_FOUND':
       return { status: 403, error: 'Provider not found', code: error.code }
     case 'INVALID_AMOUNT':
-      return { status: 400, error: 'Top-up amount must be R100, R200, or R500.', code: error.code }
+      return { status: 400, error: 'Top-up amount must be R100, R200 or R500.', code: error.code }
     case 'PROVIDER_PHONE_MISSING':
       return {
         status: 400,
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 201 })
     }
 
-    // Default: Pay@ retail cash, QR, and hosted payment link.
+    // Default: Pay@ retail cash, QR and hosted payment link.
     if (paymentMethod !== 'PAYAT') {
       return NextResponse.json({ error: 'Unsupported payment method' }, { status: 400 })
     }

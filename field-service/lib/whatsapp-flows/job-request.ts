@@ -58,7 +58,7 @@ import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // Derived from the single source of truth in service-categories.ts.
 // Restricted/regulated trades (electrical, roofing, appliances, pest control, etc.)
-// are excluded automatically — no manual list to keep in sync.
+// are excluded automatically - no manual list to keep in sync.
 const JOB_CATEGORIES = getPilotServiceCategories().map((cat) => ({
   id: `cat_${cat.tag}`,
   label: cat.label,
@@ -152,7 +152,7 @@ async function persistStreetAddressProgress(ctx: FlowContext, street: string): P
   const nextData = { ...ctx.data, addressLine1: street, addressStreet: street, addrPage: 0 }
 
   // Persist before sending the next WhatsApp prompt. Serverless outbound sends
-  // can fail, hang, or be retried independently; the request draft must already
+  // can fail, hang or be retried independently; the request draft must already
   // be advanced so the next inbound message resumes the active request instead
   // of falling back to the generic menu.
   await db.conversation.upsert({
@@ -162,7 +162,7 @@ async function persistStreetAddressProgress(ctx: FlowContext, street: string): P
       flow: 'job_request',
       step: 'addr_select_province',
       // Prisma's recursive Json type is not structurally compatible with
-      // ConversationData at compile time — cast required on all Json field writes.
+      // ConversationData at compile time - cast required on all Json field writes.
       data: nextData as any,
       expiresAt: new Date(Date.now() + ADDR_STEP_TTL_MS),
     },
@@ -256,7 +256,7 @@ async function renderProvinceList(phone: string): Promise<void> {
   const provinces = await getProvinces()
   const active = provinces.filter((p) => isActiveProvince(p.slug))
   if (active.length === 0) {
-    // Location nodes not yet seeded — sending an empty list section fails at the Meta API level.
+    // Location nodes not yet seeded - sending an empty list section fails at the Meta API level.
     // Surface the "area not listed" path so the user is captured on the waitlist.
     await sendText(
       phone,
@@ -359,7 +359,7 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleAddrSelectSuburb(ctx)
     case 'addr_confirm':
       return handleAddrConfirm(ctx)
-    // Legacy steps — handled only for in-flight conversations at deploy time
+    // Legacy steps - handled only for in-flight conversations at deploy time
     case 'collect_address_suburb':
       return handleLegacyCollectSuburb(ctx)
     case 'confirm_address':
@@ -504,7 +504,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
         }
       }
 
-      // Legacy address (no locationNodeId) or unresolvable node — force new entry
+      // Legacy address (no locationNodeId) or unresolvable node - force new entry
       await sendText(
         ctx.phone,
         `Welcome back, ${knownCustomerFirstName}.\n\nNo saved structured address is ready for this request yet.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
@@ -512,7 +512,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_address_street', nextData: baseData }
     }
 
-    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Annah")_')
+    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine - e.g. "Annah")_')
     return {
       nextStep: 'collect_name',
       nextData: { selectedCategory: category, category, isFirstBooking: true, addrPage: undefined },
@@ -522,7 +522,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
   // They sent their name as text
   const text = ctx.reply.text?.trim()
   if (!text || text.length < 2) {
-    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Annah")_')
+    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine - e.g. "Annah")_')
     return { nextStep: 'collect_name' }
   }
 
@@ -547,7 +547,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
 // ─── Address collection ───────────────────────────────────────────────────────
 
 /**
- * Multi-site picker — shown to first-booking customers who already have saved
+ * Multi-site picker - shown to first-booking customers who already have saved
  * Address records (e.g. created via the web portal or a previous booking on a
  * different channel).
  *
@@ -560,7 +560,7 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
   const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
   const customerName = ctx.data.customerName ?? 'there'
 
-  // ── Entry — show the picker (or fall through) ─────────────────────────────
+  // ── Entry - show the picker (or fall through) ─────────────────────────────
   if (ctx.reply.id === 'collect_site_start') {
     // Look up addresses for this customer.  customerId may not be in ctx.data
     // yet for a first-booking user, so resolve via phone.
@@ -592,7 +592,7 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
 
     const savedSites = customer ? deduplicateWhatsAppSavedAddresses(customer.addresses) : []
     if (!customer || savedSites.length === 0) {
-      // No saved addresses — skip the site picker entirely and go straight to
+      // No saved addresses - skip the site picker entirely and go straight to
       // manual street entry (unchanged legacy path).
       await sendText(
         ctx.phone,
@@ -651,14 +651,14 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_address_street' }
     }
 
-    // Address resolved — skip straight to issue description (same as collect_address with addr_saved_*)
+    // Address resolved - skip straight to issue description (same as collect_address with addr_saved_*)
     return handleCollectIssueDescription({
       ...ctx,
       data: { ...ctx.data, ...addressData, savedAddressId: addressId },
     })
   }
 
-  // ── Unknown reply — resend the site picker ────────────────────────────────
+  // ── Unknown reply - resend the site picker ────────────────────────────────
   // Re-enter via a synthetic start reply so the DB lookup runs again.
   return handleCollectSite({
     ...ctx,
@@ -668,7 +668,7 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'addr_same') {
-    // addrLocationNodeId + addressLine1 are already in ctx.data — collect issue description next
+    // addrLocationNodeId + addressLine1 are already in ctx.data - collect issue description next
     return handleCollectIssueDescription(ctx)
   }
 
@@ -699,7 +699,7 @@ async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
     })
   }
 
-  // addr_new or any other reply — start new structured address entry
+  // addr_new or any other reply - start new structured address entry
   const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
   await sendText(
     ctx.phone,
@@ -715,7 +715,7 @@ async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
     phone: maskedPhone(ctx.phone),
     flow: ctx.flow,
     step: ctx.step,
-    // jobRequestId is only populated after submission — null here is expected
+    // jobRequestId is only populated after submission - null here is expected
     draftId: ctx.data.savedAddressId ?? null,
   }
 
@@ -832,7 +832,7 @@ async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  // Text reply or unknown button — reject
+  // Text reply or unknown button - reject
   await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for province selection.')
   await renderProvinceList(ctx.phone)
   return { nextStep: 'addr_select_province' }
@@ -914,7 +914,7 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  // Text reply or unknown button — reject
+  // Text reply or unknown button - reject
   await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for city selection.')
   await renderCityList(ctx.phone, provinceKey, provinceLabel, ctx.data.addrPage ?? 0)
   return { nextStep: 'addr_select_city' }
@@ -937,7 +937,7 @@ async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
       ctx.phone,
       `Thanks for your interest! 🙏\n\n` +
       `We're currently only serving *JHB West* (Roodepoort, Florida, Little Falls and surrounding areas) in ${cityLabel}.\n\n` +
-      `We're expanding to more ${cityLabel} areas soon — we've saved your details and will notify you via WhatsApp when your area goes live! 🚀`,
+      `We're expanding to more ${cityLabel} areas soon - we've saved your details and will notify you via WhatsApp when your area goes live! 🚀`,
     )
     return { nextStep: 'done' }
   }
@@ -974,7 +974,7 @@ async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  // Text reply or unknown button — reject
+  // Text reply or unknown button - reject
   await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for area selection.')
   await renderRegionList(ctx.phone, cityId, cityLabel, ctx.data.addrPage ?? 0)
   return { nextStep: 'addr_select_region' }
@@ -1028,7 +1028,7 @@ async function handleAddrSelectSuburb(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  // Text reply or unknown button — reject
+  // Text reply or unknown button - reject
   await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for suburb selection.')
   await renderSuburbList(ctx.phone, regionId, regionLabel, ctx.data.addrPage ?? 0)
   return { nextStep: 'addr_select_suburb' }
@@ -1048,7 +1048,7 @@ async function handleAddrConfirm(ctx: FlowContext): Promise<FlowResult> {
     return handleCollectIssueDescription(ctx)
   }
 
-  // Unknown reply — resend confirmation
+  // Unknown reply - resend confirmation
   const streetLine = ctx.data.addressLine1 ?? ctx.data.addressStreet ?? ''
   await sendButtons(
     ctx.phone,
@@ -1114,11 +1114,11 @@ function duplicateRequestNeedsMatchingChoice(params: {
 /**
  * Prompts the customer for a free-text description of their problem.
  * Called inline (immediately after address confirmation) so ctx.reply still
- * carries the address-step button id — in that case we just show the prompt
+ * carries the address-step button id - in that case we just show the prompt
  * and wait for the next message.
  */
 async function handleCollectIssueDescription(ctx: FlowContext): Promise<FlowResult> {
-  // Inline entry from address steps: reply id is addr_* — just show the prompt.
+  // Inline entry from address steps: reply id is addr_* - just show the prompt.
   const comingFromAddressStep = Boolean(ctx.reply.id?.startsWith('addr_'))
   const text = ctx.reply.text?.trim()
 
@@ -1266,7 +1266,7 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
 const PREF_BUTTON_IDS = new Set([
   // MVP button IDs
   'pref_money', 'pref_value', 'pref_quality',
-  // Legacy IDs — in-flight conversations from before the MVP simplification
+  // Legacy IDs - in-flight conversations from before the MVP simplification
   'pref_fastest', 'pref_experienced', 'pref_rated', 'pref_budget', 'pref_verified',
 ])
 
@@ -1287,7 +1287,7 @@ async function handleCollectRequestPreferences(ctx: FlowContext): Promise<FlowRe
   const providerPreference = providerPreferenceFromReply(ctx.reply.id)
   await sendButtons(
     ctx.phone,
-    `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+    `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional - you can skip this step._`,
     [
       { id: 'photos_skip', title: '⏭ Skip' },
       { id: 'photos_start', title: '📷 Add photo' },
@@ -1303,12 +1303,12 @@ async function handleCollectRequestPreferences(ctx: FlowContext): Promise<FlowRe
   }
 }
 
-// Budget preference step removed in MVP — kept as a pass-through so in-flight conversations
+// Budget preference step removed in MVP - kept as a pass-through so in-flight conversations
 // already at this step advance gracefully to photos without re-asking the removed question.
 async function handleCollectBudgetPreference(ctx: FlowContext): Promise<FlowResult> {
   await sendButtons(
     ctx.phone,
-    `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+    `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional - you can skip this step._`,
     [
       { id: 'photos_skip', title: '⏭ Skip' },
       { id: 'photos_start', title: '📷 Add photo' },
@@ -1338,14 +1338,14 @@ async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
 }
 
 const MAX_CUSTOMER_PHOTOS = 5
-const MAX_CUSTOMER_PHOTO_BYTES = 10 * 1024 * 1024 // 10 MB — tighter than the 15 MB evidence limit
+const MAX_CUSTOMER_PHOTO_BYTES = 10 * 1024 * 1024 // 10 MB - tighter than the 15 MB evidence limit
 
 function uniqueStrings(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
 }
 
 async function sendCustomerPhotoProgress(phone: string, count: number) {
-  // Debounce across Vercel function instances — see lib/whatsapp-media-batch.ts.
+  // Debounce across Vercel function instances - see lib/whatsapp-media-batch.ts.
   // Each media event claims a seq and waits; only the latest event sends the
   // consolidated count, eliminating "2 photos received" → "3 photos received"
   // partial-count regressions for multi-file uploads.
@@ -1356,7 +1356,7 @@ async function sendCustomerPhotoProgress(phone: string, count: number) {
   })
   if (!isLatest) {
     const currentSeq = await readMediaBatchSeq(phone, 'customer_photo')
-    console.info('[job-request-flow:sendCustomerPhotoProgress] superseded — newer media event in batch', {
+    console.info('[job-request-flow:sendCustomerPhotoProgress] superseded - newer media event in batch', {
       phone,
       mySeq,
       currentSeq,
@@ -1421,7 +1421,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
     return showJobRequestSummary(ctx)
   }
 
-  // User tapped "Add photo" / "Add more" — instruct them to send a media message
+  // User tapped "Add photo" / "Add more" - instruct them to send a media message
   if (ctx.reply.id === 'photos_start' || ctx.reply.id === 'photos_add_more') {
     const remaining = MAX_CUSTOMER_PHOTOS - photoAttachmentIds.length
     const limitCopy = remaining === MAX_CUSTOMER_PHOTOS
@@ -1434,7 +1434,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'collect_photos' }
   }
 
-  // Documents are not accepted — customer photos must be images
+  // Documents are not accepted - customer photos must be images
   if (ctx.reply.type === 'document') {
     await sendText(
       ctx.phone,
@@ -1493,7 +1493,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  // Unknown reply — resend the appropriate prompt
+  // Unknown reply - resend the appropriate prompt
   if (photoAttachmentIds.length > 0) {
     const count = photoAttachmentIds.length
     await sendButtons(
@@ -1507,7 +1507,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
   } else {
     await sendButtons(
       ctx.phone,
-      `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+      `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional - you can skip this step._`,
       [
         { id: 'photos_skip', title: '⏭ Skip' },
         { id: 'photos_start', title: '📷 Add photo' },
@@ -1545,7 +1545,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     })
 
     // Dedup is now enforced inside createJobRequest.$transaction via
-    // DuplicateActiveRequestError — handled in the catch block below.
+    // DuplicateActiveRequestError - handled in the catch block below.
 
     const categoryRequirements = await resolveCategoryRequirements({ category })
 
@@ -1600,7 +1600,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         photoAttachmentIds,
       })
     } else {
-      // ── Legacy path — old in-flight conversations only ────────────────────
+      // ── Legacy path - old in-flight conversations only ────────────────────
       const addrParts = (ctx.data.address ?? '').split(',').map((p: string) => p.trim())
       result = await createJobRequest({
         phone: ctx.phone,
@@ -1632,8 +1632,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     const successMessage =
       `✅ *Request submitted.*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.requestRef}*${photoNote}\n\n` +
       `How would you like to find a provider?\n\n` +
-      `• Quick Match — we contact one suitable provider at a time.\n` +
-      `• Review Providers First — compare providers before sending.\n\n` +
+      `• Quick Match - we contact one suitable provider at a time.\n` +
+      `• Review Providers First - compare providers before sending.\n\n` +
       `Tap a button below to choose your matching mode now. Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.` +
       (categoryRequirements.policy.bookingOnAssignment
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
@@ -1641,7 +1641,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
     // ── Send success confirmation ─────────────────────────────────────────────
     // The job request is in the DB at this point. Success message delivery
-    // failures must NOT propagate to the outer catch — that would incorrectly
+    // failures must NOT propagate to the outer catch - that would incorrectly
     // tell the customer their submission failed when it actually succeeded.
     try {
       let ctaSent = false
@@ -1670,7 +1670,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         ]
       )
     } catch (sendErr) {
-      // Interactive message failed — last-resort plain text so the customer
+      // Interactive message failed - last-resort plain text so the customer
       // knows their request was received. sendText is simpler and more resilient.
       console.error('[job-request-flow] Success message send failed:', sendErr)
       await sendText(
@@ -1727,7 +1727,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       } else {
         await sendText(
           ctx.phone,
-          `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`,
+          `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status or *Cancel* if you'd like to start a fresh request. 👍`,
         )
       }
       return { nextStep: 'done', nextData: { jobRequestId: err.existingId, customerId: err.customerId } }
@@ -1746,7 +1746,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       )
       // Clear stale attachment IDs so a retry does not attempt to re-link the same
       // records and loop. The orphaned Attachment rows are still in Blob storage but
-      // unlinked — they will be cleaned up by the storage GC job.
+      // unlinked - they will be cleaned up by the storage GC job.
       return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: [], photoMediaIds: [] } }
     }
 
@@ -1769,7 +1769,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
   }
 }
 
-// ─── Legacy handlers — in-flight conversations only ──────────────────────────
+// ─── Legacy handlers - in-flight conversations only ──────────────────────────
 // These steps are no longer entered from new flows. They handle any conversation
 // that was mid-flow at deploy time. They redirect to the new structured flow.
 
@@ -1806,7 +1806,7 @@ async function handleLegacyConfirmAddress(ctx: FlowContext): Promise<FlowResult>
     return { nextStep: 'done' }
   }
 
-  // City was valid or unknown — redirect to new structured flow
+  // City was valid or unknown - redirect to new structured flow
   await sendText(
     ctx.phone,
     "We've updated our address selection. Let's re-enter your address using our new area picker.",
@@ -1832,7 +1832,7 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
       select: { id: true },
     })
     if (providerForPhone) {
-      console.log('[notify_me] provider phone — skipping customer auto-create', {
+      console.log('[notify_me] provider phone - skipping customer auto-create', {
         phone: ctx.phone,
         providerId: providerForPhone.id,
       })

@@ -219,7 +219,7 @@ export async function resolveJobRequestAccessToken(token: string) {
     jobRequest.customerAccessTokenExpiresAt <= now
   ) {
     console.warn(`[job-request-access:${traceId}] token expired or revoked: jobRequest=${jobRequest.id}`)
-    // Strip all token columns before returning — callers must not re-expose them.
+    // Strip all token columns before returning - callers must not re-expose them.
     // customerAccessToken is not in the select above, but we strip it defensively
     // in case the shape is widened or the mock includes it.
     const {

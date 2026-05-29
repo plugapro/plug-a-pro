@@ -265,7 +265,7 @@ export default async function ProviderProfilePage() {
                   name="evidenceNote"
                   defaultValue={provider.evidenceNote ?? ''}
                   rows={4}
-                  placeholder="Optional: mention past jobs, references, or types of work you are comfortable sharing."
+                  placeholder="Optional: mention past jobs, references or types of work you are comfortable sharing."
                 />
               </div>
               <div className="space-y-1.5">

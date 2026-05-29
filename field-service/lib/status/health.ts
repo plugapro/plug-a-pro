@@ -248,7 +248,7 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
       status: endpointStatus,
       source: 'live check',
       summary: STATUS_LABELS[endpointStatus],
-      impact: 'Mobile flows, booking actions, and API calls rely on this.',
+      impact: 'Mobile flows, booking actions and API calls rely on this.',
       details: 'Computed from /api/health status.',
     },
     {
@@ -257,7 +257,7 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
       status: dbStatus,
       source: 'live check',
       summary: STATUS_LABELS[dbStatus],
-      impact: 'Bookings, leads, and state transitions require DB access.',
+      impact: 'Bookings, leads and state transitions require DB access.',
       details: 'Computed from /api/health DB check.',
     },
     {
@@ -372,7 +372,7 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
         status: paymentsStatus,
         source: paymentsStatus === 'not_monitored' ? 'not monitored' : 'derived',
         summary: STATUS_LABELS[paymentsStatus],
-        impact: 'Checkout, payment collection, and refunds depend on the payment gateway.',
+        impact: 'Checkout, payment collection and refunds depend on the payment gateway.',
         details: paymentsStatus === 'not_monitored'
           ? 'Payment gateway credentials not configured in this environment.'
           : 'Payment gateway credentials are configured.',
@@ -393,7 +393,7 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
         status: whatsappStatus,
         source: whatsappStatus === 'not_monitored' ? 'not monitored' : 'live check',
         summary: STATUS_LABELS[whatsappStatus],
-        impact: 'Booking confirmations, leads, and job notifications are sent via WhatsApp.',
+        impact: 'Booking confirmations, leads and job notifications are sent via WhatsApp.',
         details: whatsappStatus === 'not_monitored'
           ? 'WhatsApp credentials not configured in this environment.'
           : whatsappStatus === 'operational'

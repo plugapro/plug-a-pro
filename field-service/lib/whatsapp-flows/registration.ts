@@ -1,6 +1,6 @@
 // ─── Service provider registration flow via WhatsApp ──────────────────────────
 // Journey: trigger → name → skills (multi-select) → area → experience → availability → submit → pending review
-// No direct connection given to customer — all mediated through Plug A Pro
+// No direct connection given to customer - all mediated through Plug A Pro
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { WHATSAPP_COPY, ctaLabelFor } from '../whatsapp-copy'
@@ -63,7 +63,7 @@ export const REGISTRATION_TRIGGERS = [
   'ngifuna ukusebenza', // Zulu: "I want to work"
 ]
 
-// ─── Provider skill options — pilot scope only ────────────────────────────────
+// ─── Provider skill options - pilot scope only ────────────────────────────────
 // Restricted/regulated trades (electrical, roofing, pest control, etc.) are
 // excluded from the selectable list. Typing them triggers a notice message.
 const PROVIDER_SKILL_OPTIONS = getPilotServiceCategories()
@@ -188,7 +188,7 @@ function submitFailureMessage(error: unknown, publicRef: string) {
       return [
         "We're still saving one or more uploaded files.",
         '',
-        'Your progress is saved. Please try Submit again in a moment, or choose Edit Application.',
+        'Your progress is saved. Please try Submit again in a moment or choose Edit Application.',
         '',
         `Reference: ${publicRef}`,
       ].join('\n')
@@ -336,7 +336,7 @@ async function sendEvidenceFileProgress(phone: string, count: number) {
   })
   if (!isLatest) {
     const currentSeq = await readMediaBatchSeq(phone, 'provider_evidence')
-    console.info('[registration:sendEvidenceFileProgress] superseded — newer media event in batch', {
+    console.info('[registration:sendEvidenceFileProgress] superseded - newer media event in batch', {
       phone,
       mySeq,
       currentSeq,
@@ -367,7 +367,7 @@ async function sendEvidenceFileProgress(phone: string, count: number) {
 
   await sendButtons(
     phone,
-    `✅ *${settledCount} file${settledCount === 1 ? '' : 's'} received.* You can add up to ${remaining} more, or continue.`,
+    `✅ *${settledCount} file${settledCount === 1 ? '' : 's'} received.* You can add up to ${remaining} more or continue.`,
     [
       { id: 'evidence_done', title: '✅ Continue' },
       { id: 'evidence_add_more', title: '📎 Add another file' },
@@ -592,7 +592,7 @@ async function sendVerificationChoicePrompt(phone: string) {
       '',
       'Providing ID helps us review your application faster. Your details are never shared with customers.',
       '',
-      'Choose how to verify, or skip and apply without it:',
+      'Choose how to verify or skip and apply without it:',
     ].join('\n'),
     [
       { id: 'verify_enter_id', title: 'Enter ID/passport' },
@@ -630,7 +630,7 @@ function validateSaId(raw: string): string | null {
 
 function validatePassportNumber(raw: string): string | null {
   const trimmed = raw.trim()
-  // Reject if the input contains spaces — passport numbers never have spaces
+  // Reject if the input contains spaces - passport numbers never have spaces
   if (/\s/.test(trimmed)) return null
   // Passport: 6-30 alphanumeric. Foreign passport numbers can be numeric-only.
   if (trimmed.length >= 6 && trimmed.length <= 30 && /^[a-z0-9]+$/i.test(trimmed)) {
@@ -673,13 +673,13 @@ async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: passport, verificationMethod: 'id_number', skills: [] } }
   }
 
-  // Any other input (including old 6-char alphanumeric IDs in flight) — re-show the choice.
+  // Any other input (including old 6-char alphanumeric IDs in flight) - re-show the choice.
   await sendVerificationChoicePrompt(ctx.phone)
   return { nextStep: 'reg_collect_id' }
 }
 
 async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
-  // Button or text "skip" — escape hatch so users with unusual IDs are never trapped.
+  // Button or text "skip" - escape hatch so users with unusual IDs are never trapped.
   if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
     await sendText(ctx.phone, 'No problem. You can verify your identity later from the Worker Portal.')
     await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
@@ -695,7 +695,7 @@ async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
     if (!saId) {
       await sendButtons(
         ctx.phone,
-        "❌ That SA ID number didn't pass the checksum check. Please check and try again, or send your passport number instead.",
+        "❌ That SA ID number didn't pass the checksum check. Please check and try again or send your passport number instead.",
         [{ id: 'verify_skip', title: 'Skip verification' }],
       )
       return { nextStep: 'reg_verify_enter_id' }
@@ -840,7 +840,7 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'skills_change' || ctx.reply.id === 'edit_skills') {
-    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* - previous selection will be replaced.'))
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
   }
 
@@ -857,7 +857,7 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (/^change(\s+skills?)?$/i.test(raw)) {
-    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* - previous selection will be replaced.'))
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
   }
 
@@ -865,7 +865,7 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
 
   const indices = parseNumberedInput(raw)
 
-  // No numbers found — try label matching as fallback.
+  // No numbers found - try label matching as fallback.
   // 1. Try the full raw phrase first (handles "pest control", "air conditioning", etc.)
   // 2. If no full-phrase match, split into tokens (handles "plumbing electrical")
   let labelMatched: string[] = []
@@ -894,21 +894,21 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  // A restricted skill was mentioned — send the pilot notice and re-prompt.
+  // A restricted skill was mentioned - send the pilot notice and re-prompt.
   if (restrictedNotice) {
     await sendText(ctx.phone, restrictedNotice)
     if (labelMatched.length === 0) {
       await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills:*', existingSkills))
       return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
     }
-    // Valid pilot skills were also mentioned — fall through to add them.
+    // Valid pilot skills were also mentioned - fall through to add them.
   }
 
   if (indices.length === 0 && labelMatched.length === 0) {
     if (!raw) {
       await sendText(ctx.phone, buildSkillPromptText('🔧 *What type of work do you do?*', existingSkills))
     } else {
-      // Unrecognised text — ask for numbers
+      // Unrecognised text - ask for numbers
       await sendText(ctx.phone, buildSkillPromptText('🔧 *Please reply with the numbers from the list below.*', existingSkills))
     }
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
@@ -954,11 +954,11 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
   const rows = [
-    { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot — ${ACTIVE_PILOT_REGION_LABEL}` },
-    { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon — register now' },
-    { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon — register now' },
-    { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon — register now' },
-    { id: 'area_other', title: 'Other province', description: '🔜 Coming soon — register now' },
+    { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot - ${ACTIVE_PILOT_REGION_LABEL}` },
+    { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon - register now' },
+    { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon - register now' },
+    { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon - register now' },
+    { id: 'area_other', title: 'Other province', description: '🔜 Coming soon - register now' },
   ]
 
   await sendList(
@@ -972,7 +972,7 @@ async function promptArea(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'edit_skills' || ctx.reply.id === 'skills_change') {
-    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* - previous selection will be replaced.'))
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
   }
 
@@ -999,11 +999,11 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       [{
         title: 'Areas',
         rows: [
-          { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot — ${ACTIVE_PILOT_REGION_LABEL}` },
-          { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon — register now' },
-          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon — register now' },
-          { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon — register now' },
-          { id: 'area_other', title: 'Other province', description: '🔜 Coming soon — register now' },
+          { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot - ${ACTIVE_PILOT_REGION_LABEL}` },
+          { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon - register now' },
+          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon - register now' },
+          { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon - register now' },
+          { id: 'area_other', title: 'Other province', description: '🔜 Coming soon - register now' },
         ],
       }],
       { buttonLabel: 'Choose Area' }
@@ -1014,11 +1014,11 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
   const areaLabel = ctx.reply.title ?? ''
   const provinceKey = PROVINCE_KEY_MAP[ctx.reply.id ?? ''] ?? 'gauteng'
 
-  // Soft pilot notice for providers outside Gauteng — still allow full registration
+  // Soft pilot notice for providers outside Gauteng - still allow full registration
   if (ctx.reply.id !== 'area_gauteng') {
     await sendText(
       ctx.phone,
-      `🌍 *Heads up — Pilot Phase*\n\nPlug A Pro is currently operating in Gauteng only. We are expanding soon!\n\nYou can still complete your profile now — we will WhatsApp you the moment we go live in your area. No need to re-register later.`
+      `🌍 *Heads up - Pilot Phase*\n\nPlug A Pro is currently operating in Gauteng only. We are expanding soon!\n\nYou can still complete your profile now - we will WhatsApp you the moment we go live in your area. No need to re-register later.`
     )
   }
 
@@ -1027,7 +1027,7 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
     const cities = await getCities(provinceKey)
 
     if (cities.length === 0) {
-      // No cities seeded yet — ask provider to type their suburb for finer granularity
+      // No cities seeded yet - ask provider to type their suburb for finer granularity
       await sendText(
         ctx.phone,
         `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
@@ -1057,7 +1057,7 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       },
     }
   } catch {
-    // DB unavailable — ask provider to type their suburb
+    // DB unavailable - ask provider to type their suburb
     await sendText(
       ctx.phone,
       `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
@@ -1110,7 +1110,7 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
     const regions = await getRegions(cityId)
 
     if (regions.length === 0) {
-      // No regions for this city — ask provider to type their suburb
+      // No regions for this city - ask provider to type their suburb
       await sendText(
         ctx.phone,
         `📍 Which suburb or area of *${cityLabel}* do you mainly work in?\n\nType the suburb name (e.g. *Allen's Nek*, *Fourways*, *Rondebosch*):`,
@@ -1172,7 +1172,7 @@ async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
-  // Fallback "Done" — used if the user somehow re-enters this step
+  // Fallback "Done" - used if the user somehow re-enters this step
   if (ctx.reply.id === 'region_done') {
     const nodeIds = ctx.data.locationNodeIds ?? []
     if (nodeIds.length === 0) {
@@ -1241,7 +1241,7 @@ async function showSuburbNumberedPrompt(
     const suburbs = await getSuburbs(regionId)
 
     if (suburbs.length === 0) {
-      // No suburbs seeded — skip drill-down, proceed to experience
+      // No suburbs seeded - skip drill-down, proceed to experience
       await sendExperiencePrompt(phone)
       return {
         nextStep: 'reg_collect_availability',
@@ -1307,12 +1307,12 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
     }
   }
 
-  // "add more" — show numbered list keeping current selections
+  // "add more" - show numbered list keeping current selections
   if (ctx.reply.id === 'suburb_add_more') {
     return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, 0, selectedRegionStatus)
   }
 
-  // "change" — clear all and restart
+  // "change" - clear all and restart
   if (ctx.reply.id === 'suburb_change') {
     return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, selectedRegionStatus)
   }
@@ -1344,7 +1344,7 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
     if (nextOffset >= suburbOptions.length) {
       await sendText(
         ctx.phone,
-        `📍 You have seen all ${suburbOptions.length} suburbs in ${regionLabel}.\n\nReply with numbers to select, or *done* to continue.`
+        `📍 You have seen all ${suburbOptions.length} suburbs in ${regionLabel}.\n\nReply with numbers to select or *done* to continue.`
       )
       return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
     }
@@ -1484,7 +1484,7 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
 
   await sendButtons(
     ctx.phone,
-    '📅 Are you available on weekends?\n\nWe get many weekend requests — workers who work Saturdays often get more leads.',
+    '📅 Are you available on weekends?\n\nWe get many weekend requests - workers who work Saturdays often get more leads.',
     [
       { id: 'avail_weekdays_only', title: '📋 Weekdays only' },
       { id: 'avail_incl_sat', title: '📅 Mon–Sat' },
@@ -1517,8 +1517,8 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     await sendText(
       ctx.phone,
       highRiskLabels.length > 0
-        ? `🧾 Share proof for: ${highRiskLabels.join(', ')}.\n\nYou can send a text note about certification, licence, trade qualification, references, or relevant past work. You can also upload one certificate/photo/PDF at a time.\n\nSubmitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.\n\nOr type *skip* to continue without one.`
-        : '🧾 Share optional work examples — you can send:\n• A text note about past jobs or references\n• One photo or PDF at a time (up to 5 files)\n\nOr type *skip* to continue without one.'
+        ? `🧾 Share proof for: ${highRiskLabels.join(', ')}.\n\nYou can send a text note about certification, licence, trade qualification, references or relevant past work. You can also upload one certificate/photo/PDF at a time.\n\nSubmitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.\n\nOr type *skip* to continue without one.`
+        : '🧾 Share optional work examples - you can send:\n• A text note about past jobs or references\n• One photo or PDF at a time (up to 5 files)\n\nOr type *skip* to continue without one.'
     )
     return { nextStep: 'reg_collect_evidence', nextData: { highRiskServiceLabels: highRiskLabels } }
   }
@@ -1528,7 +1528,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     await sendText(
       ctx.phone,
       highRiskLabels.length > 0
-        ? `Please upload a certificate, licence, trade qualification, or reference document/photo for: ${highRiskLabels.join(', ')}.\n\nSubmitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.`
+        ? `Please upload a certificate, licence, trade qualification or reference document/photo for: ${highRiskLabels.join(', ')}.\n\nSubmitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.`
         : 'Please upload a proof document or photo. You can also type *skip* to continue without uploading one.',
     )
     return { nextStep: 'reg_collect_evidence', nextData: { certificationProofIntent: true, highRiskServiceLabels: highRiskLabels } }
@@ -1583,12 +1583,12 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       }
     }
 
-    // providerApplicationId is not yet created — attachment starts with null FK.
+    // providerApplicationId is not yet created - attachment starts with null FK.
     // handlePending backfills the FK once the ProviderApplication row exists.
     try {
       const { attachmentId } = await downloadAndStoreWhatsAppMedia({
         mediaId: ctx.reply.mediaId,
-        // no providerApplicationId yet — backfilled at submission
+        // no providerApplicationId yet - backfilled at submission
         prefix: proofUpload ? 'certification_proof' : 'provider_work_photo',
         label: proofUpload ? PROVIDER_CERT_DOCUMENT_LABEL : PROVIDER_WORK_PHOTO_LABEL,
       })
@@ -1627,7 +1627,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       }
     } catch (err) {
       console.error(
-        `[registration:handleCollectEvidence] media upload failed — mediaId=${ctx.reply.mediaId} mimeType=${ctx.reply.mimeType ?? 'unknown'}:`,
+        `[registration:handleCollectEvidence] media upload failed - mediaId=${ctx.reply.mediaId} mimeType=${ctx.reply.mimeType ?? 'unknown'}:`,
         err
       )
       await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one.")
@@ -1642,13 +1642,13 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'evidence_add_more') {
     const existing = uniqueStrings(ctx.data.evidenceFileUrls ?? [])
     const remaining = Math.max(0, MAX_EVIDENCE_FILES - existing.length)
-    await sendText(ctx.phone, `📎 Send your next file — one at a time. You can add up to ${remaining} more, or type *skip* to finish.`)
+    await sendText(ctx.phone, `📎 Send your next file - one at a time. You can add up to ${remaining} more or type *skip* to finish.`)
     return { nextStep: 'reg_collect_evidence' }
   }
 
   const evidenceNote = ctx.reply.text?.trim()
   if (!evidenceNote) {
-    await sendText(ctx.phone, 'Reply with your proof note or send a file, or type *skip* if you do not want to add one now.')
+    await sendText(ctx.phone, 'Reply with your proof note or send a file or type *skip* if you do not want to add one now.')
     return { nextStep: 'reg_collect_evidence' }
   }
 
@@ -1671,7 +1671,7 @@ async function handleCollectRates(ctx: FlowContext): Promise<FlowResult> {
         `Call-out fee saved: *${formatRandAmountForProviderOnboarding(callOutFee)}*`,
         `Rate negotiable: *${rateNegotiable ? 'Yes' : 'No'}*`,
         '',
-        'Reply with a number (e.g. *250* or *R250*), or tap *Skip* to continue without one.',
+        'Reply with a number (e.g. *250* or *R250*) or tap *Skip* to continue without one.',
       ].join('\n'),
       [
         { id: 'hourly_rate_skip', title: '⏭️ Skip' },
@@ -1760,7 +1760,7 @@ async function handleCollectHourlyRate(ctx: FlowContext): Promise<FlowResult> {
   const callOutFee = typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : 0
   const rateNegotiable = ctx.data.rateNegotiable !== false
 
-  // Skip path — explicit button or text fallback.
+  // Skip path - explicit button or text fallback.
   if (
     ctx.reply.id === 'hourly_rate_skip' ||
     ctx.reply.text?.trim().toLowerCase() === 'skip'
@@ -1769,11 +1769,11 @@ async function handleCollectHourlyRate(ctx: FlowContext): Promise<FlowResult> {
     return promptProfilePhotoAfterRate(ctx, { hourlyRateSkipped: true, callOutFee, rateNegotiable })
   }
 
-  // Number capture — accept "250", "R250", "250.00", etc.
+  // Number capture - accept "250", "R250", "250.00", etc.
   try {
     const rates = validateProviderOnboardingRates({ hourlyRateText: ctx.reply.text })
     if (rates.hourlyRate == null || rates.hourlyRate < 0) {
-      // INVALID_FEE is the existing error code in the validation helper —
+      // INVALID_FEE is the existing error code in the validation helper -
       // reuse it so the catch handler below renders the same recovery copy
       // as the call-out fee path.
       throw new ProviderOnboardingValidationError('INVALID_FEE', 'Hourly rate is required.')
@@ -1792,7 +1792,7 @@ async function handleCollectHourlyRate(ctx: FlowContext): Promise<FlowResult> {
     if (error instanceof ProviderOnboardingValidationError) {
       await sendText(
         ctx.phone,
-        'Please reply with a valid hourly rate number (e.g. *250* or *R250*), or tap *Skip*.',
+        'Please reply with a valid hourly rate number (e.g. *250* or *R250*) or tap *Skip*.',
       )
       return { nextStep: 'reg_collect_hourly_rate' }
     }
@@ -1809,9 +1809,9 @@ async function promptProfilePhotoAfterRate(
   await sendButtons(
     ctx.phone,
     [
-      '📸 Add an optional *profile photo* — customers are more likely to choose providers with a clear photo.',
+      '📸 Add an optional *profile photo* - customers are more likely to choose providers with a clear photo.',
       '',
-      'Send one photo of yourself, or tap *Skip* to continue without one. You can add it later from the Worker Portal.',
+      'Send one photo of yourself or tap *Skip* to continue without one. You can add it later from the Worker Portal.',
     ].join('\n'),
     [
       { id: 'profile_photo_skip', title: '⏭️ Skip' },
@@ -1827,7 +1827,7 @@ async function promptProfilePhotoAfterRate(
 // shortlist cards consume this via the existing avatar resolver once
 // approval copies it onto Provider.avatarUrl.
 async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> {
-  // Skip path — explicit button or text fallback.
+  // Skip path - explicit button or text fallback.
   if (
     ctx.reply.id === 'profile_photo_skip' ||
     ctx.reply.text?.trim().toLowerCase() === 'skip'
@@ -1839,7 +1839,7 @@ async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> 
     return promptEvidenceAfterPhoto(ctx, { profilePhotoSkipped: true })
   }
 
-  // Image upload — replace any prior photo. Single image only; if a previous
+  // Image upload - replace any prior photo. Single image only; if a previous
   // attachment exists for this provider's photo we accept the new one.
   if (ctx.reply.type === 'image') {
     if (!ctx.reply.mediaId) {
@@ -1847,7 +1847,7 @@ async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> 
       return { nextStep: 'reg_collect_profile_photo' }
     }
     if (ctx.data.profilePhotoMediaId === ctx.reply.mediaId) {
-      // Same media re-delivered — idempotent.
+      // Same media re-delivered - idempotent.
       return promptEvidenceAfterPhoto(ctx, {})
     }
     try {
@@ -1870,7 +1870,7 @@ async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> 
       })
     } catch (err) {
       console.error(
-        `[registration:handleCollectProfilePhoto] media upload failed — mediaId=${ctx.reply.mediaId}:`,
+        `[registration:handleCollectProfilePhoto] media upload failed - mediaId=${ctx.reply.mediaId}:`,
         err,
       )
       await sendWhatsAppJourneyRecovery(ctx.phone, {
@@ -1887,10 +1887,10 @@ async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> 
   }
 
   // Anything else (free text other than skip, document upload, button reply
-  // we don't handle) — re-prompt.
+  // we don't handle) - re-prompt.
   await sendText(
     ctx.phone,
-    'Send one *photo* of yourself, or tap *Skip* (or type *skip*) to continue without a profile photo.',
+    'Send one *photo* of yourself or tap *Skip* (or type *skip*) to continue without a profile photo.',
   )
   return { nextStep: 'reg_collect_profile_photo' }
 }
@@ -1905,13 +1905,13 @@ async function promptEvidenceAfterPhoto(
   await sendButtons(
     ctx.phone,
     [
-      '📝 Add an optional *short bio* — 1–2 sentences customers will see on your profile card.',
+      '📝 Add an optional *short bio* - 1–2 sentences customers will see on your profile card.',
       '',
       'Examples:',
       '• "10 years fixing geysers and bathroom leaks. Gauteng-based. Always on time."',
       '• "Friendly handyman, no job too small. Family business since 2018."',
       '',
-      'Type your bio (max 280 characters), or tap *Skip*.',
+      'Type your bio (max 280 characters) or tap *Skip*.',
     ].join('\n'),
     [
       { id: 'provider_bio_skip', title: '⏭️ Skip' },
@@ -1936,7 +1936,7 @@ async function handleCollectBio(ctx: FlowContext): Promise<FlowResult> {
 
   const bio = ctx.reply.text?.trim()
   if (!bio) {
-    await sendText(ctx.phone, 'Type your short bio, or tap *Skip*.')
+    await sendText(ctx.phone, 'Type your short bio or tap *Skip*.')
     return { nextStep: 'reg_collect_bio' }
   }
 
@@ -1963,7 +1963,7 @@ async function promptAlternateMobileAfterBio(
       '',
       'This can help customers contact you on a safer number if your primary line is busy.',
       'Reply with a South African mobile number or tap Skip.',
-      'Examples: 082 123 4567, +27 82 123 4567, or 27821234567.',
+      'Examples: 082 123 4567, +27 82 123 4567 or 27821234567.',
     ].join('\n'),
     [
       { id: 'alternate_mobile_skip', title: '⏭️ Skip' },
@@ -1983,7 +1983,7 @@ async function handleCollectAlternateMobile(ctx: FlowContext): Promise<FlowResul
 
   const text = ctx.reply.text?.trim()
   if (!text) {
-    await sendText(ctx.phone, 'Please reply with a valid SA mobile number, or tap Skip.')
+    await sendText(ctx.phone, 'Please reply with a valid SA mobile number or tap Skip.')
     return { nextStep: 'reg_collect_alternate_mobile' }
   }
 
@@ -2006,7 +2006,7 @@ async function promptPreferredLanguageAfterAlternateMobile(
     [
       '🗣️ Optional: preferred language for customer communication.',
       '',
-      'Choose one below, or type your own and send.',
+      'Choose one below or type your own and send.',
       'You can update this later in your Worker Portal.',
     ].join('\n'),
     [
@@ -2049,7 +2049,7 @@ async function handleCollectPreferredLanguage(ctx: FlowContext): Promise<FlowRes
 
   const provided = ctx.reply.text?.trim().slice(0, 64)
   if (!provided) {
-    await sendText(ctx.phone, 'Please type your preferred language, or tap Skip.')
+    await sendText(ctx.phone, 'Please type your preferred language or tap Skip.')
     return { nextStep: 'reg_collect_preferred_language' }
   }
 
@@ -2152,7 +2152,7 @@ async function promptEvidenceAfterBio(
         '',
         `Selected high-risk services: *${labels.join(', ')}*`,
         '',
-        'Please add a note or upload proof such as a certificate, licence, trade qualification, or reference work. This helps the Plug A Pro review team assess your application.',
+        'Please add a note or upload proof such as a certificate, licence, trade qualification or reference work. This helps the Plug A Pro review team assess your application.',
         '',
         'Submitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.',
       ].join('\n'),
@@ -2170,7 +2170,7 @@ async function promptEvidenceAfterBio(
     [
       '🧾 Would you like to add an optional work note?',
       '',
-      'Examples: past jobs, references, or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
+      'Examples: past jobs, references or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
     ].join('\n'),
     [
       { id: 'evidence_add', title: '✍️ Add proof note' },
@@ -2185,7 +2185,7 @@ async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handlePending(ctx: FlowContext): Promise<FlowResult> {
-  // Edit — show field selection, not full restart
+  // Edit - show field selection, not full restart
   if (ctx.reply.id === 'reg_edit') {
     return showEditMenu(ctx)
   }
@@ -2383,7 +2383,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         cohortName: cohort.cohortName,
         locationNodeIds: submitData.locationNodeIds,
         // Enrichment (syncProviderSkills, upsertStructuredServiceAreas) must not run
-        // inside the transaction — a caught DB error inside those helpers puts the
+        // inside the transaction - a caught DB error inside those helpers puts the
         // PostgreSQL connection in ABORTED state even when swallowed at the JS level,
         // causing all subsequent tx queries to fail. Run enrichment post-commit below.
         skipEnrichment: true,
@@ -2503,7 +2503,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       // Phase 4b: link the optional profile photo Attachment to the
       // ProviderApplication, then copy its URL onto Provider.avatarUrl so
       // the customer-facing shortlist card has a photo to render
-      // immediately. Failures here are non-fatal — the application still
+      // immediately. Failures here are non-fatal - the application still
       // goes through; the photo can be re-attached from admin tooling.
       const profilePhotoAttachmentId = ctx.data.profilePhotoAttachmentId
       if (profilePhotoAttachmentId) {
@@ -2694,7 +2694,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     // Send template confirmation (covers the case where >24h passes before we reply)
     // Intentional direct sendTemplate bypass: provider applicants have no Customer record yet,
     // so canSend() would return 'customer_not_found'. This is a provider-facing transactional
-    // message (application acknowledgement) — opt-in policy does not apply.
+    // message (application acknowledgement) - opt-in policy does not apply.
     const { sendTemplate } = await import('../whatsapp')
     sendTemplate({
       to: ctx.phone,
@@ -2851,7 +2851,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_skills' }   // handleCollectSkills reads the text as the new name
 
     case 'edit_skills':
-      await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* - previous selection will be replaced.'))
       return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
 
     case 'edit_area':
@@ -2878,14 +2878,14 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
     case 'edit_evidence':
       await sendText(
         ctx.phone,
-        '🧾 Share a short note about past work or references you want customers to see later.\n\nReply with your note, or type *skip* to clear it.'
+        '🧾 Share a short note about past work or references you want customers to see later.\n\nReply with your note or type *skip* to clear it.'
       )
       return { nextStep: 'reg_collect_evidence' }
 
     case 'edit_availability':
       await sendButtons(
         ctx.phone,
-        '📅 Are you available on weekends?\n\nWe get many weekend requests — workers who work Saturdays often get more leads.',
+        '📅 Are you available on weekends?\n\nWe get many weekend requests - workers who work Saturdays often get more leads.',
         [
           { id: 'avail_weekdays_only', title: '📋 Weekdays only' },
           { id: 'avail_incl_sat',      title: '📅 Mon–Sat' },
@@ -2895,7 +2895,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_evidence' }
 
     default:
-      // Unknown reply — re-show the edit menu
+      // Unknown reply - re-show the edit menu
       return showEditMenu(ctx)
   }
 }
@@ -2933,8 +2933,8 @@ function parseReferenceInput(raw: string | undefined): { name: string; mobileE16
 
 /**
  * Parses a WhatsApp reply into a deduplicated, sorted list of 1-based positive integers.
- * Accepts comma, semicolon, and whitespace separators.
- * Rejects floats ("1.2"), non-numeric fragments, and zero/negative numbers.
+ * Accepts comma, semicolon and whitespace separators.
+ * Rejects floats ("1.2"), non-numeric fragments and zero/negative numbers.
  * Strips leading # (e.g. "#3" → 3) and trailing period (e.g. "1." → 1).
  * Trailing periods appear when users copy or mimic WhatsApp's rendered numbered list
  * format ("1. Plumbing" → user types "1.").
@@ -2947,8 +2947,8 @@ function parseReferenceInput(raw: string | undefined): { name: string; mobileE16
  *   "1,1,2,3,2" → [1, 2, 3]  (deduplicated)
  *   "#1,#3"     → [1, 3]
  *   "1.,3."     → [1, 3]      (trailing periods stripped)
- *   "1.2,3"     → [3]         (1.2 is not an integer — rejected)
- *   "1a,3"      → [3]         (1a is not a pure integer — rejected)
+ *   "1.2,3"     → [3]         (1.2 is not an integer - rejected)
+ *   "1a,3"      → [3]         (1a is not a pure integer - rejected)
  */
 function parseNumberedInput(raw: string): number[] {
   const parts = raw.trim().split(/[\s,;]+/).filter(Boolean)
@@ -2956,7 +2956,7 @@ function parseNumberedInput(raw: string): number[] {
   for (const part of parts) {
     // Strip leading # (e.g. "#1") and trailing period (e.g. "1." from WhatsApp list copy)
     const stripped = part.replace(/^#/, '').replace(/\.$/, '')
-    // Only accept pure digit strings — no floats, no mixed alphanumeric
+    // Only accept pure digit strings - no floats, no mixed alphanumeric
     if (!/^\d+$/.test(stripped)) continue
     const n = parseInt(stripped, 10)
     if (n > 0) seen.add(n)

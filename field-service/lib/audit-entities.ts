@@ -1,7 +1,7 @@
 /**
  * Canonical entity name strings used in AuditLog.entityType and
- * AdminAuditEvent.entityType. Always use these constants — never bare
- * string literals — so reads and writes always match.
+ * AdminAuditEvent.entityType. Always use these constants - never bare
+ * string literals - so reads and writes always match.
  */
 export const AUDIT_ENTITY = {
   CUSTOMER: 'Customer',

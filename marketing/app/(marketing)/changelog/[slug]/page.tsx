@@ -18,7 +18,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const entry = await getChangelogBySlug(slug);
   if (!entry) return buildMetadata({ title: "Not Found" });
-  return buildMetadata({ title: `${entry.version} — ${entry.title}` });
+  return buildMetadata({ title: `${entry.version} - ${entry.title}` });
 }
 
 export default async function ChangelogEntryPage({

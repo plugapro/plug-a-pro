@@ -16,13 +16,13 @@ import { analytics } from "@/lib/analytics";
 import { buildWhatsAppLink, whatsappAudienceOptions } from "@/lib/whatsapp";
 
 const JOB_CATEGORIES: { icon: LucideIcon; name: string; description: string }[] = [
-  { icon: Wrench, name: "Plumbing", description: "Taps, toilets, drains, leaks, and pipe repairs" },
+  { icon: Wrench, name: "Plumbing", description: "Taps, toilets, drains, leaks and pipe repairs" },
   { icon: Paintbrush, name: "Painting", description: "Interior and exterior, rooms or touch-ups" },
-  { icon: Flower2, name: "Garden & Lawn", description: "Mowing, clearing, trimming, and landscaping" },
-  { icon: Home, name: "Handyman / Odd Jobs", description: "Shelves, fixtures, doors, tiling, and everyday repairs" },
-  { icon: WashingMachine, name: "Appliances", description: "Fault-finding, inspection, and repair" },
+  { icon: Flower2, name: "Garden & Lawn", description: "Mowing, clearing, trimming and landscaping" },
+  { icon: Home, name: "Handyman / Odd Jobs", description: "Shelves, fixtures, doors, tiling and everyday repairs" },
+  { icon: WashingMachine, name: "Appliances", description: "Fault-finding, inspection and repair" },
   { icon: Hammer, name: "DIY Assistance", description: "Stuck on a project? Get help to finish it properly" },
-  { icon: ShieldCheck, name: "General Repairs", description: "Drywall, plastering, grouting, and home upkeep" },
+  { icon: ShieldCheck, name: "General Repairs", description: "Drywall, plastering, grouting and home upkeep" },
 ];
 
 const WORKER_TYPES: string[] = [
@@ -50,7 +50,7 @@ export function WhoItsFor() {
               Any small home job, sorted
             </h2>
             <p className="text-muted-foreground max-w-xl">
-              Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug A Pro matches you with a nearby local pro who can do the job.
+              Whether you need a tap fixed, a room painted or help finishing a DIY project, Plug A Pro matches you with a nearby local pro who can do the job.
             </p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -89,7 +89,7 @@ export function WhoItsFor() {
               More jobs. Less waiting.
             </h2>
             <p className="text-muted-foreground mb-6">
-              You have the skills. Getting steady, paying customers is the hard part. Plug A Pro matches you to nearby customers looking for your trade, and delivers job lead previews to your WhatsApp. No registered business required.
+              You have the skills. Getting steady, paying customers is the hard part. Plug A Pro matches you to nearby customers looking for your trade and delivers job lead previews to your WhatsApp. No registered business required.
             </p>
             <ul className="space-y-2">
               {WORKER_TYPES.map((type) => (
@@ -135,7 +135,7 @@ export function WhoItsFor() {
               Pick your path and start the conversation
             </h2>
             <p className="text-muted-foreground">
-              Whether you need help at home, want more work, or want to join as a provider or partner, the first step is the same: message us on WhatsApp.
+              Whether you need help at home, want more work or want to join as a provider or partner, the first step is the same: message us on WhatsApp.
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-3">

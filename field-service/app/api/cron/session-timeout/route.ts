@@ -93,7 +93,7 @@ export async function GET(request: Request) {
       // ── Send timeout message ───────────────────────────────────────────────
       const message =
         `Hi ${firstName}, your session has ended because there was no activity for a while. ` +
-        `Please reply to this message when you're ready to continue, and we'll help you pick up from there.`
+        `Please reply to this message when you're ready to continue and we'll help you pick up from there.`
 
       await sendText(conv.phone, message)
 

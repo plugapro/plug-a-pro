@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
   }
 
   // reportToken is delivered via the SEPARATE `otp_security_check` UTILITY
-  // template after the OTP send succeeds — see the signal-gated block below.
+  // template after the OTP send succeeds - see the signal-gated block below.
   // Do not inject the token into otp_login; that AUTHENTICATION template's
   // URL button parameter MUST equal the OTP code (Meta error #131008).
 
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Phase-2: signal-gated security check prompt. Detached via Next.js after()
-  // so the response returns to Supabase IMMEDIATELY — the signal evaluation
+  // so the response returns to Supabase IMMEDIATELY - the signal evaluation
   // and template send happen post-response. Without this, the phase-2 block
   // could add up to ~4.5s of signal-eval latency + ~10s of Meta-API latency
   // BEFORE the hook returns 200, easily exceeding Supabase's ~5s auth-hook
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
       after(phaseTwoWork)
     } catch {
       // after() not available in this execution context (nested in another
-      // after() callback, or a test runtime). Fall back to fire-and-forget;
+      // after() callback or a test runtime). Fall back to fire-and-forget;
       // the work still runs but we lose Vercel's guarantee that the runtime
       // stays alive until completion. Acceptable: phase-2 is best-effort.
       void phaseTwoWork()

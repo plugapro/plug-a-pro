@@ -21,15 +21,15 @@ export default function AboutPage() {
         <div className="prose prose-zinc dark:prose-invert max-w-none">
           <h2>What we do</h2>
           <p>
-            When something breaks at home, finding a trustworthy person to fix it is harder than it should be. You either know someone, or you don&apos;t. Plug A Pro solves that.
+            When something breaks at home, finding a trustworthy person to fix it is harder than it should be. You either know someone or you don&apos;t. Plug A Pro solves that.
           </p>
           <p>
-            We match customers with skilled local service providers in their area: plumbers, painters, gardeners, handymen, appliance repairers, and more. Customers describe the job on WhatsApp. We find nearby available local pros. Both sides connect, confirm, and get the job done.
+            We match customers with skilled local service providers in their area: plumbers, painters, gardeners, handymen, appliance repairers and more. Customers describe the job on WhatsApp. We find nearby available local pros. Both sides connect, confirm and get the job done.
           </p>
 
           <h2>For service providers</h2>
           <p>
-            South Africa has hundreds of thousands of skilled local tradespeople and independent service providers who earn job to job. Most find work through word of mouth, standing outside hardware stores, or WhatsApp groups. That&apos;s not a reliable pipeline.
+            South Africa has hundreds of thousands of skilled local tradespeople and independent service providers who earn job to job. Most find work through word of mouth, standing outside hardware stores or WhatsApp groups. That&apos;s not a reliable pipeline.
           </p>
           <p>
             Plug A Pro connects local service providers with matched job leads based on their skills and the areas they cover. No app to download. No monthly fees. Matched leads reach them on the WhatsApp they already use.
@@ -37,7 +37,7 @@ export default function AboutPage() {
 
           <h2>How it works</h2>
           <p>
-            Customers message us on WhatsApp to describe a job. We match them to nearby local pros. The service provider reviews the lead, accepts it, does an inspection if needed, and submits a written quote. The customer approves. The job happens. Both sides leave a review.
+            Customers message us on WhatsApp to describe a job. We match them to nearby local pros. The service provider reviews the lead, accepts it, does an inspection if needed and submits a written quote. The customer approves. The job happens. Both sides leave a review.
           </p>
           <p>
             Neither side shares their personal number until both parties have confirmed. We handle all communication until the job is underway.
@@ -45,7 +45,7 @@ export default function AboutPage() {
 
           <h2>Built for the real world</h2>
           <p>
-            We design for South African conditions: mobile-first, WhatsApp-primary, and built for budget Android devices on patchy data. No apps to install, no accounts to create before you can get help.
+            We design for South African conditions: mobile-first, WhatsApp-primary and built for budget Android devices on patchy data. No apps to install, no accounts to create before you can get help.
           </p>
 
           <h2>Get in touch</h2>

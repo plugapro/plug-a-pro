@@ -159,7 +159,7 @@ async function safeAudit(
     await recordAuditLog(params, client as Parameters<typeof recordAuditLog>[1])
   } catch (err) {
     // Structured event so the log pipeline can alert on sustained audit-write
-    // failures. Never include before/after payloads — the failure may itself
+    // failures. Never include before/after payloads - the failure may itself
     // be payload-related and carry sensitive context.
     console.error(JSON.stringify({
       event: 'audit.write_failed',
@@ -200,7 +200,7 @@ async function createSecurityEvent(
   })
 }
 
-// Keep this lookup shape centralized because the auth, telemetry, and report
+// Keep this lookup shape centralized because the auth, telemetry and report
 // paths must agree on which challenge is eligible for mutation.
 async function findLatestActiveChallenge(
   client: OtpSecurityClient,
@@ -296,7 +296,7 @@ export async function recordOtpChallenge(params: {
   const expiresAt = addMinutes(now, getOtpSecurityConfig().otpExpiryMinutes)
 
   const result = await serviceDb().$transaction(async (client) => {
-    // Only hashes and allowlisted context are persisted; raw OTP, IP, UA, and
+    // Only hashes and allowlisted context are persisted; raw OTP, IP, UA and
     // token values remain in process memory for this request.
     const challenge = await client.otpChallenge.create({
       data: {
@@ -871,8 +871,8 @@ export async function pruneTerminalOtpChallenges(
  * Drops historical security_events older than the configured retention
  * window. Default 365 days (`SECURITY_EVENT_RETENTION_DAYS`).
  *
- * All event statuses are eligible — including RESOLVED and FALSE_POSITIVE
- * — once they're past the retention horizon. The audit value of an event
+ * All event statuses are eligible - including RESOLVED and FALSE_POSITIVE
+ * - once they're past the retention horizon. The audit value of an event
  * decays with age; for compliance / long-term audit trails the canonical
  * `audit_logs` table remains untouched.
  */
@@ -895,8 +895,8 @@ export async function pruneStaleSecurityEvents(
  * configured retention window. Default 180 days
  * (`ACCOUNT_SECURITY_STATE_RETENTION_DAYS`).
  *
- * Active rows — those with `lockedUntil > now` OR `stepUpRequired = true`
- * — are NEVER pruned, regardless of `updatedAt`. This guarantees the
+ * Active rows - those with `lockedUntil > now` OR `stepUpRequired = true`
+ * - are NEVER pruned, regardless of `updatedAt`. This guarantees the
  * cleanup never removes state that's actively gating a sign-in.
  */
 export async function pruneClearedAccountSecurityStates(

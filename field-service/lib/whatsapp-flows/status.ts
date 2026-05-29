@@ -126,7 +126,7 @@ function sortRequestsForMyRequests<T extends Pick<JobRequestWithRuntime, 'status
 }
 
 function requestListLine(request: JobRequestWithRuntime, index: number) {
-  return `${index + 1}. ${requestReference(request)} — ${request.category} — ${requestStatusLabel(request).replace(/^[^\p{L}\p{N}]+/u, '')}`
+  return `${index + 1}. ${requestReference(request)} - ${request.category} - ${requestStatusLabel(request).replace(/^[^\p{L}\p{N}]+/u, '')}`
 }
 
 function createDefaultLeadSummary(): LeadSummaryErrorSafe {
@@ -158,7 +158,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
 
   try {
     // ── Step: initial status query ───────────────────────────────────────────
-    log('step=status_show — looking up customer')
+    log('step=status_show - looking up customer')
 
     const customer = await db.customer.findUnique({
       where: { phone: ctx.phone },
@@ -244,7 +244,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       log('status_pick reached with stale/invalid request id; showing request list')
     }
 
-    log(`customerId=${customer.id} — fetching job requests`)
+    log(`customerId=${customer.id} - fetching job requests`)
 
     const jobRequests = await db.jobRequest.findMany({
       where: { customerId: customer.id },
@@ -318,7 +318,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
         )
         return { nextStep: 'status_pick' }
       } catch (error) {
-        log(`WARN: sendList failed for request picker — falling back. error=${error instanceof Error ? error.message : String(error)}`)
+        log(`WARN: sendList failed for request picker - falling back. error=${error instanceof Error ? error.message : String(error)}`)
 
         const buttonChoices = requestChoices.slice(0, 2).map(({ id, buttonTitle }) => ({
           id,
@@ -335,18 +335,18 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
           )
           return { nextStep: 'status_pick' }
         } catch (fallbackError) {
-          log(`WARN: sendButtons fallback failed for request picker — showing text list. error=${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
+          log(`WARN: sendButtons fallback failed for request picker - showing text list. error=${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
         }
 
         await sendText(
           ctx.phone,
-          `${listBody}\n\nReply with the request reference you want to track, or reply *menu*.`
+          `${listBody}\n\nReply with the request reference you want to track or reply *menu*.`
         )
         return { nextStep: 'status_pick' }
       }
     }
 
-    // ── Single active request — or fall back to most recent ─────────────────
+    // ── Single active request - or fall back to most recent ─────────────────
     const target = activeRequests[0] ?? sortedRequests[0]
     log(`resolved to jobRequestId=${target.id} category=${target.category} status=${target.status}`)
     return showRequestStatus(ctx.phone, target.id, reqId, customer.id)
@@ -490,9 +490,9 @@ async function showRequestStatus(
         return showRequestStatus(phone, latestForCustomer.id, reqId, expectedCustomerId)
       }
 
-      // No valid fallback available (customer has no requests, or the fallback
-      // query returned the same stale/foreign ID — both are safe-exit paths).
-      log(`request ownership unresolvable for id=${jobRequestId} — sending safe error`)
+      // No valid fallback available (customer has no requests or the fallback
+      // query returned the same stale/foreign ID - both are safe-exit paths).
+      log(`request ownership unresolvable for id=${jobRequestId} - sending safe error`)
       await sendButtons(
         phone,
         '⚠️ That request could not be loaded for this account.',
@@ -532,10 +532,10 @@ async function showRequestStatus(
       if (extra) {
         const appUrl = getPublicAppUrl()
         if (!appUrl) {
-          log('WARN: app base URL is not set — cannot send approval CTA')
+          log('WARN: app base URL is not set - cannot send approval CTA')
           await sendText(
             phone,
-            `⚠️ *Action needed: ${jr.category}*\n\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nContact support to approve or decline: support@plugapro.co.za`
+            `⚠️ *Action needed: ${jr.category}*\n\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ - R${Number(extra.amount).toFixed(0)}\n\nContact support to approve or decline: support@plugapro.co.za`
           )
           return { nextStep: 'done' }
         }
@@ -545,7 +545,7 @@ async function showRequestStatus(
           log('WARN: Could not build approval URL from app base config')
           await sendText(
             phone,
-            `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nContact support to approve or decline: support@plugapro.co.za`
+            `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ - R${Number(extra.amount).toFixed(0)}\n\nContact support to approve or decline: support@plugapro.co.za`
           )
           return { nextStep: 'done' }
         }
@@ -554,15 +554,15 @@ async function showRequestStatus(
         try {
           await sendCtaUrl(
             phone,
-            `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nTap below to approve or decline:`,
+            `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ - R${Number(extra.amount).toFixed(0)}\n\nTap below to approve or decline:`,
             'Review & Approve',
             approvalUrl
           )
         } catch (error) {
-          log(`WARN: sendCtaUrl failed for approval request — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
+          log(`WARN: sendCtaUrl failed for approval request - falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
           await sendText(
             phone,
-            `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nOpen the Plug A Pro app or reply *menu* to manage your request.`
+            `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ - R${Number(extra.amount).toFixed(0)}\n\nOpen the Plug A Pro app or reply *menu* to manage your request.`
           )
         }
         return { nextStep: 'done' }
@@ -654,14 +654,14 @@ async function showRequestStatus(
         `📋 *Request ${requestReference(jr)}*\n\n` +
         `Review Providers First is ready.\n\n` +
         `We found ${reviewRankedCandidateCount} matching provider${reviewRankedCandidateCount === 1 ? '' : 's'}.\n\n` +
-        `Open your request to view their profiles and rank up to 3 providers in your preferred order. We'll contact your 1st choice first — if they can't make it, we'll automatically try your 2nd and 3rd.`
+        `Open your request to view their profiles and rank up to 3 providers in your preferred order. We'll contact your 1st choice first - if they can't make it, we'll automatically try your 2nd and 3rd.`
 
       if (trackingUrl) {
         try {
           await sendCtaUrl(phone, body, ctaLabelFor('view_request'), trackingUrl)
           return { nextStep: 'done' }
         } catch (error) {
-          log(`WARN: review-first CTA send failed — falling back to buttons. error=${error instanceof Error ? error.message : String(error)}`)
+          log(`WARN: review-first CTA send failed - falling back to buttons. error=${error instanceof Error ? error.message : String(error)}`)
         }
       }
 
@@ -735,7 +735,7 @@ async function showRequestStatus(
           )
           log(`INFO: request status CTA sent. requestId=${jr.id} label=Check status`)
         } catch (error) {
-          log(`WARN: status CTA send failed — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
+          log(`WARN: status CTA send failed - falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
           await sendText(phone, `${body}\n\nTap Track My Request to refresh.`)
         }
       } else {
@@ -799,7 +799,7 @@ function requestStatusBody(
   latestDispatchStatus: DispatchDecisionStatus | null,
 ) {
   if (requestStatus === 'PENDING_VALIDATION') {
-    return `${statusLabel}\n\nChoose *Quick Match* to contact one suitable provider at a time, or *Review Providers First* to compare options before choosing.`
+    return `${statusLabel}\n\nChoose *Quick Match* to contact one suitable provider at a time or *Review Providers First* to compare options before choosing.`
   }
 
   if (requestStatus === 'OPEN' || requestStatus === 'MATCHING') {

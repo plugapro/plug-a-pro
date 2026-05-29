@@ -8,10 +8,10 @@
 // 3. Get approval (usually 24-72h for new templates)
 //
 // Template categories used:
-//   UTILITY    — transactional, post-purchase, service updates
-//   MARKETING  — re-engagement, promotions (higher cost, lower delivery in DND)
+//   UTILITY    - transactional, post-purchase, service updates
+//   MARKETING  - re-engagement, promotions (higher cost, lower delivery in DND)
 //
-// Variable notation: {{1}}, {{2}} … — positional, replaced at send time.
+// Variable notation: {{1}}, {{2}} … - positional, replaced at send time.
 
 export const TEMPLATES = {
 
@@ -28,7 +28,7 @@ export const TEMPLATES = {
   },
 
   // Sent immediately after `otp_login` when the OTP send matches a fraud
-  // signal (send-velocity ≥3/h, IP-diversity ≥2 in 30m, or any NEW/ACKNOWLEDGED
+  // signal (send-velocity ≥3/h, IP-diversity ≥2 in 30m or any NEW/ACKNOWLEDGED
   // security_event for this phone in the last 90 days). Body is parameterless;
   // the single quick-reply button carries a per-challenge report token in its
   // payload variable. Inbound handler in lib/whatsapp-bot.ts already parses
@@ -40,10 +40,10 @@ export const TEMPLATES = {
     description: 'Signal-gated security check after OTP send; one quick-reply button to report unrequested OTP.',
     // No body parameters. Quick-reply button payload param: {{1}} = report token.
     example:
-      "Plug A Pro security check.\n\nWe just sent you a sign-in code. If you didn't request this, tap below to block it — your account stays safe.",
+      "Plug A Pro security check.\n\nWe just sent you a sign-in code. If you didn't request this, tap below to block it - your account stays safe.",
   },
 
-  // ─── Customer journey — booking lifecycle ─────────────────────────────────
+  // ─── Customer journey - booking lifecycle ─────────────────────────────────
 
   booking_confirmation: {
     name: 'booking_confirmation',
@@ -85,13 +85,13 @@ export const TEMPLATES = {
       'Hi {{1}}, your {{2}} booking has been cancelled. {{3}}',
   },
 
-  // ─── Customer journey — payment ───────────────────────────────────────────
+  // ─── Customer journey - payment ───────────────────────────────────────────
 
   payment_reminder: {
     name: 'payment_reminder',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'Sent 2h after PENDING_PAYMENT status — resends payment link',
+    description: 'Sent 2h after PENDING_PAYMENT status - resends payment link',
     // {{1}} customer name, {{2}} service, {{3}} amount; payment URL is a button
     example:
       'Hi {{1}}, your {{2}} booking is waiting for payment of {{3}}. Pay using the button below and your slot is confirmed.',
@@ -101,13 +101,13 @@ export const TEMPLATES = {
     name: 'payment_received',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'Sent when payment clears (Peach webhook) — explicit confirmation',
+    description: 'Sent when payment clears (Peach webhook) - explicit confirmation',
     // {{1}} customer name, {{2}} amount, {{3}} service, {{4}} booking ref
     example:
-      'Hi {{1}}, we received your payment of {{2}} for {{3}}. Booking confirmed — Ref: {{4}}. Thank you!',
+      'Hi {{1}}, we received your payment of {{2}} for {{3}}. Booking confirmed - Ref: {{4}}. Thank you!',
   },
 
-  // ─── Customer journey — technician dispatch ───────────────────────────────
+  // ─── Customer journey - technician dispatch ───────────────────────────────
 
   technician_assigned: {
     name: 'technician_assigned',
@@ -125,9 +125,9 @@ export const TEMPLATES = {
     category: 'UTILITY',
     description: 'Sent when technician status changes to EN_ROUTE',
     // {{1}} customer name, {{2}} technician name, {{3}} ETA
-    // Body registered with Meta 2026-04-08 (original body was rejected — leading param).
+    // Body registered with Meta 2026-04-08 (original body was rejected - leading param).
     example:
-      'Hi {{1}}, your Plug A Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!',
+      'Hi {{1}}, your Plug A Pro technician {{2}} is heading your way now. Expected arrival in {{3}} - see you soon!',
   },
 
   technician_arrived: {
@@ -169,12 +169,12 @@ export const TEMPLATES = {
       'Hi {{1}}, how did we do? Share your feedback using the button below. We appreciate your support!',
   },
 
-  // ─── Customer journey — quote flow ────────────────────────────────────────
+  // ─── Customer journey - quote flow ────────────────────────────────────────
 
   quote_ready: {
     name: 'quote_ready',
     language: 'en_ZA',
-    // Meta classified this as MARKETING (not UTILITY) — category must match or policy gate is wrong.
+    // Meta classified this as MARKETING (not UTILITY) - category must match or policy gate is wrong.
     // Implication: customers must have whatsappMarketingOptIn=true to receive quote notifications.
     // If this blocks too many users, re-submit with a more transactional body to get UTILITY approval.
     category: 'MARKETING',
@@ -193,20 +193,20 @@ export const TEMPLATES = {
     description: 'Sent when a slot opens in the area a customer requested (Notify Me)',
     // {{1}} customer name, {{2}} service, {{3}} available slot; booking URL is a button
     example:
-      'Good news {{1}}! A slot for {{2}} has opened for {{3}} in your area. Tap the button below to book — slots go fast!',
+      'Good news {{1}}! A slot for {{2}} has opened for {{3}} in your area. Tap the button below to book - slots go fast!',
   },
 
   no_technician_available: {
     name: 'no_technician_available',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'Sent when no technician can be matched — ask to reschedule or wait',
+    description: 'Sent when no technician can be matched - ask to reschedule or wait',
     // {{1}} customer name, {{2}} service, {{3}} original date; reschedule URL is a button
     example:
-      'Hi {{1}}, we could not find a technician for your {{2}} on {{3}}. Please reschedule using the button below, or we will contact you when one is available.',
+      'Hi {{1}}, we could not find a technician for your {{2}} on {{3}}. Please reschedule using the button below or we will contact you when one is available.',
   },
 
-  // ─── Technician — job matching & dispatch ────────────────────────────────
+  // ─── Technician - job matching & dispatch ────────────────────────────────
 
   job_offer: {
     name: 'job_offer',
@@ -247,7 +247,7 @@ export const TEMPLATES = {
     name: 'provider_rfp_lead_invite',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'RFP/shortlist invitation — sent before the customer selects a provider; copy does not claim "selected you"',
+    description: 'RFP/shortlist invitation - sent before the customer selects a provider; copy does not claim "selected you"',
     // {{1}} provider first name, {{2}} service, {{3}} area, {{4}} date/window;
     // button (url, index 0): {{1}} signed lead access token suffix appended to /leads/access/
     example:
@@ -272,10 +272,10 @@ export const TEMPLATES = {
     description: 'Sent when payment for a completed job is released to the technician',
     // {{1}} tech first name, {{2}} amount, {{3}} service, {{4}} expected arrival (e.g. "1–2 business days")
     example:
-      'Hi {{1}}, your payment of {{2}} for the {{3}} job has been released. Funds arrive in {{4}} — great work!',
+      'Hi {{1}}, your payment of {{2}} for the {{3}} job has been released. Funds arrive in {{4}} - great work!',
   },
 
-  // ─── Technician — onboarding ──────────────────────────────────────────────
+  // ─── Technician - onboarding ──────────────────────────────────────────────
 
   technician_application_received: {
     name: 'technician_application_received',
@@ -291,7 +291,7 @@ export const TEMPLATES = {
     name: 'technician_welcome',
     language: 'en_ZA',
     category: 'MARKETING',
-    description: 'Sent on approval — includes app link. Used as template for >24h outreach',
+    description: 'Sent on approval - includes app link. Used as template for >24h outreach',
     // {{1}} tech name, {{2}} app URL
     example:
       'Welcome to Plug A Pro, {{1}}! Your application is approved. Starter credits were awarded. Each customer-selected job you accept uses 1 credit. Worker Portal: {{2}}',
@@ -358,7 +358,7 @@ export const TEMPLATES = {
     name: 'wallet_payfast_topup_initiated',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'Sent after a provider initiates a Payfast gateway top-up (card, EFT, or SCode)',
+    description: 'Sent after a provider initiates a Payfast gateway top-up (card, EFT or SCode)',
     // {{1}} amount formatted (e.g. "R100.00"), {{2}} credits to issue
     // NOTE: WhatsApp template approval required before live sends succeed.
     example:
@@ -397,7 +397,7 @@ export const TEMPLATES = {
     description: 'Sent to a customer after a provider unlocks their lead details',
     // {{1}} provider name
     example:
-      'Good news — we matched you with {{1}}. They may contact you shortly.',
+      'Good news - we matched you with {{1}}. They may contact you shortly.',
   },
 
   customer_match_found: {
@@ -432,7 +432,7 @@ export const TEMPLATES = {
     // body: {{1}} customer first name, {{2}} provider first name,
     //       {{3}} delay label (e.g. "a little late"), {{4}} service label
     example:
-      'Hi {{1}}, {{2}} is running {{3}} for your {{4}} job. They\'re on their way — apologies for any inconvenience.',
+      'Hi {{1}}, {{2}} is running {{3}} for your {{4}} job. They\'re on their way - apologies for any inconvenience.',
   },
 
   customer_provider_en_route: {
@@ -459,7 +459,7 @@ export const TEMPLATES = {
       'Hi {{1}}, {{2}} has submitted a quote for your {{3}} job. Amount: {{4}}. Estimated time: {{5}} hours. Valid until: {{6}}. Details: {{7}}. Please accept or decline below.',
   },
 
-  // ─── Pilot — post-job completion check & review nudge ────────────────────
+  // ─── Pilot - post-job completion check & review nudge ────────────────────
 
   post_job_completion_check: {
     name: 'post_job_completion_check',
@@ -470,7 +470,7 @@ export const TEMPLATES = {
     // button 0 (quick_reply): "Yes, all done" → payload completion_yes_<matchId>
     // button 1 (quick_reply): "Not quite"     → payload completion_no_<matchId>
     example:
-      'Hi {{1}}, did {{2}} complete your {{3}} job as expected?\n\nTap below to let us know — it takes 5 seconds.',
+      'Hi {{1}}, did {{2}} complete your {{3}} job as expected?\n\nTap below to let us know - it takes 5 seconds.',
   },
 
   post_job_provider_review_nudge: {
@@ -479,12 +479,12 @@ export const TEMPLATES = {
     category: 'UTILITY',
     description: 'Sent to a provider when their customer confirmed job completion. Nudges them to leave a review with a URL button. Requires Meta approval.',
     // body: {{1}} provider first name, {{2}} customer first name, {{3}} service label
-    // button 0 (url): review link suffix (token) — base URL must be registered in Meta template
+    // button 0 (url): review link suffix (token) - base URL must be registered in Meta template
     example:
-      'Hi {{1}}, {{2}} confirmed your {{3}} job is complete. \u2b50 Reviews on Plug A Pro boost your profile score and the leads you receive. Tap below to rate the job — it takes 30 seconds.',
+      'Hi {{1}}, {{2}} confirmed your {{3}} job is complete. \u2b50 Reviews on Plug A Pro boost your profile score and the leads you receive. Tap below to rate the job - it takes 30 seconds.',
   },
 
-  // ─── MVP1 pilot — accepted lock confirmations ────────────────────────────
+  // ─── MVP1 pilot - accepted lock confirmations ────────────────────────────
 
   mvp1_accepted_lock_customer_confirmation: {
     name: 'mvp1_accepted_lock_customer_confirmation',

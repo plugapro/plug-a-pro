@@ -70,7 +70,7 @@ export default async function AdminIdentityVerificationDetailPage({
           </Link>
           <h1 className="mt-1 text-xl font-semibold">{verification.provider?.name ?? verification.providerApplication?.name ?? 'Provider verification'}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review identity evidence, status changes, and manual review history.
+            Review identity evidence, status changes and manual review history.
           </p>
         </div>
         <Badge variant={verification.status === 'PASSED' ? 'success' : verification.status === 'FAILED' ? 'danger' : 'warning'}>

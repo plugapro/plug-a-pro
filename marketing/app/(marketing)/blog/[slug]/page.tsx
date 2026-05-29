@@ -4,7 +4,7 @@ import { buildMetadata } from "@/lib/metadata";
 import { getAllPosts, getPostBySlug } from "@/lib/content";
 import { MDXContent } from "@/components/shared/MDXContent";
 
-// Next.js 16 — params is a Promise, must be awaited
+// Next.js 16 - params is a Promise, must be awaited
 export async function generateStaticParams() {
   const posts = await getAllPosts();
   return posts.map((post) => ({ slug: post.slug }));

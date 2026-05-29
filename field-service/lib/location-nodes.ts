@@ -612,7 +612,7 @@ export async function updateLocationNode(
 
 /**
  * Soft-delete: sets active = false.
- * Call this first — never hard-delete a node that has references.
+ * Call this first - never hard-delete a node that has references.
  */
 export async function deactivateLocationNode(id: string): Promise<void> {
   await db.locationNode.update({
@@ -622,7 +622,7 @@ export async function deactivateLocationNode(id: string): Promise<void> {
 }
 
 /**
- * Hard delete — only allowed if:
+ * Hard delete - only allowed if:
  * - node has no children
  * - node has no FK references in addresses.locationNodeId
  * - node has no FK references in technician_service_areas.locationNodeId

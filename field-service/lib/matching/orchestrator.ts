@@ -178,7 +178,7 @@ export async function orchestrateMatch(
 
     if (eligible.length === 0) {
       const noMatchExplanation = nearMiss.length > 0
-        ? `No eligible providers for requested window — ${nearMiss.length} near-miss provider(s) found for alternative-slot negotiation`
+        ? `No eligible providers for requested window - ${nearMiss.length} near-miss provider(s) found for alternative-slot negotiation`
         : 'No eligible technicians passed the matching filters'
 
       const decisionId = await recordDispatchDecision(db, {
@@ -218,7 +218,7 @@ export async function orchestrateMatch(
       return { status: 'NO_MATCH', filteredOut, consideredCount: rawCandidates.length }
     }
 
-    // 3. Score and rank (pure — no DB calls)
+    // 3. Score and rank (pure - no DB calls)
     const ranked = scoreAndRankCandidates(eligible, matchingJobRequest)
     const initialRankedSummary = ranked.map((rc) => ({ ...rc }))
 
@@ -236,7 +236,7 @@ export async function orchestrateMatch(
       initiatedByRole: initiatedBy.actorRole,
     })
 
-    // 4. Try top-10 candidates in rank order — stop on first successful reservation
+    // 4. Try top-10 candidates in rank order - stop on first successful reservation
     let reserved: Awaited<ReturnType<typeof reserveBestProviderAtomically>> | null = null
     const reservationFailures: Record<string, string> = {}
 
@@ -296,7 +296,7 @@ export async function orchestrateMatch(
       )
       const explanation =
         explanationParts.length > 0
-          ? `Reservation failed — ${explanationParts.join(', ')}`
+          ? `Reservation failed - ${explanationParts.join(', ')}`
           : 'All top candidates were locked or at capacity'
 
       await db.dispatchDecision.update({
@@ -312,10 +312,10 @@ export async function orchestrateMatch(
       )
       return { status: 'NO_MATCH', filteredOut, consideredCount: rawCandidates.length }
     }
-    // Note: nearMiss is not used here — reservation failures mean eligible providers exist
+    // Note: nearMiss is not used here - reservation failures mean eligible providers exist
     // but are transiently locked. Cron will retry before escalating to slot negotiation.
 
-    // 5. Dispatch lead (WhatsApp) — failure here does not roll back the hold
+    // 5. Dispatch lead (WhatsApp) - failure here does not roll back the hold
     await dispatchMatchLead({
       jobRequest: matchingJobRequest,
       hold: reserved.hold,
@@ -323,7 +323,7 @@ export async function orchestrateMatch(
     })
 
     // 5a. Notify customer that matching is in progress (spec MSG2).
-    // Fires once per request — idempotency is enforced by matchFoundWhatsappSentAt:
+    // Fires once per request - idempotency is enforced by matchFoundWhatsappSentAt:
     // if CW2 was already sent we skip to avoid duplicate "checking" messages.
     // Failure is non-fatal and must not crash the orchestrator.
     await notifyCustomerMatchingInProgress({
@@ -533,7 +533,7 @@ function resolveCohortMode(requestedMode: MatchCohortMode, requestIsTest: boolea
   return requestIsTest
 }
 
-// ── Internal helper — writes DispatchDecision row ─────────────────────────────
+// ── Internal helper - writes DispatchDecision row ─────────────────────────────
 async function recordDispatchDecision(
   client: typeof db,
   params: {
@@ -553,8 +553,8 @@ async function recordDispatchDecision(
   }
 ): Promise<string | null> {
   // Idempotency key: prevents duplicate DispatchDecisions when orchestrateMatch()
-  // is called concurrently from after(), cron, and manual admin triggers.
-  // Keyed on (jobRequestId, status, selectedProviderId, triggeredBy) — same inputs
+  // is called concurrently from after(), cron and manual admin triggers.
+  // Keyed on (jobRequestId, status, selectedProviderId, triggeredBy) - same inputs
   // produce the same key and hit the ux_dispatch_decisions_job_idempotency DB index.
   const idempotencyKey = JSON.stringify({
     jobRequestId: params.jobRequestId,
@@ -590,7 +590,7 @@ async function recordDispatchDecision(
 
     return decision.id
   } catch (err) {
-    // Non-fatal — audit trail failure must not break the match
+    // Non-fatal - audit trail failure must not break the match
     console.error('[orchestrator] failed to record dispatch decision', { jobRequestId: params.jobRequestId, err })
     return null
   }

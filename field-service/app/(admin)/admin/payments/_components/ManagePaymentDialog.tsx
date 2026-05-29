@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ActionForm, SubmitButton } from '@/components/admin/ui'
 // Spec (CHANGES.md C-05) calls for a <Sheet> (slide-in panel). Sheet is not yet
-// installed in components/ui/. Using Dialog instead — install shadcn Sheet and
+// installed in components/ui/. Using Dialog instead - install shadcn Sheet and
 // rename this component in a follow-up before Phase 2 ships.
 import {
   cancelPayAtGoPaymentFromFormAction,

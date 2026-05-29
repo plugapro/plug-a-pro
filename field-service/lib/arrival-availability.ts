@@ -249,37 +249,37 @@ export function validateArrivalWindowAgainstCustomerAvailability(params: {
         availability.requestedWindowEnd &&
         (proposedStart < availability.requestedWindowStart || proposedEnd > availability.requestedWindowEnd)
       ) {
-        return outside(`Please choose a time inside ${formatTime(availability.requestedWindowStart)}-${formatTime(availability.requestedWindowEnd)} on ${formatDate(availability.requestedWindowStart)}, or contact the customer before scheduling this time.`)
+        return outside(`Please choose a time inside ${formatTime(availability.requestedWindowStart)}-${formatTime(availability.requestedWindowEnd)} on ${formatDate(availability.requestedWindowStart)} or contact the customer before scheduling this time.`)
       }
       break
     case 'ARRIVAL_LATEST':
       if (availability.requestedArrivalLatest && proposedEnd > availability.requestedArrivalLatest) {
-        return outside(`Please choose a time before ${formatTime(availability.requestedArrivalLatest)} on ${formatDate(availability.requestedArrivalLatest)}, or contact the customer before scheduling this time.`)
+        return outside(`Please choose a time before ${formatTime(availability.requestedArrivalLatest)} on ${formatDate(availability.requestedArrivalLatest)} or contact the customer before scheduling this time.`)
       }
       break
     case 'MORNING':
       if (!inPeriod(proposedStart, proposedEnd, 'MORNING')) {
-        return outside(`Please choose a time ${PERIODS.MORNING.label}, or contact the customer before scheduling this time.`)
+        return outside(`Please choose a time ${PERIODS.MORNING.label} or contact the customer before scheduling this time.`)
       }
       break
     case 'AFTERNOON':
       if (!inPeriod(proposedStart, proposedEnd, 'AFTERNOON')) {
-        return outside(`Please choose a time ${PERIODS.AFTERNOON.label}, or contact the customer before scheduling this time.`)
+        return outside(`Please choose a time ${PERIODS.AFTERNOON.label} or contact the customer before scheduling this time.`)
       }
       break
     case 'EVENING':
       if (!inPeriod(proposedStart, proposedEnd, 'EVENING')) {
-        return outside(`Please choose a time ${PERIODS.EVENING.label}, or contact the customer before scheduling this time.`)
+        return outside(`Please choose a time ${PERIODS.EVENING.label} or contact the customer before scheduling this time.`)
       }
       break
     case 'WEEKEND':
       if (!isWeekend(proposedStart) || !isWeekend(proposedEnd)) {
-        return outside('Please choose Saturday or Sunday, or contact the customer before scheduling this time.')
+        return outside('Please choose Saturday or Sunday or contact the customer before scheduling this time.')
       }
       break
     case 'WEEKDAY':
       if (isWeekend(proposedStart) || isWeekend(proposedEnd)) {
-        return outside('Please choose Monday to Friday, or contact the customer before scheduling this time.')
+        return outside('Please choose Monday to Friday or contact the customer before scheduling this time.')
       }
       break
     case 'ANY_TIME':

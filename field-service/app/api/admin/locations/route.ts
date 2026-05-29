@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const { nodeType, slug, label, parentId, lat, lng, radiusKm } = body
   if (!nodeType || !slug || !label) {
-    return NextResponse.json({ error: 'nodeType, slug, and label are required' }, { status: 400 })
+    return NextResponse.json({ error: 'nodeType, slug and label are required' }, { status: 400 })
   }
 
   const validTypes = ['PROVINCE', 'CITY', 'REGION', 'SUBURB']

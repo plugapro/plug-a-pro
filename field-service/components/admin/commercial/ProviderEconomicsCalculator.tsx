@@ -140,7 +140,7 @@ export function ProviderEconomicsCalculator({ diditScenarioEnabled = false }: Pr
               Assumptions
             </CardTitle>
             <CardDescription>
-              USD is the base currency. People, sales, and support staffing costs are excluded.
+              USD is the base currency. People, sales and support staffing costs are excluded.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">

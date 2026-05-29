@@ -19,7 +19,7 @@ export type ProviderProfileLike = {
   serviceAreas?: string[] | null
   /** Structured location node IDs from the LocationNode table. Satisfies
    * the serviceAreas completeness requirement when populated, so callers
-   * should pass whichever field they have — either serviceAreas (legacy
+   * should pass whichever field they have - either serviceAreas (legacy
    * freetext) or locationNodeIds (structured) or both. */
   locationNodeIds?: string[] | null
   experience?: string | null
@@ -166,5 +166,5 @@ export function evaluateProviderProfileCompleteness(profile: ProviderProfileLike
 export function describeMissingFields(profile: ProviderProfileLike): string {
   const result = evaluateProviderProfileCompleteness(profile)
   if (result.ok) return ''
-  return result.missing.map((m) => `• ${m.field} — ${m.reason}`).join('\n')
+  return result.missing.map((m) => `• ${m.field} - ${m.reason}`).join('\n')
 }

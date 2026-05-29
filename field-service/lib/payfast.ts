@@ -1,25 +1,25 @@
 /**
- * Payfast adapter — self-contained module for all Payfast-specific logic.
+ * Payfast adapter - self-contained module for all Payfast-specific logic.
  *
  * Responsibilities:
  *   - Checkout payload construction (fields + MD5 signature)
  *   - ITN signature verification (source IP + signature re-computation)
  *   - Sandbox vs live environment switching
  *
- * This module has no knowledge of the provider wallet, ledger, or any other
+ * This module has no knowledge of the provider wallet, ledger or any other
  * internal domain. Call it as a black box from the top-up service and ITN
  * handler.
  *
  * Environment variables required:
- *   PAYFAST_MERCHANT_ID   — from Payfast merchant account dashboard
- *   PAYFAST_MERCHANT_KEY  — from Payfast merchant account dashboard
- *   PAYFAST_PASSPHRASE    — set in Payfast dashboard; empty string if not set
- *   PAYFAST_SANDBOX       — "true" for sandbox, omit or "false" for live
- *   PAYFAST_NOTIFY_URL    — absolute URL of the ITN handler endpoint
- *   PAYFAST_RETURN_URL    — redirect URL shown to provider after checkout
- *   PAYFAST_CANCEL_URL    — redirect URL shown to provider on cancel
+ *   PAYFAST_MERCHANT_ID   - from Payfast merchant account dashboard
+ *   PAYFAST_MERCHANT_KEY  - from Payfast merchant account dashboard
+ *   PAYFAST_PASSPHRASE    - set in Payfast dashboard; empty string if not set
+ *   PAYFAST_SANDBOX       - "true" for sandbox, omit or "false" for live
+ *   PAYFAST_NOTIFY_URL    - absolute URL of the ITN handler endpoint
+ *   PAYFAST_RETURN_URL    - redirect URL shown to provider after checkout
+ *   PAYFAST_CANCEL_URL    - redirect URL shown to provider on cancel
  *
- * IMPORTANT — return URL is not payment proof:
+ * IMPORTANT - return URL is not payment proof:
  *   Payfast redirects the provider's browser to PAYFAST_RETURN_URL after
  *   checkout regardless of payment outcome. Never trigger any wallet credit
  *   or intent status change from the return URL handler. The ITN handler is
@@ -30,7 +30,7 @@ import { createHash, timingSafeEqual } from 'crypto'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-// Payfast payment method codes — confirmed from developer docs 2026-04-29.
+// Payfast payment method codes - confirmed from developer docs 2026-04-29.
 // Note: EFT code is "ef", NOT "eft". Using "eft" silently breaks checkout.
 export type PayfastPaymentMethod = 'cc' | 'ef' | 'sc'
 
@@ -168,14 +168,14 @@ export function generateSignature(
 
 const PAYMENT_METHOD_MAP: Record<string, PayfastPaymentMethod> = {
   PAYFAST_CARD: 'cc',
-  PAYFAST_EFT: 'ef',   // "ef" confirmed — NOT "eft"
+  PAYFAST_EFT: 'ef',   // "ef" confirmed - NOT "eft"
   PAYFAST_SCODE: 'sc',
 }
 
 // ─── Checkout payload builder ──────────────────────────────────────────────────
 
 export type CheckoutIntentInput = {
-  /** PaymentIntent.id — used as m_payment_id sent to Payfast */
+  /** PaymentIntent.id - used as m_payment_id sent to Payfast */
   id: string
   amountCents: number
   creditsToIssue: number
@@ -192,7 +192,7 @@ export type CheckoutProviderInput = {
  * Build a complete Payfast checkout form payload.
  *
  * The caller should POST these fields to `payload.action` using an HTML form
- * or a JavaScript form submission. Do NOT redirect via GET — Payfast requires
+ * or a JavaScript form submission. Do NOT redirect via GET - Payfast requires
  * a form POST for the checkout initiation.
  *
  * IMPORTANT: the return URL is UI-only. Never trigger wallet crediting there.
@@ -203,7 +203,7 @@ export function buildCheckoutPayload(
   config: PayfastConfig,
 ): PayfastCheckoutPayload {
   const amountStr = (intent.amountCents / 100).toFixed(2)
-  const itemName = `Plug A Pro provider credits — ${intent.creditsToIssue} credits`
+  const itemName = `Plug A Pro provider credits - ${intent.creditsToIssue} credits`
   const itemDescription = `R${Math.round(intent.amountCents / 100)} top-up · ${intent.creditsToIssue} Plug A Pro provider credits`
   const payfastMethod = PAYMENT_METHOD_MAP[intent.paymentMethod] ?? 'cc'
 
@@ -230,7 +230,7 @@ export function buildCheckoutPayload(
   fields.payment_method = payfastMethod
 
   // Compute signature over all fields built so far (merchant_key is included
-  // in the signature but not sent to the browser — only the signature goes).
+  // in the signature but not sent to the browser - only the signature goes).
   const signatureFields = { ...fields }
   delete signatureFields.merchant_key
   fields.signature = generateSignature(signatureFields, config.passphrase)
@@ -256,7 +256,7 @@ export function buildCheckoutPayload(
  *   3. payment_status must equal "COMPLETE" for a successful payment.
  *
  * Returns { valid: true } only if all three checks pass.
- * Returns { valid: false, reason } on any failure — callers should log the
+ * Returns { valid: false, reason } on any failure - callers should log the
  * reason internally but always return HTTP 200 to Payfast.
  */
 export function verifyItn(
@@ -264,7 +264,7 @@ export function verifyItn(
   remoteIp: string | null | undefined,
   config: PayfastConfig,
 ): PayfastVerificationResult {
-  // 1. IP validation — fail closed if IP cannot be determined.
+  // 1. IP validation - fail closed if IP cannot be determined.
   if (!config.sandbox) {
     if (!remoteIp?.trim()) {
       return { valid: false, reason: 'remote IP could not be determined' }

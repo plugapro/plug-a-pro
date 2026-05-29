@@ -14,7 +14,7 @@ interface CompletionMeterProps {
 
 /**
  * Profile-completeness / onboarding-progress indicator. Used by the
- * provider dashboard, onboarding screens, and the customer profile.
+ * provider dashboard, onboarding screens and the customer profile.
  *
  * Tone shifts from danger → warning → primary as completion improves
  * so users see at a glance whether they're far from done. We intentionally

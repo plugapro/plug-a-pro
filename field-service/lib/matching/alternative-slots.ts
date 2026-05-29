@@ -39,7 +39,7 @@ function sastHourToUtc(hour: number): number {
  * Returns up to `maxSlots` future time windows (morning/afternoon bands over the
  * next `lookAheadDays` days) where at least one near-miss provider can be scheduled.
  *
- * Pure function: no DB calls — all provider data is already in `nearMissProviders`.
+ * Pure function: no DB calls - all provider data is already in `nearMissProviders`.
  */
 export function findAlternativeSlots(params: {
   nearMissProviders: NearMissProvider[]
@@ -89,7 +89,7 @@ export function findAlternativeSlots(params: {
 
       for (const provider of nearMissProviders) {
         // Find the provider's schedule rule for the probe day
-        // probeStart is always 7am SAST (5am UTC) — unambiguously same calendar day
+        // probeStart is always 7am SAST (5am UTC) - unambiguously same calendar day
         const dayOfWeek = probeStart.getDay()  // 0=Sun … 6=Sat (UTC day == SAST day at 5am UTC)
         const scheduleRule =
           provider.schedule.find((rule) => rule.dayOfWeek === dayOfWeek && rule.active) ?? null

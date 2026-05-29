@@ -254,7 +254,7 @@ export default async function RequestDetailPage({
             </p>
             <p>
               You can change your preferred time, expand your area, request
-              manual assistance, or start a new request.
+              manual assistance or start a new request.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button asChild variant="outline" className="w-full">
@@ -311,7 +311,7 @@ export default async function RequestDetailPage({
                 We&apos;re still waiting for provider responses.
               </p>
               <p>
-                You can keep waiting, adjust your request, or ask us for help.
+                You can keep waiting, adjust your request or ask us for help.
               </p>
               <Button asChild variant="outline" className="w-full">
                 <Link href="https://plugapro.co.za/contact">Ask for help</Link>
@@ -332,7 +332,7 @@ export default async function RequestDetailPage({
               {shortlist.items.length === 1 ? '' : 's'}
             </h2>
             <p className="mt-1 text-sm" style={{ color: 'var(--ink-mute)' }}>
-              Compare their experience, call-out fee, availability, and profile
+              Compare their experience, call-out fee, availability and profile
               before choosing.
             </p>
           </div>
@@ -656,7 +656,7 @@ export default async function RequestDetailPage({
                     </p>
                     <p style={{ color: 'var(--ink-mute)' }}>
                       Select Quick Match to contact one suitable provider at a
-                      time, or Review Providers First to compare options before
+                      time or Review Providers First to compare options before
                       choosing.
                     </p>
                     <div className="grid grid-cols-2 gap-2 pt-2">

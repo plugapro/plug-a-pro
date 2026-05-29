@@ -4,13 +4,13 @@
 // fallback for ambiguous cases (multiple active jobs, no parseable input).
 //
 // Commands supported:
-//   HH:MM                  — confirm arrival time on the most recent active job
-//   confirm arrival HH:MM  — confirm arrival time on the most recent active job
-//   arrive HH:MM          — confirm arrival time on the most recent active job
-//   on the way / otw      — transition single active job → EN_ROUTE
-//   arrived / i arrived   — transition single active job → ARRIVED
-//   start / start work    — transition single active job → STARTED
-//   complete / done       — mark single active job ready for sign-off
+//   HH:MM                  - confirm arrival time on the most recent active job
+//   confirm arrival HH:MM  - confirm arrival time on the most recent active job
+//   arrive HH:MM          - confirm arrival time on the most recent active job
+//   on the way / otw      - transition single active job → EN_ROUTE
+//   arrived / i arrived   - transition single active job → ARRIVED
+//   start / start work    - transition single active job → STARTED
+//   complete / done       - mark single active job ready for sign-off
 //
 // Privacy: every handler verifies the inbound phone owns the target job
 // before any state change.
@@ -396,7 +396,7 @@ export async function executeProviderJobCommand(params: {
     return {
       ok: false,
       reason: 'INVALID_COMMAND',
-      message: `This job is currently *${friendlyStatus(status)}* — open *my jobs* to update its status.`,
+      message: `This job is currently *${friendlyStatus(status)}* - open *my jobs* to update its status.`,
     }
   }
 
@@ -528,7 +528,7 @@ export async function completeProviderJobFromWhatsApp(params: {
     return {
       ok: false,
       reason: 'INVALID_STATE',
-      message: `This job is currently *${friendlyStatus(job.status)}* — reply *start* before completing it.`,
+      message: `This job is currently *${friendlyStatus(job.status)}* - reply *start* before completing it.`,
     }
   }
 
@@ -560,6 +560,6 @@ export async function completeProviderJobFromWhatsApp(params: {
     ok: true,
     jobId: job.id,
     duplicate: false,
-    message: 'Job complete — awaiting customer confirmation.\n\nThe customer has been notified.',
+    message: 'Job complete - awaiting customer confirmation.\n\nThe customer has been notified.',
   }
 }

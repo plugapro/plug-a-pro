@@ -26,13 +26,13 @@ export type FlowStep =
   | 'collect_address'           // addr_same / addr_new decision for returning customers
   | 'collect_site'              // site picker for first-booking customers with saved addresses
   | 'collect_address_street'    // captures free-text street / unit (addressLine1)
-  // Structured location selection — replaces old suburb/city free-text steps
+  // Structured location selection - replaces old suburb/city free-text steps
   | 'addr_select_province'      // list-based province selection
   | 'addr_select_city'          // list-based city selection (filtered by province)
   | 'addr_select_region'        // list-based region selection (filtered by city)
   | 'addr_select_suburb'        // list-based suburb selection (filtered by region, derives postalCode)
   | 'addr_confirm'              // show full derived address + yes/no confirmation
-  // Legacy steps — kept only for in-flight conversations at deploy time
+  // Legacy steps - kept only for in-flight conversations at deploy time
   | 'collect_address_suburb'    // LEGACY: typed suburb → then prompts city
   | 'confirm_address'           // LEGACY: receives typed city, assembles + confirms full address
   | 'collect_issue_description' // free-text issue description (inserted after address, before availability)
@@ -42,9 +42,9 @@ export type FlowStep =
   | 'confirm_job_request'
   | 'collect_photos'            // optional customer photo upload before confirm
   | 'job_request_submitted'
-  | 'notify_me'                 // no providers in area — join waitlist
+  | 'notify_me'                 // no providers in area - join waitlist
   // Registration (provider onboarding)
-  | 'reg_start'           // shows intro + yes/no — entry point
+  | 'reg_start'           // shows intro + yes/no - entry point
   | 'reg_collect_name'
   | 'reg_collect_email'  // legacy: step removed from active flow; retained for in-progress conversation migration
   | 'reg_collect_id'
@@ -91,7 +91,7 @@ export type FlowStep =
   | 'tech_job_view'
   | 'tech_job_confirm_accept'
   | 'tech_job_confirm_decline'
-  // Alternative-slot negotiation (stateless — handled via button ID intercepts)
+  // Alternative-slot negotiation (stateless - handled via button ID intercepts)
   | 'alt_slot_customer_offered'  // customer has been offered alternative slots
   | 'alt_slot_provider_offered'  // provider has been asked to pick a slot (provider-first)
   | 'alt_slot_customer_confirm'  // customer confirming provider's chosen slot
@@ -123,7 +123,7 @@ export type FlowStep =
   | 'pj_invoice'
   | 'pj_credits'               // focused credits balance + history CTA
   | 'pj_topup_select_amount'   // package list: R100 / R200 / R500
-  | 'pj_topup_eft_created'    // legacy — EFT details delivered (fallback only)
+  | 'pj_topup_eft_created'    // legacy - EFT details delivered (fallback only)
   | 'pj_topup_payat_created'  // Pay@ link sent, awaiting retailer payment
   | 'pj_redeem_voucher'               // prompt provider to enter voucher code
   | 'pj_redeem_voucher_awaiting_code' // capture the typed voucher code
@@ -152,14 +152,14 @@ export interface ConversationData {
   availabilityNote?: string     // free-text preferred availability from customer
   urgency?: string              // urgent | soon | flexible
   providerPreference?: string   // MVP: save_money | best_value | best_quality (legacy: fastest_available | budget_friendly | …)
-  budgetPreference?: string     // legacy field — no longer populated by new requests; kept for in-flight conversation reads
+  budgetPreference?: string     // legacy field - no longer populated by new requests; kept for in-flight conversation reads
   verifiedOnly?: boolean
   photoAttachmentIds?: string[] // Attachment IDs for customer job photos linked during request creation
   jobRequestId?: string
   matchId?: string
   category?: string
 
-  // Structured address — new customer job-request flow
+  // Structured address - new customer job-request flow
   addressLine1?: string              // street address captured as free text
   addrProvinceKey?: string           // province slug (used to query cities)
   addrProvinceLabel?: string         // display label, e.g. "Gauteng"
@@ -172,7 +172,7 @@ export interface ConversationData {
   addrPostalCode?: string            // derived from suburb node, never typed
   addrPage?: number                  // current page index for paged lists (reset on step transition)
 
-  // Legacy structured address fields (old path — do not populate from new flow)
+  // Legacy structured address fields (old path - do not populate from new flow)
   addressLocationNodeId?: string | null  // SUBURB node ID resolved from free-text suburb
   addressRawSuburb?: string | null       // quarantined raw text, kept for ops review
 
@@ -244,7 +244,7 @@ export interface ConversationData {
   pendingJobId?: string
   declineReason?: string
 
-  // Alternative-slot negotiation — persisted so out-of-band responses can look up context
+  // Alternative-slot negotiation - persisted so out-of-band responses can look up context
   altSlotJobRequestId?: string
   altSlotPendingProviderId?: string   // provider-first: the provider who selected a slot
 
@@ -270,7 +270,7 @@ export interface ConversationData {
 
 // The full conversation context passed to each flow handler
 export interface FlowContext {
-  phone: string         // E.164 — the customer or provider's WhatsApp number
+  phone: string         // E.164 - the customer or provider's WhatsApp number
   step: FlowStep
   data: ConversationData
   reply: InboundReply   // what they just said / tapped

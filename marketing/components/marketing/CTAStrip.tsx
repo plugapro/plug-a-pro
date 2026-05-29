@@ -30,7 +30,7 @@ export function CTAStrip() {
           Start the conversation on WhatsApp.
         </h2>
         <p style={{ color: "oklch(0.985 0 0 / 0.8)" }}>
-          Need a service provider, looking for work, or want to join as a service provider? Start with us on WhatsApp at {whatsappNumberDisplay}.
+          Need a service provider, looking for work or want to join as a service provider? Start with us on WhatsApp at {whatsappNumberDisplay}.
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button

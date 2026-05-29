@@ -38,7 +38,7 @@ export type DeliverOtpResult = {
  * Delivers a Supabase-generated OTP through the WhatsApp Cloud API.
  *
  * Security: the `code` argument MUST NEVER reach console.*, recordAuditLog,
- * the OtpDeliveryAttempt row, or any other persisted field. Tests assert this.
+ * the OtpDeliveryAttempt row or any other persisted field. Tests assert this.
  */
 export async function deliverOtp(params: {
   phone: string
@@ -89,7 +89,7 @@ export async function deliverOtp(params: {
       template: OTP_TEMPLATE_NAME as any,
       // Meta's authentication-category templates (otp_login here) include a
       // "Copy code" URL button. Per WhatsApp Cloud API, the button's URL
-      // parameter must be supplied at send time — omitting it returns
+      // parameter must be supplied at send time - omitting it returns
       // (#131008) Required parameter is missing. The button parameter must
       // be the same OTP code as the body parameter.
       components: [
@@ -145,7 +145,7 @@ export async function deliverOtp(params: {
     // can be diagnosed from a single log line. The classifier collapses every
     // unmatched error into WA_TRANSIENT, which previously hid a missing
     // URL-button parameter (#131008) behind a generic "WhatsApp delivery
-    // failed; please retry." — easy to mis-diagnose as a transient blip.
+    // failed; please retry." - easy to mis-diagnose as a transient blip.
     // Safe to log: this is the upstream error message, never the OTP code or
     // tokens (sendTemplate redacts those before throwing).
     console.error('[otp-delivery] WhatsApp send failed', {

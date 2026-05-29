@@ -14,7 +14,7 @@ export function OperatingModel() {
             WhatsApp is the front door. The app is the engine.
           </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Customers, providers, and operations each use the channel that fits the moment: WhatsApp for fast actions, the PWA for richer job detail, and admin tools for review and dispatch.
+            Customers, providers and operations each use the channel that fits the moment: WhatsApp for fast actions, the PWA for richer job detail and admin tools for review and dispatch.
           </p>
         </div>
 
@@ -27,13 +27,13 @@ export function OperatingModel() {
               </div>
               <div>
                 <h3 className="font-bold text-lg">For customers</h3>
-                <p className="text-xs text-muted-foreground">Request, approve, track, and confirm</p>
+                <p className="text-xs text-muted-foreground">Request, approve, track and confirm</p>
               </div>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
               {[
                 "Describe the job on WhatsApp or in the PWA",
-                "Add service, location, preferred time, notes, and photos",
+                "Add service, location, preferred time, notes and photos",
                 "Operations reviews the request and dispatches it to eligible providers",
                 "Receive provider handover details after a provider unlocks and accepts",
                 "Approve quotes or extra work in writing",
@@ -59,17 +59,17 @@ export function OperatingModel() {
               </div>
               <div>
                 <h3 className="font-bold text-lg">For service providers</h3>
-                <p className="text-xs text-muted-foreground">Apply, unlock, accept, and update</p>
+                <p className="text-xs text-muted-foreground">Apply, unlock, accept and update</p>
               </div>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
               {[
                 "Complete provider onboarding on WhatsApp",
-                "Submit skills, service areas, availability, and evidence",
+                "Submit skills, service areas, availability and evidence",
                 "Get approved before entering live marketplace matching",
                 "Check wallet credits and top up when needed",
                 "Open a secure lead preview, unlock with credits, then accept or decline",
-                "Quote, contact the customer, and update job status from your phone",
+                "Quote, contact the customer and update job status from your phone",
               ].map((point) => (
                 <li key={point} className="flex items-start gap-2">
                   <span
@@ -85,7 +85,7 @@ export function OperatingModel() {
         </div>
 
         <p className="text-center text-sm text-muted-foreground mt-8">
-          Operations sits behind both journeys: reviewing applications, managing dispatch, monitoring quotes, checking wallet activity, and keeping marketplace access controlled.
+          Operations sits behind both journeys: reviewing applications, managing dispatch, monitoring quotes, checking wallet activity and keeping marketplace access controlled.
         </p>
       </div>
     </section>

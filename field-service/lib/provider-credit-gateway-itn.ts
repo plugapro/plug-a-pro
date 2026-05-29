@@ -40,14 +40,14 @@ type GatewayCreditSource = {
  * Credit a provider's wallet from a verified Payfast ITN.
  *
  * Returns `{ credited: true }` on success or `{ credited: false, reason }`
- * when the intent is not found, already credited, or in a non-creditable state.
- * Never throws — callers (the ITN handler) log failures and return HTTP 200.
+ * when the intent is not found, already credited or in a non-creditable state.
+ * Never throws - callers (the ITN handler) log failures and return HTTP 200.
  */
 async function creditProviderWalletFromGatewayIntent(
   intentId: string,
   source: GatewayCreditSource,
 ): Promise<CreditFromItnResult> {
-  // Pre-transaction idempotency guard — avoids opening a transaction for
+  // Pre-transaction idempotency guard - avoids opening a transaction for
   // the common case where the intent is already credited.
   const intent = await db.paymentIntent.findUnique({
     where: { id: intentId },
@@ -105,7 +105,7 @@ async function creditProviderWalletFromGatewayIntent(
         {
           referenceType: 'payment_intent',
           referenceId: intent.id,
-          description: `Top-up via ${source.gatewayLabel} — ${intent.creditsToIssue} Plug A Pro provider credits (${amountFormatted})`,
+          description: `Top-up via ${source.gatewayLabel} - ${intent.creditsToIssue} Plug A Pro provider credits (${amountFormatted})`,
           metadata: {
             paymentReference: intent.paymentReference,
             amountCents: intent.amountCents,
@@ -138,7 +138,7 @@ async function creditProviderWalletFromGatewayIntent(
     throw error
   }
 
-  // Post-transaction notifications — failures must not roll back the credit.
+  // Post-transaction notifications - failures must not roll back the credit.
   const { notifyProviderPaymentCredited } = await import('./provider-wallet-notifications')
   notifyProviderPaymentCredited(intentId).catch((error: unknown) => {
     console.error('[provider-credit-gateway-itn] WhatsApp credit notification failed', {

@@ -87,7 +87,7 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
   }
 
   try {
-    // Keep profile, skills, areas, and schedule changes atomic so partial saves never leak through.
+    // Keep profile, skills, areas and schedule changes atomic so partial saves never leak through.
     await db.$transaction(async (tx) => {
       await tx.provider.update({
         where: { id: provider.id },

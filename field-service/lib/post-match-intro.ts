@@ -11,7 +11,7 @@ function firstName(fullName: string): string {
 
 /**
  * Sends each party a WhatsApp message with a direct CTA to message the other party.
- * Called after sendAcceptedLockConfirmations() — fire-and-forget; errors are logged.
+ * Called after sendAcceptedLockConfirmations() - fire-and-forget; errors are logged.
  */
 export async function sendPostMatchIntroductions(params: {
   leadId: string

@@ -4,7 +4,7 @@
 //   1. GET /{media-id} → returns { url, mime_type, file_size }
 //   2. GET {url} (with auth header) → raw binary
 //
-// Returns an Attachment record ID — callers store the ID, not the blob URL,
+// Returns an Attachment record ID - callers store the ID, not the blob URL,
 // so all access goes through the /api/attachments/[id] auth proxy.
 //
 // providerApplicationId is nullable: evidence is uploaded before the ProviderApplication
@@ -22,7 +22,7 @@ import { storeIdentityDocument } from './identity-verification/storage'
 import type { IdentityDocumentKind } from './identity-verification/types'
 
 const API_VERSION = 'v21.0'
-const MAX_EVIDENCE_SIZE = 15 * 1024 * 1024 // 15 MB — WhatsApp Cloud API limit
+const MAX_EVIDENCE_SIZE = 15 * 1024 * 1024 // 15 MB - WhatsApp Cloud API limit
 
 const ALLOWED_EVIDENCE_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -70,7 +70,7 @@ export async function downloadAndStoreWhatsAppMedia(params: {
     traceId,
   })
 
-  // Step 3 — upload to Vercel Blob
+  // Step 3 - upload to Vercel Blob
   // Blobs are stored as public for compatibility with the existing evidence upload
   // architecture. The /api/attachments/[id] auth proxy is the canonical access path;
   // addRandomSuffix ensures direct blob URLs are non-guessable.
@@ -90,7 +90,7 @@ export async function downloadAndStoreWhatsAppMedia(params: {
     label,
   })
 
-  // Step 4 — create Attachment record so access goes via the auth proxy.
+  // Step 4 - create Attachment record so access goes via the auth proxy.
   // providerApplicationId / jobRequestId start null; backfilled by the caller once the parent
   // record exists (e.g. handlePending for evidence, handleJobRequestSubmitted for customer photos).
   const attachment = await db.attachment.create({
@@ -99,7 +99,7 @@ export async function downloadAndStoreWhatsAppMedia(params: {
       url: blob.url,
       blobKey: blob.pathname,
       mimeType: meta.mime_type,
-      sizeBytes: buffer.byteLength,   // actual transferred bytes — meta.file_size can be stale
+      sizeBytes: buffer.byteLength,   // actual transferred bytes - meta.file_size can be stale
       label,
       uploadedBy,
     },
@@ -188,7 +188,7 @@ async function downloadWhatsAppMedia(params: {
     })
   }
 
-  // Step 1 — resolve media URL + metadata
+  // Step 1 - resolve media URL + metadata
   const metaRes = await fetch(
     `https://graph.facebook.com/${API_VERSION}/${mediaId}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -249,7 +249,7 @@ async function downloadWhatsAppMedia(params: {
     label,
   })
 
-  // Step 2 — download binary
+  // Step 2 - download binary
   const mediaRes = await fetch(meta.url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })

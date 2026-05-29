@@ -115,11 +115,11 @@ export async function findProviderForOtpLogin(
     status: true as const,
   }
 
-  // Fast path — exact E.164 match
+  // Fast path - exact E.164 match
   const exact = await client.provider.findUnique({ where: { phone: e164Phone }, select })
   if (exact) return { found: true, provider: exact }
 
-  // Fallback — try all format variants to handle legacy non-E.164 storage
+  // Fallback - try all format variants to handle legacy non-E.164 storage
   if (client.provider.findFirst) {
     const variants = phoneLookupVariants(rawPhone)
     const byVariant = await client.provider.findFirst({
@@ -152,7 +152,7 @@ export async function findProviderForOtpLogin(
     }
   }
 
-  // No Provider row found — check for a pending application so callers can
+  // No Provider row found - check for a pending application so callers can
   // return WORKER_NOT_APPROVED instead of the less helpful WORKER_NOT_FOUND
   if (client.providerApplication) {
     const variants = phoneLookupVariants(rawPhone)
@@ -225,7 +225,7 @@ export function workerVerifyMessageForCode(code: DiagnosticCode | WorkerPortalAc
     case 'DUPLICATE_WORKER_PROFILE':
       return 'We found more than one provider account for this login. Please contact support.'
     case 'ACCOUNT_LOCKED':
-      // Returned when the session-issuance security gate fails closed — either
+      // Returned when the session-issuance security gate fails closed - either
       // because the account has been auto-locked after an unrequested-OTP
       // report (security.otp.report flag on) or because the gate's state
       // lookup itself errored. Calm, non-revealing copy; "try again shortly"

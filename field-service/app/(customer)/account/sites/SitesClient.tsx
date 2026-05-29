@@ -1,7 +1,7 @@
 'use client'
 
 // ─── Client components for /account/sites ─────────────────────────────────────
-// Handles form state, add/edit dialogs, and delete/set-default interactions.
+// Handles form state, add/edit dialogs and delete/set-default interactions.
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'

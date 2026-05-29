@@ -617,7 +617,7 @@ export async function matchEligibleProvidersForServiceRequest(params: {
       serviceAreas: attempt.provider.serviceAreas,
       rank: index + 1,
       score: attempt.score ?? null,
-      whyMatched: attempt.feasibilityNotes?.[0] ?? 'Eligible by category, area, profile status, and availability.',
+      whyMatched: attempt.feasibilityNotes?.[0] ?? 'Eligible by category, area, profile status and availability.',
     }))
 
     console.info('[mvp1.match] success_cached', {
@@ -677,7 +677,7 @@ export async function matchEligibleProvidersForServiceRequest(params: {
         // This keeps request matching deterministic even if upstream ranking inputs drift.
         if (!row.provider.active || row.provider.status !== 'ACTIVE' || !row.provider.availableNow) return false
         // "Profile complete enough" for MVP1 match list visibility means at minimum
-        // a non-empty display name, at least one published skill, and at least one service area.
+        // a non-empty display name, at least one published skill and at least one service area.
         if (!row.provider.name.trim()) return false
         if (row.provider.skills.length === 0) return false
         const hasArea = row.provider.serviceAreas.length > 0 || row.provider.technicianServiceAreas.some((sa) => sa.active)
@@ -697,7 +697,7 @@ export async function matchEligibleProvidersForServiceRequest(params: {
       canMeetWindow: row.candidate.canMeetWindow,
     }))
 
-    // Write the decision, all attempt rows, and the request pointer atomically.
+    // Write the decision, all attempt rows and the request pointer atomically.
     // A crash between decision.create and matchAttempt.create would leave
     // latestDispatchDecisionId pointing at a partially-populated decision; wrapping
     // in a transaction ensures the cache check always sees a consistent state.
@@ -759,7 +759,7 @@ export async function matchEligibleProvidersForServiceRequest(params: {
       serviceAreas: row.provider!.serviceAreas,
       rank: row.rank,
       score: row.candidate.score,
-      whyMatched: row.candidate.feasibilityNotes?.[0] ?? 'Eligible by category, area, profile status, and availability.',
+      whyMatched: row.candidate.feasibilityNotes?.[0] ?? 'Eligible by category, area, profile status and availability.',
     }))
 
     if (providers.length === 0) {
@@ -1377,7 +1377,7 @@ export async function sendRequestToShortlistedProviders(params: {
             `📌 *${request.category}* in *${area || 'your area'}*`,
             preferredTime ? `Preferred time: *${preferredTime}*` : null,
             '',
-            "Tap *I'm Available* if you can take this job. The customer reviews all responses and picks a provider — if selected, you'll get a confirmation here and full details unlock. Accepting uses 1 credit.",
+            "Tap *I'm Available* if you can take this job. The customer reviews all responses and picks a provider - if selected, you'll get a confirmation here and full details unlock. Accepting uses 1 credit.",
           ].filter(Boolean).join('\n')
           sendButtons(
             providerPhone,
@@ -1457,7 +1457,7 @@ export async function sendRequestToShortlistedProviders(params: {
           templateName: 'interactive:rfp_send_failed',
           metadata: { requestId: request.id, failedCount },
         },
-      ).catch(() => undefined) // notification send — silent failure is intentional; error is surfaced via thrown ReviewFirstError below
+      ).catch(() => undefined) // notification send - silent failure is intentional; error is surfaced via thrown ReviewFirstError below
     }
     throw new ReviewFirstError(
       'PROVIDER_NOTIFICATION_FAILED',
@@ -1496,7 +1496,7 @@ export async function sendRequestToShortlistedProviders(params: {
         templateName: 'interactive:rfp_sent_to_shortlist',
         metadata: { requestId: request.id, count: notifiedCount, pendingCount, failedCount, preferenceRank: prefRank },
       },
-    ).catch(() => undefined) // notification send — best-effort customer status update; silent failure is intentional
+    ).catch(() => undefined) // notification send - best-effort customer status update; silent failure is intentional
   }
 
   return {
@@ -1695,11 +1695,11 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
                 ? names[0]
                 : names.length === 2
                   ? `${names[0]} and ${names[1]}`
-                  : `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
+                  : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 
           await sendText(
             lead.jobRequest.customer.phone,
-            `✅ Your request was sent to ${nameList}.\n\nThey each have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to confirm their availability. We'll let you know once they respond — then you can choose who you'd like to work with.`,
+            `✅ Your request was sent to ${nameList}.\n\nThey each have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to confirm their availability. We'll let you know once they respond - then you can choose who you'd like to work with.`,
             {
               templateName: REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE,
               metadata: { requestId, leadId, providerId },
@@ -1897,7 +1897,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
     },
   })
   if (!request?.customer?.phone) return
-  // Don't send a summary if the customer has already progressed past the selection step —
+  // Don't send a summary if the customer has already progressed past the selection step -
   // it would confuse them to receive "X providers responded" after they've already chosen.
   if (['PROVIDER_CONFIRMATION_PENDING', 'MATCHED', 'CANCELLED', 'EXPIRED'].includes(request.status)) return
 
@@ -1928,12 +1928,12 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
   if (available.length === 0 && pending.length === 0) {
     await sendText(
       request.customer.phone,
-      `None of the selected providers responded in time.\n\nYou can show more providers, try Quick Match, edit the request, or cancel.`,
+      `None of the selected providers responded in time.\n\nYou can show more providers, try Quick Match, edit the request or cancel.`,
       {
         templateName: 'interactive:rfp_none_responded',
         metadata: { requestId: request.id, total },
       },
-    ).catch(() => undefined) // notification send — best-effort customer summary; silent failure is intentional
+    ).catch(() => undefined) // notification send - best-effort customer summary; silent failure is intentional
     return
   }
 
@@ -1962,7 +1962,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
       templateName: 'interactive:rfp_response_summary',
       metadata: { requestId: request.id, responded, total, available: available.length },
     },
-  ).catch(() => undefined) // notification send — best-effort response summary; silent failure is intentional
+  ).catch(() => undefined) // notification send - best-effort response summary; silent failure is intentional
 
   if (available.length > 0) {
     const url = await getJobRequestAccessUrl(requestId, 'shortlist').catch(() => null)
@@ -1977,7 +1977,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
           templateName: 'interactive:rfp_response_summary_cta',
           metadata: { requestId: request.id, responded, total },
         },
-      ).catch(() => undefined) // notification send — best-effort CTA link; silent failure is intentional
+      ).catch(() => undefined) // notification send - best-effort CTA link; silent failure is intentional
     }
   }
 }
@@ -1985,7 +1985,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
 export async function expireRfpInvitations() {
   const now = new Date()
 
-  // Fix 1: Watchdog — expire leads stuck in SEND_PENDING (crash between status write and WhatsApp API call)
+  // Fix 1: Watchdog - expire leads stuck in SEND_PENDING (crash between status write and WhatsApp API call)
   const stuckSendPending = await db.lead.findMany({
     where: {
       status: 'SEND_PENDING',
@@ -2035,7 +2035,7 @@ export async function expireRfpInvitations() {
 
   const requestIds = Array.from(new Set(expired.map((lead) => lead.jobRequestId)))
   for (const requestId of requestIds) {
-    await notifyCustomerRfpResponseSummary(requestId).catch(() => undefined) // notification send — best-effort expiry summary; silent failure is intentional
+    await notifyCustomerRfpResponseSummary(requestId).catch(() => undefined) // notification send - best-effort expiry summary; silent failure is intentional
   }
 
   // Cascade to next ranked provider for any expired RFP leads
@@ -2045,7 +2045,7 @@ export async function expireRfpInvitations() {
       select: { customerPreferenceRank: true },
     }).catch(() => null)
     if (shortlistItem?.customerPreferenceRank != null) {
-      // Fix 3: Guard against concurrent cron double-cascade — only proceed if this run owns the EXPIRED transition
+      // Fix 3: Guard against concurrent cron double-cascade - only proceed if this run owns the EXPIRED transition
       const owned = await db.lead.updateMany({
         where: { id: expiredLead.id, status: 'EXPIRED' },
         data: { status: 'EXPIRED' }, // no-op write to claim ownership via predicate
@@ -2116,7 +2116,7 @@ export async function expireRfpInvitations() {
       select: { customerPreferenceRank: true },
     }).catch(() => null)
     if (shortlistItem?.customerPreferenceRank != null) {
-      // Fix 2: Atomic guard — only cascade if this run successfully claimed the DECLINED transition
+      // Fix 2: Atomic guard - only cascade if this run successfully claimed the DECLINED transition
       const declined = await db.lead.updateMany({
         where: { id: lead.id, status: 'SEND_FAILED' },
         data: { status: 'DECLINED', declinedAt: now },
@@ -2138,7 +2138,7 @@ export async function expireRfpInvitations() {
     }
   }
 
-  // Fix 4: Watchdog — alert on leads stuck in CREDIT_APPLIED post-crash (credit deducted, no unlock record)
+  // Fix 4: Watchdog - alert on leads stuck in CREDIT_APPLIED post-crash (credit deducted, no unlock record)
   // Lead has no `updatedAt`; use `respondedAt` which is bumped on every status
   // transition including the CREDIT_APPLIED write in provider-credit-application.
   const stuckCreditApplied = await db.lead.findMany({
@@ -2150,7 +2150,7 @@ export async function expireRfpInvitations() {
   })
   for (const lead of stuckCreditApplied) {
     if (!lead.unlock) {
-      console.error(`[review-first] OPS_REVIEW: Lead ${lead.id} stuck in CREDIT_APPLIED with no LeadUnlock — manual review required`)
+      console.error(`[review-first] OPS_REVIEW: Lead ${lead.id} stuck in CREDIT_APPLIED with no LeadUnlock - manual review required`)
     }
   }
 
@@ -2216,7 +2216,7 @@ export async function cascadeToNextShortlistedProvider(params: {
           templateName: 'interactive:rfp_all_providers_exhausted',
           metadata: { requestId: params.requestId, declinedRank: declinedItem.customerPreferenceRank },
         },
-      ).catch(() => undefined) // notification send — best-effort exhaustion alert; silent failure is intentional
+      ).catch(() => undefined) // notification send - best-effort exhaustion alert; silent failure is intentional
     }
     await db.jobRequest.update({
       where: { id: params.requestId },
@@ -2346,7 +2346,7 @@ export async function cascadeToNextShortlistedProvider(params: {
         ],
         undefined,
         { templateName: 'rfp:job_lead_actions', metadata: { requestId: request.id, leadId, providerId: provider.id } },
-      ).catch(() => undefined) // notification send — best-effort provider cascade invite; silent failure is intentional
+      ).catch(() => undefined) // notification send - best-effort provider cascade invite; silent failure is intentional
     }
 
     if (request.customer?.phone) {
@@ -2358,7 +2358,7 @@ export async function cascadeToNextShortlistedProvider(params: {
           templateName: 'interactive:rfp_cascade_next_provider',
           metadata: { requestId: request.id, declinedRank, nextRank, nextLeadId: leadId },
         },
-      ).catch(() => undefined) // notification send — best-effort cascade status update to customer; silent failure is intentional
+      ).catch(() => undefined) // notification send - best-effort cascade status update to customer; silent failure is intentional
     }
 
     console.info('[review-first.cascade] sent_to_next_provider', {

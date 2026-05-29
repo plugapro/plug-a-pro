@@ -24,9 +24,9 @@ export async function buildChatSystemPrompt(): Promise<string> {
 
 ${siteConfig.description}
 
-Help visitors understand the product, answer questions, and guide them toward signing up or contacting the team. Be concise and honest. If you don't know the answer, say so and direct them to /contact.
+Help visitors understand the product, answer questions and guide them toward signing up or contacting the team. Be concise and honest. If you don't know the answer, say so and direct them to /contact.
 
-Do not make up features, pricing, or commitments not listed below.
+Do not make up features, pricing or commitments not listed below.
 
 ${FAQ_CONTENT}
 

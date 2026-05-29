@@ -75,7 +75,7 @@ export default function SignUpPage() {
           msg.includes('unsupported') || msg.includes('provider') ||
           msg.includes('not enabled') || msg.includes('phone')
         ) {
-          setError("We couldn't deliver your code on WhatsApp. Check the number and try again, or contact support@plugapro.co.za.")
+          setError("We couldn't deliver your code on WhatsApp. Check the number and try again or contact support@plugapro.co.za.")
         } else {
           console.error('[sign-up] Supabase OTP error:', otpError.message)
           setError('Could not send code. Please try again or contact support@plugapro.co.za.')

@@ -17,7 +17,7 @@ const SECTIONS = [
 
 /**
  * Fires a `section_view` event the first time each section enters the viewport.
- * Renders nothing — pure side-effect component.
+ * Renders nothing - pure side-effect component.
  */
 export function SectionTracker() {
   useEffect(() => {

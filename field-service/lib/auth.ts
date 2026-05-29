@@ -65,7 +65,7 @@ export function createServiceClient() {
 }
 
 // ─── Session resolution ───────────────────────────────────────────────────────
-// Cached per-request — safe to call multiple times in a Server Component tree
+// Cached per-request - safe to call multiple times in a Server Component tree
 
 export const getSession = cache(async (): Promise<AuthUser | null> => {
   try {
@@ -123,7 +123,7 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
       // it) but record providerId + isProvider so UI never treats them as a
       // customer. This is the case that previously surfaced providers as "Customer".
       providerId = provider?.id
-      console.log('[auth.role] provider not yet portal-eligible — flagged isProvider', {
+      console.log('[auth.role] provider not yet portal-eligible - flagged isProvider', {
         userId: user.id,
         phone,
         providerStatus: provider?.status,
@@ -183,7 +183,7 @@ const getAdminActor = cache(async (): Promise<AdminAuthUser | null> => {
 
 // ─── Route guards ─────────────────────────────────────────────────────────────
 
-/** Call in admin route layouts — redirects when the caller has no active admin access. */
+/** Call in admin route layouts - redirects when the caller has no active admin access. */
 export async function requireAdmin(): Promise<AdminAuthUser> {
   const actor = await getAdminActor()
   if (actor) return actor
@@ -193,7 +193,7 @@ export async function requireAdmin(): Promise<AdminAuthUser> {
   redirect('/admin-sign-in?error=unauthorized')
 }
 
-/** Call in API route handlers — returns 401 JSON if the caller has no active admin access. */
+/** Call in API route handlers - returns 401 JSON if the caller has no active admin access. */
 export async function requireAdminApi(): Promise<NextResponse | null> {
   const actor = await getAdminActor()
   if (!actor) {
@@ -224,7 +224,7 @@ export async function requireRoleApi(required: Role[]): Promise<Response | Admin
   return actor
 }
 
-/** Call in provider API route handlers — returns 401 JSON if not an active provider. */
+/** Call in provider API route handlers - returns 401 JSON if not an active provider. */
 export async function requireProviderApi(): Promise<Response | AuthUser> {
   const session = await getSession()
   if (!session) return unauthorizedResponse()
@@ -252,7 +252,7 @@ export async function requireProviderApi(): Promise<Response | AuthUser> {
   return session
 }
 
-/** Call in provider route layouts — redirects to /provider-sign-in if not provider */
+/** Call in provider route layouts - redirects to /provider-sign-in if not provider */
 export async function requireProvider(): Promise<AuthUser> {
   const session = await getSession()
   if (!session) redirect('/provider-sign-in')
@@ -283,20 +283,20 @@ export async function requireProvider(): Promise<AuthUser> {
   return session
 }
 
-/** Call in customer routes — returns null if not authenticated (customer routes allow guests) */
+/** Call in customer routes - returns null if not authenticated (customer routes allow guests) */
 export async function getCustomerSession(): Promise<AuthUser | null> {
   return getSession()
 }
 
-// ─── Identity continuity — WhatsApp ↔ PWA bridge ─────────────────────────────
+// ─── Identity continuity - WhatsApp ↔ PWA bridge ─────────────────────────────
 //
 // Customers who book via WhatsApp start as phone-only records with userId=null.
 // When they later authenticate on the PWA via phone OTP, we call this function
 // to link their Supabase Auth user to the existing Customer record.
-// After this point both channels resolve to the same row — no duplicate records.
+// After this point both channels resolve to the same row - no duplicate records.
 
 // `isProviderOnly` is returned when the authenticated user is a provider and has
-// no pre-existing Customer record. In that case NO customer row is created — the
+// no pre-existing Customer record. In that case NO customer row is created - the
 // caller (POST /api/auth/link) blocks the customer journey instead. This prevents
 // a spurious "Customer" record from being auto-created for a provider, which would
 // wrongly mark them multi-role and surface them as a Customer on /profile.
@@ -345,7 +345,7 @@ export async function linkCustomerAccount(params: {
   // Do NOT auto-create a customer profile for a provider-only account. A provider
   // who reaches the customer sign-in/OTP flow must be blocked by the caller (see
   // /api/auth/link → isProvider), not silently given a placeholder "Customer"
-  // record — that record would mark them multi-role across the PWA and render them
+  // record - that record would mark them multi-role across the PWA and render them
   // as a Customer on /profile.
   const providerForUser = await db.provider.findFirst({
     where: { userId: params.userId },
@@ -355,7 +355,7 @@ export async function linkCustomerAccount(params: {
     return { id: null, isNew: false, isProviderOnly: true }
   }
 
-  // No prior WhatsApp record and not a provider — create fresh customer linked from the start
+  // No prior WhatsApp record and not a provider - create fresh customer linked from the start
   const created = await db.customer.create({
     data: {
       userId: params.userId,

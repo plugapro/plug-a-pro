@@ -31,8 +31,8 @@ export const RESTRICTED_SKILL_NOTICE: Record<string, string> = {
   electrical:
     '⚡ *Electrical work is not available on Plug A Pro right now.*\n\n' +
     'Electrical services in South Africa require a Certificate of Compliance (COC) issued by a registered electrician. ' +
-    'Verifying those credentials takes longer than our standard review — we are not accepting electrical providers during the current pilot.\n\n' +
-    'If you also do handyman, plumbing, tiling, carpentry, gardening, or cleaning work, please add those skills from the list.',
+    'Verifying those credentials takes longer than our standard review - we are not accepting electrical providers during the current pilot.\n\n' +
+    'If you also do handyman, plumbing, tiling, carpentry, gardening or cleaning work, please add those skills from the list.',
   roofing:
     '🏚️ *Roofing is not available on Plug A Pro right now.*\n\n' +
     'Roofing is a higher-risk trade that requires additional vetting. We are not accepting roofing providers during the current pilot.\n\n' +
@@ -70,7 +70,7 @@ export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
   {
     tag: 'garden',
     label: 'Garden & Landscaping',
-    description: 'Lawn care, landscaping, and tree trimming.',
+    description: 'Lawn care, landscaping and tree trimming.',
   },
   {
     tag: 'handyman',
@@ -85,32 +85,32 @@ export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
   {
     tag: 'electrical',
     label: 'Electrical',
-    description: 'Wiring, fault-finding, and general electrical repairs.',
+    description: 'Wiring, fault-finding and general electrical repairs.',
   },
   {
     tag: 'diy',
     label: 'DIY & Assembly',
-    description: 'Flat-pack assembly, shelving, and mounting.',
+    description: 'Flat-pack assembly, shelving and mounting.',
   },
   {
     tag: 'roofing',
     label: 'Roofing',
-    description: 'Roof repairs, waterproofing, and inspections.',
+    description: 'Roof repairs, waterproofing and inspections.',
   },
   {
     tag: 'cleaning',
     label: 'Cleaning',
-    description: 'Domestic, deep-clean, and post-construction cleaning.',
+    description: 'Domestic, deep-clean and post-construction cleaning.',
   },
   {
     tag: 'tiling',
     label: 'Tiling',
-    description: 'Floor and wall tiling, grouting, and waterproofing.',
+    description: 'Floor and wall tiling, grouting and waterproofing.',
   },
   {
     tag: 'plastering',
     label: 'Plastering',
-    description: 'Wall and ceiling plastering, skimming, and patching.',
+    description: 'Wall and ceiling plastering, skimming and patching.',
   },
   {
     tag: 'rhinoliting',
@@ -120,22 +120,22 @@ export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
   {
     tag: 'pest_control',
     label: 'Pest Control',
-    description: 'Fumigation, rodent control, and pest prevention.',
+    description: 'Fumigation, rodent control and pest prevention.',
   },
   {
     tag: 'carpentry',
     label: 'Carpentry',
-    description: 'Doors, built-in cupboards, wooden floors, and woodwork.',
+    description: 'Doors, built-in cupboards, wooden floors and woodwork.',
   },
   {
     tag: 'waterproofing',
     label: 'Waterproofing',
-    description: 'Basement sealing, roof membranes, and wet room treatment.',
+    description: 'Basement sealing, roof membranes and wet room treatment.',
   },
   {
     tag: 'air_conditioning',
     label: 'Air Conditioning',
-    description: 'AC installation, servicing, and repairs.',
+    description: 'AC installation, servicing and repairs.',
   },
   {
     // "Other" lets clients post jobs that don't fit a specific category.

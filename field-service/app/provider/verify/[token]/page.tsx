@@ -26,7 +26,7 @@ import { IdentityDetailsForm } from './IdentityDetailsForm'
 export const dynamic = 'force-dynamic'
 export const metadata = buildMetadata({ title: 'Verify Identity', noIndex: true })
 
-// Southern Africa first, then rest of Africa, then world — alphabetical within each group.
+// Southern Africa first, then rest of Africa, then world - alphabetical within each group.
 const COUNTRY_OPTIONS = [
   // Southern Africa
   'South Africa',
@@ -178,13 +178,13 @@ export default async function ProviderIdentityVerifyPage({
   // is an exhaustive switch that returns undefined for unknown values).
   const identityBasis = isIdentityBasis(verification.identityBasis) ? verification.identityBasis : null
   const requiredKinds = identityBasis ? getRequiredDocumentKinds(identityBasis) : []
-  // Show only the kinds relevant to the current step — selfie is always its own step.
+  // Show only the kinds relevant to the current step - selfie is always its own step.
   const displayKinds =
     verification.status === 'AWAITING_SELFIE'
       ? requiredKinds.filter((k) => k === 'SELFIE')
       : requiredKinds.filter((k) => k !== 'SELFIE')
   // Source of truth for "may continue": every required file for this step is
-  // persisted in the database — selecting a file in the browser is not enough.
+  // persisted in the database - selecting a file in the browser is not enough.
   const stepUploadComplete = displayKinds.length > 0 && displayKinds.every((kind) => uploadedKinds.has(kind))
 
   // Every inline action resolves to a single redirect target. Expected failures
@@ -270,7 +270,7 @@ export default async function ProviderIdentityVerifyPage({
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plug A Pro verification</p>
         <h1 className="text-2xl font-semibold tracking-normal">Confirm your identity</h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Use this secure page for ID, passport, permit, document, and selfie uploads. Do not send those details in a
+          Use this secure page for ID, passport, permit, document and selfie uploads. Do not send those details in a
           WhatsApp message unless support tells you to use the low-data fallback.
         </p>
       </header>
@@ -285,7 +285,7 @@ export default async function ProviderIdentityVerifyPage({
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {consentVendor
                 ? renderIdentityConsentText(consentVendor.vendorDisplayName)
-                : 'Plug A Pro will use your identity details only to verify your provider account, manage trust reviews, and meet legal or platform safety obligations.'}
+                : 'Plug A Pro will use your identity details only to verify your provider account, manage trust reviews and meet legal or platform safety obligations.'}
             </p>
           </div>
           <form action={acceptConsentAction}>
@@ -509,7 +509,7 @@ function ExpiredLink() {
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plug A Pro verification</p>
       <h1 className="text-2xl font-semibold tracking-normal">Verification link unavailable</h1>
       <p className="text-sm leading-6 text-muted-foreground">
-        This secure link is invalid, expired, or already complete. Return to WhatsApp and request a new verification
+        This secure link is invalid, expired or already complete. Return to WhatsApp and request a new verification
         link.
       </p>
       <Link href="/provider/verification" className="text-sm font-medium underline underline-offset-4">

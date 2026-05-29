@@ -466,7 +466,7 @@ export default async function AdminDispatchPage({
       <div>
         <h1 className="text-xl font-semibold">Dispatch Console</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Rank technicians, inspect schedule fit, and override the selected assignee when needed.
+          Rank technicians, inspect schedule fit and override the selected assignee when needed.
         </p>
       </div>
 

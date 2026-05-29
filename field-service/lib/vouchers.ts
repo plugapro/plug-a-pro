@@ -61,7 +61,7 @@ export type VoucherParseFailureReason =
 
 // Anything between/around the code chars that a real human might paste:
 // ASCII whitespace + hyphen + underscore + dot, mid-dot, bullet, soft hyphen,
-// the Unicode dash family (incl. en/em-dash, figure dash), and zero-width invisibles
+// the Unicode dash family (incl. en/em-dash, figure dash) and zero-width invisibles
 // (incl. ZWSP/ZWNJ/ZWJ/BOM) commonly inserted by mobile keyboards on paste.
 const VOUCHER_SEPARATORS = /[\s\-_.·•­‐-―​-‍﻿]+/g
 const VOUCHER_CHARSET_REGEX = new RegExp(`^[${CHARSET}]{8}$`)
@@ -87,7 +87,7 @@ export function parseVoucherCode(raw: string): VoucherParseResult {
   const stripped = raw.replace(VOUCHER_SEPARATORS, '').toUpperCase()
   if (stripped.length === 0) return { ok: false, reason: 'EMPTY' }
 
-  // Allow the PAP prefix to be present or absent — strip exactly one if it's there.
+  // Allow the PAP prefix to be present or absent - strip exactly one if it's there.
   const core = stripped.startsWith(VOUCHER_PREFIX)
     ? stripped.slice(VOUCHER_PREFIX.length)
     : stripped
@@ -152,11 +152,11 @@ export function mapVoucherRedemptionErrorToMessage(code: VoucherRedemptionErrorC
     case 'VOUCHER_CODE_EMPTY':
       return 'Please send your voucher code.'
     case 'VOUCHER_CODE_TOO_SHORT':
-      return 'That code looks too short — voucher codes are 8 characters (like 7KQ9M2XD) or the full PAP-XXXX-XXXX.'
+      return 'That code looks too short - voucher codes are 8 characters (like 7KQ9M2XD) or the full PAP-XXXX-XXXX.'
     case 'VOUCHER_CODE_TOO_LONG':
-      return 'That code looks too long — voucher codes are 8 characters (like 7KQ9M2XD) or the full PAP-XXXX-XXXX.'
+      return 'That code looks too long - voucher codes are 8 characters (like 7KQ9M2XD) or the full PAP-XXXX-XXXX.'
     case 'VOUCHER_CODE_INVALID_CHARS':
-      return 'Voucher codes use A–Z and 2–9 only (no O, I, L, 0, or 1). Please re-check your code.'
+      return 'Voucher codes use A–Z and 2–9 only (no O, I, L, 0 or 1). Please re-check your code.'
     case 'VOUCHER_RATE_LIMITED':
       return 'Too many voucher attempts. Please wait a few minutes, then try again.'
   }

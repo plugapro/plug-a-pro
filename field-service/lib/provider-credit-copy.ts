@@ -136,7 +136,7 @@ function getPublicAppUrlFromEnv(
 
   if ((host === 'localhost' || host === '127.0.0.1') && process.env.NODE_ENV === 'production') {
     console.error(
-      '[provider-credit-copy] CONFIG ERROR: public app URL contains localhost in production — WhatsApp links will be invalid.',
+      '[provider-credit-copy] CONFIG ERROR: public app URL contains localhost in production - WhatsApp links will be invalid.',
       {
         APP_PUBLIC_URL: process.env.APP_PUBLIC_URL ? '(set)' : '(not set)',
         NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ? '(set)' : '(not set)',
@@ -171,13 +171,13 @@ function getPublicAppUrlFromEnv(
  * Returns the public app base URL with an optional path appended.
  *
  * Resolution order:
- *   1. APP_PUBLIC_URL          — server-side only; set this in production to the canonical
+ *   1. APP_PUBLIC_URL          - server-side only; set this in production to the canonical
  *                                public domain (e.g. https://app.plugapro.co.za). Safe to set
  *                                independently of NEXT_PUBLIC_APP_URL so local scripts can
  *                                target production URLs without changing client-side config.
- *   2. NEXT_PUBLIC_APP_URL     — Next.js client-visible variable; typically correct in Vercel
+ *   2. NEXT_PUBLIC_APP_URL     - Next.js client-visible variable; typically correct in Vercel
  *                                production builds but may be localhost in local dev.
- *   3. Empty string fallback   — callers receive '' and should not emit a broken public URL.
+ *   3. Empty string fallback   - callers receive '' and should not emit a broken public URL.
  *
  * Production guard:
  * - Logs and blocks localhost in production URLs so no broken links are sent.
@@ -238,16 +238,16 @@ export function buildProviderCreditSummaryMessage(
     `Starter/onboarding: ${starterCredits}`,
     `Purchased: ${purchasedCredits}`,
     '',
-    'Credits are prepaid platform units, not cash, loans, or financial credit.',
+    'Credits are prepaid platform units, not cash, loans or financial credit.',
     PROVIDER_CREDITS_PRICE_LINE,
     'Credits are used only when you accept a customer-selected job.',
-    'Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits.',
+    'Previewing, showing interest, shortlisting, customer selection, declining and expiry do not use credits.',
   ].filter(Boolean).join('\n')
 }
 
 // Body intentionally contains no raw URL. Caller must pair this with a
 // sendCtaUrl follow-up that exposes `getProviderTermsUrl()` behind the
-// "View credits rules" CTA — see callers in lib/whatsapp-flows/registration.ts.
+// "View credits rules" CTA - see callers in lib/whatsapp-flows/registration.ts.
 export function buildProviderOnboardingIntroMessage() {
   return [
     '👷 *Join Plug A Pro as a Service Provider*',
@@ -255,10 +255,10 @@ export function buildProviderOnboardingIntroMessage() {
     'Get matched with customer job leads in your area.',
     '',
     "*Here's how it works:*",
-    '• You apply with your name, skills, work areas, and availability.',
+    '• You apply with your name, skills, work areas and availability.',
     '• We review your application using the information you provide.',
     '• If approved, your provider profile is activated.',
-    '• Credits are prepaid platform units, not cash, loans, or financial credit.',
+    '• Credits are prepaid platform units, not cash, loans or financial credit.',
     `• ${PROVIDER_CREDITS_PRICE_LINE}`,
     '• You receive starter credits when onboarded.',
     `• Previewing and showing interest in jobs is free.`,
@@ -275,7 +275,7 @@ export function buildProviderOnboardingIntroMessage() {
 // Body intentionally contains no raw URL. The `termsUrl` field (param kept for
 // backward compatibility with existing call sites) is now ignored in the body.
 // Callers must follow up with a sendCtaUrl that exposes the terms URL behind
-// the "View credits rules" CTA — see lib/whatsapp-flows/registration.ts.
+// the "View credits rules" CTA - see lib/whatsapp-flows/registration.ts.
 export function buildProviderApplicationSubmittedMessage(params: {
   providerName?: string | null
   applicationRef: string
@@ -300,14 +300,14 @@ export function buildProviderApplicationSubmittedMessage(params: {
     '',
     'If approved, your provider profile will be activated and you will receive starter credits for customer-selected jobs you accept.',
     '',
-    'Once approved, you can add more profile details — including your email address, portfolio photos, and identity verification — in the Worker Portal.',
+    'Once approved, you can add more profile details - including your email address, portfolio photos and identity verification - in the Worker Portal.',
     '',
-    'Provider credits terms and rules are available below — tap *View credits rules* to read them.',
+    'Provider credits terms and rules are available below - tap *View credits rules* to read them.',
   ].filter(Boolean).join('\n')
 }
 
 // Body intentionally contains no URL. The signed lead URL is exposed via the
-// dispatch.ts sendCtaUrl call ("View Lead" CTA) — never inline.
+// dispatch.ts sendCtaUrl call ("View Lead" CTA) - never inline.
 export function buildProviderLeadPreviewMessage(params: {
   category: string
   area: string
@@ -323,7 +323,7 @@ export function buildProviderLeadPreviewMessage(params: {
   province?: string | null
   urgency?: string | null
   // Accepts the stored providerPreference (MVP: save_money | best_value | best_quality) or the
-  // legacy budgetPreference field. Rendered via preferenceLabel() — never as a raw enum value.
+  // legacy budgetPreference field. Rendered via preferenceLabel() - never as a raw enum value.
   matchingPreference?: string | null
   photosCount?: number | null
 }) {
@@ -343,7 +343,7 @@ export function buildProviderLeadPreviewMessage(params: {
   const photosLine = params.photosCount != null ? [`Photos: *${params.photosCount} available*`] : []
 
   return [
-    `🔔 *New Job Opportunity — ${params.category}*`,
+    `🔔 *New Job Opportunity - ${params.category}*`,
     '',
     ...titleLine,
     ...subcategoryLine,

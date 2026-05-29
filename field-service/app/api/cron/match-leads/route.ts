@@ -114,7 +114,7 @@ export async function GET(request: Request) {
   }
 
   // 1g. Retry approved provider application WhatsApp confirmations that were
-  // missed because Meta, network, or a prior deploy failed after DB approval.
+  // missed because Meta, network or a prior deploy failed after DB approval.
   try {
     const approvedMissingNotifications = await db.providerApplication.findMany({
       where: {

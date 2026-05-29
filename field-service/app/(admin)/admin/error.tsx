@@ -2,7 +2,7 @@
 
 // Admin-wide error boundary. Catches render/data errors in any /admin/** route.
 // AdminErrorPanel handles Sentry capture, console logging, digest display,
-// retry, and back-link - no raw error.message is surfaced to the UI.
+// retry and back-link - no raw error.message is surfaced to the UI.
 
 import { AdminErrorPanel } from '@/components/admin/ui/AdminErrorPanel'
 

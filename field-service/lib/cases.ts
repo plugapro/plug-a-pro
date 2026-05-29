@@ -1,6 +1,6 @@
 // ─── Case lifecycle service ───────────────────────────────────────────────────
 // All state-mutating operations on Case records.
-// Called from API route handlers and server actions — never inline in routes.
+// Called from API route handlers and server actions - never inline in routes.
 
 import { db } from '@/lib/db'
 import { slaFor } from '@/lib/sla'
@@ -70,7 +70,7 @@ export async function getCaseByEntity(
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
-/** Creates a new Case, or returns the existing one if it already exists. */
+/** Creates a new Case or returns the existing one if it already exists. */
 export async function openCase(params: CreateCaseParams) {
   const sla = slaFor(params.queueType)
   const base = params.createdAt ?? new Date()

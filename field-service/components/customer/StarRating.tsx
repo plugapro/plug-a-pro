@@ -15,7 +15,7 @@ interface StarRatingProps {
 
 /**
  * Mobile-friendly 5-star rating selector. Renders five large tappable
- * targets, fills all stars up to the selected value, and reads correctly
+ * targets, fills all stars up to the selected value and reads correctly
  * for screen readers via a hidden radio group. Used on the customer rating
  * screen after job completion.
  */

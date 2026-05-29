@@ -41,7 +41,7 @@ export async function raiseSecurityReviewEvent(
   client: SecurityEventClient = db,
 ): Promise<void> {
   if (!input.phoneE164 && !input.subjectVerificationId && !input.subjectWebhookEventId) {
-    throw new Error('Security event requires a subject: phoneE164, subjectVerificationId, or subjectWebhookEventId')
+    throw new Error('Security event requires a subject: phoneE164, subjectVerificationId or subjectWebhookEventId')
   }
 
   const metadata = sanitizeSecurityReviewMetadata(input.metadata)

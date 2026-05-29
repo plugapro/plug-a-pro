@@ -72,7 +72,7 @@ export default async function AdminInvoicesPage() {
         <div>
           <h1 className="text-xl font-semibold">Invoices</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Generate, send, and void customer invoices.
+            Generate, send and void customer invoices.
           </p>
         </div>
         <Badge variant={invoices.length > 0 ? 'neutral' : 'outline'}>{invoices.length} total</Badge>

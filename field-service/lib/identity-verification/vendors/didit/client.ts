@@ -1,4 +1,4 @@
-// Didit HTTP client — server-side fetch wrapper with timeout and a single
+// Didit HTTP client - server-side fetch wrapper with timeout and a single
 // jittered retry on transient 5xx. Never logs payload bodies or the API key.
 
 import { getDiditConfig } from './config'

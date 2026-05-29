@@ -13,7 +13,7 @@ let inflight: Promise<string> | null = null
 /**
  * Thrown when the Pay@ token endpoint rejects a request or returns a
  * response we cannot parse. Same purpose as PayatApiError but for the
- * auth endpoint — kept distinct so the action layer can show "could not
+ * auth endpoint - kept distinct so the action layer can show "could not
  * authenticate with Pay@" vs "Pay@ rejected the request" without
  * matching on free-text error strings.
  */
@@ -86,7 +86,7 @@ async function fetchToken(): Promise<string> {
   }
 
   if (!response.ok) {
-    // Never log the response body — it may echo credentials or sensitive context.
+    // Never log the response body - it may echo credentials or sensitive context.
     if (process.env.NODE_ENV !== 'production') {
       const body = await response.text()
       console.debug('[payat-token] token fetch failed body (dev only)', body)

@@ -242,7 +242,7 @@ export async function creditPromoCreditsInTransaction(
 /**
  * Credits the provider wallet for a successful voucher redemption.
  * Uses VOUCHER_REDEMPTION entry type for clear ledger auditability.
- * creditType is PROMO — voucher credits are non-purchased credits and increment promoCreditBalance.
+ * creditType is PROMO - voucher credits are non-purchased credits and increment promoCreditBalance.
  *
  * MUST be called inside an existing DB transaction.
  */
@@ -397,7 +397,7 @@ export async function getProviderWalletBalance(
 
 /**
  * Read-only wallet balance lookup for notification/display contexts.
- * Uses findUnique instead of upsert — returns a zero balance for providers
+ * Uses findUnique instead of upsert - returns a zero balance for providers
  * without a wallet row rather than creating one as a side-effect.
  */
 export async function getProviderWalletBalanceReadOnly(
@@ -743,7 +743,7 @@ export type RecomputedWalletBalance = {
     paidCreditBalance: number
     promoCreditBalance: number
   }
-  /** True when cached and replayed balances diverge — indicates ledger drift. */
+  /** True when cached and replayed balances diverge - indicates ledger drift. */
   drifted: boolean
 }
 
@@ -762,7 +762,7 @@ function ledgerEntryDelta(entryType: string, amountCredits: number): number {
       // amountCredits carries its own sign for adjustments (+/-)
       return amountCredits
     default:
-      // WALLET_SUSPENDED, WALLET_REACTIVATED, and unknown types do not change balance.
+      // WALLET_SUSPENDED, WALLET_REACTIVATED and unknown types do not change balance.
       return 0
   }
 }

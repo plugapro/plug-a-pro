@@ -2,7 +2,7 @@
 
 /**
  * Typed wrapper around gtag so every event call is discoverable and consistent.
- * Safe to call in SSR contexts — guards on typeof window/gtag.
+ * Safe to call in SSR contexts - guards on typeof window/gtag.
  */
 function track(event: string, params?: Record<string, unknown>) {
   if (typeof window === "undefined") return;
@@ -12,7 +12,7 @@ function track(event: string, params?: Record<string, unknown>) {
 }
 
 export const analytics = {
-  /** CTA button clicked — primary conversion intent signal */
+  /** CTA button clicked - primary conversion intent signal */
   ctaClick(label: string, location: string, audience: "customer" | "worker" | "provider") {
     track("cta_click", { label, location, audience });
   },
@@ -32,7 +32,7 @@ export const analytics = {
     track("whatsapp_click", { source });
   },
 
-  /** Lead magnet form submitted — phone captured, WhatsApp handoff triggered */
+  /** Lead magnet form submitted - phone captured, WhatsApp handoff triggered */
   leadMagnetDownload(magnet: "template-pack" | "dispatch-checklist" | "cashflow-tracker", source: string) {
     track("lead_magnet_download", { magnet, source });
   },

@@ -28,7 +28,7 @@ export function getApplicationsAdminMessage(code?: string | null) {
     case 'application_approval_failed':
       return {
         tone: 'error' as const,
-        text: 'Approval could not be completed — Supabase user creation failed. Check the auth configuration and retry.',
+        text: 'Approval could not be completed - Supabase user creation failed. Check the auth configuration and retry.',
       }
     default:
       return null

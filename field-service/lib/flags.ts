@@ -22,7 +22,7 @@ export type { FeatureFlagKey } from './feature-flags-registry'
 export { FEATURE_FLAGS_REGISTRY } from './feature-flags-registry'
 
 // ─── Flag keys ────────────────────────────────────────────────────────────────
-// Legacy constant map — kept for backward compatibility with existing call sites.
+// Legacy constant map - kept for backward compatibility with existing call sites.
 // Prefer using string literals that match FeatureFlagKey going forward.
 
 export const FLAG_KEYS = {
@@ -34,7 +34,7 @@ export const FLAG_KEYS = {
   OPS_PROFILE_V2:      'ops.v2.profileV2',
   OPS_BULK_ACTIONS:    'ops.v2.bulkActions',
   OPS_DUPLICATES:      'ops.v2.duplicates',
-  // Qualified Shortlist Model — when enabled, dispatchMatchLead sends
+  // Qualified Shortlist Model - when enabled, dispatchMatchLead sends
   // free "I'm interested" / "Not interested" buttons instead of the legacy
   // paid "Accept Lead" buttons. Selected-provider acceptance still occurs via
   // the confirm_accept:<leadId> button surfaced after customer selection.
@@ -49,7 +49,7 @@ export const FLAG_KEYS = {
   // account, allowing business team members to book under the company account.
   CUSTOMER_OPERATOR_MEMBER: 'feature.customer.operator_member',
   // Code-level safety gate for routing Supabase Auth OTPs through WhatsApp.
-  // The real kill switch is the Send SMS Hook URL in the Supabase dashboard —
+  // The real kill switch is the Send SMS Hook URL in the Supabase dashboard -
   // removing it reverts delivery to Supabase's built-in SMS. This flag exists
   // so the hook endpoint can refuse to deliver if the rollout needs an
   // immediate pause without a dashboard round-trip.
@@ -75,7 +75,7 @@ async function loadFlagsFromDb(): Promise<Map<string, CachedFlag>> {
     }
     return map
   } catch {
-    // DB unavailable — fall through to env/default
+    // DB unavailable - fall through to env/default
     return new Map()
   }
 }
@@ -130,7 +130,7 @@ function getEnvFlags(): Record<string, boolean> {
 
 /**
  * Pure validator for the FEATURE_FLAGS env var. Used by health endpoints.
- * Does not log — callers control verbosity.
+ * Does not log - callers control verbosity.
  */
 export function validateFeatureFlagsEnv():
   | { status: 'unset' }
@@ -169,7 +169,7 @@ export async function isEnabled(
   key: FeatureFlagKey,
   ctx?: { userId?: string }
 ): Promise<boolean> {
-  // 1 — DB
+  // 1 - DB
   const flags = await getFlags()
   const row = flags.get(key)
   if (row !== undefined) {
@@ -178,15 +178,15 @@ export async function isEnabled(
     return false
   }
 
-  // 2 — env
+  // 2 - env
   const envFlags = getEnvFlags()
   if (key in envFlags) return Boolean(envFlags[key])
 
-  // 3 — default
+  // 3 - default
   return false
 }
 
-/** Synchronous check — only reads env (no DB). Use in non-async contexts. */
+/** Synchronous check - only reads env (no DB). Use in non-async contexts. */
 export function isEnabledSync(key: FeatureFlagKey): boolean {
   const envFlags = getEnvFlags()
   return key in envFlags ? Boolean(envFlags[key]) : false

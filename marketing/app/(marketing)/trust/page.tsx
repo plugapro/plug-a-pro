@@ -17,19 +17,19 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "Trust & Safety",
   description:
-    "How Plug A Pro reduces risk with staged contact sharing, written quotes, job records, photos where available, and manual support review.",
+    "How Plug A Pro reduces risk with staged contact sharing, written quotes, job records, photos where available and manual support review.",
 });
 
 const CUSTOMER_PROTECTIONS = [
   {
     icon: Eye,
     title: "Your number stays private",
-    body: "Plug A Pro handles the intake, matching, quote approval, and status updates from the platform number. Direct contact is not required to get the job booked and tracked.",
+    body: "Plug A Pro handles the intake, matching, quote approval and status updates from the platform number. Direct contact is not required to get the job booked and tracked.",
   },
   {
     icon: UserCheck,
     title: "Applications are manually reviewed",
-    body: "Every provider who applies goes through a manual review before their profile goes live. We record the work types they claim, the areas they cover, and any references or prior work evidence they choose to share. Unless a field says otherwise, profile details remain provider-supplied information.",
+    body: "Every provider who applies goes through a manual review before their profile goes live. We record the work types they claim, the areas they cover and any references or prior work evidence they choose to share. Unless a field says otherwise, profile details remain provider-supplied information.",
   },
   {
     icon: FileText,
@@ -39,7 +39,7 @@ const CUSTOMER_PROTECTIONS = [
   {
     icon: Camera,
     title: "Photos and job notes where available",
-    body: "The platform supports customer and provider photos, job notes, and status updates. Some jobs include before and after photos where requested or appropriate, giving support more evidence if a dispute arises.",
+    body: "The platform supports customer and provider photos, job notes and status updates. Some jobs include before and after photos where requested or appropriate, giving support more evidence if a dispute arises.",
   },
 ];
 
@@ -57,12 +57,12 @@ const WORKER_PROTECTIONS = [
   {
     icon: Eye,
     title: "Your number stays private too",
-    body: "Providers also benefit from the platform-managed flow. Plug A Pro handles the intake, quote approval, and status updates so you do not have to share your personal number just to get started.",
+    body: "Providers also benefit from the platform-managed flow. Plug A Pro handles the intake, quote approval and status updates so you do not have to share your personal number just to get started.",
   },
   {
     icon: ShieldCheck,
     title: "Written job record for payment follow-through",
-    body: "The quote, extra work approvals, photos, and completion trail stay on record so payment discussions are anchored to something written instead of memory or verbal promises.",
+    body: "The quote, extra work approvals, photos and completion trail stay on record so payment discussions are anchored to something written instead of memory or verbal promises.",
   },
 ];
 
@@ -77,19 +77,19 @@ const DISPUTE_STEPS = [
     number: "2",
     title: "Both sides submit evidence",
     detail:
-      "We ask both sides for their account of what happened, any photos, and the written quote. The job record gives support a starting point for the review.",
+      "We ask both sides for their account of what happened, any photos and the written quote. The job record gives support a starting point for the review.",
   },
   {
     number: "3",
     title: "Mediation review",
     detail:
-      "A Plug A Pro team member reviews the available evidence. We look at the written quote, photos where available, and the communication log.",
+      "A Plug A Pro team member reviews the available evidence. We look at the written quote, photos where available and the communication log.",
   },
   {
     number: "4",
     title: "Resolution",
     detail:
-      "Based on the evidence and the payment route used, Plug A Pro may facilitate next steps such as rework discussions, a platform-facilitated refund, a provider settlement hold, or a credit reversal where the platform record supports this. Plug A Pro does not act as a court or guarantee the service outcome.",
+      "Based on the evidence and the payment route used, Plug A Pro may facilitate next steps such as rework discussions, a platform-facilitated refund, a provider settlement hold or a credit reversal where the platform record supports this. Plug A Pro does not act as a court or guarantee the service outcome.",
   },
 ];
 
@@ -105,7 +105,7 @@ export default function TrustPage() {
           Built on accountability. For both sides.
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-          Plug A Pro reduces risk by documenting agreements, delaying direct contact until the job is moving, and keeping the job record in writing. It does not guarantee the identity, licensing, safety, or workmanship of a provider unless a specific field says that check happened.
+          Plug A Pro reduces risk by documenting agreements, delaying direct contact until the job is moving and keeping the job record in writing. It does not guarantee the identity, licensing, safety or workmanship of a provider unless a specific field says that check happened.
         </p>
       </div>
 
@@ -123,11 +123,11 @@ export default function TrustPage() {
             <h2 className="text-2xl font-bold">Anonymous communication</h2>
           </div>
           <p className="text-muted-foreground mb-8 max-w-2xl">
-            Plug A Pro manages the intake, matching, quote approval, and status updates from the platform number. That means the job can move forward without either side needing to exchange personal contact details at the start.
+            Plug A Pro manages the intake, matching, quote approval and status updates from the platform number. That means the job can move forward without either side needing to exchange personal contact details at the start.
           </p>
           <div className="rounded-2xl border border-border/40 p-6 bg-muted/20">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">How it works:</strong> The job starts on the Plug A Pro WhatsApp number. Quotes and approval stay in writing, and both sides receive structured updates from Plug A Pro as the booking moves forward. Exact address and phone details are shared only after the customer selects a provider and that provider accepts the job.
+              <strong className="text-foreground">How it works:</strong> The job starts on the Plug A Pro WhatsApp number. Quotes and approval stay in writing and both sides receive structured updates from Plug A Pro as the booking moves forward. Exact address and phone details are shared only after the customer selects a provider and that provider accepts the job.
             </p>
           </div>
         </div>
@@ -213,7 +213,7 @@ export default function TrustPage() {
             <h2 className="text-2xl font-bold">Dispute resolution</h2>
           </div>
           <p className="text-muted-foreground mb-10 max-w-2xl">
-            When something goes wrong, there is still a process. Plug A Pro reviews the quote, photos, and job history on record so support is working from written evidence rather than guesswork.
+            When something goes wrong, there is still a process. Plug A Pro reviews the quote, photos and job history on record so support is working from written evidence rather than guesswork.
           </p>
           <div className="space-y-0">
             {DISPUTE_STEPS.map((s, i) => (
@@ -251,7 +251,7 @@ export default function TrustPage() {
           <ul className="space-y-3 text-sm text-muted-foreground">
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              Providers on Plug A Pro are independent service providers, not Plug A Pro employees, agents, partners, or subcontractors. We facilitate the match and provide a platform record for both sides.
+              Providers on Plug A Pro are independent service providers, not Plug A Pro employees, agents, partners or subcontractors. We facilitate the match and provide a platform record for both sides.
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
@@ -259,7 +259,7 @@ export default function TrustPage() {
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              Providers are responsible for the quality and legality of their own work. Plug A Pro provides the framework: profiles, written quotes, photos where available, ratings, and support review of the record we hold. We do not warrant the outcome of any job.
+              Providers are responsible for the quality and legality of their own work. Plug A Pro provides the framework: profiles, written quotes, photos where available, ratings and support review of the record we hold. We do not warrant the outcome of any job.
             </li>
           </ul>
           <div className="mt-6 pt-6 border-t border-border/40">

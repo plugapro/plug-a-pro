@@ -1,5 +1,5 @@
 // ─── Admin: Customers ─────────────────────────────────────────────────────────
-// Lists all customers with booking count, last activity, and channel.
+// Lists all customers with booking count, last activity and channel.
 
 export const dynamic = 'force-dynamic'
 
@@ -124,7 +124,7 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
 
       {!crudEnabled && (
         <div className="tone-warning mb-4 rounded-lg border px-4 py-2 text-sm">
-          Customer mutations are disabled. Enable the <code>admin.crud.customers</code> feature flag to block, deactivate, or add notes.
+          Customer mutations are disabled. Enable the <code>admin.crud.customers</code> feature flag to block, deactivate or add notes.
         </div>
       )}
 

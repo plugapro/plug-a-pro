@@ -8,7 +8,7 @@
 //
 // All templates follow the marketplace-responsibility-matrix:
 //   - Plug A Pro facilitates matching and records agreements.
-//   - We do not guarantee workmanship, licensing, or provider behaviour.
+//   - We do not guarantee workmanship, licensing or provider behaviour.
 //   - Dispute resolution uses the written quote + job record as the reference.
 
 export type MacroKey =
@@ -34,7 +34,7 @@ const MACROS: Record<MacroKey, (v: MacroVars) => string> = {
   // ─── Disputes ───────────────────────────────────────────────────────────────
 
   DISPUTE_OPENED: ({ customerName, refId }) =>
-    `Hi ${customerName}, thanks for reaching out. We've logged your report (ref: ${refId}) and will review the written quote, job record, and any photos you've shared.\n\nWe aim to respond within 2 business hours and will keep you updated as we move forward.`,
+    `Hi ${customerName}, thanks for reaching out. We've logged your report (ref: ${refId}) and will review the written quote, job record and any photos you've shared.\n\nWe aim to respond within 2 business hours and will keep you updated as we move forward.`,
 
   DISPUTE_UPDATE: ({ customerName, refId, updateDetail }) =>
     `Hi ${customerName}, an update on your case (ref: ${refId}):\n\n${updateDetail}\n\nWe'll follow up again as soon as we have more information.`,
@@ -74,7 +74,7 @@ const MACROS: Record<MacroKey, (v: MacroVars) => string> = {
   // ─── No-shows ────────────────────────────────────────────────────────────────
 
   NO_SHOW_PROVIDER: ({ customerName, bookingRef }) =>
-    `Hi ${customerName}, we're sorry the provider didn't arrive for booking ${bookingRef}. We've logged this and will follow up with you within 2 hours to arrange a resolution — this may include rescheduling or cancellation.\n\nWe take no-shows seriously and they affect the provider's standing on the platform.`,
+    `Hi ${customerName}, we're sorry the provider didn't arrive for booking ${bookingRef}. We've logged this and will follow up with you within 2 hours to arrange a resolution - this may include rescheduling or cancellation.\n\nWe take no-shows seriously and they affect the provider's standing on the platform.`,
 
   NO_SHOW_CUSTOMER: ({ providerName, bookingRef }) =>
     `Hi ${providerName}, the customer was not available for booking ${bookingRef}. We've logged this and will follow up with you within 2 hours. Any travel or preparation costs will be considered as part of the review.`,
@@ -82,7 +82,7 @@ const MACROS: Record<MacroKey, (v: MacroVars) => string> = {
   // ─── Operational ─────────────────────────────────────────────────────────────
 
   OUT_OF_AREA: ({ customerName, area }) =>
-    `Hi ${customerName}, we don't currently have active providers in ${area}. We've noted your interest — we'll let you know when we expand to your area. You're welcome to try again once we've launched nearby.`,
+    `Hi ${customerName}, we don't currently have active providers in ${area}. We've noted your interest - we'll let you know when we expand to your area. You're welcome to try again once we've launched nearby.`,
 
   GENERAL_ACKNOWLEDGEMENT: ({ customerName }) =>
     `Hi ${customerName}, thanks for your message. A member of our team will follow up with you within 2 business hours (Mon–Fri 8am–6pm, Sat 8am–2pm).`,

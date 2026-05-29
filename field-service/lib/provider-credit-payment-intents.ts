@@ -23,7 +23,7 @@ export const MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000
 export const MANUAL_EFT_REFERENCE_ATTEMPTS = 10
 
 // ─── Gateway-allowed top-up package amounts ───────────────────────────────────
-// Pay@, Payfast, and manual EFT all restrict to the approved R100/R200/R500 packages.
+// Pay@, Payfast and manual EFT all restrict to the approved R100/R200/R500 packages.
 export const PAYFAST_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
 export const MANUAL_EFT_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
 
@@ -111,7 +111,7 @@ async function assertProviderVerifiedForPaidTopUp(
   provider: { id: string; kycStatus: KycStatus },
   client: IdentityVerificationLookupClient = db,
 ) {
-  // Short-circuit when the feature is disabled — allows rollback without a deploy.
+  // Short-circuit when the feature is disabled - allows rollback without a deploy.
   if (!(await isEnabled('provider.identity.verification'))) return
   if (provider.kycStatus !== KycStatus.VERIFIED) {
     throw new ProviderCreditPaymentIntentError(
@@ -248,7 +248,7 @@ export async function createManualEftTopUpIntent(
   if (!MANUAL_EFT_ALLOWED_AMOUNTS_CENTS.has(input.amountCents)) {
     throw new ProviderCreditPaymentIntentError(
       'INVALID_AMOUNT',
-      'Top-up amount must be one of the approved credits packages: R100, R200, or R500.',
+      'Top-up amount must be one of the approved credits packages: R100, R200 or R500.',
     )
   }
 
@@ -401,12 +401,12 @@ export async function createPayatTopUpIntent(
     }))
     throw new ProviderCreditPaymentIntentError(
       'INVALID_AMOUNT',
-      'Top-up amount must be one of the approved credits packages: R100, R200, or R500.',
+      'Top-up amount must be one of the approved credits packages: R100, R200 or R500.',
     )
   }
 
   const creditsToIssue = creditsForAmount(input.amountCents)
-  // payAtAmountCents is what the provider pays at the counter — credit value plus
+  // payAtAmountCents is what the provider pays at the counter - credit value plus
   // any service fee that Plug A Pro passes through to cover gateway costs.
   // NOTE: PAYAT_MERCHANT_FEE_FIXED_CENTS exists in env but is not yet read here;
   // callers must pass feeAmountCents explicitly until fee auto-wiring is added.
@@ -569,7 +569,7 @@ export async function createPayatTopUpIntent(
       where: { id: intent.id },
       data: { status: 'FAILED' },
     }).catch((dbErr) => {
-      // Intent stays PENDING_PAYMENT — duplicate-intent guard will block retries
+      // Intent stays PENDING_PAYMENT - duplicate-intent guard will block retries
       // for the full 3-day window. Requires manual recovery in admin.
       console.error(JSON.stringify({
         event: 'payat.intent_cleanup_failed',
@@ -639,13 +639,13 @@ export async function createPayatTopUpIntent(
 
 /**
  * Create a PaymentIntent for a Payfast gateway top-up and return the Payfast
- * checkout payload. Wallet balance is NOT modified here — crediting happens
+ * checkout payload. Wallet balance is NOT modified here - crediting happens
  * only after a verified Payfast ITN with payment_status === "COMPLETE".
  *
  * The caller must redirect or POST the provider's browser to
  * `result.checkout.action` with `result.checkout.fields`.
  *
- * IMPORTANT: the Payfast return URL is UI-only — never credit the wallet there.
+ * IMPORTANT: the Payfast return URL is UI-only - never credit the wallet there.
  */
 export async function createPayfastTopUpIntent(
   input: CreatePayfastTopUpIntentInput,
@@ -653,7 +653,7 @@ export async function createPayfastTopUpIntent(
   if (!PAYFAST_ALLOWED_AMOUNTS_CENTS.has(input.amountCents)) {
     throw new ProviderCreditPaymentIntentError(
       'INVALID_AMOUNT',
-      'Top-up amount must be one of the approved credits packages: R100, R200, or R500.',
+      'Top-up amount must be one of the approved credits packages: R100, R200 or R500.',
     )
   }
 
@@ -677,7 +677,7 @@ export async function createPayfastTopUpIntent(
 
     // Use the intent ID as the Payfast m_payment_id and as the internal
     // payment reference. For Payfast there is no human-readable bank
-    // reference — the gateway provides its own payment ID in the ITN.
+    // reference - the gateway provides its own payment ID in the ITN.
     const paymentReference = await createUniquePaymentReference(
       tx,
       // Prefix with "PF-" to distinguish Payfast intents from manual EFT
@@ -701,7 +701,7 @@ export async function createPayfastTopUpIntent(
     })
   })
 
-  // Build the Payfast checkout payload outside the transaction — if this fails
+  // Build the Payfast checkout payload outside the transaction - if this fails
   // the intent stays in PENDING_PAYMENT and will expire naturally via the
   // /api/cron/expire-payment-intents hourly cron once expiresAt has passed.
   const providerProfile = {
@@ -721,7 +721,7 @@ export async function createPayfastTopUpIntent(
     config,
   )
 
-  // Non-blocking WhatsApp notification — failure must not prevent the
+  // Non-blocking WhatsApp notification - failure must not prevent the
   // provider from reaching the Payfast checkout page.
   const { notifyProviderPayfastTopUpInitiated } = await import('./provider-wallet-notifications')
   notifyProviderPayfastTopUpInitiated(intent.id).catch((error: unknown) => {

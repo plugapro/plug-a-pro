@@ -1,5 +1,5 @@
 // ─── Blob proxy URL helpers ───────────────────────────────────────────────────
-// Vercel Blob URLs must never be returned directly to clients — they are publicly
+// Vercel Blob URLs must never be returned directly to clients - they are publicly
 // guessable once the token is known. All attachment access goes through the
 // /api/attachments/[id] proxy route, which enforces session or token-based auth
 // before serving the file.

@@ -1,12 +1,12 @@
 import Link from 'next/link'
 
 export const LEGAL_PAGES = [
-  { slug: 'privacy', title: 'Privacy policy', path: '/privacy', group: 'For everyone', blurb: 'How we collect, use, and share your information across requests, quotes, and jobs.' },
+  { slug: 'privacy', title: 'Privacy policy', path: '/privacy', group: 'For everyone', blurb: 'How we collect, use and share your information across requests, quotes and jobs.' },
   { slug: 'terms', title: 'Terms of service', path: '/terms', group: 'For everyone', blurb: 'The agreement between you and Plug A Pro, including rights and responsibilities.' },
-  { slug: 'refund-policy', title: 'Refund policy', path: '/refund-policy', group: 'For everyone', blurb: 'When refunds apply, how to request one, and how long refunds usually take.' },
-  { slug: 'trust', title: 'Trust & safety', path: '/trust', group: 'For everyone', blurb: 'How we verify providers, protect details, and handle escalations or disputes.' },
-  { slug: 'provider-terms', title: 'Provider terms', path: '/provider-terms', group: 'For service providers', blurb: 'Marketplace rules for approved providers, conduct, and policy enforcement.' },
-  { slug: 'credits-policy', title: 'Provider credits rules', path: '/credits-policy', group: 'For service providers', blurb: 'How credits are purchased, charged on acceptance, and refunded when eligible.' },
+  { slug: 'refund-policy', title: 'Refund policy', path: '/refund-policy', group: 'For everyone', blurb: 'When refunds apply, how to request one and how long refunds usually take.' },
+  { slug: 'trust', title: 'Trust & safety', path: '/trust', group: 'For everyone', blurb: 'How we verify providers, protect details and handle escalations or disputes.' },
+  { slug: 'provider-terms', title: 'Provider terms', path: '/provider-terms', group: 'For service providers', blurb: 'Marketplace rules for approved providers, conduct and policy enforcement.' },
+  { slug: 'credits-policy', title: 'Provider credits rules', path: '/credits-policy', group: 'For service providers', blurb: 'How credits are purchased, charged on acceptance and refunded when eligible.' },
   { slug: 'faq', title: 'FAQ', path: '/faq', group: 'Help', blurb: 'Answers to common customer and provider questions about the platform.' },
   { slug: 'contact', title: 'Contact support', path: '/contact', group: 'Help', blurb: 'Support channels and response expectations for urgent and non-urgent issues.' },
 ] as const

@@ -522,7 +522,7 @@ export default async function LeadDetailPage({
             <div className="px-4 py-3 space-y-1 text-sm">
               <p className="font-semibold" style={{ color: 'var(--ink)' }}>Accept cost: {lead.unlockCostCredits} Plug A Pro provider credit</p>
               <p style={{ color: 'var(--ink-mute)' }}>
-                Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}). Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
+                Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}). Customer contact details, exact address, unit, complex and access notes are hidden until acceptance.
                 Credits use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider credits terms and rules</Link>.
               </p>
             </div>
@@ -590,7 +590,7 @@ export default async function LeadDetailPage({
             <div>
               <h2 className="font-semibold" style={{ color: 'var(--ink)' }}>Refund dispute</h2>
               <p className="mt-1 text-sm" style={{ color: 'var(--ink-mute)' }}>
-                Refunds are reviewed for invalid leads only. Choosing another provider, quote rejection, slow response, high quote, or a customer changing their mind after a valid intro is not refundable.
+                Refunds are reviewed for invalid leads only. Choosing another provider, quote rejection, slow response, high quote or a customer changing their mind after a valid intro is not refundable.
               </p>
             </div>
 

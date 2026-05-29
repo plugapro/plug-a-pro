@@ -247,7 +247,7 @@ export default async function ProviderHomePage() {
           Hi {firstName} 👋
         </h1>
         <p className="mt-1 text-[14px] text-[var(--ink-mute)]">
-          Your jobs, leads, and credits at a glance.
+          Your jobs, leads and credits at a glance.
         </p>
       </div>
 

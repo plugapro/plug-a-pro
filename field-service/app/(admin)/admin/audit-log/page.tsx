@@ -212,7 +212,7 @@ export default async function AdminAuditLogPage({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Audit Log</h1>
-          <p className="text-sm text-muted-foreground">Ops, user, and admin activity history.</p>
+          <p className="text-sm text-muted-foreground">Ops, user and admin activity history.</p>
         </div>
         <p className="text-xs text-muted-foreground">
           {firstRow}-{lastRow} of {totalRows}

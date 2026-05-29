@@ -7,7 +7,7 @@ export type ProviderRedirectContext = 'home' | 'profile'
 //
 // Two provider cases, deliberately different destinations:
 //  - Portal-eligible (role === 'provider'): active, approved provider → the
-//    provider area (dashboard, or provider profile from the profile context).
+//    provider area (dashboard or provider profile from the profile context).
 //  - Not yet eligible but a Provider record exists (isProvider, e.g. pending or
 //    mid-identity-verification): role is still 'customer', so the provider area
 //    (guarded by requireProvider/checkWorkerPortalAccess) would bounce them to

@@ -1,6 +1,6 @@
 // DISCLAIMER: Plug A Pro is a marketplace platform that connects customers with independent
-// service providers. Plug A Pro does not verify, guarantee, or take responsibility for
-// ensuring that providers hold any trade certifications, licences, or regulatory approvals
+// service providers. Plug A Pro does not verify, guarantee or take responsibility for
+// ensuring that providers hold any trade certifications, licences or regulatory approvals
 // required by law for a given category of work (including but not limited to wireman's
 // licences for electrical work). It is the responsibility of the customer and the provider
 // to satisfy themselves that all applicable legal and safety requirements are met before
@@ -37,7 +37,7 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     certificationRequiredForApproval: true,
     blocksAutoApproval: true,
     evidencePrompt:
-      'Because you selected Electrical, please upload proof of your electrical certification, licence, or trade qualification if you have it. This helps our review team assess your application.',
+      'Because you selected Electrical, please upload proof of your electrical certification, licence or trade qualification if you have it. This helps our review team assess your application.',
   },
   pest_control: {
     serviceKey: 'pest_control',
@@ -47,7 +47,7 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     certificationRequiredForApproval: true,
     blocksAutoApproval: true,
     evidencePrompt:
-      'Pest Control work may require certification. Please add any certificate, licence, qualification, or reference proof you have.',
+      'Pest Control work may require certification. Please add any certificate, licence, qualification or reference proof you have.',
   },
   air_conditioning: {
     serviceKey: 'air_conditioning',
@@ -57,7 +57,7 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     certificationRequiredForApproval: true,
     blocksAutoApproval: true,
     evidencePrompt:
-      'Air Conditioning and refrigeration work can require specialist proof. Please add any relevant certificate, licence, or qualification you have.',
+      'Air Conditioning and refrigeration work can require specialist proof. Please add any relevant certificate, licence or qualification you have.',
   },
   roofing: {
     serviceKey: 'roofing',
@@ -67,7 +67,7 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     certificationRequiredForApproval: true,
     blocksAutoApproval: true,
     evidencePrompt:
-      'Roofing and working-at-heights jobs are higher risk. Please add proof of relevant experience, references, or safety training if you have it.',
+      'Roofing and working-at-heights jobs are higher risk. Please add proof of relevant experience, references or safety training if you have it.',
   },
 }
 
@@ -83,7 +83,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
   electrical: {
     normalizedCategory: 'electrical',
     bookingOnAssignment: false,
-    // Certification and equipment requirements relaxed — providers are not blocked from
+    // Certification and equipment requirements relaxed - providers are not blocked from
     // receiving leads for lacking a wireman's licence or multimeter. Plug A Pro does not
     // take responsibility for verifying regulatory compliance; see disclaimer above.
     requiredCertificationCodes: [],
@@ -188,7 +188,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     regulated: false,
   },
   // "Other" is a UI-level escape hatch only. The stored category is always
-  // the closest real tag the client selected — this entry guards against
+  // the closest real tag the client selected - this entry guards against
   // the literal string 'other' ever reaching the matching engine.
   other: {
     normalizedCategory: 'other',

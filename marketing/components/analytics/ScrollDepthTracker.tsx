@@ -8,7 +8,7 @@ const MILESTONES = [25, 50, 75, 100] as const;
 /**
  * Fires `scroll_depth` events at 25 / 50 / 75 / 100% scroll milestones.
  * Each milestone fires only once per page load.
- * Renders nothing — pure side-effect component.
+ * Renders nothing - pure side-effect component.
  */
 export function ScrollDepthTracker() {
   useEffect(() => {

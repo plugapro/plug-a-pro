@@ -2,11 +2,11 @@
 // Resolves a street/suburb/city address to lat/lng.
 //
 // Strategy (in order):
-//   1. Static SA suburb lookup (lib/service-areas/south-africa.ts) — instant, offline
-//   2. Nominatim / OpenStreetMap API — free, covers any SA address
+//   1. Static SA suburb lookup (lib/service-areas/south-africa.ts) - instant, offline
+//   2. Nominatim / OpenStreetMap API - free, covers any SA address
 //
 // The static lookup handles ~90% of SA urban addresses instantly.
-// Nominatim is the fallback for townships, new developments, and rural areas.
+// Nominatim is the fallback for townships, new developments and rural areas.
 //
 // Nominatim rate limit: 1 req/s. This is fine for WhatsApp-gated intake
 // (one geocode per job request submission). Do NOT call this in a loop.
@@ -91,7 +91,7 @@ async function nominatimLookup(input: GeocodeInput): Promise<GeoPoint | null> {
 /**
  * Resolve an SA address to lat/lng.
  * Returns null if both the static lookup and Nominatim fail.
- * Never throws — geocoding failure is non-fatal; text-based matching is the fallback.
+ * Never throws - geocoding failure is non-fatal; text-based matching is the fallback.
  */
 export async function geocodeAddress(input: GeocodeInput): Promise<GeoPoint | null> {
   try {

@@ -1,6 +1,6 @@
 // ─── Matching Engine Compatibility Layer ─────────────────────────────────────
 // Preserves the existing lead-based entry points used by WhatsApp and cron while
-// delegating ranking, scheduling, scoring, and fallback orchestration to the
+// delegating ranking, scheduling, scoring and fallback orchestration to the
 // production matcher domain in ./matching/service.
 
 import { db } from './db'
@@ -185,7 +185,7 @@ export async function acceptLead(params: {
     return { ok: false, reason: 'NOT_FOUND' }
   }
 
-  // OPS_REVIEW: ops dispatched directly — no customer-selection step. Atomically
+  // OPS_REVIEW: ops dispatched directly - no customer-selection step. Atomically
   // claim PROVIDER_CONFIRMATION_PENDING for this provider so the standard
   // acceptSelectedProviderJob path can proceed unchanged.
   let opsReviewDirectClaim = false
@@ -339,7 +339,7 @@ export async function expireStaleLeads(): Promise<number> {
 // ─── Lead reminder: 1-hour nudge for SENT/VIEWED leads with no response ───────
 
 export async function sendLeadReminders(): Promise<number> {
-  // Send reminder at ~10 minutes — halfway through the 15-minute offer TTL.
+  // Send reminder at ~10 minutes - halfway through the 15-minute offer TTL.
   // (The old 1-hour threshold was dead code: v2 offers expire in 15 minutes.)
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000)
 
@@ -403,8 +403,8 @@ export async function sendLeadReminders(): Promise<number> {
         throw new Error('Missing provider lead access URL')
       }
       const reminderTitle = isExpiringSoon
-        ? '⏰ *Reminder — Lead Expires Soon*'
-        : '⏰ *Reminder — Lead Still Available*'
+        ? '⏰ *Reminder - Lead Expires Soon*'
+        : '⏰ *Reminder - Lead Still Available*'
       await sendCtaUrl(
         lead.provider.phone,
         `${reminderTitle}\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,

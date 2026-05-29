@@ -1,7 +1,7 @@
 // ─── Provider attachment label taxonomy ──────────────────────────────────────
 // Single source of truth for the labels used when storing provider-uploaded
 // attachments. Use these constants instead of bare strings so that admin
-// tooling, gallery rendering, and trust-signal computation stay in sync.
+// tooling, gallery rendering and trust-signal computation stay in sync.
 //
 // Existing data: WhatsApp registration historically stored uploads as
 // `evidence`. New code should prefer the structured labels below; admin can
@@ -14,7 +14,7 @@ export const PROVIDER_ID_SELFIE_LABEL = 'provider_id_selfie'
 export const PROVIDER_CERT_DOCUMENT_LABEL = 'provider_certification'
 
 // Customer-facing display: profile photos are eligible for the avatar slot,
-// work photos are eligible for the gallery, and ID/cert documents must never
+// work photos are eligible for the gallery and ID/cert documents must never
 // appear in any customer-facing render.
 export const PROVIDER_CUSTOMER_VISIBLE_LABELS = [
   PROVIDER_PROFILE_PHOTO_LABEL,

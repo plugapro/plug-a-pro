@@ -62,7 +62,7 @@ export async function handleCompletionCheckYes(params: { matchId: string; custom
 }
 
 export async function handleCompletionCheckNo(params: { matchId: string; customerPhone: string; providerFirstName: string }) {
-  await sendButtons(params.customerPhone, `No problem — what happened with your ${params.providerFirstName} job?`, [
+  await sendButtons(params.customerPhone, `No problem - what happened with your ${params.providerFirstName} job?`, [
     { id: `completion_why_rescheduled_${params.matchId}`, title: 'We rescheduled' },
     { id: `completion_why_not_finished_${params.matchId}`, title: 'Not done yet' },
     { id: `completion_why_didnt_show_${params.matchId}`, title: "Didn't show up" },
@@ -74,7 +74,7 @@ export async function handleCompletionCheckWhyRescheduled(params: { matchId: str
   if (!m) return
   if (m.completionCheckRetries >= MAX_RETRIES) { await flagMatchToAdmin(params.matchId); await sendText({ to: params.customerPhone, text: 'Thanks for letting us know. Our team will follow up shortly.' }); return }
   await db.match.update({ where: { id: params.matchId }, data: { completionCheckStatus: 'NO_RESCHEDULED', completionCheckSentAt: new Date() } })
-  await sendText({ to: params.customerPhone, text: "Got it — we'll check in again in a few days. Hope the rescheduled job goes well! 👍" })
+  await sendText({ to: params.customerPhone, text: "Got it - we'll check in again in a few days. Hope the rescheduled job goes well! 👍" })
 }
 
 export async function handleCompletionCheckWhyNotFinished(params: { matchId: string; customerPhone: string }) {
@@ -82,7 +82,7 @@ export async function handleCompletionCheckWhyNotFinished(params: { matchId: str
   if (!m) return
   if (m.completionCheckRetries >= MAX_RETRIES) { await flagMatchToAdmin(params.matchId); await sendText({ to: params.customerPhone, text: 'Thanks for letting us know. Our team will be in touch to help.' }); return }
   await db.match.update({ where: { id: params.matchId }, data: { completionCheckStatus: 'NO_NOT_FINISHED', completionCheckSentAt: new Date() } })
-  await sendText({ to: params.customerPhone, text: "Noted — we'll follow up in a few days. Feel free to message us if anything changes." })
+  await sendText({ to: params.customerPhone, text: "Noted - we'll follow up in a few days. Feel free to message us if anything changes." })
 }
 
 export async function handleCompletionCheckWhyDidntShow(params: { matchId: string; customerPhone: string; providerName: string }) {

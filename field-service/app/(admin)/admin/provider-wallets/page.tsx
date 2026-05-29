@@ -73,7 +73,7 @@ export default async function ProviderWalletsPage({
         <div>
           <h1 className="text-xl font-semibold">Provider wallets</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review balances, ledger activity, unlocks, disputes, and controlled admin adjustments.
+            Review balances, ledger activity, unlocks, disputes and controlled admin adjustments.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -85,7 +85,7 @@ export default async function ProviderWalletsPage({
         <Input
           name="q"
           defaultValue={q}
-          placeholder="Search provider name, phone, or email"
+          placeholder="Search provider name, phone or email"
         />
         <select
           name="status"

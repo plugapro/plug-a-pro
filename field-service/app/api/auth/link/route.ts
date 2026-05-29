@@ -2,7 +2,7 @@
 // Called immediately after a successful phone OTP verification on the client,
 // once POST /api/auth/session has set the HttpOnly session cookie.
 // Links the authenticated Supabase user to the existing WhatsApp-created
-// Customer record (if one exists), or creates a fresh Customer row.
+// Customer record (if one exists) or creates a fresh Customer row.
 //
 // Body: { phone: string; name?: string }
 // Returns: { customerId: string | null, isNew: boolean, isProvider: boolean }
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     // A customer record exists or was linked. A Provider record may ALSO exist
-    // (genuine multi-role) — surface isProvider so the client can still block.
+    // (genuine multi-role) - surface isProvider so the client can still block.
     const provider = await db.provider.findFirst({
       where: { userId: session.id },
       select: { id: true },

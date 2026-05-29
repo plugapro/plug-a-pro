@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 export function StaleBanner({
   refreshHref,
-  message = 'Some data on this page failed to load. Refresh to retry, or check the health endpoint.',
+  message = 'Some data on this page failed to load. Refresh to retry or check the health endpoint.',
 }: {
   refreshHref: string
   message?: string

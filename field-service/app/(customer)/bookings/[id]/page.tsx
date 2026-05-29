@@ -1,5 +1,5 @@
 // ─── Customer: Booking detail ─────────────────────────────────────────────────
-// Shows tracking timeline, provider status, work evidence, and rating prompt.
+// Shows tracking timeline, provider status, work evidence and rating prompt.
 
 export const dynamic = 'force-dynamic'
 
@@ -567,7 +567,7 @@ export default async function BookingDetailPage({
               Need help with this job?
             </div>
             <div className="text-[12.5px] mb-4" style={{ color: 'var(--ink-mute)' }}>
-              Raise an issue and our support team will review quotes, photos, and job history on record.
+              Raise an issue and our support team will review quotes, photos and job history on record.
             </div>
 
             {disputes.length > 0 && (

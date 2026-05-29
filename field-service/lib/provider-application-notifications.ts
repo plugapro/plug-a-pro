@@ -1,4 +1,4 @@
-// ── G1 AUTH GAP — WhatsApp-only providers ─────────────────────────────────────
+// ── G1 AUTH GAP - WhatsApp-only providers ─────────────────────────────────────
 // Providers who register and are approved entirely via WhatsApp do not have a
 // Supabase Auth account at the point this approval notification is sent.
 // The Worker Portal URL included in the CTA is therefore inaccessible to them
@@ -49,13 +49,13 @@ Hi *${name}*, you're now active on Plug A Pro and can receive job leads through 
 To activate your pilot credit, redeem your voucher code.
 Reply *REDEEM* to enter your voucher code.
 
-Credits are prepaid platform units, not cash, loans, or financial credit.
+Credits are prepaid platform units, not cash, loans or financial credit.
 ${PROVIDER_CREDITS_PRICE_LINE}
 No credits are used for previewing or saying you are interested.
 1 credit is used only when a customer selects you and you accept that selected job.
 Full customer details unlock after acceptance.
 
-You can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours, and jobs:`,
+You can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours and jobs:`,
     termsBody: `Provider credits terms and rules:\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`,
   }
 }
@@ -120,7 +120,7 @@ export function buildProviderApplicationRejectedMessage(params: {
     `Status: *Not approved*`,
     reasonLine.trim(),
     '',
-    'If you believe this decision is incorrect, or if you would like to understand the reason, please contact support.',
+    'If you believe this decision is incorrect or if you would like to understand the reason, please contact support.',
     '',
     'You can continue here on WhatsApp. You can also open the Worker Portal to contact support.',
   ].filter((line) => line !== undefined).join('\n')
@@ -166,7 +166,7 @@ export function buildInterestSubmittedMessage(params: {
 
 /**
  * Builds the WhatsApp message body when a previously-available job lead is
- * no longer available (expired, taken, or closed). No credits were charged.
+ * no longer available (expired, taken or closed). No credits were charged.
  *
  * Body intentionally contains no raw URL.
  */

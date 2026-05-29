@@ -77,7 +77,7 @@ export function resolveProviderPwaHandoffPath(params: {
   event: ProviderWhatsappHandoffEvent | string
   token?: string | null
   lead?: ProviderHandoffLead | null
-  /** Canonical job or jobRequest id — used to build a job-specific deep link */
+  /** Canonical job or jobRequest id - used to build a job-specific deep link */
   jobId?: string | null
 }) {
   const event = isProviderWhatsappHandoffEvent(params.event)

@@ -4,7 +4,7 @@
  * All new API route handlers should use apiError() and apiSuccess() instead of
  * raw Response.json() calls. This ensures a consistent error envelope shape.
  *
- * TODO: Full envelope migration in progress — existing routes are being updated
+ * TODO: Full envelope migration in progress - existing routes are being updated
  * incrementally. See task "ARCH DRIFT HIGH: Centralize API error envelope and
  * route action error adapters across field-service and marketing".
  */

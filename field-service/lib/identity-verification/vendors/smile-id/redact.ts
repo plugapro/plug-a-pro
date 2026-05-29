@@ -1,6 +1,6 @@
 // Smile ID webhook payload redaction for audit storage.
 // Strategy: default-REDACT with an explicit allowlist of fields safe to preserve.
-// This fails-safe — if Smile adds a new identity-adjacent field (PlaceOfBirth,
+// This fails-safe - if Smile adds a new identity-adjacent field (PlaceOfBirth,
 // TaxID, Passport, BiometricHash, etc.), it is automatically redacted instead
 // of accidentally landing in audit logs. The allowlist is small and stable.
 // Raw `signature` is DROPPED entirely (signatureValid has its own column).
@@ -29,12 +29,12 @@ const PRESERVED_KEYS: ReadonlySet<string> = new Set([
   'source_sdk',
   'source_sdk_version',
   'ref_id',
-  // PartnerParams sub-keys — our own correlation IDs, not Smile PII
+  // PartnerParams sub-keys - our own correlation IDs, not Smile PII
   'user_id',
   'job_id',
   'job_type',
   'verification_id',
-  // Actions sub-keys — verdict labels (Passed/Failed/Completed/etc.), not PII
+  // Actions sub-keys - verdict labels (Passed/Failed/Completed/etc.), not PII
   'Liveness_Check',
   'Selfie_To_ID_Card_Compare',
   'Document_Check',

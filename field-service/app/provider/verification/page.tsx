@@ -18,7 +18,7 @@ export default function ProviderVerificationPage() {
       <section className="space-y-3 rounded-lg border bg-card p-4 text-sm leading-6">
         <p>
           If you came here from WhatsApp, return to the chat and reply <span className="font-semibold">VERIFY</span>.
-          Plug A Pro will guide you through the next identity step without showing your ID, passport, or permit number in
+          Plug A Pro will guide you through the next identity step without showing your ID, passport or permit number in
           WhatsApp messages.
         </p>
         <p className="text-muted-foreground">

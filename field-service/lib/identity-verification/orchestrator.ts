@@ -229,9 +229,9 @@ export async function submitVerificationForAutomation(
     })
     // Best-effort cancel of the orphaned vendor job (and Smile Link, if any) from
     // contention loss. Without this, the losing process's link stays live until
-    // its 60-minute TTL — risk: provider sees winner+loser URLs and clicks the
+    // its 60-minute TTL - risk: provider sees winner+loser URLs and clicks the
     // wrong one. adapter.cancelVerificationJob already swallows transport errors
-    // and returns vendorAcknowledged:false on failure — no rethrow possible.
+    // and returns vendorAcknowledged:false on failure - no rethrow possible.
     if (livenessResult) {
       void adapter
         .cancelVerificationJob({
@@ -312,9 +312,9 @@ export async function resolveIdentityVerificationConsentVendorForSubject(
 }
 
 // Accept both the singleton PrismaClient and any transaction client (the
-// `$transaction` callback parameter, or crudAction's TxClient).  Prisma's
+// `$transaction` callback parameter or crudAction's TxClient).  Prisma's
 // `TransactionClient` is `Omit<PrismaClient, '$connect'|'$disconnect'|'$on'
-// |'$transaction'|'$use'|'$extends'>` — structurally a superset for everything
+// |'$transaction'|'$use'|'$extends'>` - structurally a superset for everything
 // applyVendorVerdict uses (findUniqueOrThrow + create + update on the relevant
 // models), so a single union covers both callers cleanly.
 export type ApplyVendorVerdictClient = Prisma.TransactionClient | typeof db

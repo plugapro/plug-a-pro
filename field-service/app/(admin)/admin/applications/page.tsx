@@ -289,7 +289,7 @@ async function approveApplication(formData: FormData) {
           data: providerCategoryRows,
           skipDuplicates: true,
         })
-        // Removed the updateMany that forced APPROVED — autoApproveLowRiskCategories
+        // Removed the updateMany that forced APPROVED - autoApproveLowRiskCategories
         // promotes LOW-risk rows after this transaction completes.
       }
 
@@ -653,7 +653,7 @@ export default async function ApplicationsPage({
 
       {!crudEnabled && (
         <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
-          Application mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim, approve, or reject provider applications.
+          Application mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim, approve or reject provider applications.
         </div>
       )}
 

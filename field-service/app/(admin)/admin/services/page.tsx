@@ -27,7 +27,7 @@ const JOB_CATEGORIES = [
   },
   {
     name: 'Appliances',
-    description: 'Appliance installation, repair, and maintenance',
+    description: 'Appliance installation, repair and maintenance',
   },
   {
     name: 'Electrical',

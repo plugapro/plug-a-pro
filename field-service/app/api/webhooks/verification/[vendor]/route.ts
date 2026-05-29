@@ -24,7 +24,7 @@ export async function POST(
   const adapter = getAdapter(vendorKey)
   const parsed = await adapter.parseWebhook({ headers, rawBody })
 
-  // Signature gate FIRST — refuse to persist audit rows for unauthenticated
+  // Signature gate FIRST - refuse to persist audit rows for unauthenticated
   // payloads. Previously any internet scanner POSTing garbage could pollute
   // ProviderVerificationWebhookEvent with rows carrying real-looking vendor
   // references from the forged body.
@@ -48,7 +48,7 @@ export async function POST(
             ? createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')
             : null
         // TEMP-DIDIT-DEBUG: also try the secret base64-decoded into raw bytes.
-        // secret_length:43 is suspicious — it's the exact unpadded length of
+        // secret_length:43 is suspicious - it's the exact unpadded length of
         // base64-encoded 32 bytes (a 256-bit HMAC key). If Didit signs with
         // the raw 32 bytes but exposes the secret base64-encoded, our string-
         // keyed HMAC will mismatch theirs while the b64-decoded one will match.

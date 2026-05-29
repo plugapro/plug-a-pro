@@ -94,7 +94,7 @@ export default async function LocationsPage() {
       {/* ── Flag banner ────────────────────────────────────────────────────── */}
       {!crudEnabled && (
         <div className="tone-warning mb-4 rounded-lg border px-4 py-2 text-sm">
-          Location mutations are disabled. Enable the <code>admin.crud.locations</code> feature flag to create, update, or delete nodes.
+          Location mutations are disabled. Enable the <code>admin.crud.locations</code> feature flag to create, update or delete nodes.
         </div>
       )}
 

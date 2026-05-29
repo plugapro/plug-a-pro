@@ -67,7 +67,7 @@ function decodeSignature(signature: string) {
   try {
     const base64 = Buffer.from(signature, 'base64')
     // A SHA-256 HMAC is always 32 bytes. Reject anything that decodes to a
-    // different length — it is either garbage or a wrong encoding.
+    // different length - it is either garbage or a wrong encoding.
     if (base64.length === 32) return base64
   } catch {
     return null
@@ -101,9 +101,9 @@ function normalisePayload(payload: PayatWebhookPayload) {
   let amount: number = Number.NaN
   if (Number.isFinite(rawAmount)) {
     if (rawAmount < MIN_PACKAGE_CENTS) {
-      // Value is below the minimum package threshold — treat as rands and convert.
+      // Value is below the minimum package threshold - treat as rands and convert.
       // Log so gateway config differences can be detected and fixed proactively.
-      console.warn('[payat-webhook] amount below minimum-cents threshold — treating as rands', {
+      console.warn('[payat-webhook] amount below minimum-cents threshold - treating as rands', {
         rawAmount,
         convertedCents: Math.round(rawAmount * 100),
       })
@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
-  // Guard CREDITED, FAILED, and any creditedAt so a stale PAID webhook arriving
+  // Guard CREDITED, FAILED and any creditedAt so a stale PAID webhook arriving
   // after a REVERSED/CANCELLED closure cannot re-open and double-credit the intent.
   if (intent.status === 'CREDITED' || intent.status === 'FAILED' || intent.creditedAt) {
     return NextResponse.json({ received: true })

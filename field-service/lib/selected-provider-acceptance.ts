@@ -152,7 +152,7 @@ export async function acceptSelectedProviderJob(params: {
       if (lead.status === 'CREDIT_APPLIED' && !lead.unlock) {
         // Inconsistent state: credit was applied (status updated) but no LeadUnlock record
         // exists. This should not occur because both happen in the same transaction.
-        // Routing to credit application could cause a double deduction — surface the error instead.
+        // Routing to credit application could cause a double deduction - surface the error instead.
         console.error('[selected-provider-acceptance] inconsistent state: CREDIT_APPLIED with no LeadUnlock', {
           leadId: lead.id,
           providerId: params.providerId,
@@ -391,7 +391,7 @@ export async function acceptSelectedProviderJob(params: {
       }
       if (error.code === 'WALLET_MISSING' || error.code === 'WALLET_NOT_ACTIVE') {
         // Wallet disappeared or was suspended between credit check and application.
-        // This is a data integrity issue — do not show "top up" message.
+        // This is a data integrity issue - do not show "top up" message.
         return { ok: false, reason: 'CREDIT_APPLICATION_FAILED' }
       }
       if (error.code === 'LEAD_EXPIRED') {
