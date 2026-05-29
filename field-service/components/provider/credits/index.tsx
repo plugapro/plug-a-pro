@@ -260,7 +260,7 @@ export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: Provide
       ) : null}
       <ActivityList items={wallet.recentActivity} />
       <p className="px-4 text-center text-[12px] leading-relaxed text-[var(--ink-soft)]">
-        Credits never expire. 1 credit = R{creditPriceZar}. Failed or reversed payments do not add wallet credits.
+        Purchased credits do not currently expire. Promo or voucher credits may have stated campaign rules. 1 credit = R{creditPriceZar}. Failed or reversed payments do not add wallet credits.
       </p>
       <p className="px-4 text-center text-[12px]">
         <Link href="/provider/voucher" className="text-muted-foreground underline hover:text-foreground">

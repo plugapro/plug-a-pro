@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = buildMetadata({ title: "Service Provider Terms" });
+export const metadata: Metadata = buildMetadata({
+  title: "Service Provider Terms",
+  description:
+    "Terms for independent service providers using Plug A Pro leads, bookings, WhatsApp, the Worker Portal, and provider credits.",
+});
 
 export default function ProviderTermsPage() {
   return (
     <div className="py-24 max-w-3xl mx-auto px-4">
       <h1 className="text-4xl font-bold mb-8">Service Provider Terms and Conditions</h1>
       <div className="prose prose-zinc dark:prose-invert max-w-none">
-        <p>Last updated: 29 April 2026</p>
+        <p>Last updated: 29 May 2026</p>
 
         <p>
           These Service Provider Terms and Conditions (&ldquo;Provider Terms&rdquo;) govern your use of
@@ -177,21 +181,32 @@ export default function ProviderTermsPage() {
           <li>Overcharge, add undisclosed costs, or pressure Customers into approving unjustified extras.</li>
         </ul>
 
-        <h2>13. Credits and Credit-Funded Bookings</h2>
+        <h2>13. Provider Credits</h2>
         <p>
-          Bookings may be funded in whole or in part by Customer Credits. You accept such bookings as
-          fully valid Platform bookings. Your payment entitlement for completed work is governed by the
-          Provider settlement terms communicated during onboarding — your pay is not dependent on the
-          Customer&apos;s credits balance or credit type.
+          Provider credits are provider-side platform units used to accept or access eligible
+          customer-selected opportunities. They are not customer credits, payment for your work,
+          cash, legal tender, a loan, a bank deposit, or financial credit.
         </p>
         <p>
-          You must not refuse a confirmed Booking solely because Credits were used as the payment method.
+          A provider credit is deducted only when a Customer selects you and you complete final
+          acceptance of that customer-selected opportunity through the Platform, WhatsApp, or Worker
+          Portal. Previewing a lead, showing interest, being shortlisted, Customer selection before
+          your final acceptance, declining, or expiry does not use credits.
+        </p>
+        <p>
+          Purchased credits are generally non-refundable once bought, except where required by law or
+          where Plug A Pro approves a reversal due to a clear platform or system error, duplicate
+          payment, failed credit allocation, incorrect deduction, suspected fraud or chargeback
+          reversal, or another admin-approved exception. Full provider credit rules are in the{" "}
+          <a href="/credits-policy">Provider Credits Terms and Rules</a>.
         </p>
 
         <h2>14. Payment Settlement and Deductions</h2>
         <p>
-          Your payment for completed jobs is processed by Plug A Pro according to the settlement terms
-          communicated at onboarding. Plug A Pro may deduct from your settlement:
+          Where Plug A Pro facilitates customer payment, your payment for completed jobs is processed
+          according to the settlement terms communicated at onboarding. Provider credits are separate
+          from customer service payments and do not replace your quote or settlement terms. Plug A Pro
+          may deduct from your settlement:
         </p>
         <ul>
           <li>Platform service fees or commission as agreed</li>

@@ -1,204 +1,203 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = buildMetadata({ title: "Privacy Policy", noIndex: false });
+export const metadata: Metadata = buildMetadata({
+  title: "Privacy Policy",
+  description:
+    "How Plug A Pro handles customer, provider, job, WhatsApp, payment, credit, support, analytics, and platform data.",
+  noIndex: false,
+});
 
 export default function PrivacyPage() {
   return (
     <div className="py-24 max-w-3xl mx-auto px-4">
       <h1 className="text-4xl font-bold mb-8">Privacy Policy</h1>
       <div className="prose prose-zinc dark:prose-invert max-w-none">
-        <p>Last updated: 29 April 2026</p>
+        <p>Last updated: 29 May 2026</p>
 
         <p>
-          Plug A Pro (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) operates the marketplace
-          platform at <strong>plugapro.co.za</strong> and <strong>app.plugapro.co.za</strong>, including
-          our WhatsApp booking channel. This Privacy Policy explains how we collect, use, store, protect,
-          and share your personal information in compliance with the{" "}
-          <strong>Protection of Personal Information Act 4 of 2013 (&ldquo;POPIA&rdquo;)</strong> and
-          other applicable South African law.
+          Plug A Pro operates the marketplace platform at <strong>plugapro.co.za</strong>,{" "}
+          <strong>app.plugapro.co.za</strong>, the PWA, and our WhatsApp booking and provider
+          communication flows. This Privacy Policy explains how we collect, use, store, protect, and
+          share personal information under the Protection of Personal Information Act 4 of 2013
+          (&ldquo;POPIA&rdquo;) and other applicable South African law.
         </p>
 
         <p>
-          <em>This policy is intended to be read alongside our <a href="/terms">Terms of Service</a>.</em>
+          <em>
+            This policy should be read with our <a href="/terms">Terms of Service</a>,{" "}
+            <a href="/provider-terms">Service Provider Terms</a>,{" "}
+            <a href="/refund-policy">Refund and Cancellation Policy</a>, and{" "}
+            <a href="/credits-policy">Provider Credits Terms and Rules</a>.
+          </em>
         </p>
 
-        <h2>1. Who is Responsible for Your Information</h2>
+        <h2>1. Responsible party and contact</h2>
         <p>
-          Plug A Pro is the &ldquo;responsible party&rdquo; under POPIA for personal information
-          collected through the Platform. Our privacy contact is:{" "}
+          Plug A Pro is the responsible party for personal information collected through the Platform.
+          Privacy requests can be sent to{" "}
           <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a>.
         </p>
 
-        <h2>2. What Personal Information We Collect</h2>
-
-        <h3>From Customers</h3>
+        <h2>2. Information we collect from customers</h2>
         <ul>
-          <li><strong>Identity:</strong> First name (collected during WhatsApp onboarding or registration)</li>
-          <li><strong>Contact:</strong> WhatsApp phone number (used as your account identifier)</li>
-          <li><strong>Location:</strong> Service address (street, suburb, city) provided when booking</li>
-          <li><strong>Job details:</strong> Service category, availability preferences, job descriptions, and any special instructions</li>
-          <li><strong>Payment:</strong> When Platform-facilitated payment is used — transaction confirmation, reference numbers, and reconciliation data from the payment processor. We do not store card numbers.</li>
-          <li><strong>Conversation history:</strong> WhatsApp messages exchanged with our Platform to process your requests, including message status (sent, delivered, read)</li>
-          <li><strong>Reviews and ratings</strong> you submit for Providers</li>
+          <li><strong>Identity and contact:</strong> name where provided, WhatsApp phone number, account or session identifiers.</li>
+          <li><strong>Service address:</strong> street address, unit or complex details, suburb, city, province, postal code, location node, and access notes.</li>
+          <li><strong>Job request details:</strong> category, subcategory, title, description, urgency, preferred date or time window, budget preference, provider preference, max call-out fee, required skills or certifications, and other instructions.</li>
+          <li><strong>Photos and job evidence:</strong> uploaded customer photos, preview-safety choices, captions, job notes, approvals, signatures, completion records, reviews, and ratings.</li>
+          <li><strong>Communication records:</strong> WhatsApp messages, PWA messages, support messages, delivery status, message metadata, and call or dispute notes where captured.</li>
+          <li><strong>Payment records:</strong> payment references, payment status, receipts, processor responses, refunds, chargebacks, and reconciliation data where Plug A Pro facilitates payment. We do not store card numbers.</li>
+          <li><strong>Support and dispute records:</strong> complaints, evidence, decisions, refunds, provider responses, and platform support notes.</li>
         </ul>
 
-        <h3>From Service Providers</h3>
+        <h2>3. Information we collect from providers</h2>
         <ul>
-          <li><strong>Identity:</strong> Full name, identity number (handled with heightened protection under POPIA — not logged or exported without lawful basis)</li>
-          <li><strong>Contact:</strong> WhatsApp phone number, email address where provided</li>
-          <li><strong>Professional:</strong> Skills, trade licences, service areas, experience, availability, certifications, and portfolio materials</li>
-          <li><strong>Earnings and job history:</strong> Job completion records, payout history, and settlement data processed through the Platform</li>
-          <li><strong>Wallet and credits:</strong> Provider credits balance, top-up history, lead unlock records</li>
-          <li><strong>Onboarding:</strong> Application status, review notes (internal only)</li>
+          <li><strong>Identity and contact:</strong> full name, WhatsApp phone number, email address where provided, identity number or verification data where required, and account identifiers.</li>
+          <li><strong>Provider profile:</strong> services, skills, service areas, availability, pricing, bio, portfolio, references, work examples, vehicle or equipment details, and status.</li>
+          <li><strong>Licence, certification, and application data:</strong> licences, certifications, insurance details, application answers, review notes, profile evidence, and attachments where supplied.</li>
+          <li><strong>Verification data:</strong> identity verification status, vendor session references, workflow id, verification results, liveness check outcomes, document and selfie match scores, risk flags, expiry dates, and admin review outcomes where identity verification is enabled. Where the platform performs biometric checks (liveness, facial match) the lawful basis is your explicit consent recorded inside the verification flow, supported by our legitimate interest in preventing fraud and complying with applicable trust and safety obligations under POPIA section 11 and the special-information conditions in section 26.</li>
+          <li><strong>Job and lead history:</strong> lead previews, interest, shortlist events, customer selections, acceptances, declines, expiry, job status updates, photos, notes, quotes, extras, completion records, and reviews.</li>
+          <li><strong>Provider credits and wallet history:</strong> paid credit balance, promotional credit balance, top-ups, vouchers, lead unlock deductions, refunds, reversals, payment intent references, audit logs, and admin adjustments.</li>
+          <li><strong>Settlement data:</strong> payout, fee, refund, chargeback, and settlement records where Plug A Pro facilitates customer payment or provider settlement.</li>
         </ul>
 
-        <h3>Automatically Collected</h3>
+        <h2>4. Automatically collected information</h2>
         <ul>
-          <li>Device type and browser (web app users only, for functionality and security)</li>
-          <li>Session tokens to keep you signed in</li>
-          <li>API request logs for security monitoring and debugging</li>
+          <li>Device, browser, operating system, and approximate network information.</li>
+          <li>Session cookies, authentication tokens, local storage data, and security logs needed to operate the PWA.</li>
+          <li>API request logs, audit logs, error logs, trace IDs, and fraud or abuse signals.</li>
+          <li>Marketing-site analytics, including Google Analytics events and page interaction data where analytics is enabled.</li>
         </ul>
 
-        <h2>3. Why We Process Your Information (Legal Basis)</h2>
+        <h2>5. Why we use personal information</h2>
         <ul>
-          <li><strong>Contract performance:</strong> Matching Customers with Providers, processing Bookings, facilitating payment, generating invoices, managing disputes</li>
-          <li><strong>Legitimate interest:</strong> Fraud prevention, abuse detection, Platform security, improving service quality</li>
-          <li><strong>Legal obligation:</strong> Tax, financial record-keeping, regulatory compliance, responding to valid law enforcement requests</li>
-          <li><strong>Consent:</strong> Sending marketing communications (separate consent required and revocable)</li>
+          <li><strong>Platform operation:</strong> intake, matching, lead routing, quote flow, booking communication, status updates, job records, WhatsApp and PWA handoff, support, and dispute handling.</li>
+          <li><strong>Provider operations:</strong> onboarding, application review, identity checks where enabled, wallet and credit records, top-ups, deductions, reversals, and lead eligibility controls.</li>
+          <li><strong>Payments and accounting:</strong> payment references, receipts, refunds, chargebacks, settlement, reconciliation, tax and accounting records, fraud review, and audit logs.</li>
+          <li><strong>Safety and trust:</strong> staged contact sharing, job evidence, abuse prevention, account suspension, support review, and lawful dispute cooperation.</li>
+          <li><strong>Legal compliance:</strong> POPIA, tax, accounting, consumer, electronic transaction, law enforcement, and court or regulator requests.</li>
+          <li><strong>Marketing:</strong> sending marketing only where consent or another lawful basis applies, and recording opt-in or opt-out choices.</li>
         </ul>
-        <p>We do <strong>not</strong> sell your personal information to third parties.</p>
+        <p>We do <strong>not</strong> sell personal information.</p>
 
-        <h2>4. How We Share Your Information</h2>
+        <h2>6. How information is shared</h2>
         <ul>
-          <li><strong>Matched Providers:</strong> Receive your first name, suburb, and job description when a lead is matched. Your full contact number is shared only once a booking is confirmed and the Provider needs to make contact.</li>
-          <li><strong>Payment processors:</strong> If a Booking uses Platform-facilitated payment, your payment is processed by Peach Payments, PayFast, or another processor under their own privacy terms. We share only the minimum data required for payment processing.</li>
-          <li><strong>Supabase:</strong> Our database and authentication infrastructure, hosted in a GDPR-compliant data centre. Subject to a data processing agreement.</li>
-          <li><strong>Meta (WhatsApp):</strong> Messages sent via our WhatsApp channel are processed by Meta Platforms Inc. under their Business Messaging terms. We do not control Meta&apos;s data handling beyond our contractual arrangements.</li>
-          <li><strong>Vercel:</strong> Our application hosting provider. Application code and logs are processed on Vercel infrastructure.</li>
-          <li><strong>Law enforcement:</strong> Where required by a valid court order, subpoena, or applicable South African law.</li>
-        </ul>
-
-        <h2>5. Your Rights Under POPIA</h2>
-        <p>As a data subject under POPIA, you have the right to:</p>
-        <ul>
-          <li><strong>Access:</strong> Request a copy of the personal information we hold about you</li>
-          <li><strong>Correction:</strong> Ask us to correct inaccurate or incomplete information</li>
-          <li><strong>Deletion:</strong> Request deletion of your account and personal data (subject to legal retention obligations below)</li>
-          <li><strong>Objection:</strong> Object to processing for direct marketing purposes at any time</li>
-          <li><strong>Restriction:</strong> Ask us to restrict how we process your data in certain circumstances</li>
-          <li><strong>Complaints:</strong> Lodge a complaint with the Information Regulator of South Africa at{" "}
-            <a href="https://www.justice.gov.za/inforeg/" target="_blank" rel="noopener noreferrer">
-              justice.gov.za/inforeg
-            </a>
-          </li>
-        </ul>
-        <p>
-          To exercise any of these rights, email{" "}
-          <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a>. We will acknowledge your
-          request within 5 business days and respond substantively within 30 days, as required by POPIA.
-        </p>
-
-        <h2>6. Direct Marketing and Communications Opt-Out</h2>
-        <p>
-          We send two categories of WhatsApp messages:
-        </p>
-        <ul>
-          <li>
-            <strong>Transactional / service messages:</strong> Booking confirmations, job updates, payment
-            confirmations, support responses. These are necessary for the Platform to operate. Opting out
-            means you will not receive operational updates about your bookings.
-          </li>
-          <li>
-            <strong>Marketing messages:</strong> Promotions, referral offers, seasonal reminders, service
-            suggestions. These require separate consent and you may opt out at any time by replying{" "}
-            <strong>STOP</strong> to any marketing message, or by emailing{" "}
-            <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a>. Opt-outs are processed
-            within 5 business days and are recorded in our audit log.
-          </li>
-        </ul>
-        <p>
-          We do not send unsolicited marketing without your consent. We do not pass your contact details
-          to third parties for marketing purposes.
-        </p>
-
-        <h2>7. Data Retention</h2>
-        <ul>
-          <li><strong>Active accounts:</strong> Retained while your account is active and for 30 days after you request closure</li>
-          <li><strong>Deleted accounts:</strong> Personal data deleted within 30 days of closure, except where required by law (see below)</li>
-          <li><strong>Financial and tax records:</strong> Retained for 5 years from the transaction date, as required under South African tax law</li>
-          <li><strong>Job and booking records:</strong> Retained for 5 years for financial, safety, audit, and legal purposes</li>
-          <li><strong>WhatsApp conversations:</strong> Retained for 12 months from the date of the conversation, then anonymised</li>
-          <li><strong>Audit logs:</strong> Retained for 5 years to support fraud investigation, dispute resolution, and regulatory compliance</li>
-          <li><strong>Provider identity documents (ID numbers):</strong> Retained for the period required under applicable law; not included in standard data exports</li>
+          <li><strong>Customers and providers:</strong> information is shared as needed for the request, quote, booking, service performance, support, and dispute process. Exact address and phone details are shared only after the customer selects a provider and that provider accepts the job, unless another lawful workflow is expressly shown.</li>
+          <li><strong>Meta / WhatsApp:</strong> WhatsApp messages and message metadata are processed through Meta&apos;s WhatsApp Business services.</li>
+          <li><strong>Supabase:</strong> database, authentication, storage, and operational data infrastructure where used.</li>
+          <li><strong>Vercel and Vercel Blob:</strong> hosting, application delivery, logs, and file/object storage where used.</li>
+          <li><strong>Payment providers:</strong> PayFast, Pay@ / PayAt, PayAt Go, and any payment processor or payment reference provider shown in the payment flow, where used.</li>
+          <li><strong>Identity verification providers:</strong> Didit (https://didit.me), Smile ID, and any other identity verification vendor named on the consent screen at the time you complete the verification flow. These vendors receive identity document data, selfie images, and liveness frames for the purpose of verifying your identity. Vendor processing happens under our written instructions and POPIA section 21 operator obligations.</li>
+          <li><strong>Google services:</strong> Google Analytics on the marketing site.</li>
+          <li><strong>Location and map services:</strong> static location data, OpenStreetMap / Nominatim geocoding, and any external map link you choose to open from the platform, where used.</li>
+          <li><strong>Sentry or logging providers:</strong> error, performance, and diagnostic logs where enabled.</li>
+          <li><strong>Regulators, courts, and law enforcement:</strong> where required or permitted by South African law.</li>
         </ul>
 
-        <h2>8. Security</h2>
-        <p>
-          We implement industry-standard security measures including: TLS encryption for all data in transit;
-          encrypted storage at rest; role-based access controls; session management; and audit logging of
-          sensitive administrative actions. We conduct periodic security reviews.
-        </p>
-        <p>
-          No system is completely secure. If you discover a security vulnerability, report it to{" "}
-          <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a> and we will respond as quickly
-          as possible.
-        </p>
-
-        <h2>9. Data Breach Notification</h2>
-        <p>
-          If we become aware of a data breach that creates a real risk of harm to data subjects, we will:
-        </p>
+        <h2>7. POPIA rights</h2>
+        <p>Subject to lawful limits and retention duties, you may request:</p>
         <ul>
-          <li>Notify the Information Regulator as required under POPIA</li>
-          <li>Notify affected users as soon as reasonably practicable</li>
-          <li>Describe the nature of the breach, what information was affected, what steps we have taken, and what you should do</li>
+          <li>access to personal information we hold about you;</li>
+          <li>correction of inaccurate, incomplete, or outdated information;</li>
+          <li>deletion or restriction of information where legally available;</li>
+          <li>objection to processing, including direct marketing;</li>
+          <li>confirmation of whether we hold personal information about you;</li>
+          <li>complaint handling by Plug A Pro or the Information Regulator.</li>
         </ul>
         <p>
-          Breaches are reported to the Regulator within a reasonable time of discovery in accordance with
-          POPIA requirements.
+          To exercise these rights, email{" "}
+          <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a>. We may need to verify
+          your identity before acting on the request.
         </p>
 
-        <h2>10. Cookies</h2>
+        <h2>8. WhatsApp, service messages, and marketing</h2>
         <p>
-          Our web app uses session cookies only (strictly necessary for authentication and session management).
-          We do not use tracking, advertising, or analytics cookies. The marketing site (plugapro.co.za)
-          uses no cookies.
+          Transactional WhatsApp messages are used for account access, request updates, matching,
+          quotes, bookings, status updates, payment information, credit actions, support, and dispute
+          handling. These messages are part of the Platform operation.
+        </p>
+        <p>
+          Marketing messages are sent only where you have opted in or where another lawful basis
+          applies. You can opt out of marketing by replying <strong>STOP</strong> to a marketing
+          message or emailing <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a>.
+          We do not share your contact details with third parties for their own marketing.
         </p>
 
-        <h2>11. Cross-Border Data Transfers</h2>
+        <h2>9. Cookies and analytics</h2>
         <p>
-          Some of our third-party service providers (including Supabase and Vercel) may process data in
-          data centres outside South Africa. Where we use such providers, we ensure appropriate data
-          processing agreements are in place that meet or exceed POPIA requirements for third-party data
-          processors.
+          The PWA uses necessary cookies, session storage, or local storage for authentication,
+          security, saved drafts, and platform functionality. The marketing site uses Google Analytics
+          to understand page traffic and campaign performance. Browser or device settings may let you
+          restrict some cookies or analytics, but the Platform may not function properly without
+          necessary session technology.
         </p>
 
-        <h2>12. Children</h2>
+        <h2>10. Retention</h2>
+        <ul>
+          <li><strong>Active accounts:</strong> retained while the account is active.</li>
+          <li><strong>Job, booking, quote, payment, credit, and audit records:</strong> retained for accounting, dispute, fraud, tax, and legal purposes, typically up to 5 years or longer where law requires.</li>
+          <li><strong>WhatsApp and support records:</strong> retained while needed for Platform operation, support, fraud prevention, disputes, and lawful audit purposes.</li>
+          <li><strong>Provider application and verification records:</strong> retained while the provider account is active and for a lawful period afterward for compliance, audit, dispute, and fraud purposes.</li>
+          <li><strong>Marketing leads:</strong> retained until no longer needed for the purpose collected or until opt-out/deletion where legally available.</li>
+        </ul>
         <p>
-          Our Platform is for users aged 18 and over. We do not knowingly collect personal information from
-          minors. If you believe a minor has provided their details, contact us at{" "}
-          <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a> and we will delete the
-          information promptly.
+          Retention periods are operational policy targets and may need adjustment after attorney,
+          tax, accounting, and POPIA review.
         </p>
 
-        <h2>13. Changes to This Policy</h2>
+        <h2>11. Security and breach notification</h2>
         <p>
-          We may update this policy from time to time. Material changes will be communicated via WhatsApp
-          or a prominent notice on the Platform before they take effect. The &ldquo;Last updated&rdquo;
-          date reflects the most recent revision. We retain dated copies of previous policy versions.
+          We use access controls, authentication, role-based permissions, transport security, audit
+          logs, and operational monitoring to protect personal information. No system is completely
+          secure. If we become aware of a security compromise that requires notification under POPIA,
+          we will notify the Information Regulator and affected data subjects as soon as reasonably
+          possible, subject to lawful investigation needs.
         </p>
 
-        <h2>14. Contact</h2>
+        <h2>12. Cross-border processing</h2>
         <p>
-          Privacy and data requests: <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a><br />
-          General support: <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a><br />
-          Plug A Pro — Registered in South Africa
+          Some of the operators named in section 6 are based outside South Africa. In particular,
+          Vercel, Meta / WhatsApp, Google, Sentry, and Didit are based in the <strong>United States</strong>;
+          our Supabase infrastructure is hosted in the <strong>European Union</strong> (Frankfurt, Germany);
+          Smile ID is based in <strong>Africa and the United States</strong>; and other named operators
+          may process data in the regions disclosed at the point of use.
+        </p>
+        <p>
+          Where cross-border processing applies, we rely on the safeguards required by POPIA section 72:
+          either a law in the recipient country that provides an adequate level of protection (for
+          example, EU data protection law applicable to our EU-hosted databases), contractual safeguards
+          (data processing agreements and standard contractual clauses signed with each operator), or
+          your consent recorded at the point of the relevant flow. You can ask us for a summary of the
+          safeguards applicable to a specific processor by emailing{" "}
+          <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a>.
+        </p>
+
+        <h2>13. Children</h2>
+        <p>
+          The Platform is for users aged 18 and older. We do not knowingly collect information from
+          children. If you believe a child has supplied personal information, contact us so we can
+          review and delete it where required.
+        </p>
+
+        <h2>14. Changes</h2>
+        <p>
+          We may update this policy to reflect product, legal, security, or operational changes.
+          Material changes will be communicated through the Platform, WhatsApp, or the website where
+          appropriate.
+        </p>
+
+        <h2>15. Contact</h2>
+        <p>
+          Privacy: <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a>
+          <br />
+          Support: <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a>
+          <br />
+          Legal: <a href="mailto:legal@plugapro.co.za">legal@plugapro.co.za</a>
         </p>
         <p>
           <strong>Information Regulator (South Africa):</strong>{" "}
-          <a href="https://www.justice.gov.za/inforeg/" target="_blank" rel="noopener noreferrer">
-            justice.gov.za/inforeg
+          <a href="https://inforegulator.org.za/" target="_blank" rel="noopener noreferrer">
+            inforegulator.org.za
           </a>
         </p>
       </div>

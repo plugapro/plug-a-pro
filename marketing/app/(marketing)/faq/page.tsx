@@ -16,7 +16,7 @@ export const metadata: Metadata = buildMetadata({
 const CUSTOMER_FAQS = [
   {
     q: "What is Plug A Pro?",
-    a: "Plug A Pro connects people in South Africa to local service providers for small jobs. You describe your job, we match you to a rated local provider, and Plug A Pro keeps the quote, booking, and job updates in one written record.",
+    a: "Plug A Pro connects people in South Africa to independent local service providers for small jobs. You describe your job, we help match you to a suitable provider, and Plug A Pro keeps the quote, booking, and job updates in one written record.",
   },
   {
     q: "What types of jobs can I get help with?",
@@ -36,11 +36,11 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "What happens if something goes wrong?",
-    a: "Contact Plug A Pro support on WhatsApp with a description of the issue and any photos. We'll follow up within 2 hours during business hours. We review the written quote, job history, before-and-after photos, and communication records. If the issue is about scope or price, the written record is the reference point. We aim to resolve disputes within 5 business days and will keep you updated as the process moves forward.",
+    a: "Contact Plug A Pro support on WhatsApp with a description of the issue and any photos. We review the written quote, job history, photos where available, and communication records. If the issue is about scope or price, the written record is the reference point. We aim to respond within 5 business days and will keep you updated as the process moves forward.",
   },
   {
     q: "Started a DIY project and got stuck?",
-    a: "Yes, our providers can assess, continue, or finish a job you started yourself. Describe where you are and what you need and we'll match you to someone who can help.",
+    a: "Yes, independent providers on the platform may be able to assess, continue, or finish a job you started yourself. Describe where you are and what you need and we'll try to match you to someone who can help.",
   },
   {
     q: "How do I pay?",
@@ -75,7 +75,7 @@ const WORKER_FAQS = [
   },
   {
     q: "Is there a cost to join?",
-    a: "Not at launch. We're in early access mode. Join now and we'll let you know how monetisation works before it affects you.",
+    a: "Joining is free. Providers use prepaid platform credits to unlock and accept customer-selected jobs (typically R50 per credit, deducted on acceptance). Previewing leads, being shortlisted, and customer pre-selection do not use credits. See our Provider Credits Terms for the full pricing rules.",
   },
 ];
 
