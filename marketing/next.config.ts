@@ -49,6 +49,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
+  // Permanent redirects after consolidating the legal page set into /terms
+  // (see PR #26). Refund and Service Provider Terms content now lives as
+  // §§ 27–28 inside the main Terms document; deep links preserved via
+  // anchors. /free-templates was retired with no replacement (lead magnet
+  // sunset), so we let it 404 cleanly rather than redirecting somewhere
+  // less relevant.
+  async redirects() {
+    return [
+      { source: "/refund-policy", destination: "/terms#refunds", permanent: true },
+      { source: "/provider-terms", destination: "/terms#provider-terms", permanent: true },
+    ];
+  },
   // turbopack: {} silences the "webpack config present but no turbopack config"
   // error — Next.js 16 defaults to Turbopack. The VeliteWebpackPlugin below
   // only runs under webpack (pnpm build); Turbopack handles dev without it.

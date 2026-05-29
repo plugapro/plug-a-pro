@@ -4,7 +4,7 @@ import { buildMetadata } from "@/lib/metadata";
 export const metadata: Metadata = buildMetadata({
   title: "Terms of Service",
   description:
-    "Terms for customers and independent service providers using the Plug A Pro marketplace platform.",
+    "Terms for customers and independent service providers using the Plug A Pro marketplace platform, including refund and cancellation rules and the Service Provider Terms.",
 });
 
 export default function TermsPage() {
@@ -25,10 +25,11 @@ export default function TermsPage() {
         <p>
           <em>
             These Terms are intended to be read alongside our{" "}
-            <a href="/privacy">Privacy Policy</a>,{" "}
-            <a href="/credits-policy">Provider Credits Terms and Rules</a>,{" "}
-            <a href="/refund-policy">Refund and Cancellation Policy</a>, and, for service providers,
-            our <a href="/provider-terms">Service Provider Terms</a>.
+            <a href="/privacy">Privacy Policy</a> and our{" "}
+            <a href="/credits-policy">Provider Credits Terms and Rules</a>. The Refund and Cancellation
+            rules and the Service Provider Terms are part of this document — see{" "}
+            <a href="#refunds">§ 27 Refunds and Cancellations</a> and{" "}
+            <a href="#provider-terms">§ 28 Service Provider Terms</a>.
           </em>
         </p>
 
@@ -96,7 +97,7 @@ export default function TermsPage() {
         </ul>
 
         <h2>6. Provider Obligations</h2>
-        <p>Providers are bound by the <a href="/provider-terms">Service Provider Terms</a>, which are a condition of using the Platform. Key obligations include:</p>
+        <p>Providers are bound by the <a href="#provider-terms">Service Provider Terms (§ 28)</a>, which are a condition of using the Platform. Key obligations include:</p>
         <ul>
           <li>Maintain accurate profiles, pricing, and availability information.</li>
           <li>Hold all licences, registrations, permits, and insurance required by law.</li>
@@ -136,8 +137,9 @@ export default function TermsPage() {
         </p>
         <p>
           If Plug A Pro facilitated payment and the service is not performed or is materially defective,
-          you may be entitled to a refund in accordance with our <a href="/refund-policy">Refund and
-          Cancellation Policy</a> and applicable South African consumer law.
+          you may be entitled to a refund in accordance with the{" "}
+          <a href="#refunds">Refund and Cancellation rules in § 27</a> and applicable South African
+          consumer law.
         </p>
         <p>
           If you paid a Provider directly (outside Platform-facilitated payment), Plug A Pro can review
@@ -147,9 +149,9 @@ export default function TermsPage() {
         <h2>9. Cancellations and Refunds</h2>
         <p>
           Cancellation and refund rights depend on who cancels, when, and whether service has commenced.
-          See our <a href="/refund-policy">Refund and Cancellation Policy</a> for the full matrix covering
-          all scenarios, including Platform-facilitated customer payment refunds, Provider Credit reversals, Provider cancellations,
-          Customer no-shows, and partial completions.
+          See <a href="#refunds">§ 27 Refunds and Cancellations</a> below for the full matrix covering all
+          scenarios, including Platform-facilitated customer payment refunds, Provider Credit reversals,
+          Provider cancellations, Customer no-shows, and partial completions.
         </p>
         <p>
           Your statutory rights under the Consumer Protection Act 68 of 2008 (&ldquo;CPA&rdquo;) are not
@@ -287,8 +289,8 @@ export default function TermsPage() {
           Providers indemnify Plug A Pro against claims, losses, and costs arising from: the Provider&apos;s
           negligence, poor workmanship, or breach of law; damage to Customer property; Provider fraud;
           non-compliance with licensing or safety requirements; and any claim by a Customer arising from
-          the Provider&apos;s services. See the <a href="/provider-terms">Service Provider Terms</a> for
-          the full provider indemnity clause.
+          the Provider&apos;s services. See <a href="#provider-terms">§ 28 Service Provider Terms</a>
+          below for the full provider indemnity clause.
         </p>
 
         <h2>21. Consumer Rights Preservation</h2>
@@ -364,7 +366,296 @@ export default function TermsPage() {
           Act, POPIA, ECTA, and other mandatory South African legislation apply where relevant.
         </p>
 
-        <h2>27. Contact</h2>
+        <section id="refunds">
+        <h2>27. Refunds and Cancellations</h2>
+        <p>
+          This section explains how cancellations, customer service payment refunds, provider credit
+          reversals, and disputes are handled on Plug A Pro. Your statutory rights under South African
+          law, including the Consumer Protection Act 68 of 2008, apply throughout and override this
+          section where required by law.
+        </p>
+
+        <h3>27.1 Platform role</h3>
+        <p>
+          Plug A Pro is a platform that helps customers find and book independent service providers.
+          The service contract for the actual work is between the customer and the independent provider.
+          Plug A Pro may facilitate intake, matching, quotes, communication, job records, support,
+          provider credits, and payments where implemented. Plug A Pro does not perform the service itself.
+        </p>
+
+        <h3>27.2 What Plug A Pro can and cannot refund</h3>
+        <ul>
+          <li><strong>Platform-facilitated customer payments:</strong> where Plug A Pro handled the customer payment, Plug A Pro may process or facilitate a refund according to this section, the Platform record, payment processor rules, and applicable law.</li>
+          <li><strong>Direct or off-platform payments:</strong> where the customer paid the provider directly, Plug A Pro can review the dispute record and support communication, but cannot refund money it never handled.</li>
+          <li><strong>Provider credit purchases:</strong> provider credit reversals are handled under the <a href="/credits-policy">Provider Credits Terms and Rules</a>. They are separate from customer service payment refunds.</li>
+          <li><strong>Provider lead-credit deductions:</strong> a lead-credit reversal restores provider credits in the provider wallet ledger where approved. It is not a refund to the customer.</li>
+          <li><strong>Provider settlements:</strong> where Plug A Pro facilitated payment to a provider, provider settlement deductions may apply for provider-caused failures, refunds, chargebacks, fraud, no-shows, or other breaches under the Service Provider Terms (§ 28).</li>
+        </ul>
+
+        <h3>27.3 How to request help</h3>
+        <p>
+          Contact support via WhatsApp or email at{" "}
+          <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a>. Include the booking, job,
+          payment, or lead reference; the reason for the cancellation, refund, reversal, or dispute;
+          and supporting evidence such as photos, screenshots, written quotes, job notes, or messages.
+          We aim to acknowledge requests within 1 business day and provide a decision or next step
+          within 5 business days. Complex disputes may take longer where both sides need to respond.
+        </p>
+
+        <h3>27.4 Customer cancellation scenarios</h3>
+        <p><strong>Before a provider is assigned or selected:</strong> if Plug A Pro facilitated payment and no provider has been assigned or selected, the customer will generally receive a full refund to the original payment method, subject to payment processor timing and applicable law.</p>
+        <p><strong>After provider assignment or selection, but before dispatch:</strong> the customer will generally receive a refund less any cancellation or call-out fee that was clearly disclosed and approved in the quote or booking record, subject to applicable law.</p>
+        <p><strong>After the provider is en route, has arrived, or cannot access the site:</strong> a disclosed call-out fee, travel cost, or reasonable preparation cost may be deducted where the Platform record supports it and the fee was properly disclosed. Customers must provide accurate address details, site access, and a reasonably safe site.</p>
+        <p><strong>Incorrect customer information:</strong> where work cannot proceed because the customer supplied materially incorrect information, Plug A Pro may facilitate a partial refund, settlement adjustment, or cancellation outcome based on the quote, job record, provider evidence, and applicable law.</p>
+
+        <h3>27.5 Provider-caused cancellations and failures</h3>
+        <p>
+          If a provider cancels, does not arrive, lacks the required tools, skills, licence, or
+          availability, or otherwise causes the job to fail, the customer may be entitled to a full or
+          partial refund where Plug A Pro facilitated payment. Provider-caused failures are recorded and
+          may result in provider suspension, removal, lead-credit consequences, or settlement deductions.
+        </p>
+
+        <h3>27.6 Quality complaints and incomplete work</h3>
+        <p>
+          The provider is responsible for workmanship, site conduct, tools, licensing, insurance, safety
+          compliance, and legal compliance. Plug A Pro will facilitate a support process by reviewing the
+          quote, written approvals, photos, job notes, WhatsApp messages, status updates, and provider
+          response. Where the Platform record supports the complaint and Plug A Pro facilitated payment,
+          possible outcomes include rework discussions, full or partial refund, provider settlement hold,
+          provider settlement deduction, or account action. Plug A Pro does not become the provider of
+          the service and does not guarantee workmanship or outcome unless expressly stated otherwise.
+        </p>
+
+        <h3>27.7 Extra work</h3>
+        <p>
+          Customers must approve extras in writing through the Platform before the provider performs
+          that extra work. If extra work was approved and paid for but not completed, the customer may
+          be entitled to a refund for the unperformed approved extras where Plug A Pro facilitated that
+          payment. Verbal or off-platform extras are harder to support and may be treated as a direct
+          customer-provider dispute.
+        </p>
+
+        <h3>27.8 Fraud, abuse, chargebacks, and unsafe conduct</h3>
+        <p>
+          Plug A Pro may delay, refuse, reverse, or investigate a refund, credit reversal, or settlement
+          where there is suspected fraud, abuse, fabricated evidence, unlawful conduct, payment reversal,
+          chargeback, unsafe site conduct, or breach of these Terms. Payment processor chargeback rules
+          may override normal Platform timing.
+        </p>
+
+        <h3>27.9 Provider credit purchase reversals</h3>
+        <p>
+          Provider credit purchase reversals are separate from customer refunds. Purchased provider
+          credits are generally non-refundable once bought, except where required by law or where Plug
+          A Pro approves a reversal due to a clear platform or system error, duplicate payment, failed
+          credit allocation, incorrect deduction, suspected fraud or chargeback reversal, or another
+          admin-approved exception.
+        </p>
+
+        <h3>27.10 Provider lead-credit deduction disputes</h3>
+        <p>
+          Providers may query a lead-credit deduction where the lead was invalid, duplicated, materially
+          in the wrong category or location, linked to an invalid customer number, not actually requested
+          by the customer, cancelled before unlock, or affected by platform error. Approved disputes are
+          restored as provider credits through the wallet ledger.
+        </p>
+        </section>
+
+        <section id="provider-terms">
+        <h2>28. Service Provider Terms</h2>
+        <p>
+          This section governs your use of the Plug A Pro platform as a service provider
+          (&ldquo;Provider&rdquo;). It must be read alongside the{" "}
+          <a href="/credits-policy">Provider Credits Terms and Rules</a> and the Refund and Cancellation
+          rules in <a href="#refunds">§ 27</a> above. By registering as a Provider, accepting a job, or
+          using any part of the Platform, you agree to this section in full. If you do not agree, do not
+          register or use the Platform as a Provider.
+        </p>
+
+        <h3>28.1 Your status as independent contractor</h3>
+        <p>
+          You are an <strong>independent contractor</strong>, not an employee, agent, partner,
+          subcontractor, or joint venture party of Plug A Pro. Plug A Pro does not control how you
+          perform your work, your working hours, your equipment, or your methods — we facilitate the
+          introduction of customers to you and provide Platform tools to manage the booking and job
+          record. You are responsible for your own tax affairs, SARS compliance, UIF, and any other
+          obligations applicable to you as a self-employed person or business. Plug A Pro is not your
+          employer and does not withhold PAYE or make UIF contributions on your behalf.
+        </p>
+
+        <h3>28.2 Eligibility and onboarding requirements</h3>
+        <p>To register and remain active as a Provider, you must:</p>
+        <ul>
+          <li>Be at least 18 years old and legally capable of entering into contracts.</li>
+          <li>Have the right to work and operate a business in South Africa.</li>
+          <li>Hold all licences, registrations, permits, certifications, and insurance required by South African law for the services you offer (see § 28.3).</li>
+          <li>Provide accurate information during registration and onboarding.</li>
+          <li>Complete Plug A Pro&apos;s application review process to Plug A Pro&apos;s satisfaction.</li>
+          <li>Maintain your profile, skills, availability, and pricing accurately at all times.</li>
+        </ul>
+
+        <h3>28.3 Licences, qualifications, and compliance</h3>
+        <p>
+          You must hold — and maintain in good standing — any licences, trade registrations, permits, or
+          certifications required by South African law for the specific type of work you perform.
+          Examples include qualified plumbers where required under applicable plumbing codes and any
+          other trade-specific or safety-related licences applicable to your services.{" "}
+          <strong>You must not accept or perform work that requires a licence or registration you do
+          not hold.</strong> Performing regulated work without the required licence is illegal and may
+          result in criminal liability. Plug A Pro may deactivate your account if we become aware of
+          non-compliance.
+        </p>
+
+        <h3>28.4 Insurance</h3>
+        <p>
+          You are strongly encouraged — and where required by law, obligated — to hold appropriate
+          insurance for your trade and operations, including public liability insurance appropriate to
+          the services you perform and any trade-specific or statutory insurance cover required for your
+          category of work. Plug A Pro does not provide insurance cover for your activities. You are
+          solely responsible for insuring yourself against claims, losses, or liability arising from your
+          work. Plug A Pro&apos;s marketplace insurance position is separate from your obligations.
+        </p>
+
+        <h3>28.5 Accurate profile and availability</h3>
+        <p>
+          Your profile on the Platform must accurately represent your skills, services, service areas,
+          pricing, availability, qualifications, and experience. You must update your availability when
+          it changes. Misleading or false profile information is a breach of these Provider Terms and
+          may result in suspension.
+        </p>
+
+        <h3>28.6 Accepting and performing jobs</h3>
+        <p>When you accept a job lead and submit a Quote through the Platform:</p>
+        <ul>
+          <li>You confirm that you have the skills, tools, licences, and availability to perform the work described.</li>
+          <li>Your Quote is a binding offer once accepted by the Customer.</li>
+          <li>You must attend at the agreed time. If you cannot attend, you must notify Plug A Pro and the Customer as early as possible via the Platform.</li>
+          <li>You must perform the work with reasonable care, skill, professionalism, and in compliance with all applicable safety and trade laws.</li>
+        </ul>
+
+        <h3>28.7 Duty of care and service standards</h3>
+        <p>You must perform all services with reasonable care, skill, and diligence appropriate to your trade; in a safe manner that does not endanger yourself, the Customer, bystanders, or property; in compliance with all applicable South African laws, health and safety regulations, and trade standards; honestly and transparently, without misleading the Customer about scope, pricing, materials, or outcome; and using materials and equipment appropriate for the job (unless otherwise agreed).</p>
+        <p>
+          The Consumer Protection Act requires you to supply services that meet a reasonable quality
+          standard. You are liable to the Customer for defective workmanship under applicable law. This
+          liability is yours, not Plug A Pro&apos;s.
+        </p>
+
+        <h3>28.8 Extra work and scope changes</h3>
+        <p>
+          <strong>You must not carry out work outside the scope of the accepted Quote without first
+          obtaining Customer approval through the Platform.</strong> If you discover additional work or
+          scope changes on-site, stop and discuss the change with the Customer, submit a revised scope
+          or extra-work request through the Platform, wait for the Customer&apos;s written approval
+          before proceeding, and do not pressure Customers to approve extras verbally or off-platform.
+          Extra work performed without Customer approval through the Platform will not be facilitated
+          for payment by Plug A Pro. Any resulting dispute is between you and the Customer.
+        </p>
+
+        <h3>28.9 Job status updates and evidence</h3>
+        <p>You must keep the Platform job record up to date by updating your status when you are en route, when you arrive, when work starts, and when work is complete; uploading before and after photos where requested by the Platform or where it is good practice for the type of work done; capturing any customer signatures or confirmations as required by the Platform workflow; and recording notes about site conditions, scope changes, or material decisions made on-site. Accurate Platform records protect you in the event of a customer dispute. Incomplete records weaken your position.</p>
+
+        <h3>28.10 Handling customer property</h3>
+        <p>
+          You are responsible for treating Customer property with care and respect. Any damage caused by
+          your negligence, recklessness, or misconduct is your liability. You must report damage you
+          discover (whether caused by you or pre-existing) to the Customer and through the Platform as
+          soon as you become aware of it.
+        </p>
+
+        <h3>28.11 Communication with customers</h3>
+        <ul>
+          <li>Use the Platform for all job-related communication where possible. This protects both you and the Customer by maintaining a written record.</li>
+          <li>Be professional, respectful, and honest in all communications.</li>
+          <li>Do not harass, threaten, or coerce Customers.</li>
+          <li>Do not share Customer contact information with third parties.</li>
+          <li>Do not use Customer contact details for any purpose other than performing the booked service.</li>
+        </ul>
+
+        <h3>28.12 Prohibited conduct</h3>
+        <p>You must not:</p>
+        <ul>
+          <li>Provide false or misleading information about yourself, your qualifications, or the services you provide.</li>
+          <li>Accept jobs outside your skills, licences, or legal permissions.</li>
+          <li>Solicit Customers to transact outside the Platform for services introduced through the Platform (&ldquo;bypassing&rdquo;). This is a material breach and grounds for immediate termination.</li>
+          <li>Agree to cash payments directly with Customers for Platform-booked jobs without Plug A Pro&apos;s approval (where Platform-facilitated payment applies).</li>
+          <li>Misrepresent the Platform&apos;s role to Customers.</li>
+          <li>Use the Platform to commit fraud, money laundering, or any unlawful activity.</li>
+          <li>Discriminate against Customers on grounds prohibited by South African law.</li>
+          <li>Overcharge, add undisclosed costs, or pressure Customers into approving unjustified extras.</li>
+        </ul>
+
+        <h3>28.13 Provider credits</h3>
+        <p>
+          Provider credits are provider-side platform units used to accept or access eligible
+          customer-selected opportunities. They are not customer credits, payment for your work, cash,
+          legal tender, a loan, a bank deposit, or financial credit. A provider credit is deducted only
+          when a Customer selects you and you complete final acceptance of that customer-selected
+          opportunity through the Platform, WhatsApp, or Worker Portal. Previewing a lead, showing
+          interest, being shortlisted, Customer selection before your final acceptance, declining, or
+          expiry does not use credits. Purchased credits are generally non-refundable once bought,
+          except where required by law or under the exceptions listed in § 27.9 above. Full provider
+          credit rules are in the <a href="/credits-policy">Provider Credits Terms and Rules</a>.
+        </p>
+
+        <h3>28.14 Payment settlement and deductions</h3>
+        <p>
+          Where Plug A Pro facilitates customer payment, your payment for completed jobs is processed
+          according to the settlement terms communicated at onboarding. Provider credits are separate
+          from customer service payments and do not replace your quote or settlement terms. Plug A Pro
+          may deduct from your settlement: Platform service fees or commission as agreed; amounts
+          corresponding to refunds paid to Customers for Provider-caused failures (non-attendance, poor
+          workmanship, damage), subject to investigation and notification; chargebacks or reversed
+          payments where you were involved in fraud or misconduct; and outstanding amounts owed to Plug
+          A Pro under these Provider Terms. Plug A Pro will notify you of any deductions and give you an
+          opportunity to respond before a deduction is made, except where immediate action is required
+          to prevent further harm.
+        </p>
+
+        <h3>28.15 Customer complaints, disputes, and rework</h3>
+        <p>
+          You must cooperate with Plug A Pro&apos;s complaints and dispute process. This includes
+          responding to Plug A Pro support queries within 2 business days, providing your account of
+          events, evidence, and photos from the job, and cooperating with any inspection or rework
+          required. Where a Customer&apos;s complaint about workmanship quality is upheld, you may be
+          required to remedy the defect at no additional charge to the Customer. Failure to cooperate
+          may result in suspension, deduction from future settlements, or removal from the Platform.
+        </p>
+
+        <h3>28.16 Indemnity in favour of Plug A Pro</h3>
+        <p>You indemnify Plug A Pro and hold us harmless against all claims, losses, costs, damages, and legal fees arising from your negligence, poor workmanship, misconduct, or breach of these Provider Terms; damage to Customer property caused by you; personal injury caused by your actions or omissions; your failure to hold required licences, certifications, or insurance; your breach of any applicable South African law; fraud, misrepresentation, or deception by you; and any Customer claim arising from the services you performed or failed to perform.</p>
+
+        <h3>28.17 Suspension and termination</h3>
+        <p>
+          Plug A Pro may suspend or terminate your Provider account where you breach these Provider
+          Terms or the Terms of Service; engage in fraudulent, abusive, or unlawful activity; accumulate
+          repeated complaints, cancellations, or no-shows; fail to maintain required licences, insurance,
+          or qualifications; attempt to bypass the Platform; or pose a risk to Customers, other
+          Providers, or Plug A Pro. Where practical, we will give you notice and an opportunity to
+          respond before suspending or terminating your account. Immediate suspension may occur without
+          prior notice where there is a risk of harm or where urgent action is needed.
+        </p>
+
+        <h3>28.18 Confidentiality and data protection</h3>
+        <p>Customer personal information (including names, addresses, and contact details) shared with you through the Platform is provided solely for the purpose of performing the booked service. You must not use Customer personal information for any other purpose, must not share Customer personal information with third parties, must comply with POPIA in your handling of Customer data, and must promptly notify Plug A Pro if you become aware of a data breach involving Customer information.</p>
+
+        <h3>28.19 Plug A Pro audit rights</h3>
+        <p>
+          Plug A Pro may review your Platform records, job history, customer feedback, payment records,
+          and profile information for compliance, safety, and quality assurance purposes. We may request
+          proof of licences, certifications, or insurance at any time.
+        </p>
+
+        <h3>28.20 Changes to these Provider Terms</h3>
+        <p>
+          We may update this section from time to time. Material changes will be communicated via
+          WhatsApp or a notice on the Platform at least 14 days before they take effect. Continued use
+          of the Platform as a Provider after the effective date constitutes acceptance.
+        </p>
+        </section>
+
+        <h2>29. Contact</h2>
         <p>
           Legal: <a href="mailto:legal@plugapro.co.za">legal@plugapro.co.za</a><br />
           Support: <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a><br />

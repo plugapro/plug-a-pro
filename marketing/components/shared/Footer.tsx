@@ -34,8 +34,6 @@ export function Footer() {
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
             <Link href="/credits-policy" className="hover:text-foreground transition-colors">Provider Credits Rules</Link>
-            <Link href="/refund-policy" className="hover:text-foreground transition-colors">Refunds</Link>
-            <Link href="/provider-terms" className="hover:text-foreground transition-colors">Provider Terms</Link>
           </div>
         </nav>
       </div>

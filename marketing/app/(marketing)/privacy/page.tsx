@@ -25,9 +25,10 @@ export default function PrivacyPage() {
 
         <p>
           <em>
-            This policy should be read with our <a href="/terms">Terms of Service</a>,{" "}
-            <a href="/provider-terms">Service Provider Terms</a>,{" "}
-            <a href="/refund-policy">Refund and Cancellation Policy</a>, and{" "}
+            This policy should be read with our <a href="/terms">Terms of Service</a>{" "}
+            (including the{" "}
+            <a href="/terms#provider-terms">Service Provider Terms</a> in § 28 and the{" "}
+            <a href="/terms#refunds">Refund and Cancellation rules</a> in § 27) and the{" "}
             <a href="/credits-policy">Provider Credits Terms and Rules</a>.
           </em>
         </p>
