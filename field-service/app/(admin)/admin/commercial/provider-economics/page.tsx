@@ -16,7 +16,7 @@ export default async function ProviderEconomicsPage() {
       <div>
         <h1 className="text-xl font-semibold">Provider economics</h1>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Model onboarding identity checks (SmileID or Didit), fixed technology costs, active-provider upkeep,
+          Model onboarding identity checks (SmileID or Didit), fixed technology costs, active-provider upkeep
           and lead break-even economics. This excludes people and operational resourcing costs.
         </p>
       </div>

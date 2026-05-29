@@ -156,6 +156,9 @@ async function handleIdentityConsent(ctx: FlowContext): Promise<FlowResult> {
     channel: 'WHATSAPP',
     acceptedByProviderId: provider.id,
   })
+  if (consentVendor.vendorKey === 'didit') {
+    return submitHostedDiditFromWhatsApp(ctx, verification.id, provider.id)
+  }
   await transitionIdentityVerification({
     verificationId: verification.id,
     toStatus: 'AWAITING_IDENTIFIER',
@@ -228,6 +231,9 @@ export async function resumeWhatsAppIdentityVerification(
           channel: 'WHATSAPP',
           acceptedByProviderId: options.acceptedByProviderId,
         })
+        if (consentVendor.vendorKey === 'didit') {
+          return submitHostedDiditFromWhatsApp(ctx, verification.id, options.acceptedByProviderId)
+        }
         await transitionIdentityVerification({
           verificationId: verification.id,
           toStatus: 'AWAITING_IDENTIFIER',
@@ -242,6 +248,12 @@ export async function resumeWhatsAppIdentityVerification(
       }
 
     case 'CONSENTED':
+      {
+        const consentVendor = await resolveConsentVendorForWhatsApp(verification.id, ctx)
+        if (consentVendor.vendorKey === 'didit') {
+          return submitHostedDiditFromWhatsApp(ctx, verification.id, options.acceptedByProviderId)
+        }
+      }
       if (!verification.identityBasis) {
         await sendIdentityBasisList(ctx.phone)
         return {
@@ -320,6 +332,26 @@ export async function resumeWhatsAppIdentityVerification(
       await sendText(ctx.phone, 'Please start identity verification again from the provider menu when you are ready.')
       return { nextStep: 'done', nextData: {} }
   }
+}
+
+async function submitHostedDiditFromWhatsApp(
+  ctx: FlowContext,
+  verificationId: string,
+  actorId?: string,
+): Promise<FlowResult> {
+  const metadata = { hostedSkip: true, vendor: 'didit', channel: 'whatsapp' }
+  for (const toStatus of ['AWAITING_IDENTIFIER', 'AWAITING_DOCUMENT', 'AWAITING_SELFIE', 'SUBMITTED'] as const) {
+    await transitionIdentityVerification({
+      verificationId,
+      toStatus,
+      actorId,
+      actorRole: actorId ? 'provider' : undefined,
+      metadata,
+    })
+  }
+  const automation = await submitVerificationForAutomation(verificationId)
+  await sendAutomationOutcome(ctx.phone, automation)
+  return { nextStep: 'done', nextData: {} }
 }
 
 async function handleIdentityBasis(ctx: FlowContext): Promise<FlowResult> {

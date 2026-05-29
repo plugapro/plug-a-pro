@@ -78,6 +78,7 @@ const baseCtx = (step: string, reply: Record<string, unknown>, data: Record<stri
 describe('WhatsApp identity verification fallback flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSubmitAutomation.mockReset()
     vi.stubEnv('IDENTITY_HASH_PEPPER', 'test-pepper')
     vi.stubEnv('IDENTITY_ENC_KEY', '12345678901234567890123456789012')
     mockDb.provider.findUnique.mockResolvedValue({
@@ -204,6 +205,50 @@ describe('WhatsApp identity verification fallback flow', () => {
       nextStep: 'pj_identity_basis',
       nextData: { identityVerificationId: 'ver-wa-1' },
     })
+  })
+
+  it('hands hosted Didit consent to the secure verification link instead of WhatsApp document capture', async () => {
+    mockSubmitAutomation.mockResolvedValueOnce({
+      verificationId: 'ver-wa-1',
+      status: 'AWAITING_LIVENESS',
+      vendorKey: 'didit',
+      vendorReference: 'sess-didit-1',
+      livenessUrl: 'https://app.test/provider/verify/token/liveness',
+      livenessSessionExpiresAt: new Date('2026-05-29T12:00:00.000Z'),
+    })
+    const { handleWhatsAppIdentityVerificationFlow } = await import('@/lib/whatsapp-flows/identity-verification')
+
+    const result = await handleWhatsAppIdentityVerificationFlow(
+      baseCtx(
+        'pj_identity_consent',
+        { type: 'button_reply', id: 'iv_consent_accept' },
+        {
+          identityConsentVendorKey: 'didit',
+          identityConsentVendorDisplayName: 'Didit',
+          identityConsentText: 'consent for Didit',
+        },
+      ),
+    )
+
+    expect(mockRecordConsent).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      vendorKey: 'didit',
+      vendorDisplayName: 'Didit',
+      consentText: 'consent for Didit',
+      channel: 'WHATSAPP',
+    }))
+    expect(mockTransition).toHaveBeenCalledWith(expect.objectContaining({
+      verificationId: 'ver-wa-1',
+      toStatus: 'SUBMITTED',
+      metadata: expect.objectContaining({ hostedSkip: true, vendor: 'didit' }),
+    }))
+    expect(mockSubmitAutomation).toHaveBeenCalledWith('ver-wa-1')
+    expect(mockSendList).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('https://app.test/provider/verify/token/liveness'),
+    )
+    expect(result).toEqual({ nextStep: 'done', nextData: {} })
   })
 
   it('creates through the shared gate when the fail-safe flag is enabled', async () => {

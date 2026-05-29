@@ -32,9 +32,10 @@ vi.mock('@/lib/security/security-event-service', () => ({
   raiseSecurityReviewEvent: mockRaiseSecurityReviewEvent,
 }))
 
-function request(body = '{}') {
+function request(body = '{}', headers: Record<string, string> = {}) {
   return new NextRequest('http://localhost/api/webhooks/verification/smile_id', {
     method: 'POST',
+    headers,
     body,
   })
 }
@@ -96,6 +97,35 @@ describe('verification provider webhook route', () => {
     expect(mockDb.providerVerificationWebhookEvent.create).not.toHaveBeenCalled()
     expect(mockDb.providerVerificationWebhookEvent.update).not.toHaveBeenCalled()
     expect(mockApplyVendorVerdict).not.toHaveBeenCalled()
+  })
+
+  it('does not log Didit test-webhook payload bodies when rejecting invalid signatures', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: false,
+      vendorEventId: 'evt-didit-test',
+      vendorReference: 'sess-didit-test',
+      livenessSessionReference: null,
+      eventType: 'status.updated',
+      payloadHash: 'hash-didit-test',
+      redactedPayload: { event: 'status.updated' },
+      result: null,
+    })
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(
+      request('{"session_id":"sess-didit-test","FullName":"Sensitive Person"}', {
+        'x-didit-test-webhook': 'true',
+      }),
+      { params: Promise.resolve({ vendor: 'didit' }) },
+    )
+
+    expect(response.status).toBe(401)
+    expect(logSpy).not.toHaveBeenCalledWith(
+      'TEMP-DIDIT-DEBUG',
+      expect.stringContaining('Sensitive Person'),
+    )
+    logSpy.mockRestore()
   })
 
   it('does not apply a verdict when vendor and liveness references resolve to different verifications', async () => {

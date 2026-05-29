@@ -44,7 +44,7 @@ export function Hero() {
         </h1>
         <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
           Tell us what you need and we&apos;ll match you to a nearby service provider.
-          Keep your request moving with written quotes, WhatsApp updates,
+          Keep your request moving with written quotes, WhatsApp updates
           and clear handover steps for both sides.
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
