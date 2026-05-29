@@ -191,7 +191,7 @@ describe('GET /api/internal/flyer-monitor', () => {
         endSast: '2026-05-29 12:13 SAST',
         nextPollSast: '2026-05-29 18:13 SAST',
         baselineApplied: false,
-        mode: 'stateless_rolling_6h',
+        mode: 'stateless_scheduled_slot',
       },
     })
     mockBuildFlyerMonitorReport.mockReturnValue('## Plug A Pro flyer monitor')

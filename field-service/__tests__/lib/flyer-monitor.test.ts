@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   analyzeFlyerMonitorRows,
+  buildFlyerWindow,
   buildFlyerMonitorReport,
   maskPhone,
   normalizePhone,
@@ -16,6 +17,25 @@ describe('flyer monitor phone handling', () => {
 
   it('masks phones without leaking raw 10 digit numbers', () => {
     expect(maskPhone('+27773923802')).toBe('+27****3802')
+  })
+})
+
+describe('buildFlyerWindow', () => {
+  it('snaps delayed runs to the last fixed 6-hour SAST monitor slot', () => {
+    const window = buildFlyerWindow(new Date('2026-05-29T10:19:00.000Z'))
+
+    expect(window.windowStart.toISOString()).toBe('2026-05-29T04:13:00.000Z')
+    expect(window.windowEnd.toISOString()).toBe('2026-05-29T10:13:00.000Z')
+    expect(window.nextPoll.toISOString()).toBe('2026-05-29T16:13:00.000Z')
+    expect(window.baselineApplied).toBe(false)
+  })
+
+  it('clamps the first campaign-era window to the flyer baseline', () => {
+    const window = buildFlyerWindow(new Date('2026-05-28T10:14:00.000Z'))
+
+    expect(window.windowStart.toISOString()).toBe('2026-05-28T07:31:00.000Z')
+    expect(window.windowEnd.toISOString()).toBe('2026-05-28T10:13:00.000Z')
+    expect(window.baselineApplied).toBe(true)
   })
 })
 
@@ -183,5 +203,26 @@ describe('buildFlyerMonitorReport', () => {
     expect(markdown).toContain('+27****0000')
     expect(markdown).toContain('TEMPLATE_NOT_APPROVED')
     expect(markdown).not.toContain('27821230000')
+  })
+
+  it('renders the requested human-action warning label for severe friction', () => {
+    const report = analyzeFlyerMonitorRows({
+      now: new Date('2026-05-29T10:00:00.000Z'),
+      windowStart: new Date('2026-05-29T04:00:00.000Z'),
+      windowEnd: new Date('2026-05-29T10:00:00.000Z'),
+      rows: [
+        {
+          stage: 'provider_app',
+          phone: '+27821230000',
+          at: '2026-05-29T07:20:00.000Z',
+          detail: 'PENDING / NO_FLAGS',
+          failureCode: null,
+        },
+      ],
+      securityEvents: [],
+      lifetimeCounts: { customers: 10, providers: 4, providerApplications: 7 },
+    })
+
+    expect(buildFlyerMonitorReport(report)).toContain('⚠️ HUMAN ACTION RECOMMENDED')
   })
 })

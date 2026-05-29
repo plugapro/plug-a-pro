@@ -3,6 +3,9 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000
+const SAST_OFFSET_MS = 2 * 60 * 60 * 1000
+const MONITOR_SLOT_HOURS = [0, 6, 12, 18]
+const MONITOR_SLOT_MINUTE = 13
 const CAMPAIGN_BASELINE_UTC = new Date('2026-05-28T07:31:00.000Z')
 
 const EXCLUDED_PHONES = [
@@ -133,7 +136,7 @@ export type FlyerMonitorReport = {
     endSast: string
     nextPollSast: string
     baselineApplied: boolean
-    mode: 'stateless_rolling_6h'
+    mode: 'stateless_scheduled_slot'
   }
 }
 
@@ -174,10 +177,10 @@ export function maskPhone(phoneE164: string): string {
 }
 
 export function buildFlyerWindow(now = new Date()): WindowBounds {
-  const rawStart = new Date(now.getTime() - SIX_HOURS_MS)
+  const windowEnd = previousMonitorSlot(now)
+  const rawStart = new Date(windowEnd.getTime() - SIX_HOURS_MS)
   const baselineApplied = rawStart < CAMPAIGN_BASELINE_UTC
   const windowStart = baselineApplied ? CAMPAIGN_BASELINE_UTC : rawStart
-  const windowEnd = now
   const nextPoll = new Date(windowEnd.getTime() + SIX_HOURS_MS)
   return { windowStart, windowEnd, nextPoll, baselineApplied }
 }
@@ -232,7 +235,7 @@ export function analyzeFlyerMonitorRows(input: AnalyzeInput): FlyerMonitorReport
     endSast: formatSastDateTime(input.windowEnd),
     nextPollSast: formatSastDateTime(nextPoll),
     baselineApplied: input.windowStart.getTime() === CAMPAIGN_BASELINE_UTC.getTime(),
-    mode: 'stateless_rolling_6h' as const,
+    mode: 'stateless_scheduled_slot' as const,
   }
 
   return {
@@ -288,7 +291,7 @@ export function buildFlyerMonitorReport(report: FlyerMonitorReport): string {
       lines.push(`  - ${entry.atSast.slice(11, 16)} ${entry.stage}${entryDetail}`)
     }
     for (const friction of prospect.friction) {
-      const prefix = friction.humanActionRecommended ? '  - WARNING HUMAN ACTION RECOMMENDED: ' : '  - WARNING: '
+      const prefix = friction.humanActionRecommended ? '  - ⚠️ HUMAN ACTION RECOMMENDED: ' : '  - ⚠️ '
       lines.push(`${prefix}${friction.message}`)
       lines.push(`  - Suggested action: ${friction.suggestedAction}`)
     }
@@ -646,6 +649,24 @@ function isIdleWelcome(detail: string | null): boolean {
 function hashPhone(phone: string): string {
   const salt = process.env.FLYER_MONITOR_HASH_SALT ?? process.env.CRON_SECRET ?? 'flyer-monitor'
   return createHash('sha256').update(`${salt}:${phone}`).digest('hex').slice(0, 12)
+}
+
+function previousMonitorSlot(now: Date): Date {
+  const sastNowMs = now.getTime() + SAST_OFFSET_MS
+  const sastNow = new Date(sastNowMs)
+  const localDayStartMs = Date.UTC(
+    sastNow.getUTCFullYear(),
+    sastNow.getUTCMonth(),
+    sastNow.getUTCDate(),
+  )
+
+  const slotMs = MONITOR_SLOT_HOURS
+    .map((hour) => localDayStartMs + hour * 60 * 60 * 1000 + MONITOR_SLOT_MINUTE * 60 * 1000)
+    .filter((candidate) => candidate <= sastNowMs)
+    .pop()
+    ?? localDayStartMs - 6 * 60 * 60 * 1000 + MONITOR_SLOT_MINUTE * 60 * 1000
+
+  return new Date(slotMs - SAST_OFFSET_MS)
 }
 
 function sanitizeDetail(value: string | null | undefined): string | null {
