@@ -2,7 +2,7 @@
  * Tests for the gateway ITN crediting service.
  *
  * Verifies idempotency, correct ledger entry creation, wallet balance
- * increments, and that post-credit notifications fire outside the transaction.
+ * increments and that post-credit notifications fire outside the transaction.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -113,7 +113,7 @@ describe('creditProviderWalletFromGatewayItn', () => {
       return callback(mockDb as unknown as typeof mockDb)
     })
 
-    // updateMany: simulate the optimistic lock — returns count=1 on first call.
+    // updateMany: simulate the optimistic lock - returns count=1 on first call.
     mockDb.paymentIntent.updateMany.mockImplementation(async (args: Record<string, unknown>) => {
       const data = args.data as Record<string, unknown>
       if (walletState.intent && walletState.intent.creditedAt === null) {
@@ -192,7 +192,7 @@ describe('creditProviderWalletFromGatewayItn', () => {
       '../../lib/provider-credit-gateway-itn'
     )
     await creditProviderWalletFromGatewayItn('intent-1')
-    // Now intent is CREDITED — second call should be no-op.
+    // Now intent is CREDITED - second call should be no-op.
     const second = await creditProviderWalletFromGatewayItn('intent-1')
     expect(second).toMatchObject({ credited: false })
     // Balance still 2, not 4.
@@ -251,7 +251,7 @@ describe('creditProviderWalletFromGatewayItn', () => {
     const first = await creditProviderWalletFromGatewayItn('intent-1')
     expect(first).toMatchObject({ credited: true })
 
-    // Second call: intent is now CREDITED — should be idempotent no-op.
+    // Second call: intent is now CREDITED - should be idempotent no-op.
     const second = await creditProviderWalletFromGatewayItn('intent-1')
     expect(second).toMatchObject({ credited: false })
     expect(walletState.wallet!.paidCreditBalance).toBe(2)

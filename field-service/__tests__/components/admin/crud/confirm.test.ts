@@ -19,7 +19,7 @@ async function handleConfirm(
   return 'executed'
 }
 
-describe('DestructiveConfirmDialog — confirm guard', () => {
+describe('DestructiveConfirmDialog - confirm guard', () => {
   it('returns false for empty input', () => {
     expect(isMatch('', 'delete-me')).toBe(false)
   })

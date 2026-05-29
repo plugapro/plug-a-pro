@@ -98,7 +98,7 @@ describe('AutoRefresh timer logic', () => {
     cleanup()
   })
 
-  it('clears timer on cleanup — no further calls after unmount', () => {
+  it('clears timer on cleanup - no further calls after unmount', () => {
     const refresh = vi.fn()
     const { cleanup } = startAutoRefresh(refresh, () => 'visible')
 
@@ -113,14 +113,14 @@ describe('AutoRefresh timer logic', () => {
     const refresh = vi.fn()
     const { cleanup } = startAutoRefresh(refresh, () => 'visible')
 
-    // First 4 ticks each at 15s — advance exactly 60s
+    // First 4 ticks each at 15s - advance exactly 60s
     vi.advanceTimersByTime(POLL_INTERVALS.initial * 4)
 
     expect(refresh).toHaveBeenCalledTimes(4)
     cleanup()
   })
 
-  it('terminalState=true — no refresh is called (timer never started)', () => {
+  it('terminalState=true - no refresh is called (timer never started)', () => {
     // When terminalState is true the component returns early without scheduling.
     // Simulated by simply not calling startAutoRefresh.
     const refresh = vi.fn()
@@ -138,11 +138,11 @@ describe('AutoRefresh timer logic', () => {
     vi.advanceTimersByTime(POLL_INTERVALS.initial * 4)
     expect(refresh).toHaveBeenCalledTimes(4)
 
-    // Tick 5 is at 30s. Advance only 15s — should NOT fire yet.
+    // Tick 5 is at 30s. Advance only 15s - should NOT fire yet.
     vi.advanceTimersByTime(POLL_INTERVALS.initial)
     expect(refresh).toHaveBeenCalledTimes(4)
 
-    // Advance remaining 15s (total 30s from tick 4) — tick 5 fires.
+    // Advance remaining 15s (total 30s from tick 4) - tick 5 fires.
     vi.advanceTimersByTime(POLL_INTERVALS.initial)
     expect(refresh).toHaveBeenCalledTimes(5)
 

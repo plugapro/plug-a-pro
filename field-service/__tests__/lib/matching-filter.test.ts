@@ -134,7 +134,7 @@ function setupDefaultBatchMocks() {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('filterEligibleProviders — cooldown and daily-load', () => {
+describe('filterEligibleProviders - cooldown and daily-load', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setupDefaultBatchMocks()
@@ -160,7 +160,7 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   it('does not exclude provider who timed out more than 12h ago', async () => {
     // $queryRaw: cooldown empty, declined empty, daily jobs empty
     mockDb.$queryRaw
-      .mockResolvedValueOnce([])   // timedOutRows — no rows within cooldown window
+      .mockResolvedValueOnce([])   // timedOutRows - no rows within cooldown window
       .mockResolvedValueOnce([])   // declinedLeadRows
       .mockResolvedValueOnce([])   // dailyJobRows
 
@@ -237,8 +237,8 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
 
   it('excludes provider with PROVIDER_PREVIOUSLY_DECLINED when they declined this job', async () => {
     mockDb.$queryRaw
-      .mockResolvedValueOnce([])                         // timedOutRows — no cooldown
-      .mockResolvedValueOnce([{ providerId: 'p1' }])    // declinedLeadRows — p1 previously declined
+      .mockResolvedValueOnce([])                         // timedOutRows - no cooldown
+      .mockResolvedValueOnce([{ providerId: 'p1' }])    // declinedLeadRows - p1 previously declined
       .mockResolvedValueOnce([])                         // dailyJobRows
 
     const { eligible, filteredOut } = await filterEligibleProviders(
@@ -254,7 +254,7 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   it('does not exclude a provider who declined a different job', async () => {
     mockDb.$queryRaw
       .mockResolvedValueOnce([])                         // timedOutRows
-      .mockResolvedValueOnce([{ providerId: 'p2' }])    // declinedLeadRows — different provider
+      .mockResolvedValueOnce([{ providerId: 'p2' }])    // declinedLeadRows - different provider
       .mockResolvedValueOnce([])                         // dailyJobRows
 
     const { eligible } = await filterEligibleProviders(
@@ -266,7 +266,7 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   })
 })
 
-describe('filterEligibleProviders — provider availability controls', () => {
+describe('filterEligibleProviders - provider availability controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setupDefaultBatchMocks()
@@ -414,7 +414,7 @@ describe('filterEligibleProviders — provider availability controls', () => {
   })
 })
 
-describe('filterEligibleProviders — category approval', () => {
+describe('filterEligibleProviders - category approval', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setupDefaultBatchMocks()
@@ -439,7 +439,7 @@ describe('filterEligibleProviders — category approval', () => {
       .toContain('CATEGORY_NOT_APPROVED')
   })
 
-  it('passes providers with no category approval row (permissive default — not yet categorised)', async () => {
+  it('passes providers with no category approval row (permissive default - not yet categorised)', async () => {
     mockDb.providerCategory.findMany.mockResolvedValue([])
 
     const { eligible, filteredOut } = await filterEligibleProviders(
@@ -466,7 +466,7 @@ describe('filterEligibleProviders — category approval', () => {
   })
 })
 
-describe('filterEligibleProviders — near-miss bucket', () => {
+describe('filterEligibleProviders - near-miss bucket', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setupDefaultBatchMocks()
@@ -493,7 +493,7 @@ describe('filterEligibleProviders — near-miss bucket', () => {
     // Simplest: remove service area coverage so the provider fails OUTSIDE_SERVICE_AREA only → NOT near-miss.
     // For near-miss we need ONLY schedule codes. Create a job with a specific window outside schedule.
 
-    // The candidate has no schedule rows so buildWorkingWindow returns null — this means
+    // The candidate has no schedule rows so buildWorkingWindow returns null - this means
     // evaluateScheduleFit won't fail on schedule (it skips the working-window check).
     // To force WINDOW_NOT_FEASIBLE, mock the schedule to return a window that the request exceeds.
     // We achieve this by setting a requestedWindowStart + window that doesn't fit any schedule.
@@ -502,14 +502,14 @@ describe('filterEligibleProviders — near-miss bucket', () => {
 
     mockDb.providerSchedule.findMany.mockResolvedValue([{
       providerId: 'p1',
-      dayOfWeek: 0,   // Sunday — provider only works Sunday
+      dayOfWeek: 0,   // Sunday - provider only works Sunday
       startTime: '09:00',
       endTime: '17:00',
       active: true,
     }])
 
     // The job requests "now" as window start. If it's not Sunday for this test, the schedule
-    // won't apply — the scheduling module will return isAvailable based on no applicable rule.
+    // won't apply - the scheduling module will return isAvailable based on no applicable rule.
     // Force a specific test structure: candidate has a short window, job is long.
     // The reliable approach is to run with a job that triggers no schedule match → falls through
     // to no WINDOW_NOT_FEASIBLE. Instead, test the near-miss population via the filter codes check.
@@ -534,7 +534,7 @@ describe('filterEligibleProviders — near-miss bucket', () => {
     // Request starts at "now" which is after the 06:00–07:00 window ends
     const jobRequest = {
       ...makeJobRequest(),
-      requestedWindowStart: new Date(),        // now — after 07:00 SAST
+      requestedWindowStart: new Date(),        // now - after 07:00 SAST
       requestedWindowEnd: new Date(Date.now() + 2 * 60 * 60 * 1000),
     }
 
@@ -553,7 +553,7 @@ describe('filterEligibleProviders — near-miss bucket', () => {
       if (!hasNonScheduleCodes) {
         expect(nearMiss.some((n) => n.id === 'p1')).toBe(true)
       } else {
-        // Provider failed a hard check too — correctly NOT in nearMiss
+        // Provider failed a hard check too - correctly NOT in nearMiss
         expect(nearMiss.some((n) => n.id === 'p1')).toBe(false)
       }
     }
@@ -611,7 +611,7 @@ describe('filterEligibleProviders — near-miss bucket', () => {
   })
 })
 
-describe('filterEligibleProviders — category slug normalisation', () => {
+describe('filterEligibleProviders - category slug normalisation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setupDefaultBatchMocks()

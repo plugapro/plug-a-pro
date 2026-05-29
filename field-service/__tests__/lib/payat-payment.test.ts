@@ -27,7 +27,7 @@ describe('Pay@ merchant RTP payment service', () => {
     mockGetPayatToken.mockResolvedValue('test-bearer-token')
   })
 
-  it('calls /merchant/rtp/create/single — no generatecredentials, no merchant ID in path', async () => {
+  it('calls /merchant/rtp/create/single - no generatecredentials, no merchant ID in path', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
@@ -234,7 +234,7 @@ describe('Pay@ merchant RTP payment service', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('succeeds with only paymentLink — sourceReference is optional on integrator endpoint', async () => {
+  it('succeeds with only paymentLink - sourceReference is optional on integrator endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
@@ -257,7 +257,7 @@ describe('Pay@ merchant RTP payment service', () => {
     expect(result.requestToPayId).toBeUndefined()
   })
 
-  it('succeeds with non-numeric requestToPayId — requestToPayId is optional on integrator endpoint', async () => {
+  it('succeeds with non-numeric requestToPayId - requestToPayId is optional on integrator endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       status: 201,
       ok: true,
@@ -301,7 +301,7 @@ describe('Pay@ merchant RTP payment service', () => {
     })
 
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-    // Always send customerEmail — integrator endpoint rejects when the field is absent entirely.
+    // Always send customerEmail - integrator endpoint rejects when the field is absent entirely.
     expect(body).toHaveProperty('customerEmail', '')
   })
 

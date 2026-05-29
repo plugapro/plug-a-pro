@@ -175,7 +175,7 @@ describe('ops queue helpers', () => {
     )
   })
 
-  it('formats owner labels for unclaimed, self-claimed, and other-claimed work', () => {
+  it('formats owner labels for unclaimed, self-claimed and other-claimed work', () => {
     expect(formatOpsQueueOwnerLabel(undefined, 'admin_1')).toBe('Unclaimed')
     expect(
       formatOpsQueueOwnerLabel(

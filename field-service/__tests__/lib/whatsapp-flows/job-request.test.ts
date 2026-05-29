@@ -1,4 +1,4 @@
-// ─── WhatsApp customer job-request flow — structured address tests ─────────────
+// ─── WhatsApp customer job-request flow - structured address tests ─────────────
 // Covers:
 //  1. Province selection: list-based, rejects typed text
 //  2. City selection: filtered by province, out-of-area waitlists immediately
@@ -179,7 +179,7 @@ function makeCtx(
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('WhatsApp job-request flow — structured address', () => {
+describe('WhatsApp job-request flow - structured address', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(db.customer.findFirst as any).mockResolvedValue(null)
@@ -397,7 +397,7 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
   })
 
-  // ── 4. Suburb selection — derives postalCode + locationNodeId ─────────────
+  // ── 4. Suburb selection - derives postalCode + locationNodeId ─────────────
 
   describe('addr_select_suburb', () => {
     const baseData = {
@@ -457,7 +457,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
   // ── 5. Submission uses resolveStructuredAddressCapture ────────────────────
 
-  describe('job_request_submitted — structured path', () => {
+  describe('job_request_submitted - structured path', () => {
     const structuredData = {
       addrLocationNodeId: 'sub_sandton',
       addressLine1: '14 Main Road',
@@ -650,7 +650,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       )
 
       expect(result.nextStep).toBe('done')
-      // CTA succeeded — sendButtons must NOT repeat the full success message body
+      // CTA succeeded - sendButtons must NOT repeat the full success message body
       expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
         'Choose your matching preference:',
@@ -670,7 +670,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
   // ── 6. Returning customer with structured address can reuse it ────────────
 
-  describe('returning customer — structured saved address', () => {
+  describe('returning customer - structured saved address', () => {
     beforeEach(() => {
       ;(db.customer.findFirst as any).mockResolvedValue({
         id: 'cust_1',
@@ -965,7 +965,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
   // ── 7. Returning customer with legacy address → forced new structured flow ─
 
-  describe('returning customer — legacy address (no locationNodeId)', () => {
+  describe('returning customer - legacy address (no locationNodeId)', () => {
     beforeEach(() => {
       ;(db.customer.findFirst as any).mockResolvedValue({
         id: 'cust_2',
@@ -988,7 +988,7 @@ describe('WhatsApp job-request flow — structured address', () => {
         street: 'Old Street, Soweto',
         suburb: 'Soweto',
         city: 'Johannesburg',
-        locationNodeId: null,   // legacy — no structured node
+        locationNodeId: null,   // legacy - no structured node
       })
     })
 
@@ -1003,7 +1003,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
   // ── 8. New customer (no record) → name prompt before address capture ─────────
 
-  describe('new customer — first booking name prompt', () => {
+  describe('new customer - first booking name prompt', () => {
     it('sends the name prompt and flags isFirstBooking when customer.findFirst returns null', async () => {
       // beforeEach already sets db.customer.findFirst → null
       const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
@@ -1178,9 +1178,9 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
   })
 
-  // ── 11. Dedup guard — retry after DB-success / message-fail ───────────────
+  // ── 11. Dedup guard - retry after DB-success / message-fail ───────────────
 
-  describe('dedup guard — existing active job request', () => {
+  describe('dedup guard - existing active job request', () => {
     const structuredData = {
       category: 'cat_plumbing',
       selectedCategory: 'Plumbing',
@@ -1412,7 +1412,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
 // ─── collect_photos step ──────────────────────────────────────────────────────
 
-describe('WhatsApp job-request flow — collect_photos step', () => {
+describe('WhatsApp job-request flow - collect_photos step', () => {
   // Shared conversation data that mimics state after availability is selected
   const baseData = {
     selectedCategory: 'Plumbing',
@@ -1537,7 +1537,7 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
   })
 
   it('duplicate media ID arriving as the last item in a suppressed batch sends one confirmation with the correct count', async () => {
-    // Simulates: batch of 2 webhooks — first is a new photo, second is a duplicate of the first.
+    // Simulates: batch of 2 webhooks - first is a new photo, second is a duplicate of the first.
     // The batch flush calls this handler twice: first with suppress=true, second with suppress=false.
     // The duplicate guard must not inflate the count on the final (unsuppressed) call.
     const data = { ...baseData, photoAttachmentIds: [], photoMediaIds: [] }
@@ -1552,7 +1552,7 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledTimes(1)
     expect(wa.sendButtons).not.toHaveBeenCalled()
 
-    // Second call: same media ID, unsuppressed (last in batch) — should deduplicate
+    // Second call: same media ID, unsuppressed (last in batch) - should deduplicate
     const second = await handleJobRequestFlow({
       ...makePhotoCtx(undefined, undefined, first.nextData as any, 'image', 'media-dup'),
       suppressCustomerPhotoProgress: false,
@@ -1653,7 +1653,7 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
 
 // ─── collect_request_preferences step ────────────────────────────────────────
 
-describe('WhatsApp job-request flow — collect_request_preferences step (MVP)', () => {
+describe('WhatsApp job-request flow - collect_request_preferences step (MVP)', () => {
   const PHONE = '+27821234567'
 
   function makePrefCtx(replyId?: string, replyText?: string) {
@@ -1746,9 +1746,9 @@ describe('WhatsApp job-request flow — collect_request_preferences step (MVP)',
   })
 })
 
-// ─── confirm_job_request step — preference prompt ─────────────────────────────
+// ─── confirm_job_request step - preference prompt ─────────────────────────────
 
-describe('WhatsApp job-request flow — confirm_job_request preference prompt', () => {
+describe('WhatsApp job-request flow - confirm_job_request preference prompt', () => {
   const PHONE = '+27821234567'
 
   function makeAvailCtx(replyId: string) {
@@ -1809,9 +1809,9 @@ describe('WhatsApp job-request flow — confirm_job_request preference prompt', 
   })
 })
 
-// ─── collect_budget_preference step — pass-through for in-flight sessions ────
+// ─── collect_budget_preference step - pass-through for in-flight sessions ────
 
-describe('WhatsApp job-request flow — collect_budget_preference pass-through', () => {
+describe('WhatsApp job-request flow - collect_budget_preference pass-through', () => {
   const PHONE = '+27821234567'
 
   function makeBudgetCtx(replyId?: string) {
@@ -1853,9 +1853,9 @@ describe('WhatsApp job-request flow — collect_budget_preference pass-through',
   })
 })
 
-// ─── showJobRequestSummary — human-readable preference labels ─────────────────
+// ─── showJobRequestSummary - human-readable preference labels ─────────────────
 
-describe('WhatsApp job-request flow — job request summary preference display', () => {
+describe('WhatsApp job-request flow - job request summary preference display', () => {
   const PHONE = '+27821234567'
 
   function makeSummaryCtx(providerPreference?: string) {
@@ -1942,7 +1942,7 @@ describe('WhatsApp job-request flow — job request summary preference display',
 
 // Customer auto-creation guard: a provider's phone must never be turned into a
 // Customer record via the "notify me" path (would mark them multi-role).
-describe('WhatsApp notify-me — provider auto-create guard', () => {
+describe('WhatsApp notify-me - provider auto-create guard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })

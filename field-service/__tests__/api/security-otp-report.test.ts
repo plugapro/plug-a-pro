@@ -106,7 +106,7 @@ describe('POST /api/security/otp/report', () => {
     expect(mocks.reportUnrequestedOtp).not.toHaveBeenCalled()
   })
 
-  it('calls reportUnrequestedOtp with PWA_LINK, trusted IP, and user-agent', async () => {
+  it('calls reportUnrequestedOtp with PWA_LINK, trusted IP and user-agent', async () => {
     const response = await postReport({
       body: { token: 'report-token', ip: '1.2.3.4' },
     })

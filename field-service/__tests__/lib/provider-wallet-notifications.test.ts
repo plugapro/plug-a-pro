@@ -15,7 +15,7 @@ describe('provider wallet notification message builders', () => {
     vi.unstubAllEnvs()
   })
 
-  it('builds the low-balance warning copy — body has no raw URL (URL is in CTA follow-up)', () => {
+  it('builds the low-balance warning copy - body has no raw URL (URL is in CTA follow-up)', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
     const message = buildLowBalanceWarningMessage()
 
@@ -29,7 +29,7 @@ describe('provider wallet notification message builders', () => {
     expect(message).not.toContain('app.example.com')
   })
 
-  it('builds the low-balance warning copy when NEXT_PUBLIC_APP_URL is absent — still no raw URL in body', () => {
+  it('builds the low-balance warning copy when NEXT_PUBLIC_APP_URL is absent - still no raw URL in body', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
     const message = buildLowBalanceWarningMessage()
 
@@ -102,7 +102,7 @@ describe('provider wallet notification message builders', () => {
 
   it('builds the customer intro copy', () => {
     expect(buildCustomerIntroMessage({ providerName: 'Sipho Pro' })).toBe(
-      'Good news — we matched you with Sipho Pro. They may contact you shortly.',
+      'Good news - we matched you with Sipho Pro. They may contact you shortly.',
     )
   })
 
@@ -133,7 +133,7 @@ describe('provider wallet notification message builders', () => {
       expect(message).toContain('1 credit is used only when a customer selects you')
     })
 
-    it('does not leak any URL or localhost into the body — URLs travel via CTA buttons only', () => {
+    it('does not leak any URL or localhost into the body - URLs travel via CTA buttons only', () => {
       vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
       vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
       vi.stubEnv('NODE_ENV', 'production')

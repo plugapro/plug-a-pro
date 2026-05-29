@@ -209,7 +209,7 @@ describe('reserveBestProviderAtomically', () => {
     // Two concurrent reservation calls share an in-memory "lock"
     mockDb.$transaction.mockImplementation(async (callback: (tx: any) => unknown) => {
       if (lockGranted) {
-        // Simulate SKIP LOCKED — row already locked by the first transaction
+        // Simulate SKIP LOCKED - row already locked by the first transaction
         return callback({
           $queryRaw: vi.fn().mockResolvedValue([]),
           assignmentHold: { findFirst: vi.fn(), create: vi.fn() },

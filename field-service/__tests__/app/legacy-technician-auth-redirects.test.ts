@@ -32,7 +32,7 @@ describe('legacy /technician-* auth pages', () => {
     expect(verify).not.toContain("hasn't been approved yet")
   })
 
-  it('/provider-verify is a live client-side OTP form — not a redirect shell', () => {
+  it('/provider-verify is a live client-side OTP form - not a redirect shell', () => {
     // Must be a real interactive page, not accidentally converted back to a server redirect.
     expect(providerVerify).toContain("'use client'")
     // Must not borrow the redirect helper used by the legacy shim pages.

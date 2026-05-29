@@ -8,9 +8,9 @@ import {
 /**
  * Locks in the typed-error contract the credits server action depends on.
  * Before this refactor, the action mapped Pay@ failures to user-facing
- * codes by string-matching the error message — fragile if Pay@ reworded
+ * codes by string-matching the error message - fragile if Pay@ reworded
  * its HTTP error copy. These tests assert each class carries a stable
- * `name`, the discriminator fields the action layer relies on, and a
+ * `name`, the discriminator fields the action layer relies on and a
  * default message useful for log lines.
  */
 describe('Pay@ typed errors', () => {

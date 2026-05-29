@@ -4,7 +4,7 @@ import { buildProviderLeadPreviewMessage } from '../../lib/provider-credit-copy'
 import { bodyContainsRawUrl } from '../../lib/whatsapp-copy'
 
 // Protected customer fields that must NEVER appear in WhatsApp preview message bodies.
-// These constants serve as regression anchors — if a field name appears in a body string
+// These constants serve as regression anchors - if a field name appears in a body string
 // it indicates that sensitive data has been inlined.
 const PROTECTED_FIELD_PATTERNS = [
   'customerPhone',
@@ -50,7 +50,7 @@ describe('provider opportunity WhatsApp helpers', () => {
 // (phone, email, exact street, unit, complex, access notes, GPS coordinates).
 // They are the regression anchor for Step 06 privacy enforcement.
 
-describe('buildProviderLeadPreviewMessage — privacy enforcement', () => {
+describe('buildProviderLeadPreviewMessage - privacy enforcement', () => {
   const baseParams = {
     category: 'Plumbing',
     area: 'Ruimsig',

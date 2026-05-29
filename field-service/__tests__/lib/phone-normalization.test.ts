@@ -45,7 +45,7 @@ describe('normalizeOtpPhoneNumber', () => {
 
   it('uses the approved neutral number in shared auth helper copy', () => {
     expect(SA_OTP_SIGN_IN_HELPER_TEXT).toBe(
-      'South Africa is selected for OTP sign-in. You can enter 0821234567, 27821234567, or +27821234567.',
+      'South Africa is selected for OTP sign-in. You can enter 0821234567, 27821234567 or +27821234567.',
     )
     expect(SA_OTP_SIGN_IN_HELPER_TEXT).toContain(SA_EXAMPLE_MOBILE_LOCAL)
     expect(SA_OTP_SIGN_IN_HELPER_TEXT).toContain(SA_EXAMPLE_MOBILE_E164_NO_PLUS)

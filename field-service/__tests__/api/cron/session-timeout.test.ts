@@ -51,7 +51,7 @@ beforeEach(() => {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-describe('GET /api/cron/session-timeout — auth', () => {
+describe('GET /api/cron/session-timeout - auth', () => {
   it('returns 401 without the correct CRON_SECRET', async () => {
     const req = new Request('http://localhost/api/cron/session-timeout', {
       headers: { authorization: 'Bearer wrong' },
@@ -79,7 +79,7 @@ describe('GET /api/cron/session-timeout — auth', () => {
 
 // ─── No expired sessions ──────────────────────────────────────────────────────
 
-describe('GET /api/cron/session-timeout — no candidates', () => {
+describe('GET /api/cron/session-timeout - no candidates', () => {
   it('returns found=0 and sends no messages', async () => {
     vi.mocked(db.conversation.findMany).mockResolvedValue([])
 
@@ -94,7 +94,7 @@ describe('GET /api/cron/session-timeout — no candidates', () => {
 
 // ─── Single expired session ───────────────────────────────────────────────────
 
-describe('GET /api/cron/session-timeout — single mid-flow session', () => {
+describe('GET /api/cron/session-timeout - single mid-flow session', () => {
   it('sends timeout message and returns sent=1', async () => {
     vi.mocked(db.conversation.findMany).mockResolvedValue([makeConversation()] as never)
 
@@ -163,7 +163,7 @@ describe('GET /api/cron/session-timeout — single mid-flow session', () => {
 
 // ─── Deduplication ────────────────────────────────────────────────────────────
 
-describe('GET /api/cron/session-timeout — deduplication', () => {
+describe('GET /api/cron/session-timeout - deduplication', () => {
   it('skips a conversation when updateMany returns count=0 (already claimed)', async () => {
     vi.mocked(db.conversation.findMany).mockResolvedValue([makeConversation()] as never)
     // Simulate race condition: another process already set timeoutNotifiedAt
@@ -191,7 +191,7 @@ describe('GET /api/cron/session-timeout — deduplication', () => {
 
 // ─── Service opt-out ─────────────────────────────────────────────────────────
 
-describe('GET /api/cron/session-timeout — service opt-out', () => {
+describe('GET /api/cron/session-timeout - service opt-out', () => {
   it('does not send to a customer with whatsappServiceOptIn=false', async () => {
     vi.mocked(db.conversation.findMany).mockResolvedValue([makeConversation()] as never)
     vi.mocked(db.customer.findUnique).mockResolvedValue({
@@ -220,7 +220,7 @@ describe('GET /api/cron/session-timeout — service opt-out', () => {
 
 // ─── Multiple sessions ────────────────────────────────────────────────────────
 
-describe('GET /api/cron/session-timeout — multiple expired sessions', () => {
+describe('GET /api/cron/session-timeout - multiple expired sessions', () => {
   it('processes all sessions independently', async () => {
     vi.mocked(db.conversation.findMany).mockResolvedValue([
       makeConversation({ id: 'conv_1', phone: '+27600000001', data: { customerName: 'Alice' } }),
@@ -258,7 +258,7 @@ describe('GET /api/cron/session-timeout — multiple expired sessions', () => {
 
 // ─── registration flow ────────────────────────────────────────────────────────
 
-describe('GET /api/cron/session-timeout — registration flow', () => {
+describe('GET /api/cron/session-timeout - registration flow', () => {
   it('uses name from registration session data', async () => {
     vi.mocked(db.conversation.findMany).mockResolvedValue([
       makeConversation({ flow: 'registration', data: { name: 'Sipho Dlamini' } }),

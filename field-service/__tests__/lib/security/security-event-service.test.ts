@@ -20,7 +20,7 @@ describe('security event service', () => {
     mockDb.securityEvent.create.mockResolvedValue({ id: 'sec-1' })
   })
 
-  it('rejects security events without a phone, verification, or webhook subject', async () => {
+  it('rejects security events without a phone, verification or webhook subject', async () => {
     const { raiseSecurityReviewEvent } = await import('../../../lib/security/security-event-service')
 
     await expect(

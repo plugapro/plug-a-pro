@@ -164,12 +164,12 @@ describe('provider credit copy', () => {
     expect(getProviderTermsUrl()).toBe('https://app.example.com/provider/terms/credits')
   })
 
-  it('builds onboarding intro copy with terms and lead credits rules — body has no raw URL', () => {
+  it('builds onboarding intro copy with terms and lead credits rules - body has no raw URL', () => {
     const message = buildProviderOnboardingIntroMessage()
 
     expect(message).toContain('We review your application using the information you provide')
     expect(message).toContain('starter credits')
-    expect(message).toContain('Credits are prepaid platform units, not cash, loans, or financial credit')
+    expect(message).toContain('Credits are prepaid platform units, not cash, loans or financial credit')
     expect(message).toContain('1 credit = R50')
     expect(message).toContain('Previewing and showing interest in jobs is free')
     expect(message).toContain('You spend 1 credit only when a customer selects you')
@@ -186,7 +186,7 @@ describe('provider credit copy', () => {
     expect(PROVIDER_NOT_NOW_BUTTON_TITLE.length).toBeLessThanOrEqual(20)
   })
 
-  it('builds application submitted copy with review and approval wording — body has no raw URL', () => {
+  it('builds application submitted copy with review and approval wording - body has no raw URL', () => {
     const message = buildProviderApplicationSubmittedMessage({
       providerName: 'Jacob Hesser',
       applicationRef: 'APP123',
@@ -206,7 +206,7 @@ describe('provider credit copy', () => {
     expect(message).not.toContain('example.com')
   })
 
-  it('builds lead preview copy with credit cost and customer detail unlock rules — body has no raw URL', () => {
+  it('builds lead preview copy with credit cost and customer detail unlock rules - body has no raw URL', () => {
     const message = buildProviderLeadPreviewMessage({
       category: 'Plumbing',
       subcategory: 'Blocked drain',
@@ -220,7 +220,7 @@ describe('provider credit copy', () => {
       preferredTime: 'Fri, 1 May, 10:00',
       deadlineTime: '12:00',
       description: 'Shower drain is blocked.',
-      // previewUrl param has been removed — the signed lead URL is exposed via
+      // previewUrl param has been removed - the signed lead URL is exposed via
       // dispatch.ts's sendCtaUrl ("View Lead" CTA), not inline in the body.
       balance: {
         totalCreditBalance: 2,
@@ -291,19 +291,19 @@ describe('provider credit copy', () => {
     expect(line).not.toContain('Purchased')
   })
 
-  it('builds WhatsApp credit summary with starter, purchased, CTA prompt, and selected-job rule', () => {
+  it('builds WhatsApp credit summary with starter, purchased, CTA prompt and selected-job rule', () => {
     const message = buildProviderCreditSummaryMessage(
       { totalCreditBalance: 5, promoCreditBalance: 3, paidCreditBalance: 2 },
     )
 
     expect(message).toContain('Your credits')
-    expect(message).toContain('Credits are prepaid platform units, not cash, loans, or financial credit')
+    expect(message).toContain('Credits are prepaid platform units, not cash, loans or financial credit')
     expect(message).toContain('1 credit = R50')
     expect(message).toContain('Available: 5')
     expect(message).toContain('Starter/onboarding: 3')
     expect(message).toContain('Purchased: 2')
     expect(message).toContain('Credits are used only when you accept a customer-selected job')
-    expect(message).toContain('Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits')
+    expect(message).toContain('Previewing, showing interest, shortlisting, customer selection, declining and expiry do not use credits')
     expect(message).not.toContain('https://')
   })
 

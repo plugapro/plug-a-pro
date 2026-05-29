@@ -100,7 +100,7 @@ beforeEach(() => {
 
 // ─── Customer not found ───────────────────────────────────────────────────────
 
-describe('handleStatusFlow — no customer', () => {
+describe('handleStatusFlow - no customer', () => {
   it('sends "no requests found" and returns welcome', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue(null)
 
@@ -118,7 +118,7 @@ describe('handleStatusFlow — no customer', () => {
 
 // ─── No job requests ─────────────────────────────────────────────────────────
 
-describe('handleStatusFlow — customer exists, no requests', () => {
+describe('handleStatusFlow - customer exists, no requests', () => {
   it('sends "no requests yet" and returns welcome', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([])
@@ -137,7 +137,7 @@ describe('handleStatusFlow — customer exists, no requests', () => {
 
 // ─── Single active request ────────────────────────────────────────────────────
 
-describe('handleStatusFlow — single active request (no job)', () => {
+describe('handleStatusFlow - single active request (no job)', () => {
   it('sends a CTA tracking link and returns done', async () => {
     const jr = makeJobRequest()
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
@@ -468,7 +468,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
 // ─── activeJob null-safety fix ────────────────────────────────────────────────
 
-describe('handleStatusFlow — completed job shows request-level status', () => {
+describe('handleStatusFlow - completed job shows request-level status', () => {
   it.each(['COMPLETED', 'FAILED', 'CANCELLED'] as const)(
     'job.status=%s → falls back to request status label',
     async (jobStatus) => {
@@ -498,9 +498,9 @@ describe('handleStatusFlow — completed job shows request-level status', () => 
   })
 })
 
-// ─── Multiple active requests — disambiguation ────────────────────────────────
+// ─── Multiple active requests - disambiguation ────────────────────────────────
 
-describe('handleStatusFlow — My Requests list', () => {
+describe('handleStatusFlow - My Requests list', () => {
   it('sends recent request list and returns status_pick', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([
@@ -615,7 +615,7 @@ describe('handleStatusFlow — My Requests list', () => {
 
 // ─── Disambiguation pick ──────────────────────────────────────────────────────
 
-describe('handleStatusFlow — status_pick step', () => {
+describe('handleStatusFlow - status_pick step', () => {
   it('resolves the chosen request and shows its status', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(
@@ -642,7 +642,7 @@ describe('handleStatusFlow — status_pick step', () => {
   })
 })
 
-describe('handleStatusFlow — refresh status', () => {
+describe('handleStatusFlow - refresh status', () => {
   it('refreshes a specific request when the button carries the request id', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(
@@ -670,7 +670,7 @@ describe('handleStatusFlow — refresh status', () => {
 
 // ─── Extra work approval ──────────────────────────────────────────────────────
 
-describe('handleStatusFlow — extra work approval', () => {
+describe('handleStatusFlow - extra work approval', () => {
   it('sends approval CTA with correct URL when extra work is PENDING', async () => {
     const jr = makeJobRequestWithJob('AWAITING_APPROVAL')
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
@@ -699,7 +699,7 @@ describe('handleStatusFlow — extra work approval', () => {
 
 // ─── Missing app URL fallback ─────────────────────────────────────────────────
 
-describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
+describe('handleStatusFlow - missing NEXT_PUBLIC_APP_URL', () => {
   beforeEach(() => {
     delete process.env.NEXT_PUBLIC_APP_URL
   })
@@ -727,7 +727,7 @@ describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
   })
 })
 
-describe('handleStatusFlow — send fallback resilience', () => {
+describe('handleStatusFlow - send fallback resilience', () => {
   it('falls back to text when the status CTA send fails', async () => {
     const jr = makeJobRequest()
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
@@ -746,7 +746,7 @@ describe('handleStatusFlow — send fallback resilience', () => {
   })
 })
 
-describe('handleStatusFlow — resilience for invalid disambiguation id', () => {
+describe('handleStatusFlow - resilience for invalid disambiguation id', () => {
   it('handles a stale status_pick id by asking the user to choose from current requests', async () => {
     const latest = makeJobRequest({ id: 'jr_latest', category: 'Electrical', status: 'OPEN', createdAt: new Date('2026-04-12') })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)

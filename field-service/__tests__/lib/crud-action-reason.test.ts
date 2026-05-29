@@ -1,6 +1,6 @@
 import { vi, it, expect, beforeEach } from 'vitest'
 
-// Mock dependencies — crudAction imports db, auth, flags
+// Mock dependencies - crudAction imports db, auth, flags
 vi.mock('@/lib/db', () => ({
   db: {
     adminUser: { findUnique: vi.fn() },

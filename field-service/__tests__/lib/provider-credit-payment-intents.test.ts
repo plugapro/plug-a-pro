@@ -86,7 +86,7 @@ describe('provider credit payment intents', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     invalidateFlagCache()
-    // Enable the identity gate for all tests in this suite — mirrors production config.
+    // Enable the identity gate for all tests in this suite - mirrors production config.
     vi.stubEnv('FEATURE_FLAGS', JSON.stringify({ 'provider.identity.verification': true }))
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug A Pro provider credits')
     vi.stubEnv('PROVIDER_CREDIT_EFT_BANK_NAME', 'Test Bank')
@@ -125,7 +125,7 @@ describe('provider credit payment intents', () => {
         : null
     ))
 
-    // No active duplicate intents by default — allow creation to proceed.
+    // No active duplicate intents by default - allow creation to proceed.
     mockDb.paymentIntent.findFirst.mockResolvedValue(null)
 
     mockDb.paymentIntent.create.mockImplementation(async (args: any) => {
@@ -335,7 +335,7 @@ describe('provider credit payment intents', () => {
       createPayatTopUpIntent({ providerId: 'provider-1', amountCents: 10_000 }),
     ).rejects.toBe(payatError)
 
-    // Logs are now JSON strings — find the cleanup-failure entry.
+    // Logs are now JSON strings - find the cleanup-failure entry.
     const alertCall = consoleSpy.mock.calls.find((args) =>
       typeof args[0] === 'string' && args[0].includes('intent_cleanup_failed'),
     )

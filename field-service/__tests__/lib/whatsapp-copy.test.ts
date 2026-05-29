@@ -118,7 +118,7 @@ describe('ctaLabelFor / ctaLink', () => {
 })
 
 describe('bodyContainsRawUrl / assertNoRawUrlsInWhatsAppBody', () => {
-  it('detects https://, http://, www., and the production host', () => {
+  it('detects https://, http://, www. and the production host', () => {
     expect(bodyContainsRawUrl('Check it: https://app.plugapro.co.za/x')).toBeTruthy()
     expect(bodyContainsRawUrl('http://example.com')).toBeTruthy()
     expect(bodyContainsRawUrl('Visit www.plugapro.co.za')).toBeTruthy()
@@ -126,7 +126,7 @@ describe('bodyContainsRawUrl / assertNoRawUrlsInWhatsAppBody', () => {
   })
 
   it('detects tokenized access paths and JWT-looking tokens even without a scheme', () => {
-    expect(bodyContainsRawUrl('View job details — app.plugapro.co.za/leads/access/signed-token')).toBeTruthy()
+    expect(bodyContainsRawUrl('View job details - app.plugapro.co.za/leads/access/signed-token')).toBeTruthy()
     expect(bodyContainsRawUrl('Open /leads/access/signed-token from your browser')).toBeTruthy()
     expect(bodyContainsRawUrl('Token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature')).toBeTruthy()
     expect(bodyContainsRawUrl('Open app.plugapro.co.za/access/abcdefghijklmnopqrstuvwxyz1234567890')).toBeTruthy()
@@ -171,7 +171,7 @@ describe('regression: provider-credit-copy producers must not embed raw URLs', (
       paidCreditBalance: 2,
     })
     expect(bodyContainsRawUrl(body)).toBe(false)
-    // Credits history CTA is sent separately via sendCtaUrl — not embedded in body
+    // Credits history CTA is sent separately via sendCtaUrl - not embedded in body
     expect(body).not.toContain('https://')
   })
 

@@ -69,7 +69,7 @@ beforeEach(() => {
 
 // ─── existing behaviour (flag off) ───────────────────────────────────────────
 
-describe('resolveCustomerForSession — direct resolution (flag off)', () => {
+describe('resolveCustomerForSession - direct resolution (flag off)', () => {
   it('resolves by userId when customer exists', async () => {
     const rec = makeCustomerRecord({ userId: 'user_1' })
     const client = makeClient({ findUniqueResults: [rec] })
@@ -148,7 +148,7 @@ describe('resolveCustomerForSession — direct resolution (flag off)', () => {
 
 // ─── M1-T8: CustomerMember operator delegation (flag on) ─────────────────────
 
-describe('resolveCustomerForSession — operator member delegation (flag on)', () => {
+describe('resolveCustomerForSession - operator member delegation (flag on)', () => {
   beforeEach(() => {
     mockIsEnabled.mockResolvedValue(true)
   })
@@ -227,7 +227,7 @@ describe('resolveCustomerForSession — operator member delegation (flag on)', (
 
     const result = await resolveCustomerForSession(client as never, makeSession())
 
-    // Principal lookup returned null — should return null, not throw
+    // Principal lookup returned null - should return null, not throw
     expect(result).toBeNull()
   })
 

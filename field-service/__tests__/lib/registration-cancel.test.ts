@@ -127,7 +127,7 @@ function makeCtx(overrides: Partial<FlowContext> = {}): FlowContext {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
-describe('Registration cancel — summary step (reg_pending)', () => {
+describe('Registration cancel - summary step (reg_pending)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockTx.providerApplication.create.mockResolvedValue({ id: 'app_cancelled_123' })
@@ -190,7 +190,7 @@ describe('Registration cancel — summary step (reg_pending)', () => {
   })
 })
 
-describe('Registration cancel — intro (reg_cancel at name collection)', () => {
+describe('Registration cancel - intro (reg_cancel at name collection)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -232,7 +232,7 @@ describe('Registration cancel — intro (reg_cancel at name collection)', () => 
 
 describe('Re-join after cancel', () => {
   // CANCELLED is excluded from ACTIVE_PROVIDER_APPLICATION_STATUSES, so
-  // findLatestActiveProviderApplicationByPhone returns null — the provider
+  // findLatestActiveProviderApplicationByPhone returns null - the provider
   // sees the onboarding intro screen and can re-apply.
   beforeEach(() => {
     vi.clearAllMocks()

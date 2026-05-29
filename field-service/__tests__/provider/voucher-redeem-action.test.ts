@@ -57,7 +57,7 @@ describe('provider redeemVoucherAction', () => {
     ;(redeemVoucher as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       code: 'VOUCHER_CODE_TOO_SHORT',
-      message: 'ignored — actions surface mapVoucherRedemptionErrorToMessage instead',
+      message: 'ignored - actions surface mapVoucherRedemptionErrorToMessage instead',
     })
 
     const { redeemVoucherAction } = await import('../../app/(provider)/provider/voucher/actions')

@@ -1,4 +1,4 @@
-// ─── WA rebook keyword handler — handleRebookFlow ────────────────────────────
+// ─── WA rebook keyword handler - handleRebookFlow ────────────────────────────
 // Covers:
 //  1. Customer with a completed job → sends rebook confirmation buttons
 //  2. Customer with no completed jobs → sends "no jobs" message
@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
-// vi.mock() calls are hoisted — use vi.hoisted() for shared state.
+// vi.mock() calls are hoisted - use vi.hoisted() for shared state.
 
 const { mockDb } = vi.hoisted(() => {
   const mockDb = {

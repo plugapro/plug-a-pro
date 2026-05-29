@@ -7,7 +7,7 @@ vi.mock('@/components/shared/app-logo', () => ({
 
 describe('customer auth copy', () => {
   it('sign-in page renders static welcome copy', async () => {
-    // The sign-in page is a client component — verify it exports a default function
+    // The sign-in page is a client component - verify it exports a default function
     const mod = await import('@/app/(auth)/sign-in/page')
     expect(typeof mod.default).toBe('function')
   })

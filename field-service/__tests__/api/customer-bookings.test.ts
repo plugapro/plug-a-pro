@@ -232,7 +232,7 @@ describe('POST /api/customer/bookings', () => {
     }))
 
     expect(response.status).toBe(200)
-    // null, 1, and "true" are all non-boolean true — should NOT be treated as safe
+    // null, 1 and "true" are all non-boolean true - should NOT be treated as safe
     expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ safeForPreview: false }),
@@ -333,7 +333,7 @@ describe('POST /api/customer/bookings', () => {
     }))
   })
 
-  it('omits timing fields when no urgency is sent (flexible — no deadline)', async () => {
+  it('omits timing fields when no urgency is sent (flexible - no deadline)', async () => {
     const formData = new FormData()
     formData.set('category', 'plumbing')
     formData.set('title', 'Fix leaking pipe')

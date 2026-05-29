@@ -118,7 +118,7 @@ describe('normalizeAreaKey', () => {
 
 // ---------------------------------------------------------------------------
 // Shared typed fixtures for filterDisplayableReviewAttempts and
-// providerCoversRequestArea — defined here so both describe blocks can reuse
+// providerCoversRequestArea - defined here so both describe blocks can reuse
 // them without `as any`.
 // ---------------------------------------------------------------------------
 
@@ -236,7 +236,7 @@ describe('providerCoversRequestArea', () => {
   }
 
   // -------------------------------------------------------------------------
-  // Structured area — city match
+  // Structured area - city match
   // -------------------------------------------------------------------------
   it('returns true when technicianServiceAreas city matches request city', () => {
     const provider: ReviewProviderFixture = {
@@ -259,7 +259,7 @@ describe('providerCoversRequestArea', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Structured area — suburbKey match
+  // Structured area - suburbKey match
   // -------------------------------------------------------------------------
   it('returns true when technicianServiceAreas suburbKey matches request suburb', () => {
     const provider: ReviewProviderFixture = {
@@ -283,7 +283,7 @@ describe('providerCoversRequestArea', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Structured area — locationNodeId match
+  // Structured area - locationNodeId match
   // -------------------------------------------------------------------------
   it('returns true when technicianServiceAreas locationNodeId matches request locationNodeId', () => {
     const provider: ReviewProviderFixture = {
@@ -296,7 +296,7 @@ describe('providerCoversRequestArea', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Structured area — regionKey match
+  // Structured area - regionKey match
   // -------------------------------------------------------------------------
   it('returns true when technicianServiceAreas regionKey matches request region', () => {
     const provider: ReviewProviderFixture = {

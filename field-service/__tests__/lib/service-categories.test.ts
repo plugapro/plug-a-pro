@@ -32,7 +32,7 @@ describe('SERVICE_CATEGORY_OPTIONS', () => {
     expect(other?.label).toBe('Other')
   })
 
-  it('every entry has a non-empty tag, label, and description', () => {
+  it('every entry has a non-empty tag, label and description', () => {
     for (const cat of SERVICE_CATEGORY_OPTIONS) {
       expect(cat.tag).toBeTruthy()
       expect(cat.label).toBeTruthy()
@@ -62,7 +62,7 @@ describe('resolveServiceCategoryTag', () => {
   })
 })
 
-describe('getCategoryPolicy — tag alias resolution', () => {
+describe('getCategoryPolicy - tag alias resolution', () => {
   it("resolves 'garden' tag to bookingOnAssignment: true (alias for 'garden & landscaping')", () => {
     expect(getCategoryPolicy('garden').bookingOnAssignment).toBe(true)
   })
@@ -115,11 +115,11 @@ describe('getCategoryPolicy — tag alias resolution', () => {
     expect(getCategoryPolicy('other').bookingOnAssignment).toBe(false)
   })
 
-  it('is case-insensitive — GARDEN resolves correctly', () => {
+  it('is case-insensitive - GARDEN resolves correctly', () => {
     expect(getCategoryPolicy('GARDEN').bookingOnAssignment).toBe(true)
   })
 
-  it('is case-insensitive — DIY resolves correctly', () => {
+  it('is case-insensitive - DIY resolves correctly', () => {
     expect(getCategoryPolicy('DIY').bookingOnAssignment).toBe(true)
   })
 

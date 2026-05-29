@@ -99,7 +99,7 @@ describe('provider application approval notifications', () => {
   })
 
   it('builds voucher CTA approval copy with credits rules (VOUCHER_PILOT)', () => {
-    // Auto-award is disabled — message no longer references credit balance or starter credits
+    // Auto-award is disabled - message no longer references credit balance or starter credits
     const { mainBody, termsBody } = buildProviderApplicationApprovedMessage('Jacob Hesser')
 
     expect(mainBody).toContain('redeem your voucher code')

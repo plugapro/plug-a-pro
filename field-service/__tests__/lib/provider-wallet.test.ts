@@ -159,7 +159,7 @@ describe('provider wallet service', () => {
     })
   })
 
-  it('returns cached paid, promo, and total credit balances', async () => {
+  it('returns cached paid, promo and total credit balances', async () => {
     state.wallet = makeWallet({ paidCreditBalance: 7, promoCreditBalance: 3 })
 
     await expect(getProviderWalletBalance('provider-1')).resolves.toEqual({

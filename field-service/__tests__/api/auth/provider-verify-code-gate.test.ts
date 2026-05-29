@@ -180,7 +180,7 @@ describe('POST /api/auth/provider/verify-code security gate', () => {
     expect(setCookie).not.toContain('sb-access-token=provider-session-token')
   })
 
-  it('returns checkpoint metadata, clears full session, and sets only the pending cookie when step-up is required', async () => {
+  it('returns checkpoint metadata, clears full session and sets only the pending cookie when step-up is required', async () => {
     mocks.issueGate.mockResolvedValueOnce({
       ok: false,
       reason: 'STEP_UP_REQUIRED',

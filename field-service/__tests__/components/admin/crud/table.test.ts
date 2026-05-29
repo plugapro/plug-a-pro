@@ -1,6 +1,6 @@
 /**
  * Unit tests for CRUDTable selection logic.
- * Uses plain TypeScript / vitest — no DOM required.
+ * Uses plain TypeScript / vitest - no DOM required.
  */
 
 // Selection state helpers extracted from CRUDTable behaviour
@@ -30,7 +30,7 @@ function toggleAll(
   return allSelected ? new Set<string>() : new Set(limit)
 }
 
-describe('CRUDTable — selection logic', () => {
+describe('CRUDTable - selection logic', () => {
   describe('toggleRow', () => {
     it('adds a row that was not selected', () => {
       const next = toggleRow(new Set(), 'a')
@@ -46,7 +46,7 @@ describe('CRUDTable — selection logic', () => {
       const current = new Set(['a', 'b'])
       const next = toggleRow(current, 'c', 2)
       expect(next.has('c')).toBe(false)
-      expect(next).toBe(current) // same reference — unchanged
+      expect(next).toBe(current) // same reference - unchanged
     })
 
     it('allows adding when under maxSelect', () => {
@@ -68,7 +68,7 @@ describe('CRUDTable — selection logic', () => {
       expect(next.size).toBe(0)
     })
 
-    it('respects maxSelect — only takes first N', () => {
+    it('respects maxSelect - only takes first N', () => {
       const next = toggleAll(new Set(), ids, 2)
       expect([...next]).toEqual(['a', 'b'])
     })

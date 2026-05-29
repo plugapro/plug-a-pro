@@ -196,7 +196,7 @@ describe('provider final acceptance credit application', () => {
     mockNotifyAcceptedLeadLocked.mockResolvedValue(true)
   })
 
-  it('records PROVIDER_ACCEPTED, applies credit, and locks the selected job', async () => {
+  it('records PROVIDER_ACCEPTED, applies credit and locks the selected job', async () => {
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-c13',
       providerId: 'provider-c13',

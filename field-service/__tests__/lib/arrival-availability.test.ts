@@ -279,7 +279,7 @@ describe('deriveDefaultArrivalWindow', () => {
   })
 
   it('finds the next Saturday/Sunday for WEEKEND rule', () => {
-    // NOW is Tuesday 2026-04-29 — next weekend is 2026-05-02 (Saturday)
+    // NOW is Tuesday 2026-04-29 - next weekend is 2026-05-02 (Saturday)
     const availability = getCustomerAvailabilitySummary({
       description: 'Preferred availability: This weekend',
     })

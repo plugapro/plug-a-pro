@@ -1,5 +1,5 @@
 /**
- * Step 10 — Provider Full Job Details and Privacy Unlock Flow
+ * Step 10 - Provider Full Job Details and Privacy Unlock Flow
  *
  * Tests that:
  *  1. Before acceptance a non-selected (or any) provider cannot access protected
@@ -8,7 +8,7 @@
  *  2. After acceptance the accepted provider receives all protected fields.
  *  3. A different provider who holds a token for the same lead cannot access full
  *     details even when the lead is accepted by someone else.
- *  4. The preview (before acceptance) never contains protected fields — enforced
+ *  4. The preview (before acceptance) never contains protected fields - enforced
  *     server-side by provider-lead-detail and provider-lead-access, not by the UI.
  */
 
@@ -109,7 +109,7 @@ describe('provider privacy unlock flow (Step 10)', () => {
 
   // ── Pre-acceptance: protected fields must not be returned ─────────────────
 
-  it('preview before acceptance does not expose customer phone, name, street, unit, complex, or access notes', async () => {
+  it('preview before acceptance does not expose customer phone, name, street, unit, complex or access notes', async () => {
     const result = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
 
     expect(result?.isUnlocked).toBe(false)
@@ -123,7 +123,7 @@ describe('provider privacy unlock flow (Step 10)', () => {
     expect(serialized).not.toContain('Cedarwood Estate')     // complex name
     expect(serialized).not.toContain('Unit 12')              // unit number
     // Note: the description field (which may mention gate codes) is shown in
-    // truncated form in preview — this is by design. The address.accessNotes
+    // truncated form in preview - this is by design. The address.accessNotes
     // field (the separate access-notes column) is never exposed in preview.
     // Only suburb and city are safe for preview
     expect(result?.preview.area).toContain('Bryanston')
@@ -133,7 +133,7 @@ describe('provider privacy unlock flow (Step 10)', () => {
 
   // ── Post-acceptance: accepted provider receives all protected fields ───────
 
-  it('after acceptance the accepted provider receives customer name, phone, full address, and access notes', async () => {
+  it('after acceptance the accepted provider receives customer name, phone, full address and access notes', async () => {
     state.lead = makeLeadForProvider('provider-1', {
       status: 'ACCEPTED',
       unlock: { id: 'unlock-1', providerId: 'provider-1', status: 'UNLOCKED', refundReason: null, dispute: null },

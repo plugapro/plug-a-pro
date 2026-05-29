@@ -33,7 +33,7 @@ describe('voucher attempt analytics', () => {
     })
   })
 
-  it('records only safe attempt fields and omits raw, canonical, and hash-like voucher data', async () => {
+  it('records only safe attempt fields and omits raw, canonical and hash-like voucher data', async () => {
     const create = vi.fn().mockResolvedValue({ id: 'attempt_1' })
     const client = makeClient(create)
 

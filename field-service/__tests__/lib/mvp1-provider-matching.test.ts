@@ -445,12 +445,12 @@ describe('matchEligibleProvidersForServiceRequest (MVP1 workflow 1)', () => {
     expect(result.status).toBe('MATCHES_FOUND')
   })
 
-  it('stale non-OPS_REVIEW decision does not block re-matching — creates new decision', async () => {
+  it('stale non-OPS_REVIEW decision does not block re-matching - creates new decision', async () => {
     mockJobRequest.findUnique.mockResolvedValue({
       ...BASE_REQUEST,
       latestDispatchDecisionId: 'dd-stale',
     })
-    // Stale AUTO_ASSIGN decision — cache check must fall through
+    // Stale AUTO_ASSIGN decision - cache check must fall through
     mockDispatchDecision.findUnique.mockResolvedValue({
       id: 'dd-stale',
       mode: 'AUTO_ASSIGN',

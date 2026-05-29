@@ -19,7 +19,7 @@ vi.mock('@/lib/whatsapp', () => ({ sendTemplate: mockSendTemplate }))
 vi.mock('@/lib/whatsapp-interactive', () => ({ sendCtaUrl: mockSendCtaUrl }))
 
 // The notifications module imports getManualEftBankAccountInstructions but
-// notifyProviderPayatTopUpInitiated does not call it — stub to avoid db calls.
+// notifyProviderPayatTopUpInitiated does not call it - stub to avoid db calls.
 vi.mock('@/lib/provider-credit-payment-intents', () => ({
   getManualEftBankAccountInstructions: vi.fn().mockResolvedValue('EFT details'),
 }))
@@ -46,7 +46,7 @@ describe('notifyProviderPayatTopUpInitiated', () => {
     vi.resetModules()
     vi.clearAllMocks()
     mockDb.paymentIntent.findUnique.mockResolvedValue(makeIntent())
-    // hasSentNotification returns false — allow the send to proceed
+    // hasSentNotification returns false - allow the send to proceed
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.messageEvent.create.mockResolvedValue({})
     mockSendTemplate.mockResolvedValue('wa-msg-id-1')

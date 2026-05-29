@@ -155,7 +155,7 @@ function setupBatchMocks(
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('matching — ProviderCertification (WS-B.1)', () => {
+describe('matching - ProviderCertification (WS-B.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -209,7 +209,7 @@ describe('matching — ProviderCertification (WS-B.1)', () => {
   })
 })
 
-describe('matching — ProviderEquipment (WS-B.1)', () => {
+describe('matching - ProviderEquipment (WS-B.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })

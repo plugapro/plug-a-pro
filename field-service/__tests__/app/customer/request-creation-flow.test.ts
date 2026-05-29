@@ -52,7 +52,7 @@ describe('blueprint field coverage', () => {
 
 // ─── Privacy and terms acknowledgement ───────────────────────────────────────
 
-describe('validateClientRequestDetails — acknowledgements', () => {
+describe('validateClientRequestDetails - acknowledgements', () => {
   it('blocks submit when privacy is not acknowledged', () => {
     expect(
       validateClientRequestDetails({
@@ -89,7 +89,7 @@ describe('validateClientRequestDetails — acknowledgements', () => {
 
 // ─── Title validation ─────────────────────────────────────────────────────────
 
-describe('validateClientRequestDetails — title', () => {
+describe('validateClientRequestDetails - title', () => {
   it('rejects titles shorter than 6 characters', () => {
     expect(
       validateClientRequestDetails({
@@ -126,7 +126,7 @@ describe('validateClientRequestDetails — title', () => {
 
 // ─── Description validation ───────────────────────────────────────────────────
 
-describe('validateClientRequestDetails — description', () => {
+describe('validateClientRequestDetails - description', () => {
   it('rejects descriptions longer than 1200 characters', () => {
     expect(
       validateClientRequestDetails({
@@ -234,7 +234,7 @@ describe('resolvePreferredTimingWindow', () => {
 
 // ─── Type narrowing helpers ───────────────────────────────────────────────────
 
-describe('type exports — satisfy TypeScript', () => {
+describe('type exports - satisfy TypeScript', () => {
   it('ProviderPreference accepts valid values', () => {
     const v: ProviderPreference = 'fastest_available'
     expect(v).toBeDefined()

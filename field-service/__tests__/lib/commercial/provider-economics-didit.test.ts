@@ -29,7 +29,7 @@ const diditInput: ProviderEconomicsInput = {
   diditWorkflowProfile: 'KYC_AUTHORITATIVE',
 }
 
-describe('calculateProviderEconomics — Didit scenario', () => {
+describe('calculateProviderEconomics - Didit scenario', () => {
   it('switches onboarding cost source from SmileID checks to Didit pricing', () => {
     const smile = calculateProviderEconomics(smileIdInput)
     const didit = calculateProviderEconomics(diditInput)

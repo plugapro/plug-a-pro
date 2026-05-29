@@ -78,7 +78,7 @@ const BASE_INPUT = {
   regionKey: 'sandton_region',
 }
 
-describe('findCandidateProviders — tiered coverage logic', () => {
+describe('findCandidateProviders - tiered coverage logic', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -129,7 +129,7 @@ describe('findCandidateProviders — tiered coverage logic', () => {
   })
 
   it('includes provider with no structured areas when legacy serviceAreas string matches suburb (allowLegacyStringFallback=true)', async () => {
-    // MATCHING_CONFIG.allowLegacyStringFallback is true in config.ts — no need to mock
+    // MATCHING_CONFIG.allowLegacyStringFallback is true in config.ts - no need to mock
     mockDb.provider.findMany.mockResolvedValue([
       makeProvider({
         technicianServiceAreas: [],
@@ -198,7 +198,7 @@ describe('findCandidateProviders — tiered coverage logic', () => {
     expect(results).toHaveLength(0)
   })
 
-  it('handles suburb normalisation — space to underscore for suburbKey lookup', async () => {
+  it('handles suburb normalisation - space to underscore for suburbKey lookup', async () => {
     mockDb.provider.findMany.mockResolvedValue([
       makeProvider({
         technicianServiceAreas: [

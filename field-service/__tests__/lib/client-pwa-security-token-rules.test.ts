@@ -1,8 +1,8 @@
-// ─── Client PWA — Security, privacy, and token rules (CLIENT-10) ────────────
+// ─── Client PWA - Security, privacy and token rules (CLIENT-10) ────────────
 // Covers:
-//  1. resolveJobRequestAccessScope — scoped to jobRequestId, expiry, revocation,
+//  1. resolveJobRequestAccessScope - scoped to jobRequestId, expiry, revocation,
 //     trace ID on every denial
-//  2. resolveJobRequestAccessToken — same gates + token columns stripped from result
+//  2. resolveJobRequestAccessToken - same gates + token columns stripped from result
 //  3. Token ownership: token only resolves the request it was issued for
 //  4. Protected provider fields absent from customer-facing shortlist shape
 //  5. Protected customer fields absent from pre-acceptance provider preview
@@ -37,7 +37,7 @@ function makeJobRequest(overrides: Record<string, unknown> = {}) {
     createdAt: new Date('2026-05-01T08:00:00.000Z'),
     updatedAt: new Date('2026-05-01T08:00:00.000Z'),
     selectedLeadInviteId: null,
-    // customerAccessToken is NOT in the select — Prisma won't return it.
+    // customerAccessToken is NOT in the select - Prisma won't return it.
     // We do NOT include it here so the mock matches what Prisma would return.
     customerAccessTokenExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
     customerAccessTokenRevokedAt: null,
@@ -146,7 +146,7 @@ describe('resolveJobRequestAccessScope', () => {
 })
 
 // ─── 2. resolveJobRequestAccessToken ─────────────────────────────────────────
-describe('resolveJobRequestAccessToken — token fields stripped from result', () => {
+describe('resolveJobRequestAccessToken - token fields stripped from result', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
@@ -225,15 +225,15 @@ describe('resolveJobRequestAccessToken — token fields stripped from result', (
 })
 
 // ─── 3. Protected provider fields absent from customer shortlist ──────────────
-// This is a static contract test — we verify the Prisma select argument that
+// This is a static contract test - we verify the Prisma select argument that
 // getCustomerShortlistForRequest sends to the DB.
-describe('customer shortlist — protected provider fields must be absent', () => {
+describe('customer shortlist - protected provider fields must be absent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
   })
 
-  it('getCustomerShortlistForRequest uses select that omits phone, kycStatus, and admin-only fields', async () => {
+  it('getCustomerShortlistForRequest uses select that omits phone, kycStatus and admin-only fields', async () => {
     // Return null shortlist so the function short-circuits cleanly
     mockDb.providerShortlist = { findFirst: vi.fn().mockResolvedValueOnce(null) }
     const { getCustomerShortlistForRequest } = await import('@/lib/customer-shortlists')
@@ -256,7 +256,7 @@ describe('customer shortlist — protected provider fields must be absent', () =
 })
 
 // ─── 4. Protected customer fields absent from provider preview ────────────────
-describe('provider preview — protected customer fields absent before acceptance', () => {
+describe('provider preview - protected customer fields absent before acceptance', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
@@ -264,7 +264,7 @@ describe('provider preview — protected customer fields absent before acceptanc
     mockDb.leadUnlock.findUnique.mockResolvedValue(null)
   })
 
-  it('safe preview does not expose customer phone, street, or access notes', async () => {
+  it('safe preview does not expose customer phone, street or access notes', async () => {
     mockDb.lead.findUnique.mockResolvedValueOnce(makeProviderLead())
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'prov-1' })
@@ -312,7 +312,7 @@ describe('provider preview — protected customer fields absent before acceptanc
 })
 
 // ─── 5. resolveProviderLeadAttachmentScope isAccepted flag ───────────────────
-describe('resolveProviderLeadAttachmentScope — isAccepted blocks non-preview attachments', () => {
+describe('resolveProviderLeadAttachmentScope - isAccepted blocks non-preview attachments', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
@@ -320,7 +320,7 @@ describe('resolveProviderLeadAttachmentScope — isAccepted blocks non-preview a
     mockDb.leadUnlock.findUnique.mockResolvedValue(null)
   })
 
-  it('returns isAccepted=false for a SENT lead — non-preview attachment access denied', async () => {
+  it('returns isAccepted=false for a SENT lead - non-preview attachment access denied', async () => {
     mockDb.lead.findUnique.mockResolvedValueOnce(makeProviderLead())
     const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'prov-1' })
@@ -375,7 +375,7 @@ describe('resolveProviderLeadAttachmentScope — isAccepted blocks non-preview a
 })
 
 // ─── 6. Concurrent resolver safety (PROVIDER_CONFIRMATION_PENDING race) ──────
-describe('resolveJobRequestAccessToken — concurrent resolver safety', () => {
+describe('resolveJobRequestAccessToken - concurrent resolver safety', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()

@@ -45,7 +45,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     vi.clearAllMocks()
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
     process.env.PROVIDER_LEAD_APP_URL = 'https://app.plugapro.co.za'
-    mockDb.lead.findUnique.mockResolvedValue(null)   // no existing declined lead — proceed
+    mockDb.lead.findUnique.mockResolvedValue(null)   // no existing declined lead - proceed
     mockDb.lead.upsert.mockResolvedValue({ id: 'lead-1' })
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.attachment.count.mockResolvedValue(2)

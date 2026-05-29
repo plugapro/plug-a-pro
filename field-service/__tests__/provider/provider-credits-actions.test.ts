@@ -754,7 +754,7 @@ describe('provider credits server actions', () => {
           balanceAfterPromoCredits: 3,
           referenceType: 'voucher',
           referenceId: 'voucher-id-00000002',
-          description: 'Voucher redemption — 3 credits',
+          description: 'Voucher redemption - 3 credits',
           source: 'voucher_redemption',
           createdAt: new Date('2026-05-21T10:00:00.000Z'),
           metadata: {
@@ -792,7 +792,7 @@ describe('provider credits server actions', () => {
       await expect(getProviderWalletLedgerEntry('entry-other')).resolves.toBeNull()
     })
 
-    it('LEAD_UNLOCK_DEBIT detail includes job category, title, and lead ref from metadata', async () => {
+    it('LEAD_UNLOCK_DEBIT detail includes job category, title and lead ref from metadata', async () => {
       const { db } = await arrangeProvider()
       ;(db as any).walletLedgerEntry = {
         findFirst: vi.fn().mockResolvedValue({

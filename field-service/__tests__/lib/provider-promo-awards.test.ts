@@ -209,8 +209,8 @@ describe('provider promo award service', () => {
   })
 
   // G3: manual admin approval promo credits
-  // Confirms that awardMobileVerifiedPromoCreditsInTransaction — the exact
-  // function called by the admin approveApplication server action — awards
+  // Confirms that awardMobileVerifiedPromoCreditsInTransaction - the exact
+  // function called by the admin approveApplication server action - awards
   // MOBILE_VERIFIED credits with a provider_application reference and is
   // idempotent when called a second time (e.g., if an admin retries the action).
   describe('G3: manual admin approval calls awardMobileVerifiedPromoCreditsInTransaction', () => {
@@ -238,7 +238,7 @@ describe('provider promo award service', () => {
       })
     })
 
-    it('is idempotent — second manual approval attempt does not double-award', async () => {
+    it('is idempotent - second manual approval attempt does not double-award', async () => {
       await awardMobileVerifiedPromoCreditsInTransaction(mockDb as any, 'provider-1', {
         referenceType: 'provider_application',
         referenceId: 'application-manual-1',

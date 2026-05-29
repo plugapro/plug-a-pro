@@ -342,7 +342,7 @@ describe('revokeAdminAction', () => {
 
 // ─── Auth entry-point guard ──────────────────────────────────────────────────
 
-describe('requireRole guard — rejects non-OWNER callers', () => {
+describe('requireRole guard - rejects non-OWNER callers', () => {
   it('changeRoleAction rejects when requireRole throws UNAUTHORIZED', async () => {
     mockRequireRole.mockRejectedValueOnce(new Error('UNAUTHORIZED'))
     const { changeRoleAction } = await import('@/app/(admin)/admin/team/actions')

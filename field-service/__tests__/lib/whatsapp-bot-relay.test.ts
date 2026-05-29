@@ -245,7 +245,7 @@ beforeEach(() => {
     (msg: any) => ({ type: 'text', text: msg.text?.body ?? '', id: undefined } as never),
   )
 
-  // parseProviderLeadResponseAction: not a lead response — skip the early-return path
+  // parseProviderLeadResponseAction: not a lead response - skip the early-return path
   vi.mocked(wa.parseProviderLeadResponseAction).mockReturnValue({
     ok: false,
     reason: { code: 'NO_CONTEXT', rawMessageType: 'text', inboundMessageId: 'wamid_test_1', contextMessageId: null },
@@ -262,9 +262,9 @@ beforeEach(() => {
   vi.mocked(db.job.findFirst).mockResolvedValue(null)
 })
 
-// ── Customer relay — active booking path ─────────────────────────────────────
+// ── Customer relay - active booking path ─────────────────────────────────────
 
-describe('tryMediatedRelay — customer has active booking with active job', () => {
+describe('tryMediatedRelay - customer has active booking with active job', () => {
   beforeEach(() => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({
       id: 'cust_1', name: 'Sarah Customer', phone: CUSTOMER_PHONE,
@@ -337,9 +337,9 @@ describe('tryMediatedRelay — customer has active booking with active job', () 
   )
 })
 
-// ── Customer relay — active match path (no booking yet) ──────────────────────
+// ── Customer relay - active match path (no booking yet) ──────────────────────
 
-describe('tryMediatedRelay — customer has active match but no confirmed booking', () => {
+describe('tryMediatedRelay - customer has active match but no confirmed booking', () => {
   beforeEach(() => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({
       id: 'cust_1', name: 'Sarah Customer', phone: CUSTOMER_PHONE,
@@ -390,9 +390,9 @@ describe('tryMediatedRelay — customer has active match but no confirmed bookin
   })
 })
 
-// ── Customer relay — no active context ───────────────────────────────────────
+// ── Customer relay - no active context ───────────────────────────────────────
 
-describe('tryMediatedRelay — customer has no active booking or match', () => {
+describe('tryMediatedRelay - customer has no active booking or match', () => {
   beforeEach(() => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({
       id: 'cust_1', name: 'Sarah Customer', phone: CUSTOMER_PHONE,
@@ -417,9 +417,9 @@ describe('tryMediatedRelay — customer has no active booking or match', () => {
   })
 })
 
-// ── Relay blocked — job is terminal ──────────────────────────────────────────
+// ── Relay blocked - job is terminal ──────────────────────────────────────────
 
-describe('tryMediatedRelay — booking exists but job has ended', () => {
+describe('tryMediatedRelay - booking exists but job has ended', () => {
   beforeEach(() => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({
       id: 'cust_1', name: 'Sarah Customer', phone: CUSTOMER_PHONE,
@@ -457,9 +457,9 @@ describe('tryMediatedRelay — booking exists but job has ended', () => {
   })
 })
 
-// ── Relay blocked — booking has no job record ─────────────────────────────────
+// ── Relay blocked - booking has no job record ─────────────────────────────────
 
-describe('tryMediatedRelay — booking exists but job record is missing', () => {
+describe('tryMediatedRelay - booking exists but job record is missing', () => {
   it('falls through to the match check when booking.job is null', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({
       id: 'cust_1', name: 'Sarah Customer', phone: CUSTOMER_PHONE,
@@ -480,9 +480,9 @@ describe('tryMediatedRelay — booking exists but job record is missing', () => 
   })
 })
 
-// ── Relay skipped — reset keyword ────────────────────────────────────────────
+// ── Relay skipped - reset keyword ────────────────────────────────────────────
 
-describe('tryMediatedRelay — customer sends a reset keyword', () => {
+describe('tryMediatedRelay - customer sends a reset keyword', () => {
   it.each(['hi', 'hello', 'menu', 'start', 'hey', '0'])(
     'does not attempt relay for keyword "%s"',
     async (keyword) => {
@@ -494,7 +494,7 @@ describe('tryMediatedRelay — customer sends a reset keyword', () => {
 
       await processInboundMessage(makeTextMessage(CUSTOMER_PHONE, keyword))
 
-      // Reset keywords must never trigger relay — even with an active booking
+      // Reset keywords must never trigger relay - even with an active booking
       expect(wa.sendText).not.toHaveBeenCalledWith(
         CUSTOMER_PHONE,
         expect.stringContaining('relayed'),
@@ -509,9 +509,9 @@ describe('tryMediatedRelay — customer sends a reset keyword', () => {
   )
 })
 
-// ── Relay skipped — message too short ────────────────────────────────────────
+// ── Relay skipped - message too short ────────────────────────────────────────
 
-describe('tryMediatedRelay — message body is too short', () => {
+describe('tryMediatedRelay - message body is too short', () => {
   it('does not relay a single-character message', async () => {
     vi.mocked(wa.parseInbound).mockReturnValue({ type: 'text', text: 'x', id: undefined } as never)
     vi.mocked(db.customer.findUnique).mockResolvedValue({
@@ -544,9 +544,9 @@ describe('tryMediatedRelay — message body is too short', () => {
   })
 })
 
-// ── Multiple active bookings — ordering ──────────────────────────────────────
+// ── Multiple active bookings - ordering ──────────────────────────────────────
 
-describe('tryMediatedRelay — multiple active bookings (ambiguity)', () => {
+describe('tryMediatedRelay - multiple active bookings (ambiguity)', () => {
   it('routes to the most recently updated booking (findFirst with orderBy updatedAt desc)', async () => {
     const newerBooking = {
       ...makeActiveBookingWithJob(),
@@ -562,7 +562,7 @@ describe('tryMediatedRelay — multiple active bookings (ambiguity)', () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({
       id: 'cust_1', name: 'Sarah Customer', phone: CUSTOMER_PHONE,
     } as never)
-    // findFirst returns only the first result — the mock simulates the DB returning the newest
+    // findFirst returns only the first result - the mock simulates the DB returning the newest
     vi.mocked(db.booking.findFirst).mockResolvedValue(newerBooking as never)
 
     await processInboundMessage(makeTextMessage(CUSTOMER_PHONE, 'On my way'))
@@ -581,9 +581,9 @@ describe('tryMediatedRelay — multiple active bookings (ambiguity)', () => {
   })
 })
 
-// ── Provider relay — active job path ─────────────────────────────────────────
+// ── Provider relay - active job path ─────────────────────────────────────────
 
-describe('tryMediatedRelay — provider sends free text with active job', () => {
+describe('tryMediatedRelay - provider sends free text with active job', () => {
   beforeEach(() => {
     vi.mocked(identity.resolveWhatsAppUserContext).mockResolvedValue(makeProviderIdentity() as never)
     vi.mocked(db.conversation.upsert).mockResolvedValue(makeIdleConversation(PROVIDER_PHONE) as never)
@@ -646,9 +646,9 @@ describe('tryMediatedRelay — provider sends free text with active job', () => 
   )
 })
 
-// ── Provider relay — no active job ───────────────────────────────────────────
+// ── Provider relay - no active job ───────────────────────────────────────────
 
-describe('tryMediatedRelay — provider sends free text with no active job', () => {
+describe('tryMediatedRelay - provider sends free text with no active job', () => {
   beforeEach(() => {
     vi.mocked(identity.resolveWhatsAppUserContext).mockResolvedValue(makeProviderIdentity() as never)
     vi.mocked(db.conversation.upsert).mockResolvedValue(makeIdleConversation(PROVIDER_PHONE) as never)
@@ -681,7 +681,7 @@ describe('tryMediatedRelay — provider sends free text with no active job', () 
 
 // ── Customer not in database ──────────────────────────────────────────────────
 
-describe('tryMediatedRelay — phone number not found as customer or provider', () => {
+describe('tryMediatedRelay - phone number not found as customer or provider', () => {
   it('falls through to main menu when phone is unknown to the system', async () => {
     // provider.findUnique and customer.findUnique already return null from shared beforeEach
     await processInboundMessage(makeTextMessage(CUSTOMER_PHONE, 'Hello'))

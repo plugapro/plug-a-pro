@@ -265,7 +265,7 @@ describe('provider identity verification orchestrator', () => {
 
     await submitVerificationForAutomation('ver_1', client)
 
-    // Best-effort cancel runs via void/Promise — wait a microtask tick.
+    // Best-effort cancel runs via void/Promise - wait a microtask tick.
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(cancelSpy).toHaveBeenCalledWith({

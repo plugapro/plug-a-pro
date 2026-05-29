@@ -107,7 +107,7 @@ describe('customer mobile landing page', () => {
   })
 
   it('greets a pending provider by their provider name, never the spurious "Customer" placeholder', async () => {
-    // A provider mid-verification has role='customer' but a Provider record, and
+    // A provider mid-verification has role='customer' but a Provider record and
     // may carry a leftover placeholder Customer row named "Customer" from before
     // the auto-creation fix. The home greeting must prefer the provider name.
     mockGetSession.mockResolvedValue({ id: 'u-9', role: 'customer', isProvider: true, phone: '+27823035070' })

@@ -1,6 +1,6 @@
-// ─── CLIENT-05: Photo, Address, and Privacy Flow ─────────────────────────────
-// Validates the photo upload logic, address privacy enforcement, and
-// safeForPreview handling across the PWA booking flow, API route, and
+// ─── CLIENT-05: Photo, Address and Privacy Flow ─────────────────────────────
+// Validates the photo upload logic, address privacy enforcement and
+// safeForPreview handling across the PWA booking flow, API route and
 // server-side lead query.
 //
 // Component-level interaction tests for BookingFlow photo input are deferred to
@@ -9,10 +9,10 @@
 import { describe, expect, it } from 'vitest'
 
 // ─── Photo upload: server-side validation in API route ───────────────────────
-// Import parsePhotoSafeForPreview via the module — it's private so we test
+// Import parsePhotoSafeForPreview via the module - it's private so we test
 // it indirectly through the route's expected behavior contracts:
 
-describe('photo upload — server-side MIME type enforcement', () => {
+describe('photo upload - server-side MIME type enforcement', () => {
   it('accepts image/jpeg as a valid MIME type', () => {
     const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf']
     expect(ALLOWED.includes('image/jpeg')).toBe(true)
@@ -29,7 +29,7 @@ describe('photo upload — server-side MIME type enforcement', () => {
   })
 })
 
-describe('photo upload — client-side validation logic', () => {
+describe('photo upload - client-side validation logic', () => {
   const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
   const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif']
 
@@ -38,7 +38,7 @@ describe('photo upload — client-side validation logic', () => {
       return `"${file.name}" is not a supported image type (JPEG, PNG, WEBP, HEIC, GIF).`
     }
     if (file.size > MAX_PHOTO_SIZE) {
-      return `"${file.name}" is too large — photos must be 10 MB or smaller.`
+      return `"${file.name}" is too large - photos must be 10 MB or smaller.`
     }
     return null
   }
@@ -100,9 +100,9 @@ describe('photo upload — client-side validation logic', () => {
   })
 })
 
-// ─── safeForPreview — API route sets flag from client toggle ─────────────────
+// ─── safeForPreview - API route sets flag from client toggle ─────────────────
 
-describe('safeForPreview — parsePhotoSafeForPreview logic', () => {
+describe('safeForPreview - parsePhotoSafeForPreview logic', () => {
   // Replicates the parsePhotoSafeForPreview function from the bookings API route
   function parsePhotoSafeForPreview(raw: string | null, photoCount: number): boolean[] {
     if (photoCount === 0) return []
@@ -164,12 +164,12 @@ describe('safeForPreview — parsePhotoSafeForPreview logic', () => {
   })
 })
 
-// ─── Address privacy — provider lead query excludes exact fields pre-acceptance
+// ─── Address privacy - provider lead query excludes exact fields pre-acceptance
 
-describe('address privacy — provider lead query shape', () => {
+describe('address privacy - provider lead query shape', () => {
   it('pre-acceptance address query contains only suburb, city, province, region', () => {
     // This mirrors the resolveProviderLeadAccessToken select shape from
-    // lib/provider-lead-access.ts (lines ~272-279) — exact address fields must
+    // lib/provider-lead-access.ts (lines ~272-279) - exact address fields must
     // NOT appear in the pre-acceptance query.
     const PRE_ACCEPTANCE_ADDRESS_SELECT = {
       suburb: true,
@@ -213,17 +213,17 @@ describe('address privacy — provider lead query shape', () => {
   })
 })
 
-// ─── Address privacy copy — required text constants ───────────────────────────
+// ─── Address privacy copy - required text constants ───────────────────────────
 
-describe('address privacy copy — required text', () => {
+describe('address privacy copy - required text', () => {
   const REQUIRED_SENTENCES = [
-    'Providers will only see your suburb, city, and province before you select one and they accept the job.',
+    'Providers will only see your suburb, city and province before you select one and they accept the job.',
     'Your exact address and phone number are only shared after acceptance.',
   ]
 
   // Freeze the required copy so a future edit doesn't silently drop privacy guarantees
   it('required privacy sentence 1 is stable', () => {
-    expect(REQUIRED_SENTENCES[0]).toContain('suburb, city, and province')
+    expect(REQUIRED_SENTENCES[0]).toContain('suburb, city and province')
     expect(REQUIRED_SENTENCES[0]).toContain('before you select one')
   })
 
@@ -234,9 +234,9 @@ describe('address privacy copy — required text', () => {
   })
 })
 
-// ─── WhatsApp photos — safeForPreview defaults ────────────────────────────────
+// ─── WhatsApp photos - safeForPreview defaults ────────────────────────────────
 
-describe('WhatsApp customer photos — safeForPreview default', () => {
+describe('WhatsApp customer photos - safeForPreview default', () => {
   it('Attachment.safeForPreview defaults to true in the Prisma schema (DB default)', () => {
     // The Prisma schema has `safeForPreview Boolean @default(true)`.
     // downloadAndStoreWhatsAppMedia does not pass safeForPreview explicitly,
@@ -249,7 +249,7 @@ describe('WhatsApp customer photos — safeForPreview default', () => {
     // WA photos are uploaded before the job request is created (in collect_photos step).
     // createJobRequest backfills jobRequestId via updateMany.
     // This means a failed job request submission does NOT create orphaned DB records
-    // for the attachment row (it was already created) — but the jobRequestId link is
+    // for the attachment row (it was already created) - but the jobRequestId link is
     // never written, leaving the photo orphaned but not duplicating DB rows.
     const existingBeforeJobRequest = true
     expect(existingBeforeJobRequest).toBe(true)

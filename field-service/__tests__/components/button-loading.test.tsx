@@ -6,22 +6,22 @@ import { FormSubmitButton } from '@/components/ui/form-submit-button'
 /**
  * Tests the pending-state UX primitives shipped in commits a2b0ed8 and
  * 1c152ff. Vitest runs in the `node` environment so we cannot exercise
- * useState / useFormStatus interactively — those code paths are covered
+ * useState / useFormStatus interactively - those code paths are covered
  * by Playwright (e2e/smoke.spec.ts). What we CAN verify deterministically:
  *
  *   1. Button without `loading` renders children verbatim (back-compat).
  *   2. Button with `loading={true}` swaps to loadingLabel, forces
- *      `disabled`, sets `aria-busy="true"`, and injects a spinning svg.
+ *      `disabled`, sets `aria-busy="true"` and injects a spinning svg.
  *   3. Button with `loading={true}` and no loadingLabel keeps children
  *      (the explicit-label override is the documented pattern).
  *   4. Button with `asChild` bypasses loading visuals (Slot's single-child
- *      contract — spinner sibling would break it).
+ *      contract - spinner sibling would break it).
  *   5. FormSubmitButton outside a form renders the underlying button
  *      with pending=false (useFormStatus default).
- *   6. Module-load smoke for FormSubmitButton — catches import-path
+ *   6. Module-load smoke for FormSubmitButton - catches import-path
  *      regressions and circular dependencies introduced by future edits.
  */
-describe('Button — loading prop', () => {
+describe('Button - loading prop', () => {
   it('renders children verbatim when loading is omitted (back-compat)', () => {
     const html = renderToStaticMarkup(<Button>Save changes</Button>)
     expect(html).toContain('Save changes')

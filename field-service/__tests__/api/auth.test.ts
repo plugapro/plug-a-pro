@@ -181,7 +181,7 @@ describe('POST /api/auth/session', () => {
     const setCookie = res.headers.get('Set-Cookie') ?? ''
     expect(setCookie).toContain('HttpOnly')
     expect(setCookie).toContain('sb-access-token=valid-token')
-    // HttpOnly presence is already asserted above — no further check needed
+    // HttpOnly presence is already asserted above - no further check needed
   })
 
   it('clamps client-provided cookie max-age to a safe server-side ceiling', async () => {
@@ -1384,7 +1384,7 @@ describe('POST /api/auth/provider/verify-code', () => {
     '27823035070',
     '+27823035070',
     '+27 82 303 5070',
-  ])('verifies OTP, resolves approved provider, and creates a session for %s', async (input) => {
+  ])('verifies OTP, resolves approved provider and creates a session for %s', async (input) => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findMany as any).mockResolvedValue([{
       id: 'provider-1',
@@ -1663,7 +1663,7 @@ describe('POST /api/auth/link', () => {
     const { POST } = await import('../../app/api/auth/link/route')
     const req = new NextRequest('http://localhost/api/auth/link', {
       method: 'POST',
-      // Attacker supplies a different userId — must be ignored
+      // Attacker supplies a different userId - must be ignored
       body: JSON.stringify({ phone: '+27821234567', userId: 'attacker-user-id' }),
       headers: { 'Content-Type': 'application/json' },
     })

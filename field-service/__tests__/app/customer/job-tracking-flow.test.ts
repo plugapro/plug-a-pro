@@ -1,12 +1,12 @@
 /**
- * CLIENT-08 — Provider Confirmation and Job Tracking Flow
+ * CLIENT-08 - Provider Confirmation and Job Tracking Flow
  *
  * Covers:
  *  1. PROVIDER_CONFIRMATION_PENDING screen resolution
  *  2. ASSIGNED / MATCHED state screen resolution and allowed actions
  *  3. 9-step blueprint job tracking timeline via buildClientPwaJobTrackingSteps
- *  4. Tracking step progression — labels, done/current flags for all 9 steps
- *  5. Completion screen copy — "Job completed" / "Please confirm everything is in order."
+ *  4. Tracking step progression - labels, done/current flags for all 9 steps
+ *  5. Completion screen copy - "Job completed" / "Please confirm everything is in order."
  *  6. WhatsApp handoff URLs for job events link to token-based ticket route
  */
 import { describe, expect, it } from 'vitest'
@@ -85,8 +85,8 @@ describe('CLIENT-08: MATCHED / ASSIGNED state screen resolution', () => {
   })
 })
 
-// ── 3. 9-step tracking timeline — presence and order ─────────────────────────
-describe('CLIENT-08: buildClientPwaJobTrackingSteps — 9 steps present', () => {
+// ── 3. 9-step tracking timeline - presence and order ─────────────────────────
+describe('CLIENT-08: buildClientPwaJobTrackingSteps - 9 steps present', () => {
   it('returns exactly 9 steps', async () => {
     const { buildClientPwaJobTrackingSteps } = await import('../../../lib/client-pwa-job-tracking')
     const steps = buildClientPwaJobTrackingSteps({ status: 'SCHEDULED', arrivalTimeConfirmedAt: null })
@@ -130,7 +130,7 @@ describe('CLIENT-08: buildClientPwaJobTrackingSteps — 9 steps present', () => 
   })
 })
 
-// ── 4. Step progression — labels and done/current flags ──────────────────────
+// ── 4. Step progression - labels and done/current flags ──────────────────────
 describe('CLIENT-08: tracking step progression', () => {
   it('SCHEDULED with no arrival confirmation lands on Provider accepted (step 4)', async () => {
     const { buildClientPwaJobTrackingSteps } = await import('../../../lib/client-pwa-job-tracking')
@@ -217,7 +217,7 @@ describe('CLIENT-08: WhatsApp handoff token route', () => {
     expect(path).toContain('view=job_tracking')
   })
 
-  it('job_tracking, active_job, and completion_review screens all map to job_tracking handoff view', async () => {
+  it('job_tracking, active_job and completion_review screens all map to job_tracking handoff view', async () => {
     // The token page is the canonical handoff route for all post-acceptance states.
     // Verified via the handoffViewForScreen mapping: job_tracking / active_job / completion_review → 'job_tracking'.
     const { resolveClientPwaScreenForJobStatus } = await import('../../../lib/client-pwa-state')

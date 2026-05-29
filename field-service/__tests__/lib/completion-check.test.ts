@@ -137,7 +137,7 @@ describe('handleCompletionCheckYes', () => {
     )
   })
 
-  it('is idempotent — skips if reviewRequestSentAt already set', async () => {
+  it('is idempotent - skips if reviewRequestSentAt already set', async () => {
     mockDb.match.findUnique.mockResolvedValue({ ...mockMatch, reviewRequestSentAt: new Date() })
 
     await handleCompletionCheckYes({ matchId: 'match-1', customerPhone: '+27821111111' })

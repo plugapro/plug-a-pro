@@ -1,6 +1,6 @@
 // A provider must never be routed into customer context. resolveProviderRedirect
 // is the single source of truth for sending a provider away from customer
-// surfaces (/ and /profile) — distinguishing portal-eligible providers (provider
+// surfaces (/ and /profile) - distinguishing portal-eligible providers (provider
 // area) from pending/in-verification providers (verification status page, which
 // is reachable without portal access). Customers are never redirected.
 

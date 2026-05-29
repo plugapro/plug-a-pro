@@ -371,7 +371,7 @@ describe('matching-engine compatibility wrappers', () => {
     expect(sent).toBe(1)
     expect(mockSendCtaUrl).toHaveBeenCalledTimes(1)
     const message = mockSendCtaUrl.mock.calls[0][1] as string
-    expect(message).toContain('Reminder — Lead Expires Soon')
+    expect(message).toContain('Reminder - Lead Expires Soon')
     expect(message).not.toContain('0 min left')
     expect(mockDb.lead.update).toHaveBeenCalledWith({
       where: { id: 'lead-1' },

@@ -289,7 +289,7 @@ describe('WhatsApp voucher redemption handlers', () => {
         'PAP-7KQ9-M2XD',
         { channel: 'WHATSAPP' },
       )
-      // Canonical must appear in the success message so the user sees what was accepted —
+      // Canonical must appear in the success message so the user sees what was accepted -
       // especially valuable when they typed it dashless or suffix-only.
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
@@ -302,7 +302,7 @@ describe('WhatsApp voucher redemption handlers', () => {
       expect(result.nextStep).toBe('pj_credits')
     })
 
-    it('user types suffix-only — success message still echoes the canonical PAP-XXXX-XXXX form', async () => {
+    it('user types suffix-only - success message still echoes the canonical PAP-XXXX-XXXX form', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
         makeActiveProvider(),
       )

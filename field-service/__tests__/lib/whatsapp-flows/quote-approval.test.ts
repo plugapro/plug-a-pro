@@ -89,7 +89,7 @@ beforeEach(() => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('processQuoteDecision — accept', () => {
+describe('processQuoteDecision - accept', () => {
   it('updates quote to APPROVED and creates a booking', async () => {
     const result = await processQuoteDecision(QUOTE_ID, 'approve', {
       verifyCustomerPhone: CUSTOMER_PHONE,
@@ -146,7 +146,7 @@ describe('processQuoteDecision — accept', () => {
   })
 })
 
-describe('processQuoteDecision — decline', () => {
+describe('processQuoteDecision - decline', () => {
   it('updates quote to DECLINED and writes AuditLog', async () => {
     const result = await processQuoteDecision(QUOTE_ID, 'decline', {
       verifyCustomerPhone: CUSTOMER_PHONE,
@@ -180,7 +180,7 @@ describe('processQuoteDecision — decline', () => {
   })
 })
 
-describe('processQuoteDecision — wrong phone (security)', () => {
+describe('processQuoteDecision - wrong phone (security)', () => {
   it('returns FORBIDDEN when the phone does not match the customer', async () => {
     const result = await processQuoteDecision(QUOTE_ID, 'approve', {
       verifyCustomerPhone: '+27699999999', // wrong phone

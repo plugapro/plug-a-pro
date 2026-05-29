@@ -224,7 +224,7 @@ describe('selected provider final acceptance', () => {
     mockAssertIdentityVerifiedForCredits.mockResolvedValue({ providerId: 'provider-1', verificationId: 'ver-1' })
   })
 
-  it('records provider acceptance, checks credits, applies credit, and locks the job', async () => {
+  it('records provider acceptance, checks credits, applies credit and locks the job', async () => {
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-1',
       providerId: 'provider-1',
@@ -370,7 +370,7 @@ describe('selected provider final acceptance', () => {
     expect(mockNotifyAcceptedLeadLocked).not.toHaveBeenCalled()
   })
 
-  it('blocks wrong provider, expired lead, cancelled request, and accept after decline', async () => {
+  it('blocks wrong provider, expired lead, cancelled request and accept after decline', async () => {
     await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-2' }))
       .resolves.toEqual({ ok: false, reason: 'PROVIDER_NOT_SELECTED' })
 

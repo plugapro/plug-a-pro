@@ -6,7 +6,7 @@ const mockState = {
   conversation: null as null | { phone: string; data: Record<string, unknown> },
 }
 
-// Serialize $transaction calls to mirror Postgres serializable isolation —
+// Serialize $transaction calls to mirror Postgres serializable isolation -
 // the real Prisma $transaction with row-locking is atomic, so the test mock
 // must be too. Concurrent calls queue up rather than racing on shared state.
 let txQueue: Promise<unknown> = Promise.resolve()
@@ -56,7 +56,7 @@ beforeEach(() => {
 })
 
 describe('claimMediaBatchSeq', () => {
-  it('returns 1 on first call, 2 on second, etc — atomic monotonic per scope', async () => {
+  it('returns 1 on first call, 2 on second, etc - atomic monotonic per scope', async () => {
     const { claimMediaBatchSeq } = await import('@/lib/whatsapp-media-batch')
     expect(await claimMediaBatchSeq('+27821234567', 'provider_evidence')).toBe(1)
     expect(await claimMediaBatchSeq('+27821234567', 'provider_evidence')).toBe(2)
@@ -75,7 +75,7 @@ describe('claimMediaBatchSeq', () => {
     mockState.conversation = null
     const { claimMediaBatchSeq } = await import('@/lib/whatsapp-media-batch')
     // Without a row to update, sequence falls through to 1 each call but
-    // should not throw — protects against a race where the conversation hasn't
+    // should not throw - protects against a race where the conversation hasn't
     // been created yet.
     const seq = await claimMediaBatchSeq('+27821234567', 'provider_evidence')
     expect(seq).toBe(1)
@@ -101,7 +101,7 @@ describe('awaitAndCheckLatest', () => {
   })
 })
 
-describe('debounceMediaBatch — regression: 5 concurrent events → only latest is "isLatest"', () => {
+describe('debounceMediaBatch - regression: 5 concurrent events → only latest is "isLatest"', () => {
   it('exactly one of N concurrent events is reported as the latest', async () => {
     const { debounceMediaBatch } = await import('@/lib/whatsapp-media-batch')
     const N = 5
@@ -118,7 +118,7 @@ describe('debounceMediaBatch — regression: 5 concurrent events → only latest
     expect(latest[0].mySeq).toBe(maxSeq)
   })
 
-  it('a single event becomes "isLatest" — confirms single-file uploads still respond', async () => {
+  it('a single event becomes "isLatest" - confirms single-file uploads still respond', async () => {
     const { debounceMediaBatch } = await import('@/lib/whatsapp-media-batch')
     const result = await debounceMediaBatch({
       phone: '+27821234567',

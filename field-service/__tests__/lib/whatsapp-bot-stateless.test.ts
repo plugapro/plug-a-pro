@@ -293,7 +293,7 @@ describe('processInboundMessage stateless notification replies', () => {
     )
     expect(mockSendText).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Thanks — your reply has been added to your application.'),
+      expect.stringContaining('Thanks - your reply has been added to your application.'),
     )
     expect(handleJobRequestFlow).not.toHaveBeenCalled()
     expect(handleRegistrationFlow).not.toHaveBeenCalled()
@@ -1228,7 +1228,7 @@ describe('processInboundMessage stateless notification replies', () => {
   })
 
   it('does not use duplicate button IDs when a non-job_request flow is active', async () => {
-    // Use reschedule — one of the flows covered by the generic guard (registration has its own)
+    // Use reschedule - one of the flows covered by the generic guard (registration has its own)
     mockDb.conversation.upsert.mockResolvedValue({
       phone: PHONE,
       flow: 'reschedule',
@@ -1926,7 +1926,7 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
     expect((mockDb as any).providerLeadResponse.create).not.toHaveBeenCalled()
     expect(mockSendText).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Understood — noted as unavailable'),
+      expect.stringContaining('Understood - noted as unavailable'),
     )
   })
 
@@ -2029,7 +2029,7 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
     })
 
     it('sends graceful response and does not update DB when lead status is unexpected', async () => {
-      // MATCHED is not in the known-status list — triggers the unexpected_lead_status warn guard
+      // MATCHED is not in the known-status list - triggers the unexpected_lead_status warn guard
       mockDb.lead.findUnique.mockResolvedValue(
         makeRfpLead({ status: 'MATCHED', jobRequest: { id: 'jr-1', category: 'Plumbing', status: 'SHORTLIST_READY' } }),
       )
@@ -2066,9 +2066,9 @@ describe('handleRfpLeadInterest (ops_accept button)', () => {
     })
   })
 
-// ─── handleSelectedProviderConfirmation — new failure branches ───────────────
+// ─── handleSelectedProviderConfirmation - new failure branches ───────────────
 
-describe('handleSelectedProviderConfirmation — new failure branches', () => {
+describe('handleSelectedProviderConfirmation - new failure branches', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()

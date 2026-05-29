@@ -52,7 +52,7 @@ vi.mock('next/server', async (importOriginal) => {
   return {
     ...original,
     after: (fn: () => void | Promise<void>) => {
-      // Execute immediately in test context — no request scope needed
+      // Execute immediately in test context - no request scope needed
       void Promise.resolve().then(fn).catch(() => undefined)
     },
   }
@@ -118,7 +118,7 @@ function makeTx() {
       }),
     },
     jobRequest: {
-      // Default: no existing active request — dedup guard passes through
+      // Default: no existing active request - dedup guard passes through
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(),
     },
@@ -445,7 +445,7 @@ describe('createJobRequest', () => {
     expect(mockOrchestrateMatch).not.toHaveBeenCalled()
   })
 
-  it('does not throw if orchestrateMatch fails — matching is non-blocking', async () => {
+  it('does not throw if orchestrateMatch fails - matching is non-blocking', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
@@ -540,7 +540,7 @@ describe('createJobRequest', () => {
     expect(expiresMs).toBeLessThanOrEqual(after + defaultOffsetMs + 500)
   })
 
-  it('expiresAt is always a Date — never undefined or null', async () => {
+  it('expiresAt is always a Date - never undefined or null', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })

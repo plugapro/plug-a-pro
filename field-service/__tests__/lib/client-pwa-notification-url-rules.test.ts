@@ -1,4 +1,4 @@
-// ─── CLIENT-11 — Client PWA Notifications, Copy, and URL Rules ─────────────────
+// ─── CLIENT-11 - Client PWA Notifications, Copy and URL Rules ─────────────────
 // Tests asserting:
 //   1. All required client notification functions are exported from the correct modules.
 //   2. The privacy copy is present in the request_submitted message.
@@ -38,7 +38,7 @@ describe('CLIENT_PWA_PRIVACY_COPY constant', () => {
 
 // ─── request_submitted ────────────────────────────────────────────────────────
 
-describe('notifyCustomerPwaRequestSubmitted — request_submitted', () => {
+describe('notifyCustomerPwaRequestSubmitted - request_submitted', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -138,7 +138,7 @@ describe('notifyCustomerPwaRequestSubmitted — request_submitted', () => {
 
 // ─── matching_in_progress / providers_reviewing ───────────────────────────────
 
-describe('notifyCustomerMatchingInProgress — matching_in_progress', () => {
+describe('notifyCustomerMatchingInProgress - matching_in_progress', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -175,7 +175,7 @@ describe('notifyCustomerMatchingInProgress — matching_in_progress', () => {
 
 // ─── review_requested ─────────────────────────────────────────────────────────
 
-describe('notifyCustomerReviewRequested — review_requested', () => {
+describe('notifyCustomerReviewRequested - review_requested', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -293,9 +293,9 @@ describe('notifyCustomerReviewRequested — review_requested', () => {
   })
 })
 
-// ─── URL helper — localhost production guard ──────────────────────────────────
+// ─── URL helper - localhost production guard ──────────────────────────────────
 
-describe('getPublicAppUrl() — localhost production guard', () => {
+describe('getPublicAppUrl() - localhost production guard', () => {
   const savedAppPublicUrl = process.env.APP_PUBLIC_URL
   const savedNextPublicAppUrl = process.env.NEXT_PUBLIC_APP_URL
 
@@ -344,7 +344,7 @@ describe('getPublicAppUrl() — localhost production guard', () => {
 
 // ─── shortlist_ready copy rules ───────────────────────────────────────────────
 
-describe('shortlist_ready message copy (notifyCustomerShortlistReady — customer-shortlists.ts)', () => {
+describe('shortlist_ready message copy (notifyCustomerShortlistReady - customer-shortlists.ts)', () => {
   // The copy is built inside notifyCustomerShortlistReady which is not exported.
   // We verify the copy contract via a snapshot of its known body template literal.
 

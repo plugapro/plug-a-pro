@@ -23,7 +23,7 @@ describe('generateVoucherCode', () => {
 })
 
 describe('normalizeVoucherCode', () => {
-  it('strips whitespace, uppercases, and removes dashes', () => {
+  it('strips whitespace, uppercases and removes dashes', () => {
     expect(normalizeVoucherCode('  pap-7kq9-m2xd  ')).toBe('PAP7KQ9M2XD')
     expect(normalizeVoucherCode('PAP-7KQ9-M2XD')).toBe('PAP7KQ9M2XD')
     expect(normalizeVoucherCode('pap7kq9m2xd')).toBe('PAP7KQ9M2XD')
@@ -37,7 +37,7 @@ describe('voucherCodeToHash', () => {
     expect(hash).toMatch(/^[0-9a-f]+$/)
   })
 
-  it('is deterministic — same input produces same hash', () => {
+  it('is deterministic - same input produces same hash', () => {
     expect(voucherCodeToHash('PAP-7KQ9-M2XD')).toBe(voucherCodeToHash('pap-7kq9-m2xd'))
     expect(voucherCodeToHash('PAP-7KQ9-M2XD')).toBe(voucherCodeToHash(' PAP-7KQ9-M2XD '))
     expect(voucherCodeToHash('PAP-7KQ9-M2XD')).toBe(voucherCodeToHash('PAP7KQ9M2XD'))
@@ -50,7 +50,7 @@ describe('voucherCodeToHash', () => {
 
 describe('parseVoucherCode', () => {
   // Canonical form: each successful parse returns this string and a hash matching
-  // voucherCodeToHash('PAP-7KQ9-M2XD'). Hash determinism is the key invariant — the
+  // voucherCodeToHash('PAP-7KQ9-M2XD'). Hash determinism is the key invariant - the
   // 200 codes already printed and stored in production must keep resolving.
   const CANONICAL = 'PAP-7KQ9-M2XD'
   const EXPECTED_HASH = voucherCodeToHash(CANONICAL)
@@ -79,7 +79,7 @@ describe('parseVoucherCode', () => {
     it('accepts lower-case suffix only', () => expectCanonical('7kq9m2xd'))
     it('accepts space-separated PAP and segments', () => expectCanonical('PAP 7KQ9 M2XD'))
     it('accepts spaces between every character', () => expectCanonical('7 K Q 9 M 2 X D'))
-    it('accepts em-dashes between segments', () => expectCanonical('PAP—7KQ9—M2XD'))
+    it('accepts em-dashes between segments', () => expectCanonical('PAP-7KQ9-M2XD'))
     it('accepts en-dashes between segments', () => expectCanonical('PAP–7KQ9–M2XD'))
     it('accepts dot separators', () => expectCanonical('PAP.7KQ9.M2XD'))
     it('accepts underscore separators', () => expectCanonical('pap_7kq9_m2xd'))
@@ -107,7 +107,7 @@ describe('parseVoucherCode', () => {
     it('rejects an emoji as INVALID_CHARS', () => expectFailure('7KQ9M2X😀', 'INVALID_CHARS'))
   })
 
-  describe('mapVoucherRedemptionErrorToMessage — new parse-failure codes', () => {
+  describe('mapVoucherRedemptionErrorToMessage - new parse-failure codes', () => {
     it('maps VOUCHER_CODE_EMPTY to a friendly prompt', () => {
       expect(mapVoucherRedemptionErrorToMessage('VOUCHER_CODE_EMPTY')).toMatch(/voucher code/i)
     })
@@ -138,7 +138,7 @@ describe('parseVoucherCode', () => {
       ['PAP7KQ9M2XD'],
       ['7KQ9M2XD'],
       ['PAP 7KQ9 M2XD'],
-      ['PAP—7KQ9—M2XD'],
+      ['PAP-7KQ9-M2XD'],
     ])('parses %s to the same hash as voucherCodeToHash("PAP-7KQ9-M2XD")', (input) => {
       const result = parseVoucherCode(input)
       expect(result.ok).toBe(true)

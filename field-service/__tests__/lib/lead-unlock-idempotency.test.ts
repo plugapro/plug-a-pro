@@ -78,7 +78,7 @@ const VALID_LEAD = {
   },
 }
 
-describe('unlockLeadForProvider — idempotency (duplicate webhook / double-tap)', () => {
+describe('unlockLeadForProvider - idempotency (duplicate webhook / double-tap)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockTransaction.mock.lead.findUnique.mockResolvedValue(VALID_LEAD)

@@ -11,7 +11,7 @@ describe('trusted request IP helpers', () => {
     expect(trustedClientIpFromHeaders(headers)).toBe('8.8.8.8')
   })
 
-  it('skips private, loopback, and malformed forwarded addresses', () => {
+  it('skips private, loopback and malformed forwarded addresses', () => {
     const headers = new Headers({
       'x-forwarded-for': '10.0.0.1, malformed, 127.0.0.1, ::1, 1.1.1.1',
     })

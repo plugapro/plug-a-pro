@@ -100,7 +100,7 @@ describe('generateInvoicePdf()', () => {
   })
 
   // 4. Happy path: renders, uploads, persists, returns blob URL
-  it('renders PDF, uploads to blob, upserts invoice row, and returns blob URL', async () => {
+  it('renders PDF, uploads to blob, upserts invoice row and returns blob URL', async () => {
     mockInvoiceFindUnique.mockResolvedValue(null)
     mockBookingFindUnique.mockResolvedValue(FULL_BOOKING)
     mockRenderToBuffer.mockResolvedValue(Buffer.from('%PDF-test'))
@@ -112,7 +112,7 @@ describe('generateInvoicePdf()', () => {
     // renderToBuffer called once
     expect(mockRenderToBuffer).toHaveBeenCalledTimes(1)
 
-    // blob put called with correct key prefix, buffer, and content type
+    // blob put called with correct key prefix, buffer and content type
     expect(mockBlobPut).toHaveBeenCalledWith(
       expect.stringMatching(/^invoices\/bkg-abc12345\//),
       expect.any(Buffer),
