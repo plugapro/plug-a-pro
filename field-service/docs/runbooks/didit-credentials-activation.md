@@ -218,11 +218,11 @@ This is non-destructive — the adapter just falls back to `{ enabled: false }` 
 
 1. **Confirm to the operator** verbatim: `Didit credentials are now in Vercel production env. The next production deploy will pick them up. No flags have been flipped — the adapter is still inert until the rollout-activation runbook runs.`
 
-2. **Log to OpenBrain** (`PlugAPro`, domain `engineering`):
+2. **Log to OpenBrain** (`Plug-A-Pro`, domain `engineering`):
    ```bash
    cd "/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend"
    pnpm brain -- knowledge add \
-     --project "PlugAPro" \
+     --project "Plug-A-Pro" \
      --domain "engineering" \
      --title "ops — Didit credentials added to Vercel production (YYYY-MM-DD)" \
      --tags "didit, vercel-env, secrets, rollout, domain:engineering" \

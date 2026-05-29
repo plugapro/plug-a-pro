@@ -75,7 +75,7 @@ Do not treat the implementation wording as final legal advice. CPA prepaid credi
 - Whether payment processor chargebacks or Pay@/PayAt/PayFast rules override platform refund wording.
 - Whether Plug A Pro holds customer funds, only facilitates payment, or both, and how this changes refund/settlement wording.
 - Whether provider identity, licence, certification, or insurance checks are actually performed before any "verified" or "reviewed" claim appears.
-- POPIA treatment of provider identity numbers, licence/certification documents, WhatsApp conversations, photos, support records, analytics, logs, and retention periods.
+- POPIA treatment of provider identity numbers, biometric/liveness data, licence/certification documents, WhatsApp conversations, photos, support records, analytics, logs, cross-border safeguards, vendor operator agreements, and retention periods.
 - WhatsApp consent, transactional vs marketing message split, direct marketing opt-out implementation, and consent evidence.
 - Dispute language: confirm it does not make Plug A Pro an arbitrator, guarantor, service supplier, employer, agent, partner, or subcontractor.
 

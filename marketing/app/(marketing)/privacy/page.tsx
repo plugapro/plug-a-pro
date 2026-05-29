@@ -55,7 +55,7 @@ export default function PrivacyPage() {
           <li><strong>Identity and contact:</strong> full name, WhatsApp phone number, email address where provided, identity number or verification data where required, and account identifiers.</li>
           <li><strong>Provider profile:</strong> services, skills, service areas, availability, pricing, bio, portfolio, references, work examples, vehicle or equipment details, and status.</li>
           <li><strong>Licence, certification, and application data:</strong> licences, certifications, insurance details, application answers, review notes, profile evidence, and attachments where supplied.</li>
-          <li><strong>Verification data:</strong> identity verification status, vendor session references, workflow id, verification results, liveness check outcomes, document and selfie match scores, risk flags, expiry dates, and admin review outcomes where identity verification is enabled. Where the platform performs biometric checks (liveness, facial match) the lawful basis is your explicit consent recorded inside the verification flow, supported by our legitimate interest in preventing fraud and complying with applicable trust and safety obligations under POPIA section 11 and the special-information conditions in section 26.</li>
+          <li><strong>Verification data:</strong> identity verification status, vendor session references, workflow id, verification results, liveness check outcomes, document and selfie match scores, risk flags, expiry dates, and admin review outcomes where identity verification is enabled. Where the platform performs biometric checks such as liveness or facial matching, we ask for consent in the verification flow and process this information for fraud prevention, trust and safety, and legal compliance purposes, subject to POPIA and any applicable special personal information rules.</li>
           <li><strong>Job and lead history:</strong> lead previews, interest, shortlist events, customer selections, acceptances, declines, expiry, job status updates, photos, notes, quotes, extras, completion records, and reviews.</li>
           <li><strong>Provider credits and wallet history:</strong> paid credit balance, promotional credit balance, top-ups, vouchers, lead unlock deductions, refunds, reversals, payment intent references, audit logs, and admin adjustments.</li>
           <li><strong>Settlement data:</strong> payout, fee, refund, chargeback, and settlement records where Plug A Pro facilitates customer payment or provider settlement.</li>
@@ -87,7 +87,7 @@ export default function PrivacyPage() {
           <li><strong>Supabase:</strong> database, authentication, storage, and operational data infrastructure where used.</li>
           <li><strong>Vercel and Vercel Blob:</strong> hosting, application delivery, logs, and file/object storage where used.</li>
           <li><strong>Payment providers:</strong> PayFast, Pay@ / PayAt, PayAt Go, and any payment processor or payment reference provider shown in the payment flow, where used.</li>
-          <li><strong>Identity verification providers:</strong> Didit (https://didit.me), Smile ID, and any other identity verification vendor named on the consent screen at the time you complete the verification flow. These vendors receive identity document data, selfie images, and liveness frames for the purpose of verifying your identity. Vendor processing happens under our written instructions and POPIA section 21 operator obligations.</li>
+          <li><strong>Identity verification providers:</strong> Didit (https://didit.me), Smile ID, and any other identity verification vendor named on the consent screen at the time you complete the verification flow. These vendors may receive identity document data, selfie images, liveness frames, vendor references, and related metadata for identity verification. We use contractual, security, and access controls intended to meet POPIA requirements for third-party processing.</li>
           <li><strong>Google services:</strong> Google Analytics on the marketing site.</li>
           <li><strong>Location and map services:</strong> static location data, OpenStreetMap / Nominatim geocoding, and any external map link you choose to open from the platform, where used.</li>
           <li><strong>Sentry or logging providers:</strong> error, performance, and diagnostic logs where enabled.</li>
@@ -156,19 +156,15 @@ export default function PrivacyPage() {
 
         <h2>12. Cross-border processing</h2>
         <p>
-          Some of the operators named in section 6 are based outside South Africa. In particular,
-          Vercel, Meta / WhatsApp, Google, Sentry, and Didit are based in the <strong>United States</strong>;
-          our Supabase infrastructure is hosted in the <strong>European Union</strong> (Frankfurt, Germany);
-          Smile ID is based in <strong>Africa and the United States</strong>; and other named operators
-          may process data in the regions disclosed at the point of use.
+          Some of the operators named in section 6 may process information outside South Africa,
+          including in the United States, the European Union, Africa, or other regions disclosed by the
+          relevant provider or at the point of use.
         </p>
         <p>
-          Where cross-border processing applies, we rely on the safeguards required by POPIA section 72:
-          either a law in the recipient country that provides an adequate level of protection (for
-          example, EU data protection law applicable to our EU-hosted databases), contractual safeguards
-          (data processing agreements and standard contractual clauses signed with each operator), or
-          your consent recorded at the point of the relevant flow. You can ask us for a summary of the
-          safeguards applicable to a specific processor by emailing{" "}
+          Where cross-border processing applies, we rely on safeguards required by POPIA, such as
+          appropriate laws in the recipient country, contractual safeguards, security measures, or
+          consent where applicable. You can ask us for a summary of the safeguards applicable to a
+          specific processor by emailing{" "}
           <a href="mailto:privacy@plugapro.co.za">privacy@plugapro.co.za</a>.
         </p>
 
