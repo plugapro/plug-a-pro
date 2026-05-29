@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend && pnpm brain -- context --project 'Plug A Pro' 2>/dev/null || echo 'OpenBrain context unavailable'"
+            "command": "cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend && pnpm brain -- context --project 'Plug-A-Pro' 2>/dev/null || echo 'OpenBrain context unavailable'"
           }
         ]
       }

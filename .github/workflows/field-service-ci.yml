@@ -4,12 +4,18 @@ on:
   push:
     branches: [main, develop, migration/from-vdp]
     paths:
+      - '.claude/settings.json'
+      - '.githooks/**'
       - 'field-service/**'
+      - 'scripts/git-hooks/**'
       - '.github/workflows/field-service-ci.yml'
   pull_request:
     branches: [main, migration/from-vdp]
     paths:
+      - '.claude/settings.json'
+      - '.githooks/**'
       - 'field-service/**'
+      - 'scripts/git-hooks/**'
       - '.github/workflows/field-service-ci.yml'
 
 defaults:
@@ -48,6 +54,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate local git hooks
+        run: |
+          bash -n ../scripts/git-hooks/field-service-pre-push.sh
+          sh -n ../.githooks/pre-push
 
       - name: Secret hygiene guard
         run: pnpm security:secrets
