@@ -1,9 +1,9 @@
 // ─── Reason-code registry ─────────────────────────────────────────────────────
-// Per-queue close-out codes. Every list includes OTHER — callers must enforce
+// Per-queue close-out codes. Every list includes OTHER - callers must enforce
 // a free-text note when code === 'OTHER'.
 //
 // Deprecation: mark a code inactive via the `deprecated` flag.
-// Do NOT delete codes — historical cases reference them.
+// Do NOT delete codes - historical cases reference them.
 
 import type { OpsQueueType } from '@prisma/client'
 
@@ -52,9 +52,9 @@ export const QUOTE_REASON_CODES: ReasonCode[] = [
 ]
 
 export const TRUST_REASON_CODES: ReasonCode[] = [
-  { code: 'RESOLVED_REFUND',     label: 'Resolved — refund issued',      requiresNote: false },
-  { code: 'RESOLVED_REDO',       label: 'Resolved — redo arranged',      requiresNote: false },
-  { code: 'RESOLVED_NO_ACTION',  label: 'Resolved — no action required', requiresNote: true  },
+  { code: 'RESOLVED_REFUND',     label: 'Resolved - refund issued',      requiresNote: false },
+  { code: 'RESOLVED_REDO',       label: 'Resolved - redo arranged',      requiresNote: false },
+  { code: 'RESOLVED_NO_ACTION',  label: 'Resolved - no action required', requiresNote: true  },
   { code: 'ESCALATED_LEGAL',     label: 'Escalated to legal',            requiresNote: true  },
   { code: 'OTHER',               label: 'Other',                         requiresNote: true  },
 ]
@@ -67,7 +67,7 @@ export const FINANCE_REASON_CODES: ReasonCode[] = [
   { code: 'OTHER',                label: 'Other',                   requiresNote: true  },
 ]
 
-// TODO(WS-SUPPLY): SUPPLY queue not yet in OpsQueueType enum — add migration + enum member
+// TODO(WS-SUPPLY): SUPPLY queue not yet in OpsQueueType enum - add migration + enum member
 // before registering this in QUEUE_REASON_CODES. Exported here so it can be imported
 // directly when the SUPPLY queue page is built.
 export const SUPPLY_REASON_CODES: ReasonCode[] = [
@@ -88,8 +88,8 @@ const QUEUE_REASON_CODES: Partial<Record<OpsQueueType, ReasonCode[]>> = {
   PAYMENT_FOLLOW_UP:  FINANCE_REASON_CODES,
   PROVIDER_ONBOARDING: [
     { code: 'APPROVED',           label: 'Application approved',    requiresNote: false },
-    { code: 'REJECTED_INCOMPLETE',label: 'Rejected — incomplete',   requiresNote: true  },
-    { code: 'REJECTED_INELIGIBLE',label: 'Rejected — ineligible',   requiresNote: true  },
+    { code: 'REJECTED_INCOMPLETE',label: 'Rejected - incomplete',   requiresNote: true  },
+    { code: 'REJECTED_INELIGIBLE',label: 'Rejected - ineligible',   requiresNote: true  },
     { code: 'OTHER',              label: 'Other',                   requiresNote: true  },
   ],
 }

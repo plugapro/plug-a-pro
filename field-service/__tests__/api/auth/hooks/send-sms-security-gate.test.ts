@@ -178,7 +178,7 @@ describe('POST /api/auth/hooks/send-sms security gate', () => {
     expect(recordDeliveryRefusedDuringLock).not.toHaveBeenCalled()
   })
 
-  it('records a challenge, delivers OTP, and marks SENT when security.otp.report is on', async () => {
+  it('records a challenge, delivers OTP and marks SENT when security.otp.report is on', async () => {
     const res = await POST(buildSignedRequest())
 
     expect(res.status).toBe(200)
@@ -261,7 +261,7 @@ describe('POST /api/auth/hooks/send-sms security gate', () => {
     expect(markChallengeSent).not.toHaveBeenCalled()
   })
 
-  it('returns hook-success shape, records CANCELLED, and does not call deliverOtp when locked', async () => {
+  it('returns hook-success shape, records CANCELLED and does not call deliverOtp when locked', async () => {
     vi.mocked(isDeliveryAllowed).mockResolvedValueOnce({
       allowed: false,
       reason: 'locked',

@@ -1,4 +1,4 @@
-// ─── Step 15 — Provider notifications copy and URL rules ─────────────────────
+// ─── Step 15 - Provider notifications copy and URL rules ─────────────────────
 // Tests asserting:
 //   1. All required provider message builders are present and have correct copy.
 //   2. Credit rules copy is clear: previewing/interest is free; 1 credit only on
@@ -38,7 +38,7 @@ const CREDIT_USED_EXACT = '1 credit is used only when a customer selects you and
 const OPTIONAL_PWA_PHRASE = 'You can continue here on WhatsApp.'
 const OPTIONAL_PWA_PORTAL = 'Worker Portal'
 
-describe('credit rules copy — must be present in all relevant messages', () => {
+describe('credit rules copy - must be present in all relevant messages', () => {
   it('onboarding intro contains the credit rules', () => {
     const msg = buildProviderOnboardingIntroMessage()
     expect(msg).toContain('Previewing and showing interest in jobs is free')
@@ -110,13 +110,13 @@ describe('credit rules copy — must be present in all relevant messages', () =>
       paidCreditBalance: 1,
     })
     expect(msg).toContain('Credits are used only when you accept a customer-selected job')
-    expect(msg).toContain('Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits')
+    expect(msg).toContain('Previewing, showing interest, shortlisting, customer selection, declining and expiry do not use credits')
   })
 })
 
 // ─── Optional PWA framing ─────────────────────────────────────────────────────
 
-describe('optional PWA framing — WhatsApp must be presented as self-sufficient', () => {
+describe('optional PWA framing - WhatsApp must be presented as self-sufficient', () => {
   it('application approved message frames the Worker Portal as optional', () => {
     const { mainBody } = buildProviderApplicationApprovedMessage('Test', {
       starterPromoCreditsAwarded: 0,
@@ -197,7 +197,7 @@ describe('no localhost in any production message template body', () => {
     expect(result).toBe('http://localhost:3000/provider')
   })
 
-  it('all required provider message bodies are free of raw URLs, localhost, and 127.0.0.1 — production env', () => {
+  it('all required provider message bodies are free of raw URLs, localhost and 127.0.0.1 - production env', () => {
     vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
     vi.stubEnv('NODE_ENV', 'production')
@@ -240,7 +240,7 @@ describe('no localhost in any production message template body', () => {
 // ─── Required messages are present and well-formed ───────────────────────────
 
 describe('required provider message builders are present', () => {
-  it('buildProviderApplicationMoreInfoRequiredMessage — present, correct copy', () => {
+  it('buildProviderApplicationMoreInfoRequiredMessage - present, correct copy', () => {
     const msg = buildProviderApplicationMoreInfoRequiredMessage({
       name: 'Sipho Ndlovu',
       applicationRef: 'APP-99XZ',
@@ -254,7 +254,7 @@ describe('required provider message builders are present', () => {
     expect(msg).not.toMatch(/https?:\/\//)
   })
 
-  it('buildProviderApplicationMoreInfoRequiredMessage — omits notes block when not provided', () => {
+  it('buildProviderApplicationMoreInfoRequiredMessage - omits notes block when not provided', () => {
     const msg = buildProviderApplicationMoreInfoRequiredMessage({
       name: 'Sipho',
       applicationRef: 'APP-001',
@@ -262,7 +262,7 @@ describe('required provider message builders are present', () => {
     expect(msg).not.toContain('What we need')
   })
 
-  it('buildProviderApplicationRejectedMessage — present, correct copy', () => {
+  it('buildProviderApplicationRejectedMessage - present, correct copy', () => {
     const msg = buildProviderApplicationRejectedMessage({
       name: 'Jane Smith',
       applicationRef: 'APP-REJ1',
@@ -277,7 +277,7 @@ describe('required provider message builders are present', () => {
     expect(msg).not.toMatch(/https?:\/\//)
   })
 
-  it('buildProviderApplicationRejectedMessage — omits reason block when not provided', () => {
+  it('buildProviderApplicationRejectedMessage - omits reason block when not provided', () => {
     const msg = buildProviderApplicationRejectedMessage({
       name: 'Jane',
       applicationRef: 'APP-001',
@@ -285,7 +285,7 @@ describe('required provider message builders are present', () => {
     expect(msg).not.toContain('Reason:')
   })
 
-  it('buildInterestSubmittedMessage — present, correct copy with fee and arrival', () => {
+  it('buildInterestSubmittedMessage - present, correct copy with fee and arrival', () => {
     const msg = buildInterestSubmittedMessage({
       category: 'Plumbing',
       area: 'Soweto',
@@ -301,13 +301,13 @@ describe('required provider message builders are present', () => {
     expect(msg).not.toMatch(/https?:\/\//)
   })
 
-  it('buildInterestSubmittedMessage — omits fee/arrival lines when not provided', () => {
+  it('buildInterestSubmittedMessage - omits fee/arrival lines when not provided', () => {
     const msg = buildInterestSubmittedMessage({ category: 'Cleaning', area: 'Kempton Park' })
     expect(msg).not.toContain('Call-out fee')
     expect(msg).not.toContain('Estimated arrival')
   })
 
-  it('buildJobUnavailableMessage — expired reason', () => {
+  it('buildJobUnavailableMessage - expired reason', () => {
     const msg = buildJobUnavailableMessage({ category: 'Tiling', area: 'Roodepoort', reason: 'expired' })
     expect(msg).toContain('Job no longer available')
     expect(msg).toContain('expired')
@@ -315,18 +315,18 @@ describe('required provider message builders are present', () => {
     expect(msg).not.toMatch(/https?:\/\//)
   })
 
-  it('buildJobUnavailableMessage — taken reason', () => {
+  it('buildJobUnavailableMessage - taken reason', () => {
     const msg = buildJobUnavailableMessage({ reason: 'taken' })
     expect(msg).toContain('accepted by another provider')
     expect(msg).toContain('No credits were used')
   })
 
-  it('buildJobUnavailableMessage — closed reason', () => {
+  it('buildJobUnavailableMessage - closed reason', () => {
     const msg = buildJobUnavailableMessage({ reason: 'closed' })
     expect(msg).toContain('closed by the customer')
   })
 
-  it('buildJobUnavailableMessage — unknown reason falls back gracefully', () => {
+  it('buildJobUnavailableMessage - unknown reason falls back gracefully', () => {
     const msg = buildJobUnavailableMessage({})
     expect(msg).toContain('Job no longer available')
     expect(msg).toContain('no longer available')
@@ -368,10 +368,10 @@ describe('central URL helper uses production base URL', () => {
   })
 })
 
-// ─── Qualified Shortlist Model — copy accuracy ────────────────────────────────
+// ─── Qualified Shortlist Model - copy accuracy ────────────────────────────────
 
-describe('Qualified Shortlist Model copy rules — credit model is accurately communicated', () => {
-  it('buildProviderLeadPreviewMessage — previewing described as free, credit deducted only on selected-job acceptance', () => {
+describe('Qualified Shortlist Model copy rules - credit model is accurately communicated', () => {
+  it('buildProviderLeadPreviewMessage - previewing described as free, credit deducted only on selected-job acceptance', () => {
     const msg = buildProviderLeadPreviewMessage({
       category: 'Electrical',
       area: 'Midrand',
@@ -390,7 +390,7 @@ describe('Qualified Shortlist Model copy rules — credit model is accurately co
     expect(msg).not.toMatch(/https?:\/\//)
   })
 
-  it('customer-selected notification uses Accept/Decline buttons — body states credit cost', () => {
+  it('customer-selected notification uses Accept/Decline buttons - body states credit cost', () => {
     // The selected-provider notification body is built inline in customer-shortlists.ts.
     // We verify the contract via the snapshot of the exact template copy used.
     // Key requirements:
@@ -411,7 +411,7 @@ describe('Qualified Shortlist Model copy rules — credit model is accurately co
   it('selected_job_accepted_customer body must not embed raw ticket URL', () => {
     // Regression guard for selected-provider-acceptance.ts:479 fix.
     // The customer is notified via sendText (body) + sendCtaUrl (link separately).
-    // The body must never contain the raw URL — it would trigger assertNoRawUrlsInWhatsAppBody.
+    // The body must never contain the raw URL - it would trigger assertNoRawUrlsInWhatsAppBody.
     const ticketUrl = 'https://app.plugapro.co.za/requests/access/sometoken'
     const body =
       `✅ Your provider accepted the job\n\n` +

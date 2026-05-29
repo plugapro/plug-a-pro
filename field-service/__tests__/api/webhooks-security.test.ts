@@ -158,9 +158,9 @@ describe('verifyMetaSignature', () => {
   })
 })
 
-// ─── WhatsApp POST webhook — signature enforcement ────────────────────────────
+// ─── WhatsApp POST webhook - signature enforcement ────────────────────────────
 
-describe('POST /api/webhooks/whatsapp — signature required', () => {
+describe('POST /api/webhooks/whatsapp - signature required', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.WHATSAPP_APP_SECRET = 'test-secret'
@@ -272,14 +272,14 @@ describe('POST /api/webhooks/whatsapp — signature required', () => {
   })
 })
 
-// ─── Payments webhook — idempotency guard ────────────────────────────────────
+// ─── Payments webhook - idempotency guard ────────────────────────────────────
 
-describe('POST /api/webhooks/payments — idempotency', () => {
+describe('POST /api/webhooks/payments - idempotency', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('sends WhatsApp confirmation on first delivery (booking not yet SCHEDULED)', async () => {
     const { db } = await import('@/lib/db')
-    // Idempotency check — payment not yet PAID (first delivery)
+    // Idempotency check - payment not yet PAID (first delivery)
     ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
     // Full booking for WhatsApp message
     ;(db.booking.findUnique as any).mockResolvedValueOnce({
@@ -317,7 +317,7 @@ describe('POST /api/webhooks/payments — idempotency', () => {
 
   it('skips WhatsApp confirmation on duplicate delivery (booking already SCHEDULED)', async () => {
     const { db } = await import('@/lib/db')
-    // Idempotency check — payment already PAID from a prior webhook delivery
+    // Idempotency check - payment already PAID from a prior webhook delivery
     ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PAID' })
 
     const { POST } = await import('../../app/api/webhooks/payments/route')

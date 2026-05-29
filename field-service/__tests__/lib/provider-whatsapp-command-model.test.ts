@@ -111,7 +111,7 @@ describe('provider WhatsApp command model', () => {
     expect(resolveProviderWhatsappCommand('On The Way')?.flow).toBe('provider_journey')
   })
 
-  it('is idempotent — resolving the same command twice returns identical results', () => {
+  it('is idempotent - resolving the same command twice returns identical results', () => {
     const first = resolveProviderWhatsappCommand('menu')
     const second = resolveProviderWhatsappCommand('menu')
     expect(first).toEqual(second)
@@ -135,7 +135,7 @@ describe('provider WhatsApp command model', () => {
     }
   })
 
-  it('start bare keyword routes to pj_menu (not start job — no collision with job execution)', () => {
+  it('start bare keyword routes to pj_menu (not start job - no collision with job execution)', () => {
     // bare "start" → menu (it's in the menu aliases)
     expect(resolveProviderWhatsappCommand('start')?.step).toBe('pj_menu')
     // "start job" → job execution via provider_whatsapp_job_commands path
@@ -168,7 +168,7 @@ describe('provider WhatsApp command model', () => {
     expect(resolveProviderWhatsappCommand('join')?.state).toBe('application_capture')
   })
 
-  it('menu is always recoverable — pj_menu step is assigned for any menu-type command regardless of context', () => {
+  it('menu is always recoverable - pj_menu step is assigned for any menu-type command regardless of context', () => {
     // The command model always returns pj_menu for menu aliases.
     // The bot wires this to override flow/step for provider roles, ensuring recovery from any state.
     const result = resolveProviderWhatsappCommand('menu')

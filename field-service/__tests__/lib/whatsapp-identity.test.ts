@@ -153,9 +153,9 @@ describe('WhatsApp identity resolution', () => {
     })
   })
 
-  // ── Duplicate-record trap regression test (Phase 4 follow-up — Task 4) ───
+  // ── Duplicate-record trap regression test (Phase 4 follow-up - Task 4) ───
   // Pre-fix: db.provider.findFirst with no orderBy returned an arbitrary row
-  // when multiple Provider records existed for the same phone — sometimes the
+  // when multiple Provider records existed for the same phone - sometimes the
   // stale APPLICATION_PENDING row, leading the bot to misroute the user.
   // Post-fix: findMany ordered by updatedAt desc + post-filter prefers the
   // ACTIVE+verified row, so the active provider always wins.

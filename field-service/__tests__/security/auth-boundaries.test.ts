@@ -1,8 +1,8 @@
 /**
- * Security regression tests — auth boundaries and CSRF protection.
+ * Security regression tests - auth boundaries and CSRF protection.
  *
  * These tests document the intended auth contract for key helpers and route
- * handlers. They run against the module implementations directly (unit) — NOT
+ * handlers. They run against the module implementations directly (unit) - NOT
  * integration. For full E2E security testing, use the Playwright smoke suite.
  */
 
@@ -116,7 +116,7 @@ describe('requireAdmin', () => {
   })
 
   it('is a function exported from lib/auth', async () => {
-    // Structural check — ensures the export exists and has not been accidentally removed.
+    // Structural check - ensures the export exists and has not been accidentally removed.
     // Integration-level auth tests live in __tests__/api/auth/.
     const auth = await import('../../lib/auth')
     expect(typeof auth.requireAdmin).toBe('function')

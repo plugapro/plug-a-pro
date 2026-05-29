@@ -72,7 +72,7 @@ export function LeadMagnetForm({
         </div>
         <h3 className="mt-4 text-2xl font-semibold">Opening WhatsApp…</h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Your number is saved. WhatsApp should open automatically — if it doesn&apos;t, tap below.
+          Your number is saved. WhatsApp should open automatically - if it doesn&apos;t, tap below.
         </p>
         {whatsappUrl ? (
           <a

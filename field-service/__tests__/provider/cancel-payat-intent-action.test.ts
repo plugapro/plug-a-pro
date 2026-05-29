@@ -188,7 +188,7 @@ describe('cancelProviderPayatTopUpIntent', () => {
   })
 
   it('returns NOT_CANCELLABLE for a non-PENDING_PAYMENT intent (the where clause blocks it)', async () => {
-    // The transaction findFirst uses status: 'PENDING_PAYMENT' —
+    // The transaction findFirst uses status: 'PENDING_PAYMENT' -
     // CREDITED / ITN_RECEIVED / EXPIRED intents will not match.
     mockDb.paymentIntent.findFirst.mockResolvedValue(null)
 
@@ -213,7 +213,7 @@ describe('cancelProviderPayatTopUpIntent', () => {
   })
 })
 
-describe('cancelProviderPayatTopUpIntent — duplicate guard interaction', () => {
+describe('cancelProviderPayatTopUpIntent - duplicate guard interaction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()

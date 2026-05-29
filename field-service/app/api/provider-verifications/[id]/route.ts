@@ -1,7 +1,7 @@
 // GET /api/provider-verifications/[id]
-// Returns a redacted view of a provider identity verification — internal
+// Returns a redacted view of a provider identity verification - internal
 // status, decision, assurance level, vendor metadata. No raw vendor payload,
-// no encrypted session URL, no `vendorReference` (Didit session id) — the
+// no encrypted session URL, no `vendorReference` (Didit session id) - the
 // session id is sensitive enough that we don't expose it to anything that
 // isn't the admin Vendors page.
 

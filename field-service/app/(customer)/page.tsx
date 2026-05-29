@@ -17,8 +17,8 @@ import { SectionLabel } from '@/components/ui/section-label'
 import { AreaSelector } from '@/components/customer/AreaSelector'
 
 export const metadata = buildMetadata({
-  title: 'Skilled help near you — book local service providers',
-  description: 'Browse rated local providers, get a written quote, and book on WhatsApp.',
+  title: 'Skilled help near you - book local service providers',
+  description: 'Browse rated local providers, get a written quote and book on WhatsApp.',
 })
 
 // Tiles must stay in sync with PILOT_SKILL_TAGS in lib/service-categories.ts.
@@ -140,7 +140,7 @@ export default async function CustomerHomePage({
           {!isLoggedOut && <><br />what needs fixing?</>}
         </h1>
         <p className="mt-2 mb-4 text-[14.5px] leading-relaxed text-[var(--ink-mute)] [text-wrap:pretty] max-w-[320px]">
-          Plumbers, handymen, gardeners, tilers and more — rated by customers who booked them.
+          Plumbers, handymen, gardeners, tilers and more - rated by customers who booked them.
         </p>
 
         {/* Search bar */}
@@ -318,7 +318,7 @@ export default async function CustomerHomePage({
                 Win paying work - without the noise.
               </h2>
               <p className="text-[13px] leading-[1.5] mb-4" style={{ opacity: 0.75 }}>
-                Real leads, transparent fees, and live job tracking. Apply once, get matched daily.
+                Real leads, transparent fees and live job tracking. Apply once, get matched daily.
               </p>
               <div className="flex gap-2">
                 <Link

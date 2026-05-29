@@ -98,7 +98,7 @@ function activeRegistrationConversation(step: string) {
     flow: 'registration',
     step,
     data: { name: 'Lovemore', skills: ['plumbing'] },
-    // 25 minutes in the future — well within the 30-minute TTL.
+    // 25 minutes in the future - well within the 30-minute TTL.
     expiresAt: new Date(Date.now() + 25 * 60_000),
   })
 }
@@ -123,7 +123,7 @@ function textMessage(body: string) {
   }
 }
 
-describe('provider onboarding dispatcher — profile photo + active-flow guards', () => {
+describe('provider onboarding dispatcher - profile photo + active-flow guards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()

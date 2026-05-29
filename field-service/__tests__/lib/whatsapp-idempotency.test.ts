@@ -1,4 +1,4 @@
-// Tests for WhatsApp/Meta idempotency: WAMID dedupe, cron send-dedup, and
+// Tests for WhatsApp/Meta idempotency: WAMID dedupe, cron send-dedup and
 // extra-work duplicate guard.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -90,7 +90,7 @@ describe('WAMID-based inbound dedupe', () => {
     )
   })
 
-  it('only treats P2002 as a duplicate — other DB errors propagate', async () => {
+  it('only treats P2002 as a duplicate - other DB errors propagate', async () => {
     const dbError = new Error('Connection refused')
     mockCreate.mockRejectedValueOnce(dbError)
 
@@ -169,7 +169,7 @@ describe('createExtraWork idempotency', () => {
     })
 
     expect(existing?.approvalToken).toBe('token-existing-abc')
-    // create should NOT be called — idempotency guard returns early
+    // create should NOT be called - idempotency guard returns early
     expect(mockCreate).not.toHaveBeenCalled()
   })
 
@@ -214,7 +214,7 @@ describe('logOutboundMessage', () => {
     }))
 
     // The direction default is enforced at the DB level (DEFAULT 'OUTBOUND')
-    // and in the Prisma schema — verify the schema field exists
+    // and in the Prisma schema - verify the schema field exists
     const { db } = await import('@/lib/db')
     expect(db.messageEvent).toBeDefined()
   })

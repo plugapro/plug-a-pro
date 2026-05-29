@@ -26,7 +26,7 @@ function envInt(name: string, fallback: number): number {
 function isTestRuntime(): boolean {
   // Vitest sets VITEST=true automatically; NODE_ENV=test is the conventional
   // Node test marker. Either is sufficient. Any other env (including
-  // 'staging', 'preview', or unset) is treated as a non-test runtime and
+  // 'staging', 'preview' or unset) is treated as a non-test runtime and
   // requires a real pepper.
   return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true'
 }

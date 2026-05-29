@@ -66,7 +66,7 @@ describe('feature flag rollout groups', () => {
     expect([...OPS_CRUD_FEATURE_FLAGS].sort()).toEqual([...IMPLEMENTED_OPS_CRUD_FLAGS].sort())
   })
 
-  it('excludes reserved, vendor, auth, customer, provider, matching, and pilot flags', () => {
+  it('excludes reserved, vendor, auth, customer, provider, matching and pilot flags', () => {
     for (const flag of NON_CRUD_OR_UNIMPLEMENTED_FLAGS) {
       expect(OPS_CRUD_FEATURE_FLAGS).not.toContain(flag)
     }

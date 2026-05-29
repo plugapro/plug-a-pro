@@ -7,7 +7,7 @@ import { db } from './db'
 import { addDays, format, startOfDay, isBefore } from 'date-fns'
 
 export interface AvailableSlot {
-  id: string | null    // null — dynamic (no Slot record in new schema)
+  id: string | null    // null - dynamic (no Slot record in new schema)
   date: string         // ISO date string: "2026-04-01"
   windowStart: string  // "09:00"
   windowEnd: string    // "17:00"

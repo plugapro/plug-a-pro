@@ -103,7 +103,7 @@ describe('parseProviderJobCommand', () => {
     expect(parseProviderJobCommand(null)).toBeNull()
   })
 
-  it('returns null for "issue" — it routes to dispute flow, not a job status command', () => {
+  it('returns null for "issue" - it routes to dispute flow, not a job status command', () => {
     // "issue" is intentionally handled by the dispute flow in whatsapp-bot, not here.
     expect(parseProviderJobCommand('issue')).toBeNull()
   })

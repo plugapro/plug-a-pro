@@ -72,7 +72,7 @@ describe('otp security config and crypto helpers', () => {
 
     expect(() => getOtpSecurityConfig()).toThrow(/OTP_HASH_PEPPER is required/)
 
-    // 'staging' / 'preview' / unknown envs are NOT test runtimes — pepper required.
+    // 'staging' / 'preview' / unknown envs are NOT test runtimes - pepper required.
     vi.stubEnv('NODE_ENV', 'staging')
     expect(() => getOtpSecurityConfig()).toThrow(/OTP_HASH_PEPPER is required/)
 
@@ -138,7 +138,7 @@ describe('otp security config and crypto helpers', () => {
     expect(clearPendingStepUpCookieHeader()).toContain('Max-Age=0')
   })
 
-  it('rejects wrong key, tampered ciphertext, tampered auth tag, expired payload, and replay marker inputs', async () => {
+  it('rejects wrong key, tampered ciphertext, tampered auth tag, expired payload and replay marker inputs', async () => {
     const token = encryptPendingStepUpCookie(basePayload())
     const [iv, ciphertext, authTag] = token.split('.')
 

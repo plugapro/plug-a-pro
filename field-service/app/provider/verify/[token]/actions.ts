@@ -48,14 +48,14 @@ export type DocumentActionResult =
   | { ok: false; code: 'INVALID_IDENTITY_BASIS' }
 
 // Consent only does work before it has been recorded. Every other status
-// (already consented, mid-flow, or terminal) is a no-op so a stale tab can't
+// (already consented, mid-flow or terminal) is a no-op so a stale tab can't
 // attempt an invalid transition back to CONSENTED.
 const CONSENT_REQUIRED_STATUSES: readonly VerificationStatus[] = ['NOT_STARTED', 'STARTED']
 
 export async function acceptIdentityConsent(token: string) {
   const verification = await resolveProviderVerificationToken(token)
 
-  // Idempotent / stale-safe: consent already given, flow advanced, or terminal.
+  // Idempotent / stale-safe: consent already given, flow advanced or terminal.
   if (!statusIn(verification.status, CONSENT_REQUIRED_STATUSES)) {
     logIdentityVerificationEvent('verify.consent.noop', {
       verificationId: verification.id,
@@ -118,7 +118,7 @@ export async function submitIdentityBasisAndIdentifier(
     return { ok: true as const, alreadyAdvanced: true }
   }
 
-  // Validation failures are an expected outcome — return them so the page can
+  // Validation failures are an expected outcome - return them so the page can
   // surface a controlled message instead of triggering the error boundary.
   const parsed = IdentifierSchema.safeParse(rawInput)
   if (!parsed.success) {
@@ -351,7 +351,7 @@ export async function startHostedVerificationFromConsent(token: string) {
     return { ok: false as const, code: 'NOT_HOSTED_VENDOR' as const }
   }
   if (verification.consentVendorKey !== consentVendor.vendorKey) {
-    // Caller forgot to record consent — surface explicitly rather than
+    // Caller forgot to record consent - surface explicitly rather than
     // silently fabricating one.
     return { ok: false as const, code: 'CONSENT_NOT_RECORDED' as const }
   }

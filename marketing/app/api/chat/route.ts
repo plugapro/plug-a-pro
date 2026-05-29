@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   const systemPrompt = await buildChatSystemPrompt();
 
   const result = streamText({
-    // AI Gateway route — model string "provider/model"
+    // AI Gateway route - model string "provider/model"
     // Requires VERCEL_OIDC_TOKEN (run: vercel link && vercel env pull)
     model: "anthropic/claude-haiku-4.5",
     system: systemPrompt,

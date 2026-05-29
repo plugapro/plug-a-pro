@@ -52,7 +52,7 @@ export default function LinkExpiredPage() {
             color: 'var(--ink-mute)',
           }}>
             We couldn&apos;t verify access to this request. The link may have been used
-            or revoked. Open your most recent WhatsApp message from Plug A Pro, or
+            or revoked. Open your most recent WhatsApp message from Plug A Pro or
             start a new request.
           </p>
         </div>

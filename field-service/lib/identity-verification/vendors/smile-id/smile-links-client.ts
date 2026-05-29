@@ -86,7 +86,7 @@ export async function createSmileLink(input: CreateSmileLinkInput): Promise<Crea
     ...signedHeader(),
     source_sdk: 'rest_api',
     source_sdk_version: SOURCE_SDK_VERSION,
-    name: `Plug A Pro — ${input.verificationId}`,
+    name: `Plug A Pro - ${input.verificationId}`,
     company_name: 'Plug A Pro',
     id_types: [{
       country: 'ZA',

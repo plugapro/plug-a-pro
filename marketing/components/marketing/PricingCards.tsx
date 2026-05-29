@@ -11,12 +11,12 @@ const SIDES = [
     emoji: "🏠",
     headline: "Free to request help",
     description:
-      "Describe your job, get matched to nearby local pros, and receive written quotes — at no cost. You only pay the service provider for the job itself.",
+      "Describe your job, get matched to nearby local pros and receive written quotes - at no cost. You only pay the service provider for the job itself.",
     points: [
       "No platform fee to request a match",
       "Approve quotes before any work begins",
       "Keep the booking and job updates on WhatsApp",
-      "Payment arranged through the platform after job completion — method confirmed with each booking",
+      "Payment arranged through the platform after job completion - method confirmed with each booking",
     ],
     cta: "Start on WhatsApp",
     href: buildWhatsAppLink(whatsappMessages.customer),
@@ -28,7 +28,7 @@ const SIDES = [
     emoji: "🔧",
     headline: "Simple, fair access to customers",
     description:
-      "Register your skills and service areas, receive matched job leads on WhatsApp, and build a visible reputation over time. No upfront fees to join.",
+      "Register your skills and service areas, receive matched job leads on WhatsApp and build a visible reputation over time. No upfront fees to join.",
     points: [
       "Free to register and create your profile",
       "Receive matched leads based on your trade and area",

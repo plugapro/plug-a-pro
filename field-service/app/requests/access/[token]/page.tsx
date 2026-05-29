@@ -267,8 +267,8 @@ export default async function TicketAccessPage({
     const code = expired ? 'TICKET_LINK_EXPIRED' : invalid ? 'TICKET_LINK_INVALID' : 'TICKET_LOOKUP_FAILED'
     const title = expired ? 'This request link has expired.' : "We couldn't open this request link."
     const body = expired
-      ? 'This secure request link is time-limited. Open the latest WhatsApp message from Plug A Pro to get a fresh link, or sign in to view your requests below.'
-      : 'This link may be from an older WhatsApp message that has since been updated. Check your latest message from Plug A Pro for a fresh link, or sign in to view your requests.'
+      ? 'This secure request link is time-limited. Open the latest WhatsApp message from Plug A Pro to get a fresh link or sign in to view your requests below.'
+      : 'This link may be from an older WhatsApp message that has since been updated. Check your latest message from Plug A Pro for a fresh link or sign in to view your requests.'
     return (
       <div className="mx-auto max-w-lg space-y-4 px-4 py-10">
         <Card>
@@ -599,7 +599,7 @@ export default async function TicketAccessPage({
         <Card className="border-destructive/30 bg-destructive/5">
           <CardContent className="space-y-2 px-4 py-4 text-sm text-destructive">
             <p className="font-medium">We could not complete that action</p>
-            <p>Please refresh this link, open the latest WhatsApp message, or contact support.</p>
+            <p>Please refresh this link, open the latest WhatsApp message or contact support.</p>
             <Button asChild variant="outline" className="w-full">
               <Link href={supportHref}>Contact support</Link>
             </Button>
@@ -665,7 +665,7 @@ export default async function TicketAccessPage({
         <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
           <CardContent className="space-y-3 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
             <p className="font-medium">We could not find enough suitable providers yet.</p>
-            <p>You can change your preferred time, expand your area, request manual assistance, or start a new request.</p>
+            <p>You can change your preferred time, expand your area, request manual assistance or start a new request.</p>
             <div className="grid grid-cols-2 gap-2">
               <Button asChild variant="outline">
                 <Link href={supportHref}>Ask for help</Link>
@@ -884,7 +884,7 @@ export default async function TicketAccessPage({
             </p>
             <h2 className="mt-1 text-lg font-semibold">We found {shortlist.items.length} suitable provider{shortlist.items.length === 1 ? '' : 's'}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Compare their experience, call-out fee, availability, and profile before choosing.
+              Compare their experience, call-out fee, availability and profile before choosing.
             </p>
           </div>
           {profileItem && (

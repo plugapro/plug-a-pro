@@ -5,7 +5,7 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "How It Works",
   description:
-    "See how Plug A Pro moves a request from WhatsApp intake through operations review, approved provider matching, credit unlock, acceptance, quote approval, and job updates.",
+    "See how Plug A Pro moves a request from WhatsApp intake through operations review, approved provider matching, credit unlock, acceptance, quote approval and job updates.",
 });
 
 const CUSTOMER_STEPS = [
@@ -13,7 +13,7 @@ const CUSTOMER_STEPS = [
     step: "1",
     title: "Start on WhatsApp or the PWA",
     detail:
-      "Tell Plug A Pro what service you need, where the job is, your preferred availability, and add photos if they help explain the work.",
+      "Tell Plug A Pro what service you need, where the job is, your preferred availability and add photos if they help explain the work.",
   },
   {
     step: "2",
@@ -31,7 +31,7 @@ const CUSTOMER_STEPS = [
     step: "4",
     title: "You receive the handover",
     detail:
-      "After a successful acceptance, you get the provider's name, contact details, and a secure link to view the handover for that request.",
+      "After a successful acceptance, you get the provider's name, contact details and a secure link to view the handover for that request.",
   },
   {
     step: "5",
@@ -43,13 +43,13 @@ const CUSTOMER_STEPS = [
     step: "6",
     title: "Track the job status",
     detail:
-      "You receive WhatsApp updates when the provider schedules arrival, is on the way, arrives, starts the job, and completes the work.",
+      "You receive WhatsApp updates when the provider schedules arrival, is on the way, arrives, starts the job and completes the work.",
   },
   {
     step: "7",
     title: "Confirm completion",
     detail:
-      "The final job record keeps the quote, status updates, notes, photos, and completion history together for follow-up and support.",
+      "The final job record keeps the quote, status updates, notes, photos and completion history together for follow-up and support.",
   },
 ];
 
@@ -58,7 +58,7 @@ const WORKER_STEPS = [
     step: "1",
     title: "Start provider onboarding on WhatsApp",
     detail:
-      "Share your name, trade categories, service areas, experience, availability, and evidence such as documents or photos.",
+      "Share your name, trade categories, service areas, experience, availability and evidence such as documents or photos.",
   },
   {
     step: "2",
@@ -70,7 +70,7 @@ const WORKER_STEPS = [
     step: "3",
     title: "Approved providers activate their profile",
     detail:
-      "If approved, the provider record is activated. The provider can open the Provider PWA, sign in with phone OTP, review their profile, set availability, and check wallet credits.",
+      "If approved, the provider record is activated. The provider can open the Provider PWA, sign in with phone OTP, review their profile, set availability and check wallet credits.",
   },
   {
     step: "4",
@@ -88,13 +88,13 @@ const WORKER_STEPS = [
     step: "6",
     title: "Unlock, then accept or decline",
     detail:
-      "Before full customer details are shown, the system checks provider status, KYC/application state, wallet balance, and lead availability. If checks pass, the wallet is debited, the unlock is recorded, and the provider can accept.",
+      "Before full customer details are shown, the system checks provider status, KYC/application state, wallet balance and lead availability. If checks pass, the wallet is debited, the unlock is recorded and the provider can accept.",
   },
   {
     step: "7",
     title: "Handover and job execution",
     detail:
-      "After acceptance, the customer is notified, operations visibility is updated, and the provider can contact the customer, quote, schedule arrival, upload notes or photos, and update job progress.",
+      "After acceptance, the customer is notified, operations visibility is updated and the provider can contact the customer, quote, schedule arrival, upload notes or photos and update job progress.",
   },
 ];
 
@@ -103,13 +103,13 @@ const OPS_STEPS = [
     step: "1",
     title: "Review incoming requests",
     detail:
-      "Customer job requests enter an operations view where the team can check service type, location, timing, notes, and uploaded photos.",
+      "Customer job requests enter an operations view where the team can check service type, location, timing, notes and uploaded photos.",
   },
   {
     step: "2",
     title: "Dispatch and matching",
     detail:
-      "The dispatch queue can use matching rules or manual override to route the request to providers who cover the category, area, and availability window.",
+      "The dispatch queue can use matching rules or manual override to route the request to providers who cover the category, area and availability window.",
   },
   {
     step: "3",
@@ -119,9 +119,9 @@ const OPS_STEPS = [
   },
   {
     step: "4",
-    title: "Monitor acceptance, quotes, and payments",
+    title: "Monitor acceptance, quotes and payments",
     detail:
-      "Operations tracks accepted leads, quote progress, booking/payment status, provider wallet activity, disputes, and provider application review.",
+      "Operations tracks accepted leads, quote progress, booking/payment status, provider wallet activity, disputes and provider application review.",
   },
 ];
 
@@ -129,7 +129,7 @@ const DECISION_GATES = [
   {
     title: "Application gate",
     detail:
-      "Pending, rejected, inactive, or suspended providers cannot receive marketplace leads. Approval or rejection is sent back through WhatsApp.",
+      "Pending, rejected, inactive or suspended providers cannot receive marketplace leads. Approval or rejection is sent back through WhatsApp.",
   },
   {
     title: "Credit unlock gate",
@@ -199,7 +199,7 @@ export default function HowItWorksPage() {
           How Plug A Pro works
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          The real flow from customer request to provider approval, lead unlock, acceptance, handover, quote, and job updates.
+          The real flow from customer request to provider approval, lead unlock, acceptance, handover, quote and job updates.
         </p>
       </div>
 
@@ -236,7 +236,7 @@ export default function HowItWorksPage() {
           />
           <FlowSection
             label="Operations journey"
-            title="Review, dispatch, wallet review, and monitoring"
+            title="Review, dispatch, wallet review and monitoring"
             steps={OPS_STEPS}
           />
 
@@ -264,7 +264,7 @@ export default function HowItWorksPage() {
               Full customer details are released in stages
             </p>
             <p>
-              A provider first sees a limited lead preview. Full customer contact details are released after the provider passes the eligibility checks, unlocks the lead where required, and accepts the job. Plug A Pro keeps the request, quote approval, job updates, and handover activity on record.
+              A provider first sees a limited lead preview. Full customer contact details are released after the provider passes the eligibility checks, unlocks the lead where required and accepts the job. Plug A Pro keeps the request, quote approval, job updates and handover activity on record.
             </p>
           </div>
         </div>

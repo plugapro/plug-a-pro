@@ -4,7 +4,7 @@
 // lead capture, email templates, etc.)
 
 export const siteConfig = {
-  // Venture identifier — matches the 'venture' field in the database and Supabase leads table
+  // Venture identifier - matches the 'venture' field in the database and Supabase leads table
   venture: 'plug-a-pro',
 
   // Display name (used in page titles, emails, etc.)
@@ -13,7 +13,7 @@ export const siteConfig = {
   // Short tagline (used in meta description, OG tags)
   description: 'Book skilled technicians via WhatsApp. Track every job. Get paid reliably.',
 
-  // Canonical URL — no trailing slash
+  // Canonical URL - no trailing slash
   url: (() => {
     const configuredUrl = (process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '')
       .trim()
@@ -31,7 +31,7 @@ export const siteConfig = {
     }
   })(),
 
-  // Primary accent colour (single oklch token — used in Tailwind + meta theme-color)
+  // Primary accent colour (single oklch token - used in Tailwind + meta theme-color)
   accent: '#2563eb',
 
   // WhatsApp number for customer contact (international format, no spaces or dashes)
@@ -73,7 +73,7 @@ export function buildMetadata(
   }> = {}
 ): Metadata {
   const title = overrides.title
-    ? `${overrides.title} — ${siteConfig.name}`
+    ? `${overrides.title} - ${siteConfig.name}`
     : siteConfig.name
   const description = overrides.description ?? siteConfig.description
   const url = overrides.path

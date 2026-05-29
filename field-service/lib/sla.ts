@@ -1,4 +1,4 @@
-// ─── SLA registry — public API ───────────────────────────────────────────────
+// ─── SLA registry - public API ───────────────────────────────────────────────
 // Thin re-export that normalises the ops-dashboard SLA config into the
 // Case-layer API the plan calls `slaFor(queueType)`.
 //
@@ -11,7 +11,7 @@ import type { OpsDashboardQueueKey } from './ops-dashboard/types'
 
 export type SlaSpec = {
   targetMinutes: number
-  warningAtMinutes: number   // 80 % of target — matches getSlaTone logic
+  warningAtMinutes: number   // 80 % of target - matches getSlaTone logic
   targetLabel: string
 }
 
@@ -29,7 +29,7 @@ const QUEUE_TYPE_TO_KEY: Record<OpsQueueType, OpsDashboardQueueKey | null> = {
 export function slaFor(queueType: OpsQueueType): SlaSpec {
   const key = QUEUE_TYPE_TO_KEY[queueType]
   if (!key) {
-    // TODO(WS-SUPPLY): SUPPLY is not yet in OpsQueueType enum — this branch is unreachable
+    // TODO(WS-SUPPLY): SUPPLY is not yet in OpsQueueType enum - this branch is unreachable
     // until the SUPPLY migration is applied. Default to 1 business day when it lands.
     return { targetMinutes: 8 * 60, warningAtMinutes: Math.floor(8 * 60 * 0.8), targetLabel: 'Resolve inside 1 day' }
   }

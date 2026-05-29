@@ -1,5 +1,5 @@
 // ─── Admin: Team Management ────────────────────────────────────────────────────
-// Lists AdminUser records with invite, role-change, and deactivate actions.
+// Lists AdminUser records with invite, role-change and deactivate actions.
 
 export const dynamic = 'force-dynamic'
 

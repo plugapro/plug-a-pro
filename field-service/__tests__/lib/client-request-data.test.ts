@@ -59,7 +59,7 @@ describe('client request data helpers', () => {
       expect(preferenceLabel('not_sure')).toBe('Best value')
     })
 
-    it('defaults to Best value for null, undefined, or unknown values', () => {
+    it('defaults to Best value for null, undefined or unknown values', () => {
       expect(preferenceLabel(undefined)).toBe('Best value')
       expect(preferenceLabel(null)).toBe('Best value')
       expect(preferenceLabel('')).toBe('Best value')

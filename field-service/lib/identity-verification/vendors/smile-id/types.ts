@@ -8,14 +8,14 @@
 export type SmileLinkIdType = {
   country: string                  // ISO 3166-1 alpha-2 (e.g. 'ZA')
   id_type: string                  // 'IDENTITY_CARD' for SA EVD
-  verification_method: string      // resolved by sandbox probe (Task 2) — likely 'doc_verification'
+  verification_method: string      // resolved by sandbox probe (Task 2) - likely 'doc_verification'
 }
 
 export type SmileLinkPartnerParams = {
   user_id: string                  // Smile requires user_id nested HERE, not top-level
   job_id: string                   // partner-supplied, globally unique forever
   job_type: number                 // 11 for Enhanced Document Verification
-  verification_id: string          // Plug A Pro internal id — travels back on every callback
+  verification_id: string          // Plug A Pro internal id - travels back on every callback
   [key: string]: string | number   // partner_params accepts arbitrary string-coerced extras
 }
 
@@ -29,7 +29,7 @@ export type SmileLinksCreateRequest = {
   name: string                     // shown in Smile portal for this link
   company_name: string
   id_types: SmileLinkIdType[]
-  callback_url: string             // REQUIRED — Smile Links rejects requests without this
+  callback_url: string             // REQUIRED - Smile Links rejects requests without this
   is_single_use: boolean
   partner_params: SmileLinkPartnerParams
   expires_at: string               // ISO-8601 with ms
@@ -98,7 +98,7 @@ export type SmileEvdWebhookPayload = {
   // do NOT compare with `=== true` boolean. Adapter normalises in parse.ts.
   IsFinalResult?: string | boolean
 
-  // PII fields — keys present depend on EVD product variant. Treat ALL of these
+  // PII fields - keys present depend on EVD product variant. Treat ALL of these
   // as PII for redaction; do not log raw values.
   ImageLinks?: SmileEvdImageLinks
   KYCReceipt?: string

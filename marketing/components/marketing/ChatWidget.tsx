@@ -57,7 +57,7 @@ export function ChatWidget() {
               Send
             </Button>
           </form>
-          {/* WhatsApp escalation — wired in Task 14 */}
+          {/* WhatsApp escalation - wired in Task 14 */}
           <div className="px-4 py-2 border-t border-border/40 text-xs text-muted-foreground">
             Prefer a human? <WhatsAppButton compact source="chat_widget" />
           </div>

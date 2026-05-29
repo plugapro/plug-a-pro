@@ -323,7 +323,7 @@ describe('otp security service', () => {
     })
   })
 
-  it('does not let late sent, failed, or cancelled updates overwrite reported challenges', async () => {
+  it('does not let late sent, failed or cancelled updates overwrite reported challenges', async () => {
     const sentRace = await recordOtpChallenge({
       phoneE164: PHONE,
       purpose: 'LOGIN',
@@ -363,7 +363,7 @@ describe('otp security service', () => {
     })
   })
 
-  it('reports an unrequested OTP idempotently, cancels siblings, locks the phone, and creates high severity event', async () => {
+  it('reports an unrequested OTP idempotently, cancels siblings, locks the phone and creates high severity event', async () => {
     const older = await recordOtpChallenge({
       phoneE164: PHONE,
       userId: USER_ID,
@@ -440,7 +440,7 @@ describe('otp security service', () => {
     )
   })
 
-  it('does not fail generic report success for expired, reused, tampered, or unsigned report tokens', async () => {
+  it('does not fail generic report success for expired, reused, tampered or unsigned report tokens', async () => {
     const expired = await recordOtpChallenge({
       phoneE164: PHONE,
       purpose: 'LOGIN',

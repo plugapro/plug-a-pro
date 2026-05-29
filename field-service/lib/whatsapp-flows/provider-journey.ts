@@ -1,6 +1,6 @@
 // ─── Provider WhatsApp journey ────────────────────────────────────────────────
 // Registered providers manage availability and job status through WhatsApp.
-// Entry: keywords "available", "offline", "my jobs", or "provider menu"
+// Entry: keywords "available", "offline", "my jobs" or "provider menu"
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { sendCustomerRunningLateNotification, sendProviderInvoiceTemplate } from '../whatsapp'
@@ -349,7 +349,7 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
   if (!provider) {
     await sendText(
       ctx.phone,
-      "👷 You're not registered as a Plug A Pro provider yet.\n\nReply *join* to apply, or *Hi* for the main menu."
+      "👷 You're not registered as a Plug A Pro provider yet.\n\nReply *join* to apply or *Hi* for the main menu."
     )
     return { nextStep: 'done' }
   }
@@ -478,7 +478,7 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'pj_toggle' || ctx.reply.id === 'pj_go_online' || ctx.reply.id === 'pj_go_offline') {
-    // A temp-paused provider has availableNow=true but a future breakUntil — treat as offline
+    // A temp-paused provider has availableNow=true but a future breakUntil - treat as offline
     const isTempPaused =
       provider.technicianAvailability?.availabilityState === 'PAUSED' &&
       provider.technicianAvailability.breakUntil != null &&
@@ -547,7 +547,7 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
 
   if (ctx.reply.id === 'provider_topup') return { nextStep: 'pj_topup_select_amount' }
 
-  // Unexpected input — re-show menu
+  // Unexpected input - re-show menu
   return handleProviderMenu(ctx)
 }
 
@@ -755,9 +755,9 @@ async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const structuredAreas = provider.technicianServiceAreas.map(
-    (area) => `${area.label} — ${area.active ? 'Active pilot' : 'Coming soon'}`,
+    (area) => `${area.label} - ${area.active ? 'Active pilot' : 'Coming soon'}`,
   )
-  const legacyAreas = provider.serviceAreas.map((area) => `${area} — status saved`)
+  const legacyAreas = provider.serviceAreas.map((area) => `${area} - status saved`)
   const areas = structuredAreas.length ? structuredAreas : legacyAreas
 
   await sendButtons(
@@ -805,7 +805,7 @@ async function handleProviderProfile(ctx: FlowContext): Promise<FlowResult> {
 async function handleProviderSupport(ctx: FlowContext): Promise<FlowResult> {
   await sendButtons(
     ctx.phone,
-    "🛟 *Provider Support*\n\nTell us what you need help with. A Plug A Pro team member can review your account, application, or current jobs.",
+    "🛟 *Provider Support*\n\nTell us what you need help with. A Plug A Pro team member can review your account, application or current jobs.",
     [
       { id: 'provider_status', title: 'Provider Status' },
       { id: 'back_home', title: 'Main Menu' },
@@ -825,7 +825,7 @@ async function handleProviderCredits(ctx: FlowContext): Promise<FlowResult> {
   try {
     creditSummary = await providerCreditSummary(provider.id)
   } catch {
-    // balance unavailable — send best-effort message
+    // balance unavailable - send best-effort message
   }
 
   await sendButtons(
@@ -879,7 +879,7 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
 
   // Root cause: Provider Status used to enter the active-provider availability
   // and credits path immediately. Pending/inactive providers can legitimately
-  // lack wallet, verification, or availability records, so explain application
+  // lack wallet, verification or availability records, so explain application
   // and profile state first and only use active-provider services after that.
   if (
     isProviderPendingReview(provider) ||
@@ -964,7 +964,7 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `${statusBody}\n\n${creditSummary}\n\nApplication status: *${providerApplicationStatusLabel(application?.status)}*\nProvider profile: *${provider.active ? provider.status : 'Inactive'}*\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when approved, active, and available.`,
+    `${statusBody}\n\n${creditSummary}\n\nApplication status: *${providerApplicationStatusLabel(application?.status)}*\nProvider profile: *${provider.active ? provider.status : 'Inactive'}*\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when approved, active and available.`,
     paused
       ? [
           { id: 'provider_go_available', title: 'Go Available' },
@@ -1000,7 +1000,7 @@ async function handleWorkerPortal(ctx: FlowContext): Promise<FlowResult> {
 
   await sendCtaUrl(
     ctx.phone,
-    'Manage your detailed working hours, emergency jobs, same-day jobs, and temporary pauses in the Worker Portal.',
+    'Manage your detailed working hours, emergency jobs, same-day jobs and temporary pauses in the Worker Portal.',
     ctaLabelFor('worker_portal'),
     portalUrl,
     { footer: 'WhatsApp supports quick status changes only' },
@@ -1192,7 +1192,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
     const status = statusLabel[job.status] ?? job.status
     return {
       id: `pj_job_${job.id}`,
-      title: `${category}${suburb ? ` — ${suburb}` : ''}`.slice(0, 24),
+      title: `${category}${suburb ? ` - ${suburb}` : ''}`.slice(0, 24),
       description: status,
     }
   })
@@ -1202,7 +1202,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
     const status = acceptedLeadStatusLabel(lead.jobRequest?.match)
     return {
       id: `pj_lead_${lead.id}`,
-      title: `${category}${suburb ? ` — ${suburb}` : ''}`.slice(0, 24),
+      title: `${category}${suburb ? ` - ${suburb}` : ''}`.slice(0, 24),
       description: status,
     }
   })
@@ -1304,7 +1304,7 @@ async function handleJobDetail(ctx: FlowContext): Promise<FlowResult> {
   }
 
   // Build button IDs: pj_upd_<jobId>_<newStatus>
-  // WhatsApp button title max 20 chars — keep labels short
+  // WhatsApp button title max 20 chars - keep labels short
   const buttons = nextSteps.map((s) => ({
     id: `pj_upd_${jobId}_${s.id}`,
     title: s.label,
@@ -1381,12 +1381,12 @@ async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promi
   })
   const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
   const body =
-    `📋 *${category} — ${suburb}*\n\n` +
+    `📋 *${category} - ${suburb}*\n\n` +
     `Customer: *${customer}*\n` +
     `Ref: *${shortRef(lead.jobRequestId)}*\n` +
     `Status: *${status}*\n` +
     `Next step: *${nextStep}*\n\n` +
-    `Open the job to view customer details, photos, contact options, and status actions.`
+    `Open the job to view customer details, photos, contact options and status actions.`
 
   if (leadUrl) {
     await sendCtaUrl(
@@ -1469,9 +1469,9 @@ async function handleStatusConfirm(ctx: FlowContext): Promise<FlowResult> {
   })
 
   const statusMessages: Record<string, string> = {
-    EN_ROUTE:  '🚗 Status updated — *On My Way*!\n\nThe customer has been notified you are en route.',
-    ARRIVED:   "📍 Status updated — *Arrived*!\n\nThe customer has been notified you're at the location.",
-    STARTED:   '🔧 Status updated — *Work Started*!\n\nUpdate to ✅ Done when finished.',
+    EN_ROUTE:  '🚗 Status updated - *On My Way*!\n\nThe customer has been notified you are en route.',
+    ARRIVED:   "📍 Status updated - *Arrived*!\n\nThe customer has been notified you're at the location.",
+    STARTED:   '🔧 Status updated - *Work Started*!\n\nUpdate to ✅ Done when finished.',
     PAUSED:    '⏸ Job paused.\n\nReply *my jobs* to resume when ready.',
     PENDING_COMPLETION_CONFIRMATION: `✅ *Marked ready for customer sign-off!*\n\nThe customer has been asked to confirm completion.`,
   }
@@ -1508,7 +1508,7 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
   })
 
   if (!provider) {
-    // Could be an applicant — direct them to support
+    // Could be an applicant - direct them to support
     await sendButtons(
       ctx.phone,
       "You're not yet registered as an active provider. Once your application is approved, you can complete identity verification in the Worker Portal.",
@@ -1536,11 +1536,11 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
     NOT_STARTED: 'Not started',
     IN_PROGRESS: 'In progress',
     SUBMITTED: 'Under review',
-    REJECTED: 'Rejected — resubmission required',
+    REJECTED: 'Rejected - resubmission required',
     EXPIRED: 'Expired',
   }
   const status = provider.kycStatus === 'VERIFIED'
-    ? 'Manual review complete — secure liveness step required for buying credits'
+    ? 'Manual review complete - secure liveness step required for buying credits'
     : statusLabel[(provider.kycStatus as string) ?? 'NOT_STARTED'] ?? (provider.kycStatus ?? 'Not started')
   const link = await issueIdentityVerificationLinkForWhatsApp(provider.id)
   const portalUrl = link?.verificationUrl ?? getPublicAppUrl('/provider/verification')
@@ -1819,7 +1819,7 @@ export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
 
 function getPayatFeeAmountCents(): number {
   const raw = process.env.PAYAT_MERCHANT_FEE_FIXED_CENTS
-  if (!raw) return 700 // R7 default — update via env var once Pay@ confirms exact fee
+  if (!raw) return 700 // R7 default - update via env var once Pay@ confirms exact fee
   const parsed = parseInt(raw, 10)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 700
 }
@@ -1847,7 +1847,7 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
     if (verificationUrl) {
       await sendCtaUrl(
         ctx.phone,
-        '🛡️ *Identity check required*\n\nYou must complete identity verification before purchasing top-up credits.\n\nTap the button below to verify — it takes about 2 minutes and is required once.',
+        '🛡️ *Identity check required*\n\nYou must complete identity verification before purchasing top-up credits.\n\nTap the button below to verify - it takes about 2 minutes and is required once.',
         ctaLabelFor('identity_verification'),
         verificationUrl,
       )
@@ -1866,13 +1866,13 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
     return handleTopUpPayatCreate(ctx, provider, selected.amountCents)
   }
 
-  // First entry or unrecognised reply — show the package list
+  // First entry or unrecognised reply - show the package list
   const feeAmountCents = getPayatFeeAmountCents()
   const feeR = Math.round(feeAmountCents / 100)
   const creditLine = await providerCreditBalanceLine(provider.id)
   await sendList(
     ctx.phone,
-    `💳 *Top Up Credits*\n\n${creditLine}\n\n1 credit = R50. Credits are used only when a customer selects you and you accept the job.\n\nPay at any Pick n Pay, Shoprite, or Checkers till — you'll receive a payment barcode to show at the cashier. A R${feeR} counter service fee is added to the amount you pay. Credits are added automatically once payment is confirmed.\n\nChoose how much to add:`,
+    `💳 *Top Up Credits*\n\n${creditLine}\n\n1 credit = R50. Credits are used only when a customer selects you and you accept the job.\n\nPay at any Pick n Pay, Shoprite or Checkers till - you'll receive a payment barcode to show at the cashier. A R${feeR} counter service fee is added to the amount you pay. Credits are added automatically once payment is confirmed.\n\nChoose how much to add:`,
     [{
       title: 'Pay at Retailer (Pay@)',
       rows: [
@@ -1910,7 +1910,7 @@ async function handleTopUpPayatCreate(
     if (result.payat.paymentLink) {
       await sendCtaUrl(
         ctx.phone,
-        `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till. Credits are added automatically once payment is confirmed — usually within a few minutes.`,
+        `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite or Checkers till. Credits are added automatically once payment is confirmed - usually within a few minutes.`,
         'Pay now at retailer',
         result.payat.paymentLink,
       ).catch((err: unknown) => {
@@ -1953,7 +1953,7 @@ async function handleTopUpPayatCreate(
     }
 
     const message = isDuplicate
-      ? `You already have an active Pay@ top-up link. Check your earlier messages for the payment barcode, or visit the provider portal to start a new one after it expires.`
+      ? `You already have an active Pay@ top-up link. Check your earlier messages for the payment barcode or visit the provider portal to start a new one after it expires.`
       : `⚠️ Could not create your top-up. Please try again or visit the provider portal.`
 
     console.error('[provider-journey] createPayatTopUpIntent failed', {
@@ -2012,7 +2012,7 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
 
     if (result.ok) {
       const n = result.creditsAwarded
-      // Echo the canonical form so the user sees exactly which voucher was accepted —
+      // Echo the canonical form so the user sees exactly which voucher was accepted -
       // useful when they typed dashless / suffix-only / em-dashed input.
       await sendText(
         ctx.phone,

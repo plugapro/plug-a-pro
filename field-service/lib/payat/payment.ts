@@ -68,14 +68,14 @@ function mapPayatResponse(
   data: Record<string, unknown>,
   fallbackReference: string,
 ): PayatPaymentResponse {
-  // paymentLink is required on the integrator endpoint — the provider cannot pay without it.
+  // paymentLink is required on the integrator endpoint - the provider cannot pay without it.
   const rawLink = data.paymentLink ?? data.payment_link ?? data.url ?? data.checkoutUrl
   if (typeof rawLink !== 'string' || !rawLink) {
     throw new PayatApiError('rtp_response_invalid', undefined, 'Pay@ response missing paymentLink')
   }
 
   // sourceReference (retail till reference) and requestToPayId are merchant-endpoint-only fields.
-  // The integrator endpoint may not include them — extract if present, otherwise omit.
+  // The integrator endpoint may not include them - extract if present, otherwise omit.
   const sourceReferenceRaw = data.sourceReference ?? data.source_reference
   const sourceReference =
     typeof sourceReferenceRaw === 'string' && sourceReferenceRaw ? sourceReferenceRaw : undefined
@@ -132,7 +132,7 @@ async function sendPayatPaymentRequest(
     console.warn(JSON.stringify({
       event: 'payat.rtp_phone_missing',
       topupId: params.topupId,
-      msg: 'providerPhone is empty — Pay@ will likely reject the RTP request',
+      msg: 'providerPhone is empty - Pay@ will likely reject the RTP request',
     }))
   }
 
@@ -244,7 +244,7 @@ async function sendPayatPaymentRequest(
       event: 'payat.rtp_create_failed',
       topupId: params.topupId,
       httpStatus: response.status,
-      // Truncate to 500 chars — enough for the error code, not enough to expose large payloads.
+      // Truncate to 500 chars - enough for the error code, not enough to expose large payloads.
       errorBody: responseBody.slice(0, 500),
     }))
     throw new PayatApiError('rtp_create_failed', response.status)

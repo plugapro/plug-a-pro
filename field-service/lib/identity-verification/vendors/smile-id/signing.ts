@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 
-// Smile ID signing — legacy /v1/* convention.
+// Smile ID signing - legacy /v1/* convention.
 // HMAC-SHA256 over: timestamp + partner_id + "sid_request", base64-encoded.
 // One shared key (SMILE_ID_API_KEY) signs outbound requests AND verifies
 // inbound webhooks; no separate webhook secret.

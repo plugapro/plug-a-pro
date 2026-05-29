@@ -36,7 +36,7 @@ const SERVICES: {
     headline: "Everyday home maintenance from independent providers",
     examples: [
       "Shelf fitting, door adjustments, hinge replacements",
-      "Grouting, tiling repairs, and minor plastering",
+      "Grouting, tiling repairs and minor plastering",
       "Furniture assembly and mounting",
       "Drywall patching and finishing",
       "General household upkeep and odd jobs",
@@ -45,19 +45,19 @@ const SERVICES: {
   {
     icon: Paintbrush,
     name: "Painting",
-    headline: "Interior and exterior painting — rooms or touch-ups",
+    headline: "Interior and exterior painting - rooms or touch-ups",
     examples: [
       "Full room repaints",
       "Feature wall or accent painting",
       "Touch-up and repair painting",
       "Exterior wall and fence painting",
-      "Prep work, filling, and sanding included",
+      "Prep work, filling and sanding included",
     ],
   },
   {
     icon: Flower2,
     name: "Garden & Lawn",
-    headline: "Outdoor spaces cleared, cut, and maintained",
+    headline: "Outdoor spaces cleared, cut and maintained",
     examples: [
       "Lawn mowing and edging",
       "Clearing overgrown garden areas",
@@ -69,7 +69,7 @@ const SERVICES: {
   {
     icon: Wrench,
     name: "Plumbing (small jobs)",
-    headline: "Leaks, drips, blockages, and fittings",
+    headline: "Leaks, drips, blockages and fittings",
     examples: [
       "Tap and mixer repairs or replacements",
       "Toilet cistern and flush mechanism repairs",
@@ -84,7 +84,7 @@ const SERVICES: {
     headline: "Fault-finding and repair for household appliances",
     examples: [
       "Washing machine not draining or spinning",
-      "Dishwasher door, pump, or seal issues",
+      "Dishwasher door, pump or seal issues",
       "Fridge and freezer fault assessment",
       "Oven and stove element replacements",
       "Tumble dryer belt and motor faults",
@@ -105,7 +105,7 @@ const SERVICES: {
   {
     icon: ShieldCheck,
     name: "Roofing (minor)",
-    headline: "Leaks, loose tiles, and gutter repairs",
+    headline: "Leaks, loose tiles and gutter repairs",
     examples: [
       "Locating and sealing roof leaks",
       "Broken or slipped tile replacement",
@@ -218,7 +218,7 @@ export default function ServicesPage() {
         <div className="mx-auto max-w-3xl border-t border-border/40 pt-8 text-center">
           <p className="text-sm leading-6 text-muted-foreground">
             Plug A Pro is the platform. Independent service providers are responsible for their own work,
-            tools, licensing, insurance, safety compliance, site conduct, and workmanship unless the
+            tools, licensing, insurance, safety compliance, site conduct and workmanship unless the
             platform expressly states otherwise for a specific check.
           </p>
         </div>

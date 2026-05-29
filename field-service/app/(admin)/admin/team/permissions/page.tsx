@@ -21,12 +21,12 @@ const CAPABILITIES = [
   {
     name: 'Operations dashboard and queues',
     minimumRole: 'OPS',
-    summary: 'View and work queue modules such as validation, dispatch, field exceptions, quotes, bookings, disputes, and payments.',
+    summary: 'View and work queue modules such as validation, dispatch, field exceptions, quotes, bookings, disputes and payments.',
   },
   {
     name: 'Customer and provider mutations',
     minimumRole: 'OPS',
-    summary: 'Run flagged CRUD-style mutations such as block, suspend, verify, note, and location updates.',
+    summary: 'Run flagged CRUD-style mutations such as block, suspend, verify, note and location updates.',
   },
   {
     name: 'Financial operations',
@@ -36,7 +36,7 @@ const CAPABILITIES = [
   {
     name: 'Trust and safety interventions',
     minimumRole: 'TRUST',
-    summary: 'Handle provider trust actions, KYC review, and risk-led interventions.',
+    summary: 'Handle provider trust actions, KYC review and risk-led interventions.',
   },
   {
     name: 'Platform administration',
@@ -46,14 +46,14 @@ const CAPABILITIES = [
   {
     name: 'Team management and owner safety actions',
     minimumRole: 'OWNER',
-    summary: 'Invite admins, change admin roles, deactivate admins, and retain the last-owner safety rail.',
+    summary: 'Invite admins, change admin roles, deactivate admins and retain the last-owner safety rail.',
   },
 ]
 
 const ROLE_SUMMARY = [
   {
     role: 'OPS',
-    description: 'Queue operations, dispatch, and day-to-day marketplace administration.',
+    description: 'Queue operations, dispatch and day-to-day marketplace administration.',
   },
   {
     role: 'FINANCE',
@@ -61,7 +61,7 @@ const ROLE_SUMMARY = [
   },
   {
     role: 'TRUST',
-    description: 'Everything FINANCE can do, plus trust, safety, and KYC-related interventions.',
+    description: 'Everything FINANCE can do, plus trust, safety and KYC-related interventions.',
   },
   {
     role: 'ADMIN',

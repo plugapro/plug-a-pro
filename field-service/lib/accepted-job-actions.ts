@@ -105,7 +105,7 @@ function tokenAllowsAcceptedJobScope(params: {
   if (providerLeadTokenAllowsScope(payload, params.scope)) return true
   // A LEAD_RESPONSE_SCOPES token (the original WhatsApp invite URL) identifies the
   // assigned provider. After acceptance the same token may be used to perform job
-  // actions — the actual accepted-state check happens in resolveAcceptedLeadFromToken.
+  // actions - the actual accepted-state check happens in resolveAcceptedLeadFromToken.
   return payload.scopes?.some((s) => LEAD_RESPONSE_SCOPES.includes(s as ProviderLeadAccessScope)) ?? false
 }
 
@@ -477,7 +477,7 @@ export async function markAcceptedLeadAction(params: {
       jobRequestId: lead.jobRequestId,
       matchId: match.id,
       action: params.action,
-      text: `✅ Your ${category} job has been marked complete.\n\nWe'll follow up shortly for confirmation, invoice, or feedback.`,
+      text: `✅ Your ${category} job has been marked complete.\n\nWe'll follow up shortly for confirmation, invoice or feedback.`,
     })
   }
 

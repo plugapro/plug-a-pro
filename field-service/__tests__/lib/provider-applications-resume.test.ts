@@ -19,7 +19,7 @@ describe('resumeMoreInfoApplication', () => {
 
     const result = await resumeMoreInfoApplication(client, {
       applicationId: 'app-1',
-      providerNote: 'Sent ID — see latest message.',
+      providerNote: 'Sent ID - see latest message.',
     })
 
     expect(result).toEqual({ ok: true, status: 'PENDING' })
@@ -29,7 +29,7 @@ describe('resumeMoreInfoApplication', () => {
     }))
     const updateCall = client.providerApplication.update.mock.calls[0][0]
     expect(updateCall.data.notes).toContain('Admin asked for ID copy.')
-    expect(updateCall.data.notes).toContain('Sent ID — see latest message.')
+    expect(updateCall.data.notes).toContain('Sent ID - see latest message.')
     expect(client.auditLog.create).toHaveBeenCalled()
   })
 

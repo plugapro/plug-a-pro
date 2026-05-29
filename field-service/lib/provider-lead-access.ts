@@ -105,7 +105,7 @@ function getSigningSecret() {
     process.env.AUTH_SECRET
 
   if (!secret) {
-    throw new Error('Missing PROVIDER_LEAD_ACCESS_SECRET, NEXTAUTH_SECRET, or AUTH_SECRET')
+    throw new Error('Missing PROVIDER_LEAD_ACCESS_SECRET, NEXTAUTH_SECRET or AUTH_SECRET')
   }
 
   return secret
@@ -644,7 +644,7 @@ export async function resolveProviderLeadAttachmentScope(token: string) {
     return { status: resolved.status, jobRequestId: null, leadId: resolved.payload?.leadId ?? null, traceId: resolved.traceId }
   }
 
-  // Expose whether the provider has an accepted unlock — the attachment proxy
+  // Expose whether the provider has an accepted unlock - the attachment proxy
   // uses this to decide whether to enforce safeForPreview on request-level
   // attachments. After acceptance, the provider may view all request attachments.
   const hasAcceptedUnlock =

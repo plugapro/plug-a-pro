@@ -1,12 +1,12 @@
 /**
- * CLIENT-09 — Exception and Recovery States
+ * CLIENT-09 - Exception and Recovery States
  *
  * Covers:
- *  1. State resolver — EXPIRED and CANCELLED map to correct screens with no actions
- *  2. State resolver — PROVIDER_CONFIRMATION_PENDING maps to provider_confirmation
- *  3. Destination builder — expired token produces expired accessLevel and expired screen
- *  4. Destination builder — invalid token produces invalid_link screen and recovery route
- *  5. Recovery page reason mapping — expired, invalid, unauthorized
+ *  1. State resolver - EXPIRED and CANCELLED map to correct screens with no actions
+ *  2. State resolver - PROVIDER_CONFIRMATION_PENDING maps to provider_confirmation
+ *  3. Destination builder - expired token produces expired accessLevel and expired screen
+ *  4. Destination builder - invalid token produces invalid_link screen and recovery route
+ *  5. Recovery page reason mapping - expired, invalid, unauthorized
  *  6. No sensitive data leaked: expired destination exposes no DB internals
  *  7. provider_declined_after_selection is a valid QualifiedLeadInviteState
  */
@@ -46,9 +46,9 @@ function makeMinimalJobRequest(overrides?: Partial<{ id: string; status: string 
   }
 }
 
-// ── 1. State resolver — terminal states ───────────────────────────────────────
+// ── 1. State resolver - terminal states ───────────────────────────────────────
 
-describe('CLIENT-09: state resolver — terminal states', () => {
+describe('CLIENT-09: state resolver - terminal states', () => {
   it('EXPIRED maps to expired screen with reason request_expired', async () => {
     const { resolveClientPwaScreenForState } = await import('@/lib/client-pwa-state')
     const result = resolveClientPwaScreenForState({ requestStatus: 'EXPIRED' })
@@ -84,7 +84,7 @@ describe('CLIENT-09: state resolver — terminal states', () => {
   })
 })
 
-// ── 2. Allowed actions — no actions on terminal screens ───────────────────────
+// ── 2. Allowed actions - no actions on terminal screens ───────────────────────
 
 describe('CLIENT-09: allowed actions for terminal screens', () => {
   it('cancelled screen has no allowed actions', async () => {
@@ -106,9 +106,9 @@ describe('CLIENT-09: allowed actions for terminal screens', () => {
   })
 })
 
-// ── 3. Destination builder — expired token ────────────────────────────────────
+// ── 3. Destination builder - expired token ────────────────────────────────────
 
-describe('CLIENT-09: destination builder — expired token', () => {
+describe('CLIENT-09: destination builder - expired token', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -139,9 +139,9 @@ describe('CLIENT-09: destination builder — expired token', () => {
   })
 })
 
-// ── 4. Destination builder — invalid token ────────────────────────────────────
+// ── 4. Destination builder - invalid token ────────────────────────────────────
 
-describe('CLIENT-09: destination builder — invalid token', () => {
+describe('CLIENT-09: destination builder - invalid token', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -171,7 +171,7 @@ describe('CLIENT-09: destination builder — invalid token', () => {
 // ── 5. Recovery page reason mapping ───────────────────────────────────────────
 
 describe('CLIENT-09: recovery page reason variants', () => {
-  it('REASONS map contains expired, invalid, and unauthorized keys', async () => {
+  it('REASONS map contains expired, invalid and unauthorized keys', async () => {
     // We cannot import the page module directly (it imports Next.js metadata helpers).
     // Verify the reason map by checking copy values via a plain import of the data
     // structure as defined in the module. Since Next.js page files cannot be unit-tested
@@ -195,11 +195,11 @@ describe('CLIENT-09: recovery page reason variants', () => {
   })
 })
 
-// ── 6. QualifiedLeadInviteState — provider_declined_after_selection ───────────
+// ── 6. QualifiedLeadInviteState - provider_declined_after_selection ───────────
 
-describe('CLIENT-09: QualifiedLeadInviteState — provider declined', () => {
+describe('CLIENT-09: QualifiedLeadInviteState - provider declined', () => {
   it('provider_declined_after_selection is a declared state in qualified-shortlist-state', async () => {
-    // Import and cast — if the type did not include this literal the TS compiler
+    // Import and cast - if the type did not include this literal the TS compiler
     // would reject it; the runtime check confirms the import resolves without error.
     const mod = await import('@/lib/qualified-shortlist-state')
     // The module exports type-only constructs; verify the module itself loads cleanly

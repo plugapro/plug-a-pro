@@ -19,7 +19,7 @@ const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
     icon: Phone,
     title: "Safe contact",
     description:
-      "Plug A Pro handles the intake, matching, quote approval, and status updates from the platform number so jobs can move forward without forcing direct contact at the start.",
+      "Plug A Pro handles the intake, matching, quote approval and status updates from the platform number so jobs can move forward without forcing direct contact at the start.",
   },
   {
     icon: FileText,
@@ -55,7 +55,7 @@ export function Features() {
           Everything that makes the match work
         </h2>
         <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-          From job description to completion, the platform handles matching, communication, quoting, tracking, and trust.
+          From job description to completion, the platform handles matching, communication, quoting, tracking and trust.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {FEATURES.map((f) => {

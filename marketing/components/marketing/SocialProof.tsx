@@ -1,7 +1,7 @@
 const TESTIMONIALS = [
   {
     quote:
-      "I had a leaking tap and a dripping shower head. Described both on WhatsApp, got a plumber the next morning. Price was exactly what was quoted — not a cent more.",
+      "I had a leaking tap and a dripping shower head. Described both on WhatsApp, got a plumber the next morning. Price was exactly what was quoted - not a cent more.",
     author: "Thandi M.",
     role: "Homeowner, Bryanston",
   },

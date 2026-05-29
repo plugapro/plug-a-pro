@@ -165,7 +165,7 @@ describe('getPayatToken', () => {
 
   describe('when PAYAT_TOKEN_URL is not set', () => {
     // Separate describe so this beforeEach stubs TOKEN_URL to '' as the FIRST
-    // stub for this key — vi.stubEnv cannot override a same-key stub that was
+    // stub for this key - vi.stubEnv cannot override a same-key stub that was
     // already set in an outer beforeEach, so a fresh describe is required.
     beforeEach(() => {
       vi.resetModules()

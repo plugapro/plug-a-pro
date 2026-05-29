@@ -4,7 +4,7 @@
 // and the auto-approval worker (provider-auto-approve.ts) to decide whether an
 // application requires manual intervention before it can be approved.
 //
-// These are pure functions with no I/O — safe to unit-test without Prisma.
+// These are pure functions with no I/O - safe to unit-test without Prisma.
 
 import {
   getServiceComplianceRequirement,
@@ -18,7 +18,7 @@ import {
 export type ApplicationForReviewGuard = {
   id: string
   skills: string[]
-  /** Human-readable status string — used for undo-approval guard. */
+  /** Human-readable status string - used for undo-approval guard. */
   status: string
   /** Provider record linked to this application, if already created. */
   providerId?: string | null

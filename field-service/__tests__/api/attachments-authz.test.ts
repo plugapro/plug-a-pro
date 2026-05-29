@@ -69,7 +69,7 @@ const ATTACHMENT_JOB_PROVIDER = {
   jobRequest: null,
 }
 
-describe('GET /api/attachments/[id] — provider job ownership check', () => {
+describe('GET /api/attachments/[id] - provider job ownership check', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockHead.mockResolvedValue({
@@ -548,7 +548,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
 // Ticket tokens (customer access links) must NOT serve safeForPreview=false
 // request attachments. Only job attachments (work evidence) are exempt because
 // those are post-acceptance by definition.
-describe('GET /api/attachments/[id] — safeForPreview enforcement with ticket tokens', () => {
+describe('GET /api/attachments/[id] - safeForPreview enforcement with ticket tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockHead.mockResolvedValue({ downloadUrl: 'https://store.public.blob.vercel-storage.com/download/att-1' })
@@ -590,7 +590,7 @@ describe('GET /api/attachments/[id] — safeForPreview enforcement with ticket t
   })
 
   it('allows a ticket-token request for a job attachment (work evidence) regardless of safeForPreview', async () => {
-    // Job attachments are post-acceptance work evidence — always visible to the ticket holder
+    // Job attachments are post-acceptance work evidence - always visible to the ticket holder
     mockGetSession.mockResolvedValue(null)
     mockDb.attachment.findUnique.mockResolvedValue({
       ...ATTACHMENT_JOB_PROVIDER,
@@ -618,7 +618,7 @@ describe('GET /api/attachments/[id] — safeForPreview enforcement with ticket t
 // Provider lead tokens (signed links) must NOT serve safeForPreview=false
 // request attachments unless the provider has an accepted unlock (isAccepted=true).
 // After acceptance the full request-level attachment set is allowed.
-describe('GET /api/attachments/[id] — safeForPreview enforcement with lead tokens (CODEX-15)', () => {
+describe('GET /api/attachments/[id] - safeForPreview enforcement with lead tokens (CODEX-15)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockHead.mockResolvedValue({ downloadUrl: 'https://store.public.blob.vercel-storage.com/download/att-1' })

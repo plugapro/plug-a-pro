@@ -14,7 +14,7 @@ describeFn('Smile ID sandbox round-trip', () => {
     }
   })
 
-  it('creates a Smile Link, disables it, and confirms shape', async () => {
+  it('creates a Smile Link, disables it and confirms shape', async () => {
     const { createSmileLink, disableSmileLink } = await import(
       '../../../../../lib/identity-verification/vendors/smile-id/smile-links-client'
     )

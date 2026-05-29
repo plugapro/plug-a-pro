@@ -98,7 +98,7 @@ function makeJobRequest(overrides: Partial<MatchingJobRequest> = {}): MatchingJo
     category: 'plumbing',
     title: 'Fix leaking tap',
     description: 'Tap in bathroom is leaking.',
-    requestedWindowStart: NOW,        // original window is "now" — near-miss failed on this
+    requestedWindowStart: NOW,        // original window is "now" - near-miss failed on this
     requestedWindowEnd: new Date(NOW.getTime() + 2 * 60 * 60 * 1000),
     requestedArrivalLatest: null,
     estimatedDurationMinutes: 120,

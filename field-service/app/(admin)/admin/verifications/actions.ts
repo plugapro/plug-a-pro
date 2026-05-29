@@ -311,15 +311,15 @@ type RefreshDiditInput = z.infer<typeof RefreshDiditSchema>
  * (which the credit gate and selected-provider acceptance both require).
  *
  * This action only mints the internal verify link and stamps Didit-specific
- * fields on the verification row — it does NOT create the Didit session.
+ * fields on the verification row - it does NOT create the Didit session.
  * Consent must be recorded by the provider in the PWA before a session is
  * created (see startHostedVerificationFromConsent in
  * app/provider/verify/[token]/actions.ts).
  *
  * Auth: crudAction handles session + role checks internally (TRUST role,
  * admin.crud.verifications flag). Do not add a redundant requireAdmin()
- * call here — the API route at /api/provider-verifications already uses
- * requireAdminApi() for the HTTP boundary, and the form-action path lands
+ * call here - the API route at /api/provider-verifications already uses
+ * requireAdminApi() for the HTTP boundary and the form-action path lands
  * directly in crudAction.
  */
 export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput) {
@@ -428,7 +428,7 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
         throw new Error('Verification has no Didit session_id to refresh against')
       }
       if (['PASSED', 'FAILED', 'EXPIRED', 'CANCELLED'].includes(verification.status)) {
-        // Already terminal — return existing snapshot, no Didit call needed.
+        // Already terminal - return existing snapshot, no Didit call needed.
         return {
           id: verification.id,
           status: verification.status,
@@ -442,7 +442,7 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
 
       if (refreshed.normalized.result) {
         // Thread the crudAction transaction client so the state transition,
-        // Provider.kycStatus update, and the audit-log writes are committed
+        // Provider.kycStatus update and the audit-log writes are committed
         // atomically with the refresh action's audit row.
         await applyVendorVerdict(verification.id, refreshed.normalized.result, 'webhook', tx)
       }

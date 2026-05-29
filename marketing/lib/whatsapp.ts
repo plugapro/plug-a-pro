@@ -30,13 +30,13 @@ export const whatsappAudienceOptions: Array<{
     audience: "customer",
     label: "I need a service provider",
     message: whatsappMessages.customer,
-    description: "Tell us what needs fixing, installing, or finishing and we’ll start on WhatsApp.",
+    description: "Tell us what needs fixing, installing or finishing and we’ll start on WhatsApp.",
   },
   {
     audience: "worker",
     label: "I want to offer my services",
     message: whatsappMessages.worker,
-    description: "Tell us your trade, which areas you cover, and we’ll get the conversation started.",
+    description: "Tell us your trade, which areas you cover and we’ll get the conversation started.",
   },
   {
     audience: "provider",

@@ -300,7 +300,7 @@ class PayFastProvider implements PspProvider {
   }
 
   async createRefund(pspReference: string, amountCents: number): Promise<RefundResult> {
-    // PayFast refunds via their API — requires bearer token auth
+    // PayFast refunds via their API - requires bearer token auth
     // Docs: https://developers.payfast.co.za/api#tag/Refunds
     const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0]
     const version = 'v1'
@@ -609,7 +609,7 @@ export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
       failureReason: 'Payment declined',
     },
   })
-  console.error('[payments] payment failed — ops follow-up required', {
+  console.error('[payments] payment failed - ops follow-up required', {
     bookingId: event.bookingId,
     pspReference: event.pspReference,
   })

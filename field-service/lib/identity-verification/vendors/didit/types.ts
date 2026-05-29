@@ -88,7 +88,7 @@ export type DiditWebhookEnvelope = {
   [key: string]: unknown
 }
 
-// Type guards — minimal narrowing without zod runtime cost; keep tight to
+// Type guards - minimal narrowing without zod runtime cost; keep tight to
 // what the adapter actually reads. Anything else is treated as opaque JSON
 // to be redacted before audit storage.
 

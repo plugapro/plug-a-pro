@@ -441,7 +441,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
     })
   })
 
-  it('covers promo award, preview safety, unlock debit, EFT crediting, paid debit, refund, and low-balance hooks', async () => {
+  it('covers promo award, preview safety, unlock debit, EFT crediting, paid debit, refund and low-balance hooks', async () => {
     await expect(getOrCreateProviderWallet('provider-1')).resolves.toMatchObject({
       paidCreditBalance: 0,
       promoCreditBalance: 0,

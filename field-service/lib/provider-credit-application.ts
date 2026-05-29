@@ -475,7 +475,7 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
 
   if (!wallet) {
     // Belt-and-suspenders: credit check should have caught this in the same tx.
-    // Treat as a data integrity failure — caller should surface as CREDIT_APPLICATION_FAILED.
+    // Treat as a data integrity failure - caller should surface as CREDIT_APPLICATION_FAILED.
     throw new ProviderCreditApplicationError(
       'WALLET_MISSING',
       'Provider wallet does not exist.',

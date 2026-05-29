@@ -274,7 +274,7 @@ export default async function OtpSecurityPage({
         <div>
           <h1 className="text-2xl font-semibold">OTP Security</h1>
           <p className="text-sm text-muted-foreground">
-            Latest OTP abuse reports, lock events, and step-up security events.
+            Latest OTP abuse reports, lock events and step-up security events.
           </p>
         </div>
         <p className="text-xs text-muted-foreground">{events.length} of latest 100 events</p>

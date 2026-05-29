@@ -66,7 +66,7 @@ describe('submitReview', () => {
     expect(mockDbReviewCreate).not.toHaveBeenCalled()
   })
 
-  it('is idempotent — returns ok:false when existingReview is present', async () => {
+  it('is idempotent - returns ok:false when existingReview is present', async () => {
     mockResolveReviewAccessToken.mockResolvedValue({
       status: 'active',
       payload: { matchId: 'match-1', reviewerType: 'CUSTOMER' },

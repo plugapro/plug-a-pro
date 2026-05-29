@@ -101,7 +101,7 @@ describe('POST /api/security/otp/step-up/ack', () => {
     expect(mocks.completeStepUp).not.toHaveBeenCalled()
   })
 
-  it('completes step-up, issues sb-access-token, and clears pap-step-up-token', async () => {
+  it('completes step-up, issues sb-access-token and clears pap-step-up-token', async () => {
     mocks.completeStepUp.mockResolvedValueOnce({ ok: true })
     setPendingCookie(encryptPendingStepUpCookie(payload()))
 

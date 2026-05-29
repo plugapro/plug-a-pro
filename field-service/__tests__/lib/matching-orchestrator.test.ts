@@ -351,7 +351,7 @@ describe('orchestrateMatch', () => {
     })
   })
 
-  // ── Feature flag — candidate pool toggle ────────────────────────────────────
+  // ── Feature flag - candidate pool toggle ────────────────────────────────────
 
   it('passes usePool=true when matching.v2.candidate_pool flag is on', async () => {
     const candidate = makeEligibleCandidate()

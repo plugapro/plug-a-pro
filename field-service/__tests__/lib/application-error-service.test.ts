@@ -23,7 +23,7 @@ describe('generatePublicErrorRef', () => {
     expect(ref).toMatch(/^PAP-[A-Z2-9]{5}$/)
   })
 
-  it('never contains ambiguous characters O, 0, I, or 1', () => {
+  it('never contains ambiguous characters O, 0, I or 1', () => {
     for (let i = 0; i < 200; i++) {
       const ref = generatePublicErrorRef()
       expect(ref).not.toMatch(/[OI01]/)
@@ -49,7 +49,7 @@ const baseInput = {
   retryable: true,
 }
 
-describe('captureApplicationError — user-safe output', () => {
+describe('captureApplicationError - user-safe output', () => {
   it('user message never contains the raw error code', async () => {
     const { userMessage } = await captureApplicationError(baseInput)
     expect(userMessage).not.toContain('PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED')
@@ -86,7 +86,7 @@ describe('captureApplicationError — user-safe output', () => {
   })
 })
 
-describe('captureApplicationError — internal storage', () => {
+describe('captureApplicationError - internal storage', () => {
   it('persists the full error code internally', async () => {
     await captureApplicationError(baseInput)
     expect(db.applicationErrorEvent.create).toHaveBeenCalledWith(
@@ -121,7 +121,7 @@ describe('captureApplicationError — internal storage', () => {
   })
 })
 
-describe('captureApplicationError — payload redaction', () => {
+describe('captureApplicationError - payload redaction', () => {
   it('redacts phone field from request payload', async () => {
     await captureApplicationError({
       ...baseInput,
@@ -186,7 +186,7 @@ describe('captureApplicationError — payload redaction', () => {
   })
 })
 
-describe('captureApplicationError — persistence failure is non-fatal', () => {
+describe('captureApplicationError - persistence failure is non-fatal', () => {
   it('still returns a valid publicRef and userMessage when DB write fails', async () => {
     ;(db.applicationErrorEvent.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('Connection refused'),

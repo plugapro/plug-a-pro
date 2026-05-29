@@ -24,7 +24,7 @@ export function RefundPaymentButton({ paymentId, maxAmount, amountLabel, disable
     const formData = new FormData()
     formData.set('paymentId', paymentId)
     formData.set('amount', String(refundAmount))
-    // issueRefundAction redirects on completion — call via startTransition so
+    // issueRefundAction redirects on completion - call via startTransition so
     // Next.js handles the navigation after the server action resolves.
     startTransition(async () => {
       await issueRefundAction(formData)

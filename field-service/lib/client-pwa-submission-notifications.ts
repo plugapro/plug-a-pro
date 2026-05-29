@@ -6,7 +6,7 @@ import { ctaLabelFor } from './whatsapp-copy'
 /**
  * Privacy copy that must appear in the request-submitted and shortlist-ready
  * messages so customers understand when their contact details are released.
- * The exact wording is part of the Client PWA contract — do not change without
+ * The exact wording is part of the Client PWA contract - do not change without
  * updating the corresponding blueprint copy.
  */
 export const CLIENT_PWA_PRIVACY_COPY =
@@ -50,7 +50,7 @@ export async function notifyCustomerPwaRequestSubmitted(params: {
 }
 
 /**
- * Sent when the matching engine transitions a request to MATCHING status —
+ * Sent when the matching engine transitions a request to MATCHING status -
  * i.e. a lead has been dispatched to at least one provider.
  *
  * Spec message: "Providers are being checked. We'll notify you when your
@@ -90,7 +90,7 @@ export async function notifyCustomerMatchingInProgress(params: {
 }
 
 /**
- * Sent after a job has been marked COMPLETED — invites the customer to leave a
+ * Sent after a job has been marked COMPLETED - invites the customer to leave a
  * review and confirms the job is done.
  *
  * This covers the `review_requested` message type in the Client PWA journey spec.

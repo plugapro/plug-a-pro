@@ -10,7 +10,7 @@ import {
 } from '@/lib/flags'
 import { FEATURE_FLAGS_REGISTRY } from '@/lib/feature-flags-registry'
 
-// Mock the DB — flags.ts imports db directly
+// Mock the DB - flags.ts imports db directly
 vi.mock('@/lib/db', () => ({
   db: {
     featureFlag: {
@@ -44,7 +44,7 @@ describe('feature flag registry', () => {
   })
 })
 
-describe('isEnabled — default behaviour', () => {
+describe('isEnabled - default behaviour', () => {
   beforeEach(() => {
     invalidateFlagCache()
     vi.clearAllMocks()
@@ -76,7 +76,7 @@ describe('isEnabled — default behaviour', () => {
   })
 })
 
-describe('isEnabled — per-user enabledForUsers', () => {
+describe('isEnabled - per-user enabledForUsers', () => {
   beforeEach(() => {
     invalidateFlagCache()
     vi.clearAllMocks()
@@ -105,7 +105,7 @@ describe('isEnabled — per-user enabledForUsers', () => {
   })
 })
 
-describe('isEnabled — env var override', () => {
+describe('isEnabled - env var override', () => {
   beforeEach(() => {
     invalidateFlagCache()
     vi.clearAllMocks()

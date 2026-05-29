@@ -2,7 +2,7 @@
 //
 // These logs are the breadcrumb trail for the document -> selfie transition.
 // Never log raw identifiers (SA ID numbers, passport numbers) or access tokens;
-// pass only IDs, statuses, document kinds, and coarse file metadata.
+// pass only IDs, statuses, document kinds and coarse file metadata.
 
 export type IdentityLogContext = Record<string, unknown>
 
@@ -24,7 +24,7 @@ export function describeError(error: unknown): DescribedError {
   return { name: 'UnknownError', message: String(error) }
 }
 
-// Tokens are secrets — only keep a short, non-reversible prefix for correlation.
+// Tokens are secrets - only keep a short, non-reversible prefix for correlation.
 export function maskToken(token: string | null | undefined): string | null {
   if (!token) return null
   return token.length <= 8 ? '***' : `${token.slice(0, 6)}…`

@@ -5,12 +5,12 @@
 //   - signatureValid drives the 401 short-circuit at the route layer; this
 //     parser MUST return false rather than throw when the signature fails.
 //   - vendorReference is the Didit session_id (what we stamped on the
-//     verification row at session-create time) — joins the webhook event
+//     verification row at session-create time) - joins the webhook event
 //     back to the verification record.
 //   - result is non-null only for terminal Didit states (Approved /
 //     Declined / In Review). Non-decision states (Expired, Abandoned,
 //     In Progress, Resubmitted, Awaiting User, Not Started) yield
-//     result:null — the webhook event is still stored for audit; no
+//     result:null - the webhook event is still stored for audit; no
 //     state transition fires (existing TTL handles cleanup).
 //   - vendorEventId is Didit's event_id, used for idempotency at the route.
 
@@ -50,7 +50,7 @@ export async function parseDiditWebhook(input: ParseWebhookInput): Promise<Parse
 
   // Look up the workflow id we stamped on the verification row at session
   // creation; needed for the basic-vs-authoritative assurance-level decision.
-  // Best-effort — when the verification record isn't found we proceed without
+  // Best-effort - when the verification record isn't found we proceed without
   // a hint (orchestrator falls back to its existing default).
   const storedWorkflowId = sessionId ? await lookupStoredWorkflowId(sessionId) : null
   const config = getDiditConfig()

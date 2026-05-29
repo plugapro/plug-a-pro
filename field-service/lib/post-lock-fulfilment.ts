@@ -3,8 +3,8 @@
 // lockAcceptedLeadAfterCreditInTransaction inside the same Prisma transaction
 // so the Match exists by the time the lock returns.
 //
-// Sub-path A (jobRequest.customerAcceptedAmount != null) — where the customer
-// pre-agreed a price and Booking + Job should materialise immediately — is NOT
+// Sub-path A (jobRequest.customerAcceptedAmount != null) - where the customer
+// pre-agreed a price and Booking + Job should materialise immediately - is NOT
 // handled here yet. Phase 1b will extend this helper or call out to
 // createBookingArtifactsForApprovedQuote from quotes.ts.
 
@@ -37,12 +37,12 @@ export async function materializeFulfilmentArtifacts(
     // a stub Quote (or to claim the existing match) unless it belongs to the
     // same provider that just locked the lead. Without this check, the
     // OPS_REVIEW direct-dispatch path in matching/service.ts could have
-    // matched a different provider on the same JobRequest, and a subsequent
+    // matched a different provider on the same JobRequest and a subsequent
     // shortlist-acceptance call here would silently graft a stub Quote onto
-    // the wrong match. The thrown error is loud on purpose — surfacing this
+    // the wrong match. The thrown error is loud on purpose - surfacing this
     // collision is preferable to a corrupt fulfilment chain.
     if (existing.providerId !== params.providerId) {
-      // Loud log before throwing — the outer transaction has already written
+      // Loud log before throwing - the outer transaction has already written
       // ACCEPTED_LOCKED + audit by the time we reach here, so on-call needs
       // a structured line that names both providers.
       console.error('[post-lock-fulfilment] provider_mismatch', {
@@ -64,7 +64,7 @@ export async function materializeFulfilmentArtifacts(
         alreadyMaterialised: true,
       }
     }
-    // Match exists but no Quote yet — fill the gap. Shouldn't happen under
+    // Match exists but no Quote yet - fill the gap. Shouldn't happen under
     // normal flow, but covers a partial-failure recovery scenario.
     const quote = await tx.quote.create({
       data: {
@@ -87,7 +87,7 @@ export async function materializeFulfilmentArtifacts(
   })
   // Stub Quote with amount=0. The customer-facing approval page must guard
   // against rendering this until the provider has submitted a real quote
-  // (see app/quotes/[token]/page.tsx — Phase 1b).
+  // (see app/quotes/[token]/page.tsx - Phase 1b).
   const quote = await tx.quote.create({
     data: {
       matchId: match.id,

@@ -69,7 +69,7 @@ describe('job request access tokens', () => {
 // The token-page attachment query MUST filter on safeForPreview: true so that
 // attachments flagged as not safe for preview are never included in the customer
 // access token page response (pre-acceptance context).
-describe('resolveJobRequestAccessToken — safeForPreview enforcement', () => {
+describe('resolveJobRequestAccessToken - safeForPreview enforcement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })

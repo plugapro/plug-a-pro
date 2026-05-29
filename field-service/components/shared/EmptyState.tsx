@@ -10,7 +10,7 @@ interface EmptyStateProps {
 }
 
 /**
- * Use whenever a list, dashboard panel, or detail section has no data
+ * Use whenever a list, dashboard panel or detail section has no data
  * to show. Always pair the explanation with a clear next-step action
  * if one exists ("Browse services", "Top up credits"). Never render
  * a blank panel.

@@ -1,7 +1,7 @@
 /**
  * Payfast ITN webhook handler tests.
  *
- * All tests mock the Payfast adapter and database — no real Payfast calls,
+ * All tests mock the Payfast adapter and database - no real Payfast calls,
  * no real database writes, no real WhatsApp sends.
  */
 
@@ -226,7 +226,7 @@ describe('POST /api/webhooks/payfast', () => {
   it('does not credit when payment_status is FAILED', async () => {
     mockDb.paymentIntent.findUnique.mockResolvedValue(makePendingIntent())
     const { POST } = await import('../../app/api/webhooks/payfast/route')
-    // Build an ITN where payment_status=FAILED — verifyItn rejects this.
+    // Build an ITN where payment_status=FAILED - verifyItn rejects this.
     const base: Record<string, string> = {
       m_payment_id: INTENT_ID,
       pf_payment_id: 'pf-fail',

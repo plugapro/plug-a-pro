@@ -662,7 +662,7 @@ export async function cancelProviderPayatTopUpIntent(
     return {
       ok: false,
       code: 'NOT_CANCELLABLE',
-      message: 'This link cannot be cancelled — it may have already been paid, expired, or cancelled.',
+      message: 'This link cannot be cancelled - it may have already been paid, expired or cancelled.',
     }
   }
 
@@ -892,7 +892,7 @@ export async function createProviderPayatTopUpIntent(
           return {
             ok: false,
             code: 'DUPLICATE_INTENT',
-            userMessage: "You already have a pending Pay@ top-up for this amount. Open it from your active payments, or wait for it to expire.",
+            userMessage: "You already have a pending Pay@ top-up for this amount. Open it from your active payments or wait for it to expire.",
           }
         case 'INVALID_AMOUNT':
           return {

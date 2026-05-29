@@ -16,7 +16,7 @@ export type ProviderChannelResponsibility = {
 
 // This matrix is the source of truth for the Provider WhatsApp-first channel model.
 // Core actions must either have a WhatsApp path now, be planned for WhatsApp in
-// this runner, or carry an explicit blocker that prevents silent PWA-only drift.
+// this runner or carry an explicit blocker that prevents silent PWA-only drift.
 export const PROVIDER_CHANNEL_RESPONSIBILITIES: ProviderChannelResponsibility[] = [
   {
     id: 'application',
@@ -30,7 +30,7 @@ export const PROVIDER_CHANNEL_RESPONSIBILITIES: ProviderChannelResponsibility[] 
   },
   {
     id: 'profile_data_capture',
-    label: 'Profile, service area, availability, and rate capture',
+    label: 'Profile, service area, availability and rate capture',
     core: true,
     primaryChannel: 'whatsapp',
     whatsapp: 'existing',
@@ -112,7 +112,7 @@ export const PROVIDER_CHANNEL_RESPONSIBILITIES: ProviderChannelResponsibility[] 
   },
   {
     id: 'job_status_updates',
-    label: 'Mark on the way, arrived, start job, and update active job status',
+    label: 'Mark on the way, arrived, start job and update active job status',
     core: true,
     primaryChannel: 'whatsapp',
     whatsapp: 'existing',
@@ -132,7 +132,7 @@ export const PROVIDER_CHANNEL_RESPONSIBILITIES: ProviderChannelResponsibility[] 
   },
   {
     id: 'help_menu_status',
-    label: 'Help, menu, and provider status',
+    label: 'Help, menu and provider status',
     core: true,
     primaryChannel: 'whatsapp',
     whatsapp: 'existing',
@@ -152,7 +152,7 @@ export const PROVIDER_CHANNEL_RESPONSIBILITIES: ProviderChannelResponsibility[] 
   },
   {
     id: 'advanced_dashboard',
-    label: 'Dashboard, document management, job history, and performance',
+    label: 'Dashboard, document management, job history and performance',
     core: false,
     primaryChannel: 'pwa',
     whatsapp: 'optional',

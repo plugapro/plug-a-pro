@@ -1,4 +1,4 @@
-// ─── WhatsApp conversation bot — main inbound router ─────────────────────────
+// ─── WhatsApp conversation bot - main inbound router ─────────────────────────
 // All inbound WhatsApp messages pass through here.
 // Resolves conversation state → dispatches to correct flow → saves new state.
 //
@@ -83,9 +83,9 @@ const CONVERSATION_TTL_MS = Math.max(CONFIGURED_CONVERSATION_TTL_MS, DEFAULT_CON
 // confirmation that the user acted on before the rest landed.
 const MEDIA_UPLOAD_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_MEDIA_UPLOAD_BATCH_WINDOW_MS) || 3000
 // Each window can be tuned independently via its own env var.
-// Note: WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS only affects the provider path —
+// Note: WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS only affects the provider path -
 // setting it does NOT change the customer window. Use WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS
-// to adjust customer batching, or WHATSAPP_MEDIA_UPLOAD_BATCH_WINDOW_MS to adjust both.
+// to adjust customer batching or WHATSAPP_MEDIA_UPLOAD_BATCH_WINDOW_MS to adjust both.
 const CUSTOMER_PHOTO_BATCH_WINDOW_MS =
   Number(process.env.WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS) || MEDIA_UPLOAD_BATCH_WINDOW_MS
 const PROVIDER_EVIDENCE_BATCH_WINDOW_MS =
@@ -328,7 +328,7 @@ function mapProviderLeadResponseFailureMessage(reason: ProviderLeadResponseResol
     return 'We couldn\'t match this reply to an active lead. Please tap "I\'m Available" from the latest lead message and try again.'
   }
   if (reason === 'MULTIPLE_ACTIVE_LEADS') {
-    return 'We found multiple active lead replies. Please use the latest message, or type *menu* and open your jobs list.'
+    return 'We found multiple active lead replies. Please use the latest message or type *menu* and open your jobs list.'
   }
   return 'No matching open lead was found for that response. Reply *menu* to continue.'
 }
@@ -1081,7 +1081,7 @@ async function processInboundMessageUnlocked(
     // Override: reset keywords always restart
     const rawText = reply.text?.toLowerCase() ?? ''
 
-    // ── Marketing opt-out/in — must precede RESET_KEYWORDS and CANCEL_KEYWORDS checks
+    // ── Marketing opt-out/in - must precede RESET_KEYWORDS and CANCEL_KEYWORDS checks
     // Ordering: marketing consent > cancel booking > reset to menu
     // 'stop offers' / 'unsubscribe' → opt-out (not the same as 'stop' → menu reset)
     if (STOP_PHRASES.some((p) => rawText === p || rawText.startsWith(p + ' '))) {
@@ -1106,7 +1106,7 @@ async function processInboundMessageUnlocked(
       return
     }
 
-    // Drop reactions, voice notes, stickers — nothing actionable.
+    // Drop reactions, voice notes, stickers - nothing actionable.
     // image/document are allowed through for:
     //   - evidence collection in the provider registration flow (reg_collect_evidence)
     //   - profile photo capture in the provider registration flow (reg_collect_profile_photo)
@@ -1115,7 +1115,7 @@ async function processInboundMessageUnlocked(
     //   - completion photo upload in the provider job completion flow (providerCompletionStep === 'photo')
     // Must be checked BEFORE flow dispatch so mid-flow reactions don't retrigger menus.
     // WHY profile-photo is here: omitting it caused images uploaded at the
-    // profile-photo step to be silently dropped — the flow went dead, the user
+    // profile-photo step to be silently dropped - the flow went dead, the user
     // typed "Hi" and got the main menu (provider onboarding silent-failure
     // incident, LoveMojo / Lovemore application).
     if (reply.type === 'other') return
@@ -1305,7 +1305,7 @@ async function processInboundMessageUnlocked(
       return
     }
 
-    // Session expired mid-flow — offer contextual resume instead of silently resetting
+    // Session expired mid-flow - offer contextual resume instead of silently resetting
     // Stateless notification replies must bypass this guard: these button IDs carry
     // all routing context needed to process the action even when the conversation
     // session has timed out.
@@ -1351,7 +1351,7 @@ async function processInboundMessageUnlocked(
         return
       }
 
-      // Other flows — just return to main menu
+      // Other flows - just return to main menu
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
@@ -1359,8 +1359,8 @@ async function processInboundMessageUnlocked(
 
     // Active onboarding: never let a casual "hi"/"menu"/etc. silently wipe an
     // in-progress provider application. Offer a resume prompt instead. Without
-    // this guard, a brief silence — e.g. while a media upload is being
-    // processed — followed by "Hi" would dump the user at the main menu and
+    // this guard, a brief silence - e.g. while a media upload is being
+    // processed - followed by "Hi" would dump the user at the main menu and
     // lose every step they had already filled in.
     if (
       isReset &&
@@ -1388,7 +1388,7 @@ async function processInboundMessageUnlocked(
     const isProviderJobList = PROVIDER_KEYWORDS.some((k) => rawText === k)
 
     // ─── Stateless notification-response intercepts ─────────────────────────────
-    // These run regardless of session state — push-notification button replies can
+    // These run regardless of session state - push-notification button replies can
     // arrive hours after the user last interacted; session expiry must not block them.
 
     if (data.pendingOpportunityLeadId) {
@@ -1412,7 +1412,7 @@ async function processInboundMessageUnlocked(
         await handleProviderLocationShare(phone, reply.latitude, reply.longitude)
         return
       }
-      // Any other message while waiting — re-prompt or ignore
+      // Any other message while waiting - re-prompt or ignore
       // Fall through so reset keywords still work
     }
 
@@ -1444,9 +1444,9 @@ async function processInboundMessageUnlocked(
         phone,
         `Choose a top-up amount. A R${feeR} counter service fee is added to the amount you pay at the till. Credits are issued automatically once payment is confirmed.`,
         [
-          { id: 'topup_payat_10000', title: `R${Math.round((10_000 + feeCents) / 100)} — 2 credits` },
-          { id: 'topup_payat_20000', title: `R${Math.round((20_000 + feeCents) / 100)} — 4 credits` },
-          { id: 'topup_payat_50000', title: `R${Math.round((50_000 + feeCents) / 100)} — 10 credits` },
+          { id: 'topup_payat_10000', title: `R${Math.round((10_000 + feeCents) / 100)} - 2 credits` },
+          { id: 'topup_payat_20000', title: `R${Math.round((20_000 + feeCents) / 100)} - 4 credits` },
+          { id: 'topup_payat_50000', title: `R${Math.round((50_000 + feeCents) / 100)} - 10 credits` },
         ],
       )
       return
@@ -1474,13 +1474,13 @@ async function processInboundMessageUnlocked(
         const creditsR = Math.round(amountCents / 100)
         const feeR = Math.round(feeAmountCents / 100)
         const credits = amountCents / 5000
-        // H-10: Send a direct CTA URL as a delivery guarantee — the template
+        // H-10: Send a direct CTA URL as a delivery guarantee - the template
         // notification from notifyProviderPayatTopUpInitiated may be delayed or
         // fail if the template is pending approval.
         if (result.payat.paymentLink) {
           await sendCtaUrl(
             phone,
-            `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till.`,
+            `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite or Checkers till.`,
             'Pay now',
             result.payat.paymentLink,
           ).catch((error: unknown) => {
@@ -1492,7 +1492,7 @@ async function processInboundMessageUnlocked(
         }
       } catch (err: unknown) {
         // H-4: DUPLICATE_INTENT means an active Pay@ link already exists for this
-        // amount. Telling the provider to "try again" would loop — give them a
+        // amount. Telling the provider to "try again" would loop - give them a
         // specific message directing them to the link already sent.
         const isIdentityNotVerified =
           err !== null &&
@@ -1545,7 +1545,7 @@ async function processInboundMessageUnlocked(
           isIdentityNotVerified
             ? 'Please complete identity verification before creating another top-up link.'
             : (isDuplicate
-            ? `You already have an active Pay@ top-up link for R${Math.round(amountCents / 100)}. Check your earlier WhatsApp messages for the payment link, or visit the provider portal to start a new one after it expires.`
+            ? `You already have an active Pay@ top-up link for R${Math.round(amountCents / 100)}. Check your earlier WhatsApp messages for the payment link or visit the provider portal to start a new one after it expires.`
             : 'Could not create a Pay@ payment link. Please try again or visit the provider portal.')
         )
       }
@@ -1566,7 +1566,7 @@ async function processInboundMessageUnlocked(
         const { declineLead } = await import('./matching-engine')
         await declineLead({ leadId, providerId: provider.id })
       }
-      await sendText(phone, `Understood — lead passed (${reason}). We'll keep matching this job with other providers.`)
+      await sendText(phone, `Understood - lead passed (${reason}). We'll keep matching this job with other providers.`)
       return
     }
 
@@ -1652,7 +1652,7 @@ async function processInboundMessageUnlocked(
         await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
         return
       }
-      // No active lead — fall through to main menu
+      // No active lead - fall through to main menu
     }
 
     if (reply.id?.startsWith('decline:')) {
@@ -1688,7 +1688,7 @@ async function processInboundMessageUnlocked(
     }
 
     if (reply.id?.startsWith('ops_decline:')) {
-      // ── OPS_REVIEW / RFP direct lead decline — show reason sub-menu ──────────
+      // ── OPS_REVIEW / RFP direct lead decline - show reason sub-menu ──────────
       const parsed = parseOpsActionButton(reply.id)
       const leadId = parsed?.leadId
       if (!parsed || !leadId) {
@@ -1824,20 +1824,20 @@ async function processInboundMessageUnlocked(
     }
 
     if (reply.id?.startsWith('rebook_confirm:')) {
-      // ── Rebook: customer confirmed — load prior job and enter pre-fill flow ──
+      // ── Rebook: customer confirmed - load prior job and enter pre-fill flow ──
       await handleRebookConfirm(phone, reply.id)
       return
     }
 
     if (reply.id === 'rebook_cancel') {
-      // ── Rebook: customer declined — graceful exit ────────────────────────────
+      // ── Rebook: customer declined - graceful exit ────────────────────────────
       await sendText(phone, "No problem! Type *Request a job* when you're ready.")
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
     }
 
     if (isRebook && flow === 'idle' && !isReset) {
-      // ── Rebook keyword — trigger from idle state only ────────────────────────
+      // ── Rebook keyword - trigger from idle state only ────────────────────────
       await handleRebookFlow(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
@@ -1977,7 +1977,7 @@ async function processInboundMessageUnlocked(
             })
             await sendText(
               phone,
-              `Thanks — your interest is recorded. Call-out fee: R${parsed.callOutFee}. Earliest arrival: ${parsed.estimatedArrivalAt.toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.\n\nThe customer will compare your response with other providers. We'll notify you here if you're selected.\n\nNo credits used.`,
+              `Thanks - your interest is recorded. Call-out fee: R${parsed.callOutFee}. Earliest arrival: ${parsed.estimatedArrivalAt.toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.\n\nThe customer will compare your response with other providers. We'll notify you here if you're selected.\n\nNo credits used.`,
             )
             await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
             return
@@ -2032,7 +2032,7 @@ async function processInboundMessageUnlocked(
           if (result.ok) {
             await sendText(
               phone,
-              'Thanks — your reply has been added to your application. Our team will continue the review and update you here.',
+              'Thanks - your reply has been added to your application. Our team will continue the review and update you here.',
             )
             return
           }
@@ -2080,7 +2080,7 @@ async function processInboundMessageUnlocked(
           await sendText(phone, result.message)
           return
         }
-        // For AMBIGUOUS_JOB, INVALID_COMMAND, or INVALID_TIME: fall through so
+        // For AMBIGUOUS_JOB, INVALID_COMMAND or INVALID_TIME: fall through so
         // the menu can show the provider their list of active jobs.
       }
     }
@@ -2113,7 +2113,7 @@ async function processInboundMessageUnlocked(
       flow === 'idle' &&
       ['running late', 'delayed', 'late', 'stuck in traffic'].some((k) => rawText === k)
     ) {
-      // M5-T3: running-late — stateless, handle immediately
+      // M5-T3: running-late - stateless, handle immediately
       const lateResult = await handleRunningLateFlow(phone)
       await saveConversation({ phone, flow: 'idle', step: lateResult.nextStep === 'done' ? 'welcome' : lateResult.nextStep, data })
       return
@@ -2121,7 +2121,7 @@ async function processInboundMessageUnlocked(
       flow === 'idle' &&
       ['dispute', 'issue', 'issue with job', 'raise issue'].some((k) => rawText === k)
     ) {
-      // M5-T4: dispute — two-step; first message sent here, reply handled by provider_journey dispatcher
+      // M5-T4: dispute - two-step; first message sent here, reply handled by provider_journey dispatcher
       const disputeResult = await handleProviderDisputeFlow(phone)
       await saveConversation({ phone, flow: 'provider_journey', step: disputeResult.nextStep, data })
       return
@@ -2129,7 +2129,7 @@ async function processInboundMessageUnlocked(
       flow === 'idle' &&
       ['invoice', 'send invoice', 'receipt'].some((k) => rawText === k)
     ) {
-      // M5-T5: invoice — stateless, handle immediately
+      // M5-T5: invoice - stateless, handle immediately
       const invoiceResult = await handleInvoiceFlow(phone)
       await saveConversation({ phone, flow: 'idle', step: invoiceResult.nextStep === 'done' ? 'welcome' : invoiceResult.nextStep, data })
       return
@@ -2236,7 +2236,7 @@ async function processInboundMessageUnlocked(
     } else if (flow === 'provider_journey') {
       result = await handleProviderJourneyFlow(ctx)
     } else {
-      // Only relay free-form text — never relay reset keywords (hi/hello/menu/etc.)
+      // Only relay free-form text - never relay reset keywords (hi/hello/menu/etc.)
       // isReset means the user wants the main menu, not to message a provider
       if (flow === 'idle' && reply.type === 'text' && rawText.length >= 2 && !isReset) {
         const relayed = await tryMediatedRelay(phone, reply.text ?? '')
@@ -2246,24 +2246,24 @@ async function processInboundMessageUnlocked(
         }
       }
 
-      // Idle / unknown — for providers with free-text input that didn't match
+      // Idle / unknown - for providers with free-text input that didn't match
       // any command, show a tip with the most common shortcuts before the menu.
       if (isProviderRole && !reply.id && rawText.length >= 2) {
         await sendText(
           phone,
           `Sorry, I didn't understand "${reply.text?.slice(0, 60) ?? ''}".\n\n` +
           `Quick provider commands:\n` +
-          `• *menu* — main menu\n` +
-          `• *credits* — check balance\n` +
-          `• *my jobs* — your active jobs\n` +
-          `• *14:00* or *arrive 14:00* — confirm arrival\n` +
-          `• *on the way* / *arrived* / *start* / *complete* — update job\n` +
-          `• *interested* / *not interested* — respond to a lead\n` +
+          `• *menu* - main menu\n` +
+          `• *credits* - check balance\n` +
+          `• *my jobs* - your active jobs\n` +
+          `• *14:00* or *arrive 14:00* - confirm arrival\n` +
+          `• *on the way* / *arrived* / *start* / *complete* - update job\n` +
+          `• *interested* / *not interested* - respond to a lead\n` +
           `• Multiple jobs? Add the job ref, e.g. *arrive 14:00 #PAP-JOB-ABC12345*`,
         )
       }
 
-      // Idle / unknown — show main menu
+      // Idle / unknown - show main menu
       await showMainMenu(phone)
       result = { nextStep: 'welcome', nextData: {} }
       flow = 'idle'
@@ -2604,7 +2604,7 @@ async function handleCustomerRematchCheckResponse(phone: string, actionId: strin
 }
 
 // ─── Job notification to provider via WhatsApp ───────────────────────────────
-// Replaces direct customer ↔ provider contact — all mediated through the platform
+// Replaces direct customer ↔ provider contact - all mediated through the platform
 
 export async function notifyProviderNewJob(params: {
   providerPhone: string
@@ -2677,7 +2677,7 @@ export async function notifyProviderNewJob(params: {
 
   await sendCtaUrl(
     params.providerPhone,
-    `🔔 *New Job Opportunity*\n\n${previewLines}\n\nRef: ${ref} · Expires in ${expiryLabel}\n\nThe customer is comparing suitable providers.\n\n${creditLine}\n\nReply with the buttons sent below, or tap to view photos/full preview.`,
+    `🔔 *New Job Opportunity*\n\n${previewLines}\n\nRef: ${ref} · Expires in ${expiryLabel}\n\nThe customer is comparing suitable providers.\n\n${creditLine}\n\nReply with the buttons sent below or tap to view photos/full preview.`,
     ctaLabelFor('view_lead'),
     leadUrl,
     { footer: 'Safe preview only. Exact address stays locked.' },
@@ -2721,14 +2721,14 @@ export async function notifyProviderApplicationResult(params: {
 
 Your application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.
 
-Log in to complete your profile, set your schedule, and start responding to matching requests.`,
+Log in to complete your profile, set your schedule and start responding to matching requests.`,
       )
       return
     }
 
     await sendCtaUrl(
       params.phone,
-      `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule, and start responding to matching requests.`,
+      `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule and start responding to matching requests.`,
       ctaLabelFor('worker_portal'),
       portalUrl,
       { footer: 'Welcome to the Plug A Pro network! 👋' }
@@ -2736,7 +2736,7 @@ Log in to complete your profile, set your schedule, and start responding to matc
   } else {
     // Intentional direct sendTemplate bypass: provider applicants have no Customer record,
     // so canSend() would return 'customer_not_found'. This is a provider-facing transactional
-    // message (application outcome) — opt-in policy does not apply.
+    // message (application outcome) - opt-in policy does not apply.
     const { sendTemplate } = await import('./whatsapp')
     await sendTemplate({
       to: params.phone,
@@ -2935,7 +2935,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
   const provider = await db.provider.findUnique({ where: { phone } })
   if (!provider) {
-    await sendText(phone, "You're not registered as a Plug A Pro provider. Reply *join* to apply, or contact support if you think this is an error.")
+    await sendText(phone, "You're not registered as a Plug A Pro provider. Reply *join* to apply or contact support if you think this is an error.")
     return
   }
 
@@ -3215,7 +3215,7 @@ async function handleProviderJobFlow(
   }
 
   if (ctx.step === 'tech_job_confirm_accept' && ctx.reply.id?.startsWith('accept_job_')) {
-    // Idempotent — skip if already scheduled (e.g. duplicate button tap)
+    // Idempotent - skip if already scheduled (e.g. duplicate button tap)
     if (job.status !== 'SCHEDULED') {
       await sendText(ctx.phone, '✅ Job already accepted. Check the app for details.')
       return { nextStep: 'done' }
@@ -3279,7 +3279,7 @@ async function handleProviderJobFlow(
 
     await sendText(
       ctx.phone,
-      "Understood — we'll reassign this job. Reply *my jobs* to check your remaining active assignments."
+      "Understood - we'll reassign this job. Reply *my jobs* to check your remaining active assignments."
     )
     return { nextStep: 'done' }
   }
@@ -3326,7 +3326,7 @@ export async function sendQuoteToClient(params: {
   // buttons; the full quote URL is exposed via a sendCtaUrl follow-up below.
   await sendButtons(
     params.customerPhone,
-    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${truncateField(params.description, 200)}_\n\nTap a button below to accept or decline, or open the full quote.`,
+    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${truncateField(params.description, 200)}_\n\nTap a button below to accept or decline or open the full quote.`,
     [
       { id: `quote_accept_${params.quoteId}`, title: '✅ Accept Quote' },
       { id: `quote_decline_${params.quoteId}`, title: '❌ Decline' },
@@ -3366,7 +3366,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
     } else if (result.error === 'EXPIRED') {
       await sendText(phone, "⏰ This quote has expired. Reply *Hi* to submit a new request and we'll get a fresh quote to you.")
     } else {
-      await sendText(phone, "😔 Something went wrong on our end. Please use the link in the original quote message, or reply *Hi* to start again.")
+      await sendText(phone, "😔 Something went wrong on our end. Please use the link in the original quote message or reply *Hi* to start again.")
     }
     return
   }
@@ -3386,7 +3386,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
     if (providerJobUrl) {
       await sendCtaUrl(
         result.provider.phone,
-        `✅ *Booking confirmed — ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen your secure job link to view full details and update status.`,
+        `✅ *Booking confirmed - ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen your secure job link to view full details and update status.`,
         ctaLabelFor('view_job'),
         providerJobUrl,
         { footer: 'Secure link for this accepted job only.' }
@@ -3394,7 +3394,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
     } else {
       await sendText(
         result.provider.phone,
-        `✅ *Booking confirmed — ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nReply *menu* to continue in WhatsApp and request your secure job link.`
+        `✅ *Booking confirmed - ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nReply *menu* to continue in WhatsApp and request your secure job link.`
       ).catch(() => {})
     }
     const { sendProviderAssigned } = await import('./whatsapp')
@@ -3411,7 +3411,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
       result.provider.phone,
       `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${truncateField(result.category, 50)} quote. Your profile remains active and new leads will come through as they arise.`
     ).catch(() => {})
-    await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
+    await sendText(phone, `Got it - we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
   }
 }
 
@@ -3592,7 +3592,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     return
   }
 
-  // acceptAssignmentOffer does not send notifications — dispatch provider confirmation
+  // acceptAssignmentOffer does not send notifications - dispatch provider confirmation
   // and customer notification here, then fall back to a simpler message if the
   // provider notification fails (transient API error, URL generation failure, etc.).
   const { notifyPostMatchAcceptance } = await import('./post-match-communications')
@@ -3630,7 +3630,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
 
   // ── Location prompt ──────────────────────────────────────────────────────────
   // Ask the provider to share their current location so the customer can be
-  // notified the provider is en route. This is optional — the provider can skip.
+  // notified the provider is en route. This is optional - the provider can skip.
   await saveConversation({ phone, flow: 'provider_journey', step: 'post_accept_location_prompt', data: {} })
   await sendButtons(
     phone,
@@ -3815,7 +3815,7 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
   })
   if (!lead) {
     console.info('[whatsapp-bot] decline: lead not found for hold (expired or already closed)', { traceId, holdId, providerId: provider.id })
-    await sendText(phone, "Understood — we've noted your response. New leads will come through as jobs arise.")
+    await sendText(phone, "Understood - we've noted your response. New leads will come through as jobs arise.")
     return
   }
 
@@ -3825,7 +3825,7 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
 
     await sendText(
       phone,
-      `Understood — lead passed (${reason}). We'll keep matching this job with other providers. New leads will come through as they arise.`
+      `Understood - lead passed (${reason}). We'll keep matching this job with other providers. New leads will come through as they arise.`
     )
   } catch (error) {
     console.error('[whatsapp-bot] decline: unexpected failure', {
@@ -3931,7 +3931,7 @@ async function handleOpsLeadDeclineWithProviderId(
         return
       }
 
-      await sendText(phone, `Understood — noted as unavailable. You'll receive new job notifications as they arise.`)
+      await sendText(phone, `Understood - noted as unavailable. You'll receive new job notifications as they arise.`)
       console.info('[whatsapp-bot] ops_decline: rfp_lead_declined', {
         traceId,
         leadId,
@@ -3955,7 +3955,7 @@ async function handleOpsLeadDeclineWithProviderId(
 
     const { declineLead } = await import('./matching-engine')
     await declineLead({ leadId, providerId: provider.id })
-    await sendText(phone, `Understood — noted as unavailable. You'll receive new job notifications as they arise.`)
+    await sendText(phone, `Understood - noted as unavailable. You'll receive new job notifications as they arise.`)
     console.info('[whatsapp-bot] ops_decline: lead declined', {
       traceId,
       leadId,
@@ -4019,7 +4019,7 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
         where: { id: leadId, providerId: provider.id, status: { in: [...rfpOpenStatuses] } },
         data: { status: 'DECLINED', respondedAt: now, declinedAt: now },
       })
-      await sendText(phone, `Understood — noted as unavailable (${reason}). You'll receive new job notifications as they arise.`)
+      await sendText(phone, `Understood - noted as unavailable (${reason}). You'll receive new job notifications as they arise.`)
       console.info('[whatsapp-bot] ops_decline: rfp_lead_declined', {
         traceId, leadId, providerId: provider.id, reason, prevStatus: lead.status,
       })
@@ -4039,7 +4039,7 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
     // Standard path: customer-selected or assignment-hold (auto-assign v2) leads
     const { declineLead } = await import('./matching-engine')
     await declineLead({ leadId, providerId: provider.id })
-    await sendText(phone, `Understood — noted as unavailable (${reason}). You'll receive new job notifications as they arise.`)
+    await sendText(phone, `Understood - noted as unavailable (${reason}). You'll receive new job notifications as they arise.`)
     console.info('[whatsapp-bot] ops_decline: lead declined', { traceId, leadId, providerId: provider.id, reason })
   } catch (error) {
     console.error('[whatsapp-bot] ops_decline: unexpected failure', {
@@ -4145,7 +4145,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         const supportNum = process.env.SUPPORT_WHATSAPP_NUMBER ?? ''
         await sendText(
           phone,
-          `⚠️ We couldn't complete the job assignment. If a credit was deducted, please contact support — we'll investigate and refund any incorrectly deducted credit.\n\n_Ref: ${traceId}_\n\nSupport: wa.me/${supportNum.replace(/\D/g, '')}`,
+          `⚠️ We couldn't complete the job assignment. If a credit was deducted, please contact support - we'll investigate and refund any incorrectly deducted credit.\n\n_Ref: ${traceId}_\n\nSupport: wa.me/${supportNum.replace(/\D/g, '')}`,
         )
         return
       }
@@ -4153,7 +4153,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         const supportNum = process.env.SUPPORT_WHATSAPP_NUMBER ?? ''
         await sendText(
           phone,
-          `⚠️ Your credit was applied but we couldn't lock the job assignment. Please contact support — we'll check the job status and ensure you're not charged twice.\n\n_Ref: ${traceId}_\n\nSupport: wa.me/${supportNum.replace(/\D/g, '')}`,
+          `⚠️ Your credit was applied but we couldn't lock the job assignment. Please contact support - we'll check the job status and ensure you're not charged twice.\n\n_Ref: ${traceId}_\n\nSupport: wa.me/${supportNum.replace(/\D/g, '')}`,
         )
         return
       }
@@ -4258,7 +4258,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
     phone,
     declineResult.alreadyDeclined
       ? 'You already declined this job. No further action was taken.'
-      : 'No problem — we have let the customer know. They can pick another provider from the shortlist.',
+      : 'No problem - we have let the customer know. They can pick another provider from the shortlist.',
   )
 }
 
@@ -4287,10 +4287,10 @@ async function handleProviderOpportunityNotInterested(phone: string, buttonId: s
       source: 'whatsapp',
       idempotencyKey: `whatsapp:${provider.id}:${leadId}:not_interested`,
     })
-    await sendText(phone, 'Thanks — we have marked you as not interested. No credits used.')
+    await sendText(phone, 'Thanks - we have marked you as not interested. No credits used.')
   } catch (error) {
     console.warn('[whatsapp-bot] not_interested response failed', { traceId, leadId, error: String(error) })
-    await sendText(phone, 'Thanks — your response has been recorded.')
+    await sendText(phone, 'Thanks - your response has been recorded.')
   }
 }
 
@@ -4346,7 +4346,7 @@ async function handleProviderOpportunityCapture(
     try {
       const rates = validateProviderOnboardingRates({ callOutFeeText: reply.text })
       if (rates.callOutFee == null) throw new Error('missing fee')
-      await sendText(phone, 'When can you arrive? Reply with a time like *today afternoon*, *tomorrow morning*, or an exact date/time.')
+      await sendText(phone, 'When can you arrive? Reply with a time like *today afternoon*, *tomorrow morning* or an exact date/time.')
       await saveConversation({
         phone,
         flow: 'idle',
@@ -4367,7 +4367,7 @@ async function handleProviderOpportunityCapture(
   if (step === 'arrival') {
     const estimatedArrivalAt = parseProviderOpportunityArrivalText(reply.text ?? '')
     if (!estimatedArrivalAt) {
-      await sendText(phone, 'Please reply with a valid arrival time, for example *today afternoon*, *tomorrow morning*, or *2026-05-03 09:00*.')
+      await sendText(phone, 'Please reply with a valid arrival time, for example *today afternoon*, *tomorrow morning* or *2026-05-03 09:00*.')
       return
     }
     await sendButtons(
@@ -4498,7 +4498,7 @@ async function handleProviderCompletionCapture(
       await sendText(phone, 'Please send a short completion note.')
       return
     }
-    await sendText(phone, 'Please upload a completion photo, or reply SKIP.')
+    await sendText(phone, 'Please upload a completion photo or reply SKIP.')
     await saveConversation({
       phone,
       flow: 'provider_job',
@@ -4517,7 +4517,7 @@ async function handleProviderCompletionCapture(
     const skipped = reply.text?.trim().toLowerCase() === 'skip'
     if (!skipped) {
       if (!reply.mediaId) {
-        await sendText(phone, 'Please upload a completion photo, or reply SKIP.')
+        await sendText(phone, 'Please upload a completion photo or reply SKIP.')
         return
       }
       try {
@@ -4534,7 +4534,7 @@ async function handleProviderCompletionCapture(
           mediaIdSuffix: reply.mediaId.slice(-8),
           error,
         })
-        await sendText(phone, 'We could not save that photo. Please upload another photo, or reply SKIP.')
+        await sendText(phone, 'We could not save that photo. Please upload another photo or reply SKIP.')
         return
       }
     }
@@ -4581,7 +4581,7 @@ async function handleRebookConfirm(phone: string, buttonId: string): Promise<voi
 
   const savedAddresses = identity.savedAddresses
   if (savedAddresses.length > 0) {
-    // Has saved address(es) — show the site picker (collect_site handles the prompt)
+    // Has saved address(es) - show the site picker (collect_site handles the prompt)
     const ctx = {
       phone,
       flow: 'job_request' as const,
@@ -4592,7 +4592,7 @@ async function handleRebookConfirm(phone: string, buttonId: string): Promise<voi
     const result = await handleJobRequestFlow(ctx)
     await saveConversation({ phone, flow: 'job_request', step: result.nextStep, data: { ...baseData, ...result.nextData } })
   } else {
-    // No saved addresses — go straight to address entry; description is already pre-filled
+    // No saved addresses - go straight to address entry; description is already pre-filled
     const category = priorJob.category ?? 'your service'
     await sendText(
       phone,

@@ -1,5 +1,5 @@
 // ─── Admin: Booking detail ─────────────────────────────────────────────────────
-// Full booking view with customer info, job timeline, extras, photos, and admin actions.
+// Full booking view with customer info, job timeline, extras, photos and admin actions.
 
 export const dynamic = 'force-dynamic'
 

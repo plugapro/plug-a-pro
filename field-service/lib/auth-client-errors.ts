@@ -55,7 +55,7 @@ export function getCustomerOtpSendErrorMessage(message?: string | null): string 
     case 'RATE_LIMITED':
       return 'Too many attempts. Please wait a few minutes before trying again.'
     case 'WHATSAPP_BLOCKED':
-      return 'We could not deliver your code on WhatsApp. Check the number and try again, or contact support@plugapro.co.za.'
+      return 'We could not deliver your code on WhatsApp. Check the number and try again or contact support@plugapro.co.za.'
     case 'PROVIDER_AUTH':
       return 'Your account is not configured to request codes from this surface right now. Contact support@plugapro.co.za.'
     case 'NETWORK':

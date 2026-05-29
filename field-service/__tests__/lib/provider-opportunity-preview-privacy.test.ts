@@ -1,5 +1,5 @@
 // Regression guard: getSafeProviderOpportunityPreview must never expose
-// customer phone, street, or access notes before the lead is accepted.
+// customer phone, street or access notes before the lead is accepted.
 // See lib/provider-opportunity-responses.ts comment at line ~90.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -40,7 +40,7 @@ const SAFE_LEAD = {
       region: null,
       city: 'Cape Town',
       province: 'Western Cape',
-      // These fields are NOT in the Prisma select — but if they somehow leaked through,
+      // These fields are NOT in the Prisma select - but if they somehow leaked through,
       // the assertions below would catch it.
     },
     attachments: [
@@ -49,12 +49,12 @@ const SAFE_LEAD = {
   },
 }
 
-describe('getSafeProviderOpportunityPreview — privacy enforcement', () => {
+describe('getSafeProviderOpportunityPreview - privacy enforcement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('omits customer phone, street, addressLine1, unitNumber, and accessNotes before acceptance', async () => {
+  it('omits customer phone, street, addressLine1, unitNumber and accessNotes before acceptance', async () => {
     mockLead.findUnique.mockResolvedValue(SAFE_LEAD)
 
     const preview = await getSafeProviderOpportunityPreview('lead-1', 'prov-1')

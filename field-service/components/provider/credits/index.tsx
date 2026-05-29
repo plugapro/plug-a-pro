@@ -465,7 +465,7 @@ export function PaymentIntentStatusClient({
                 <div className="min-w-0 flex-1">
                   <div className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-500">Pay@ retail reference</div>
                   <div className="mt-1 break-all font-mono text-[22px] font-extrabold tracking-[0.04em] text-neutral-900 sm:text-[28px]">{sourceReference}</div>
-                  <div className="mt-1 text-[12px] text-neutral-500">Give this number to the cashier at PEP, Shoprite, Pick n Pay, Checkers, Boxer, or Builders.</div>
+                  <div className="mt-1 text-[12px] text-neutral-500">Give this number to the cashier at PEP, Shoprite, Pick n Pay, Checkers, Boxer or Builders.</div>
                 </div>
                 <Clipboard className="size-5 shrink-0 text-[var(--brand-purple)]" aria-hidden />
               </div>

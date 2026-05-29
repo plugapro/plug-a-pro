@@ -33,7 +33,7 @@ function validateAddressStep(input: {
   }
 
   if (!input.locationNodeId) {
-    return 'Select your suburb before continuing — use "Use my location" or type in the search box.'
+    return 'Select your suburb before continuing - use "Use my location" or type in the search box.'
   }
 
   const suburb = normalizeValue(input.suburb)
@@ -168,7 +168,7 @@ describe('BookingFlow address validation', () => {
       locationNodeId: null,
       addressLine1: '5 Alice Lane',
     })
-    expect(result).toBe('Select your suburb before continuing — use "Use my location" or type in the search box.')
+    expect(result).toBe('Select your suburb before continuing - use "Use my location" or type in the search box.')
   })
 
   it('should reject invalid province', () => {

@@ -63,7 +63,7 @@ type TxClient = Omit<
 interface CrudActionOptions<TInput, TOutput> {
   /** Entity name for the audit log, e.g. 'Customer', 'Location'. */
   entity: string
-  /** Entity ID being acted on. For creates, omit — will be inferred from result. */
+  /** Entity ID being acted on. For creates, omit - will be inferred from result. */
   entityId?: string
   /** Audit action string, e.g. 'customer.block', 'location.create'. */
   action: string
@@ -77,7 +77,7 @@ interface CrudActionOptions<TInput, TOutput> {
   schema?: z.ZodType<TInput>
   /** Raw (unvalidated) input data. */
   input?: unknown
-  /** Snapshot of the record before mutation — written to AdminAuditEvent.before. */
+  /** Snapshot of the record before mutation - written to AdminAuditEvent.before. */
   before?: Record<string, unknown> | null
   /**
    * Optional human-readable justification for this action.
@@ -103,7 +103,7 @@ interface CrudActionOptions<TInput, TOutput> {
  *  3. Required feature flag is enabled (if specified).
  *  4. Input is valid against the Zod schema (if specified).
  *  5. The mutation and both audit rows (AuditLog + AdminAuditEvent) are
- *     committed atomically — no partial writes.
+ *     committed atomically - no partial writes.
  */
 export async function crudAction<TInput = unknown, TOutput = unknown>(
   opts: CrudActionOptions<TInput, TOutput>

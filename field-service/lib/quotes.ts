@@ -213,7 +213,7 @@ export async function processQuoteDecision(
         }
       }
 
-      // Approve — atomic claim prevents concurrent double-approval
+      // Approve - atomic claim prevents concurrent double-approval
       const claimed = await tx.quote.updateMany({
         where: { id: quoteId, status: 'PENDING' },
         data: { status: 'APPROVED', approvedAt: new Date() },

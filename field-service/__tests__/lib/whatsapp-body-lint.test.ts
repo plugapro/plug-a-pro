@@ -9,7 +9,7 @@ import { bodyContainsRawUrl } from '@/lib/whatsapp-copy'
 //     dynamically inside async senders (sendQuoteToClient, dispatch.ts, etc.)
 //     are covered by per-flow integration tests, not this lint.
 
-describe('repo-wide WhatsApp body-text lint — no raw URLs in customer-facing copy', () => {
+describe('repo-wide WhatsApp body-text lint - no raw URLs in customer-facing copy', () => {
   it.each([
     [
       'buildProviderCreditSummaryMessage',

@@ -1,6 +1,6 @@
-// Phase 1 auto-approval — approves PENDING provider applications that have all
-// required fields (name, skills, service areas, and experience).
-// HIGH_RISK_CATEGORY applications (Electrical, Roofing, Pest Control, and Air
+// Phase 1 auto-approval - approves PENDING provider applications that have all
+// required fields (name, skills, service areas and experience).
+// HIGH_RISK_CATEGORY applications (Electrical, Roofing, Pest Control and Air
 // Conditioning) are routed to manual review and are not auto-approved. Plumbing is
 // standard and must not block auto-approval.
 //
@@ -239,7 +239,7 @@ async function checkPaymentIntentSchemaCompatibility(client: AutoApproveDb): Pro
     return { isCompatible: false, reasons: ['PAYMENT_INTENT_MODEL_MISSING'] }
   }
   try {
-    // Probe the exact field that the promo award queries — catches column drift early.
+    // Probe the exact field that the promo award queries - catches column drift early.
     await client.paymentIntent.count({ where: { providerId: '__precheck__' } })
     return { isCompatible: true, reasons: [] }
   } catch (error) {
@@ -696,7 +696,7 @@ export async function autoApproveProviderApplications(
     console.error('[auto-approve:marker-schema] preflight failed', { reasons: markerPreflight.reasons })
   }
   if (!paymentIntentPreflight.isCompatible) {
-    console.error('[auto-approve:payment-intent-schema] preflight failed — promo awards will be skipped', { reasons: paymentIntentPreflight.reasons })
+    console.error('[auto-approve:payment-intent-schema] preflight failed - promo awards will be skipped', { reasons: paymentIntentPreflight.reasons })
   }
 
   const result: AutoApproveResult = {

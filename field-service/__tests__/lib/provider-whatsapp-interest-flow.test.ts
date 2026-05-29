@@ -1,4 +1,4 @@
-// ─── Provider WhatsApp interest capture — multi-step flow tests ───────────────
+// ─── Provider WhatsApp interest capture - multi-step flow tests ───────────────
 // Blueprint: 07-provider-interest-rate-response-whatsapp-flow
 //
 // These tests assert the WhatsApp multi-step interest capture (callout → arrival
@@ -191,7 +191,7 @@ beforeEach(() => {
 
 // ─── Step 1: interested: button triggers callout prompt ───────────────────────
 
-describe('interested: button — starts interest capture', () => {
+describe('interested: button - starts interest capture', () => {
   beforeEach(() => {
     mockDb.conversation.upsert.mockResolvedValueOnce(idleConversation())
   })
@@ -220,9 +220,9 @@ describe('interested: button — starts interest capture', () => {
   })
 })
 
-// ─── Step 2: callout step — fee validation ────────────────────────────────────
+// ─── Step 2: callout step - fee validation ────────────────────────────────────
 
-describe('callout step — fee validation', () => {
+describe('callout step - fee validation', () => {
   beforeEach(() => {
     mockDb.conversation.upsert.mockResolvedValue(interestCaptureConversation('callout'))
   })
@@ -252,7 +252,7 @@ describe('callout step — fee validation', () => {
       PHONE,
       expect.stringContaining('valid call-out fee'),
     )
-    // Must NOT advance to arrival — no arrival prompt sent
+    // Must NOT advance to arrival - no arrival prompt sent
     expect(mockSendText).not.toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('When can you arrive'),
@@ -279,9 +279,9 @@ describe('callout step — fee validation', () => {
   })
 })
 
-// ─── Step 3: arrival step — arrival validation ────────────────────────────────
+// ─── Step 3: arrival step - arrival validation ────────────────────────────────
 
-describe('arrival step — arrival validation', () => {
+describe('arrival step - arrival validation', () => {
   beforeEach(() => {
     mockDb.conversation.upsert.mockResolvedValue(
       interestCaptureConversation('arrival', {
@@ -353,7 +353,7 @@ describe('arrival step — arrival validation', () => {
 
 // ─── Step 4: negotiable step ──────────────────────────────────────────────────
 
-describe('negotiable step — rate negotiable capture', () => {
+describe('negotiable step - rate negotiable capture', () => {
   const arrivalIso = new Date('2026-05-10T09:00:00.000Z').toISOString()
 
   beforeEach(() => {
@@ -404,9 +404,9 @@ describe('negotiable step — rate negotiable capture', () => {
   })
 })
 
-// ─── Step 5: note step — optional note then submit ────────────────────────────
+// ─── Step 5: note step - optional note then submit ────────────────────────────
 
-describe('note step — optional note and submission', () => {
+describe('note step - optional note and submission', () => {
   const arrivalIso = new Date('2026-05-10T09:00:00.000Z').toISOString()
   const baseData = {
     providerOpportunityCallOutFeeText: 'R250',
@@ -452,7 +452,7 @@ describe('note step — optional note and submission', () => {
     expect(confirmCall![1]).toContain('No credits were used')
   })
 
-  it('confirmation message includes call-out, arrival, and rate fields', async () => {
+  it('confirmation message includes call-out, arrival and rate fields', async () => {
     await processInboundMessage(buttonMessage('provider_opp_note_skip'))
 
     const confirmCall = mockSendText.mock.calls.find((args) =>
@@ -505,7 +505,7 @@ describe('note step — optional note and submission', () => {
 
 // ─── Credit deduction invariant ───────────────────────────────────────────────
 
-describe('no credit deduction — full flow invariant', () => {
+describe('no credit deduction - full flow invariant', () => {
   it('respondToProviderOpportunity always returns creditsDeducted: 0 on INTERESTED', async () => {
     // This asserts the respondToProviderOpportunity module contract directly.
     // The mock returns creditsDeducted: 0; and we verify the bot does not
@@ -521,8 +521,8 @@ describe('no credit deduction — full flow invariant', () => {
 
     await processInboundMessage(buttonMessage('provider_opp_note_skip'))
 
-    // The return value is { response, creditsDeducted: 0 } — we verify
-    // the mock was called, and that the bot did not attempt any credit deduction.
+    // The return value is { response, creditsDeducted: 0 } - we verify
+    // the mock was called and that the bot did not attempt any credit deduction.
     expect(mockRespondToProviderOpportunity).toHaveBeenCalledTimes(1)
     const result = await mockRespondToProviderOpportunity.mock.results[0].value
     expect(result.creditsDeducted).toBe(0)
@@ -592,7 +592,7 @@ describe('duplicate and interrupted responses', () => {
 
     await processInboundMessage(buttonMessage('provider_opp_note_skip'))
 
-    // Must show a recoverable error — not the success confirmation
+    // Must show a recoverable error - not the success confirmation
     const errorCall = mockSendText.mock.calls.find((args) => {
       const body = String(args[1] ?? '')
       return body.includes('Something went wrong') || body.includes('try again')
@@ -610,7 +610,7 @@ describe('duplicate and interrupted responses', () => {
 
 // ─── not_interested: button ────────────────────────────────────────────────────
 
-describe('not_interested: button — single-step decline', () => {
+describe('not_interested: button - single-step decline', () => {
   beforeEach(() => {
     mockDb.conversation.upsert.mockResolvedValue(idleConversation())
   })

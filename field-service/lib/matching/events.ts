@@ -2,7 +2,7 @@
 // Structured event logging for the matching engine.
 // Every match outcome emits exactly one event.
 //
-// These are currently written to stdout as JSON. The event field is stable —
+// These are currently written to stdout as JSON. The event field is stable -
 // future integrations (analytics, alerting, pub/sub) should depend on it.
 
 export type MatchDomainEvent =

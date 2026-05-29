@@ -137,7 +137,7 @@ export async function sendText(
 // ─── Buttons (max 3) ──────────────────────────────────────────────────────────
 
 export interface QuickReply {
-  id: string    // max 256 chars — returned in webhook
+  id: string    // max 256 chars - returned in webhook
   title: string // max 20 chars
 }
 

@@ -356,7 +356,7 @@ export default async function JobDetailPage({
               Problem on this job?
             </p>
             <p className="text-sm" style={{ color: 'var(--ink-mute)' }}>
-              Raise it with Plug A Pro support so the written quote, photos, and job history can be reviewed.
+              Raise it with Plug A Pro support so the written quote, photos and job history can be reviewed.
             </p>
           </div>
 

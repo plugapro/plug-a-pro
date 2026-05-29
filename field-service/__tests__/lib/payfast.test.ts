@@ -260,7 +260,7 @@ describe('verifyItn', () => {
   it('skips IP validation in sandbox mode', () => {
     const config = makeConfig({ sandbox: true })
     const itn = buildValidItn()
-    // In sandbox mode any IP (or no IP) is acceptable — only the signature matters.
+    // In sandbox mode any IP (or no IP) is acceptable - only the signature matters.
     const result = verifyItn(itn, UNKNOWN_IP, config)
     expect(result).toEqual({ valid: true })
   })
@@ -311,7 +311,7 @@ describe('parseItnAmountCents', () => {
   })
 
   it('rounds correctly for floating point edge cases', () => {
-    // 0.1 + 0.2 = 0.30000000000000004 in float — Math.round handles this.
+    // 0.1 + 0.2 = 0.30000000000000004 in float - Math.round handles this.
     expect(parseItnAmountCents('0.30')).toBe(30)
   })
 

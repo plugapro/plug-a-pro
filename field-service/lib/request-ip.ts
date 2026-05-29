@@ -119,7 +119,7 @@ function isGlobalIpv6(value: string): boolean {
   if (!groups) return false
   if (mappedIpv4FromGroups(groups)) return false
 
-  // Reject local, documentation, multicast, and other non-global IPv6 ranges.
+  // Reject local, documentation, multicast and other non-global IPv6 ranges.
   if (groups.every((group) => group === 0)) return false
   if (groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1) {
     return false

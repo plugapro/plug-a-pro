@@ -68,7 +68,7 @@ function messageText(message?: string) {
     case 'note_added':
       return 'Admin note added.'
     case 'reconcile_failed':
-      return 'Could not match this payment. Check the status, amount, and bank reference.'
+      return 'Could not match this payment. Check the status, amount and bank reference.'
     case 'credit_failed':
       return 'Could not credit this payment intent. It may already be credited or in an invalid status.'
     case 'fail_failed':
@@ -369,7 +369,7 @@ export default async function ProviderCreditPaymentDetailPage({
             <input type="hidden" name="paymentIntentId" value={intent.id} />
             <h2 className="font-semibold">Mark failed</h2>
             <p className="text-sm text-muted-foreground">
-              Use this when funds are not received, the amount is wrong, or the reference cannot be matched.
+              Use this when funds are not received, the amount is wrong or the reference cannot be matched.
             </p>
             <textarea
               name="adminNote"

@@ -10,12 +10,12 @@
  * Env override policy:
  *   Set FEATURE_FLAGS='{"flag.key": true}' to override DB values at boot time.
  *   Env overrides apply to ALL users and bypass per-user rollout (enabledForUsers).
- *   Use env overrides in CI / staging only — never in production.
+ *   Use env overrides in CI / staging only - never in production.
  *
  * Rollout ownership:
- *   owner: 'eng'   — Engineering; flag controls infrastructure / API surface
- *   owner: 'ops'   — Operations; flag controls admin queue / workflow behaviour
- *   owner: 'prod'  — Product; flag controls customer / provider feature surface
+ *   owner: 'eng'   - Engineering; flag controls infrastructure / API surface
+ *   owner: 'ops'   - Operations; flag controls admin queue / workflow behaviour
+ *   owner: 'prod'  - Product; flag controls customer / provider feature surface
  */
 
 export const FEATURE_FLAGS_REGISTRY = {
@@ -61,12 +61,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'admin.crud.dispatch': {
-    description: 'Enable dispatch claim, rerank, auto-assign, and override mutations on the Dispatch console.',
+    description: 'Enable dispatch claim, rerank, auto-assign and override mutations on the Dispatch console.',
     owner: 'ops',
     defaultValue: false,
   },
   'admin.crud.validation': {
-    description: 'Enable validation queue claim, release, promote, and cancel mutations on the Validation Queue admin page.',
+    description: 'Enable validation queue claim, release, promote and cancel mutations on the Validation Queue admin page.',
     owner: 'ops',
     defaultValue: false,
   },
@@ -98,17 +98,17 @@ export const FEATURE_FLAGS_REGISTRY = {
   },
   // ─── Admin finance / invoicing ───────────────────────────────────────────────
   'admin.quotes.send': {
-    description: 'Enable approve, decline, send, and revise admin mutations on the Quote Approvals page.',
+    description: 'Enable approve, decline, send and revise admin mutations on the Quote Approvals page.',
     owner: 'ops',
     defaultValue: false,
   },
   'admin.invoices.actions': {
-    description: 'Enable generate, send, and void mutations on the Invoices admin page.',
+    description: 'Enable generate, send and void mutations on the Invoices admin page.',
     owner: 'ops',
     defaultValue: false,
   },
   'admin.payments.retry': {
-    description: 'Enable payment PSP checkout retry on the Payments admin page. Reserved — not yet implemented.',
+    description: 'Enable payment PSP checkout retry on the Payments admin page. Reserved - not yet implemented.',
     owner: 'eng',
     defaultValue: false,
   },
@@ -166,7 +166,7 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'ops.v2.cases': {
-    description: 'Case lifecycle: claim, note, resolve, and reopen exception cases across all ops queues.',
+    description: 'Case lifecycle: claim, note, resolve and reopen exception cases across all ops queues.',
     owner: 'ops',
     defaultValue: false,
   },
@@ -188,12 +188,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'security.otp.report': {
-    description: 'Enable unrequested OTP report tokens, report routes, security challenge tracking, locks, and step-up.',
+    description: 'Enable unrequested OTP report tokens, report routes, security challenge tracking, locks and step-up.',
     owner: 'eng',
     defaultValue: false,
   },
   'admin.security.otp': {
-    description: 'Enable OTP security admin mutations: acknowledge, resolve, false-positive, and clear account lock.',
+    description: 'Enable OTP security admin mutations: acknowledge, resolve, false-positive and clear account lock.',
     owner: 'ops',
     defaultValue: false,
   },
@@ -209,7 +209,7 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'feature.customer.operator_member': {
-    description: 'M1-T8: CustomerMember operator delegation — session resolves to the principal customer account (B2B team booking).',
+    description: 'M1-T8: CustomerMember operator delegation - session resolves to the principal customer account (B2B team booking).',
     owner: 'prod',
     defaultValue: false,
   },
@@ -230,7 +230,7 @@ export const FEATURE_FLAGS_REGISTRY = {
   },
   // ─── Provider features ───────────────────────────────────────────────────────
   'feature.provider.pwa_inbox': {
-    description: 'Enable provider PWA lead inbox, profile editor, availability toggle, and earnings dashboard (M4).',
+    description: 'Enable provider PWA lead inbox, profile editor, availability toggle and earnings dashboard (M4).',
     owner: 'prod',
     defaultValue: false,
   },
@@ -247,7 +247,7 @@ export const FEATURE_FLAGS_REGISTRY = {
   },
 
 
-  // ─── Pilot — post-job review flow ────────────────────────────────────────────
+  // ─── Pilot - post-job review flow ────────────────────────────────────────────
   'pilot.completion-check': {
     description: 'Enable cron-driven completion-check WhatsApp flow for AUTO_ASSIGN cash-pilot jobs. Sends completion check 2 days after job window; fires review nudges on Yes.',
     owner: 'ops',
@@ -266,7 +266,7 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'provider.identity.verification.fail_safe': {
-    description: 'Enable shared identity-verification start gating: resume active attempts, cap repeated failures, and preserve credit-purpose HIGH assurance.',
+    description: 'Enable shared identity-verification start gating: resume active attempts, cap repeated failures and preserve credit-purpose HIGH assurance.',
     owner: 'eng',
     defaultValue: false,
   },
@@ -286,12 +286,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'provider.identity.vendor.omnicheck': {
-    description: 'Enable OmniCheck/VerifyID as a live identity verification vendor (P2 — sandbox only until contract signed).',
+    description: 'Enable OmniCheck/VerifyID as a live identity verification vendor (P2 - sandbox only until contract signed).',
     owner: 'eng',
     defaultValue: false,
   },
   'provider.identity.vendor.datanamix': {
-    description: 'Enable Datanamix/pbVerify as a live identity verification vendor (P2 — sandbox only until contract signed).',
+    description: 'Enable Datanamix/pbVerify as a live identity verification vendor (P2 - sandbox only until contract signed).',
     owner: 'eng',
     defaultValue: false,
   },

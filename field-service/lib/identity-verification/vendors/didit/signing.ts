@@ -1,11 +1,11 @@
 // Didit webhook signature verification.
 //
 // Didit emits three signature headers simultaneously:
-//   X-Signature-V2     — HMAC-SHA256 over canonical JSON of the body  (PRIMARY)
-//   X-Signature        — HMAC-SHA256 over the raw request bytes       (fallback)
-//   X-Signature-Simple — HMAC-SHA256 over "<ts>:<sid>:<status>:<type>" (last resort)
+//   X-Signature-V2     - HMAC-SHA256 over canonical JSON of the body  (PRIMARY)
+//   X-Signature        - HMAC-SHA256 over the raw request bytes       (fallback)
+//   X-Signature-Simple - HMAC-SHA256 over "<ts>:<sid>:<status>:<type>" (last resort)
 //
-// Plus X-Timestamp (unix-epoch seconds) for replay protection — reject if the
+// Plus X-Timestamp (unix-epoch seconds) for replay protection - reject if the
 // skew exceeds 300 seconds.
 //
 // We accept V2 first, fall back to raw V1 if V2 absent. Simple is intentionally
@@ -46,7 +46,7 @@ export function verifyDiditWebhookSignature(rawBody: string, headers: Record<str
   if (v2) {
     const canonical = canonicalJsonOrNull(rawBody)
     // V2 implies canonical JSON. If the body is malformed JSON we MUST NOT
-    // silently fall through to a raw-body hash (which is V1's semantics) —
+    // silently fall through to a raw-body hash (which is V1's semantics) -
     // that would let a non-JSON payload pass as V2 via accidentally matching
     // the V1 secret. Reject and let the caller mark signatureValid:false.
     if (canonical === null) {
@@ -108,7 +108,7 @@ function headerCaseInsensitive(headers: Record<string, string>, key: string): st
   return null
 }
 
-// Canonical JSON (sorted keys recursively) — must match Didit's V2 hash input.
+// Canonical JSON (sorted keys recursively) - must match Didit's V2 hash input.
 // Returns the raw body unchanged on parse failure so the same call site can
 // also be used by tests that want a stable hash even of malformed input.
 // Webhook signature verification uses `canonicalJsonOrNull` (below) which

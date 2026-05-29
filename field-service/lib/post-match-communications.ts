@@ -178,7 +178,7 @@ export async function notifyPostMatchAcceptance(params: {
   const category = lead.jobRequest.category
   const address = addressLabel(lead.jobRequest.address)
 
-  // Non-throwing URL lookups — null means we fall back to plain text messages.
+  // Non-throwing URL lookups - null means we fall back to plain text messages.
   const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id).catch(() => null)
   const customerHandoverUrl = await getCustomerProviderHandoverUrl({
     leadId: lead.id,
@@ -208,7 +208,7 @@ export async function notifyPostMatchAcceptance(params: {
   let customerNotified = false
   let providerNotified = false
 
-  // Customer notification — non-fatal. A customer-side WhatsApp failure must
+  // Customer notification - non-fatal. A customer-side WhatsApp failure must
   // never block the provider confirmation that follows.
   if (customer.phone && !(await hasSentPostMatchMessage({
     to: customer.phone,
@@ -249,13 +249,13 @@ export async function notifyPostMatchAcceptance(params: {
           customerContext,
         )
       } else {
-        // No handover URL — send plain text; provider will contact customer
+        // No handover URL - send plain text; provider will contact customer
         await sendText(customer.phone, customerBody, customerContext)
       }
       customerNotified = true
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      console.error('[post-match] customer notification failed (non-fatal — provider confirmation continues)', {
+      console.error('[post-match] customer notification failed (non-fatal - provider confirmation continues)', {
         lead_id: lead.id,
         customer_id: customer.id,
         error: reason,
@@ -275,14 +275,14 @@ export async function notifyPostMatchAcceptance(params: {
     }
   }
 
-  // Provider notification — must always be attempted regardless of customer outcome.
+  // Provider notification - must always be attempted regardless of customer outcome.
   if (provider.phone && !(await hasSentPostMatchMessage({
     to: provider.phone,
     templateName: 'post_match_provider_job_accepted',
     leadId: lead.id,
   }))) {
     const body =
-      `✅ *Lead accepted — ${firstName(provider.name)}*\n\n` +
+      `✅ *Lead accepted - ${firstName(provider.name)}*\n\n` +
       `${buildLeadAcceptedCreditLine({
         creditsUsed: creditsCharged,
         remainingCredits: walletBalance.totalCreditBalance,
@@ -328,7 +328,7 @@ export async function notifyPostMatchAcceptance(params: {
       } else {
         await sendText(provider.phone, body, providerContext)
       }
-      // Mark as notified here — before the Contact Customer button — so that a
+      // Mark as notified here - before the Contact Customer button - so that a
       // failure on the secondary button does not incorrectly mark providerNotified false.
       providerNotified = true
     } catch (err) {
@@ -352,7 +352,7 @@ export async function notifyPostMatchAcceptance(params: {
     }
   }
 
-  // Contact Customer button — non-fatal; failure must not affect providerNotified.
+  // Contact Customer button - non-fatal; failure must not affect providerNotified.
   if (provider.phone && !(await hasSentPostMatchMessage({
     to: provider.phone,
     templateName: 'post_match_provider_next_actions',

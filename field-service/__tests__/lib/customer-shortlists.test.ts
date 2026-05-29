@@ -415,7 +415,7 @@ describe('customer shortlists', () => {
       where: { id: 'lead-1' },
       data: { customerSelectedAt: expect.any(Date), expiresAt: expect.any(Date) },
     })
-    // Sibling leads are NOT marked SUPERSEDED here — they stay in their current
+    // Sibling leads are NOT marked SUPERSEDED here - they stay in their current
     // status so cascadeToNextShortlistedProvider can resurface them if the
     // selected provider later declines. Stale RFP taps from siblings are
     // guarded by the JobRequest.status check in handleRfpLeadInterest.
@@ -1787,7 +1787,7 @@ describe('customer shortlists', () => {
         phone: '+27111111111',
       },
     })
-    // Concurrent call already committed — tx re-read shows PROVIDER_CONFIRMATION_PENDING
+    // Concurrent call already committed - tx re-read shows PROVIDER_CONFIRMATION_PENDING
     state.tx.jobRequest.findUnique.mockResolvedValueOnce({
       status: 'PROVIDER_CONFIRMATION_PENDING',
       selectedProviderId: 'provider-1',
@@ -1803,7 +1803,7 @@ describe('customer shortlists', () => {
 
     expect(result.alreadySelected).toBe(true)
     expect(result.leadId).toBe('lead-concurrent')
-    // No jobRequest update should happen — idempotent path
+    // No jobRequest update should happen - idempotent path
     expect(state.tx.jobRequest.updateMany).not.toHaveBeenCalled()
   })
 

@@ -14,10 +14,10 @@ export const metadata = buildMetadata({
 })
 
 const HOW_IT_WORKS = [
-  { icon: <Wrench size={18} />, title: 'Apply once', desc: 'Tell us your skills, service areas, and experience. Approval usually takes under 24 hours.' },
+  { icon: <Wrench size={18} />, title: 'Apply once', desc: 'Tell us your skills, service areas and experience. Approval usually takes under 24 hours.' },
   { icon: <Bell size={18} />, title: 'Receive leads', desc: 'We notify you on WhatsApp when a matching job is available. Accept or pass - no pressure.' },
-  { icon: <Zap size={18} />, title: 'Quote & win work', desc: 'Contact the customer, do the inspection if needed, and submit a written quote through the platform.' },
-  { icon: <CheckCircle2 size={18} />, title: 'Get paid', desc: 'Complete the job, collect payment, and build your rating. Repeat.' },
+  { icon: <Zap size={18} />, title: 'Quote & win work', desc: 'Contact the customer, do the inspection if needed and submit a written quote through the platform.' },
+  { icon: <CheckCircle2 size={18} />, title: 'Get paid', desc: 'Complete the job, collect payment and build your rating. Repeat.' },
 ]
 
 const BENEFITS = [

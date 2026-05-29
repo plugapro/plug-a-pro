@@ -45,7 +45,7 @@ export default async function NewCustomerPage({
         <div>
           <h1 className="text-2xl font-bold">Add customer</h1>
           <p className="text-sm text-muted-foreground">
-            Create a customer record for WhatsApp, referral, import, or PWA-origin users.
+            Create a customer record for WhatsApp, referral, import or PWA-origin users.
           </p>
         </div>
       </div>

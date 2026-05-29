@@ -258,7 +258,7 @@ async function loadHeroSection(
             key: 'operationalExceptions',
             label: 'Operational exceptions',
             value: exceptionCount,
-            description: 'Total of field exceptions, payment exceptions, and open disputes requiring ops action.',
+            description: 'Total of field exceptions, payment exceptions and open disputes requiring ops action.',
             drilldownHref: '/admin/dispatch',
             tone: exceptionTone,
           },
@@ -679,7 +679,7 @@ async function loadTrendSection(
         },
         _sum: { amount: true },
       }),
-      // Daily series — only for ranges that benefit from a chart (>1 day)
+      // Daily series - only for ranges that benefit from a chart (>1 day)
       client.$queryRaw<DailyCountRow[]>`
         SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*)::bigint AS count
         FROM "job_requests"
@@ -802,7 +802,7 @@ function buildSectionFailureIncidents(snapshot: OpsDashboardSnapshot): OpsDashbo
         id: `incident:${section}:${result.error.code}`,
         section,
         severity: 'warning',
-        message: `${section} section unavailable — ${result.error.message}`,
+        message: `${section} section unavailable - ${result.error.message}`,
       },
     ]
   })
@@ -859,8 +859,8 @@ function queueKeyToDescription(key: OpsDashboardQueueKey, count: number): string
     validation: 'Requests missing platform validation before matching can start.',
     dispatch: `${count} request${count === 1 ? '' : 's'} waiting for provider assignment.`,
     quoteApprovals: 'Quotes waiting on customer decision or revision follow-through.',
-    fieldExceptions: 'Jobs that are blocked, failed, or waiting on customer action.',
-    financeFollowUp: 'Pending, failed, and refund-state payments requiring intervention.',
+    fieldExceptions: 'Jobs that are blocked, failed or waiting on customer action.',
+    financeFollowUp: 'Pending, failed and refund-state payments requiring intervention.',
     trustRecovery: 'Open disputes and complaints with customer-provider risk attached.',
     providerOnboarding: 'Pending applications that block future assignment capacity.',
   }
@@ -891,7 +891,7 @@ function formatIncidentAge(ageMinutes: number) {
 }
 
 // ─── Matching health metrics ──────────────────────────────────────────────────
-// Queried from DB — used by the admin dashboard matching health card.
+// Queried from DB - used by the admin dashboard matching health card.
 // Covers the last 24 hours unless a different window is passed.
 
 export type MatchingHealthMetrics = {

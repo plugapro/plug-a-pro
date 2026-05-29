@@ -50,7 +50,7 @@ function initials(name: string): string {
 
 /**
  * Design-spec provider card. Surfaces avatar, name, verification, rating,
- * completed jobs, location, service chips, call-out fee, and availability.
+ * completed jobs, location, service chips, call-out fee and availability.
  * All values are optional - only present data is rendered.
  */
 export function ProviderCard({

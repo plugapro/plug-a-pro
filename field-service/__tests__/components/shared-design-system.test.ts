@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 /**
  * Module-load smoke test for the shared design-system components introduced
  * by the Black Apple PWA redesign. We verify each module loads cleanly,
- * exports the expected named symbol, and the export is a function (React
+ * exports the expected named symbol and the export is a function (React
  * component). Vitest is wired to the `node` environment in this repo, so we
- * can't actually render — that's covered by Playwright smoke. This test
- * catches import-path typos, circular dependencies, and accidental
+ * can't actually render - that's covered by Playwright smoke. This test
+ * catches import-path typos, circular dependencies and accidental
  * regressions where a component is removed or renamed.
  */
 describe('shared design-system components', () => {
@@ -71,7 +71,7 @@ describe('shared design-system components', () => {
   it('MoneyInput is a forwardRef React component', async () => {
     const mod = await import('@/components/shared/MoneyInput')
     expect(mod.MoneyInput).toBeDefined()
-    // forwardRef returns an object with $$typeof — verify the export is at
+    // forwardRef returns an object with $$typeof - verify the export is at
     // least a renderable component reference (object or function).
     const t = typeof mod.MoneyInput
     expect(t === 'object' || t === 'function').toBe(true)

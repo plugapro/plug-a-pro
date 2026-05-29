@@ -5,7 +5,7 @@ export function getProviderMarketplaceReviewLabel(marketplaceApproved: boolean):
 }
 
 export function getProviderMarketplaceReviewDescription(): string {
-  return 'Skills, bio, service areas, experience, and similar profile details are supplied by the provider. Any evidence note or portfolio link is shared by the provider unless a field says Plug A Pro reviewed it. Plug A Pro records completed jobs, quotes, and customer reviews completed on the platform, but does not claim licensing, background checks, or workmanship guarantees unless a specific field says so.'
+  return 'Skills, bio, service areas, experience and similar profile details are supplied by the provider. Any evidence note or portfolio link is shared by the provider unless a field says Plug A Pro reviewed it. Plug A Pro records completed jobs, quotes and customer reviews completed on the platform, but does not claim licensing, background checks or workmanship guarantees unless a specific field says so.'
 }
 
 export type ProviderTrustProvenance =
@@ -75,7 +75,7 @@ export function buildProviderTrustSignals(input: {
       label: 'Provider evidence note',
       value: input.evidenceNote,
       provenance: 'provider-shared-evidence',
-      description: 'This is the provider’s own note about past work, references, or certificates unless Plug A Pro says a specific item was checked.',
+      description: 'This is the provider’s own note about past work, references or certificates unless Plug A Pro says a specific item was checked.',
     })
   }
 
@@ -108,7 +108,7 @@ export function buildProviderTrustSignals(input: {
       label: 'Marketplace review',
       value: 'Application reviewed for lead eligibility',
       provenance: 'marketplace-review',
-      description: 'This review allows the provider to receive marketplace leads. It is not a blanket licence, safety, or workmanship certification.',
+      description: 'This review allows the provider to receive marketplace leads. It is not a blanket licence, safety or workmanship certification.',
     })
   }
 

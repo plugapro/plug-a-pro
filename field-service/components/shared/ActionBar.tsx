@@ -22,7 +22,7 @@ interface ActionBarProps {
 /**
  * Sticky bottom action bar for flows that need a persistent primary CTA
  * (booking wizard, quote review, payment). Sits above the bottom-nav
- * with safe-area padding, blurred backdrop, and a hairline top border
+ * with safe-area padding, blurred backdrop and a hairline top border
  * so it reads as part of the system, not floating chrome.
  *
  * Use sparingly - only on flow screens where the user must commit to a

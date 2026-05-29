@@ -1,5 +1,5 @@
 // POST /api/technician/jobs/[id]/photo
-// Body: multipart/form-data with `files[]` or `file`, optional `caption`, and optional `label`.
+// Body: multipart/form-data with `files[]` or `file`, optional `caption` and optional `label`.
 // Uploads to Vercel Blob and creates Attachment records in DB.
 
 import { type NextRequest, NextResponse } from 'next/server'

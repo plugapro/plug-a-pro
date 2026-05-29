@@ -71,7 +71,7 @@ const SAFE_VOUCHER_SEPARATORS = /[\s\-_.\u00B7\u2022\u00AD\u2010-\u2015\u200B-\u
 
 /**
  * Builds only non-secret input-shape metadata for analytics.
- * Never return the raw input, canonical voucher code, normalized candidate, or hash.
+ * Never return the raw input, canonical voucher code, normalized candidate or hash.
  */
 export function buildVoucherRedemptionAttemptMetadata(rawInput: string): VoucherRedemptionAttemptMetadata {
   const normalizedCandidate = rawInput.replace(SAFE_VOUCHER_SEPARATORS, '').toUpperCase()

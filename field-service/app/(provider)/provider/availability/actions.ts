@@ -89,7 +89,7 @@ export async function saveProviderAvailabilityFromFormAction(formData: FormData)
   const isAvailableNow = availabilityMode !== 'PAUSED'
 
   try {
-    // Apply schedule, provider status, and availability mode in one transaction for consistency.
+    // Apply schedule, provider status and availability mode in one transaction for consistency.
     await db.$transaction(async (tx) => {
       for (const day of DAYS) {
         const active = formData.get(`day_${day.value}_active`) === 'on'

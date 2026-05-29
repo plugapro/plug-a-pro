@@ -249,14 +249,14 @@ describe('POST /api/payat/webhook', () => {
       metadata: null,
     })
 
-    // Delayed PAID arrives — must be ignored
+    // Delayed PAID arrives - must be ignored
     const paidRes = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }))
     expect(paidRes.status).toBe(200)
     expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
   })
 
   it('T-5: rejects base64 signature that decodes to wrong byte length', async () => {
-    // "not-32-bytes" base64-encodes to a 9-byte buffer — not a valid SHA-256 HMAC
+    // "not-32-bytes" base64-encodes to a 9-byte buffer - not a valid SHA-256 HMAC
     const shortBase64 = Buffer.from('not-32-bytes').toString('base64')
     const { POST } = await import('@/app/api/payat/webhook/route')
     const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }, shortBase64))
@@ -265,7 +265,7 @@ describe('POST /api/payat/webhook', () => {
   })
 
   it('T-6: skips secondary paymentReference lookup when clientReferenceNumber is present (even non-UUID)', async () => {
-    // clientReferenceNumber is present so usedClientRef=true — secondary findFirst must not fire
+    // clientReferenceNumber is present so usedClientRef=true - secondary findFirst must not fire
     mockDb.paymentIntent.findUnique.mockResolvedValue(null)
 
     const { POST } = await import('@/app/api/payat/webhook/route')
@@ -289,7 +289,7 @@ describe('POST /api/payat/webhook', () => {
     })
 
     const { POST } = await import('@/app/api/payat/webhook/route')
-    // Pay@ reports the fee-inclusive amount — should match
+    // Pay@ reports the fee-inclusive amount - should match
     const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_700 }))
     expect(res.status).toBe(200)
     expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
@@ -307,7 +307,7 @@ describe('POST /api/payat/webhook', () => {
     })
 
     const { POST } = await import('@/app/api/payat/webhook/route')
-    // Pay@ reports 10000 but we expected 10700 — amount mismatch, mark FAILED
+    // Pay@ reports 10000 but we expected 10700 - amount mismatch, mark FAILED
     const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }))
     expect(res.status).toBe(200)
     expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(

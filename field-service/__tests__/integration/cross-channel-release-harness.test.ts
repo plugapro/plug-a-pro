@@ -94,7 +94,7 @@ describe('cross-channel release harness', () => {
 
     expect(result.ok).toBe(false)
     expect(result.reason).toBe('provider_final_acceptance_failed')
-    // Final-accept timeline marker must not be reached — proves the selected
+    // Final-accept timeline marker must not be reached - proves the selected
     // provider was blocked before credit debit / customer-detail unlock.
     expect(result.timeline).not.toContain('provider_final_accepted')
     expect(providerFinalAccept).toHaveBeenCalledTimes(1)

@@ -1,6 +1,6 @@
 // ─── Web Push notification helper ─────────────────────────────────────────────
 // Uses the `web-push` package to deliver push notifications to providers.
-// Requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT in env.
+// Requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT in env.
 //
 // Generate VAPID keys:
 //   npx web-push generate-vapid-keys
@@ -30,7 +30,7 @@ export async function sendPushNotification(params: {
   url?: string
 }): Promise<void> {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
-    console.warn('[push] VAPID keys not configured — notification not delivered.')
+    console.warn('[push] VAPID keys not configured - notification not delivered.')
     return
   }
 
@@ -51,7 +51,7 @@ export async function sendPushNotification(params: {
   } catch (err: unknown) {
     const status = (err as { statusCode?: number }).statusCode
     if (status === 410 || status === 404) {
-      // Subscription expired — clean it up
+      // Subscription expired - clean it up
       await db.pushSubscription.deleteMany({
         where: { endpoint: params.subscription.endpoint },
       })

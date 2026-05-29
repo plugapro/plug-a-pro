@@ -1,6 +1,6 @@
 // ─── Job completion confirmation tokens ──────────────────────────────────────
 // HMAC-SHA256 signed tokens (no DB storage) that let a customer confirm job
-// completion via a WhatsApp link — no login required.
+// completion via a WhatsApp link - no login required.
 //
 // Token format:  base64url(payload).base64url(hmac)
 // Payload:       { v: 1, jobId, customerId, exp }

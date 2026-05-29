@@ -2,7 +2,7 @@ import { normalizePhone } from './utils'
 
 export const INTERNAL_TEST_COHORT_NAME = 'internal_staff_test'
 
-// Bootstrap list — seeds Customer.isTestUser / Provider.isTestUser when those
+// Bootstrap list - seeds Customer.isTestUser / Provider.isTestUser when those
 // rows are first created. The DB flags are authoritative once a row exists;
 // adding/removing test users at runtime should be done by flipping the DB flag,
 // not by editing this list. We still consult the list as a fallback for

@@ -16,7 +16,7 @@ describe('ADMIN_NAV_ITEMS', () => {
   })
 
   it('propagates Verifications into ADMIN_SMOKE_ROUTES so post-deploy smoke catches regressions', () => {
-    // ADMIN_SMOKE_ROUTES is derived from ADMIN_NAV_ITEMS — adding to the nav should
+    // ADMIN_SMOKE_ROUTES is derived from ADMIN_NAV_ITEMS - adding to the nav should
     // automatically extend smoke coverage without a second edit site.
     expect(ADMIN_SMOKE_ROUTES).toContain('/admin/verifications')
   })

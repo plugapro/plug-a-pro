@@ -249,12 +249,12 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
         },
       },
     }) ?? null,
-    // Duplicate-record trap fix (Phase 4 follow-up — Task 4):
+    // Duplicate-record trap fix (Phase 4 follow-up - Task 4):
     // We previously called findFirst with no orderBy, so if a phone had
     // multiple Provider rows (rare but possible after migrations or test
-    // data), Prisma returned an arbitrary first match — sometimes a stale
+    // data), Prisma returned an arbitrary first match - sometimes a stale
     // APPLICATION_PENDING row instead of the active one. Pull all matches,
-    // order by recency, and post-filter so an ACTIVE+verified row always
+    // order by recency and post-filter so an ACTIVE+verified row always
     // wins over a pending/suspended one.
     // TODO(prisma-gen): remove `as any` once the generated Prisma client exposes Customer/Provider/Job models
     (db as any).provider?.findMany?.({
@@ -287,7 +287,7 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
   // After the duplicate-trap fix above, `providerRows` is an Array<Row> sorted
   // by updatedAt desc. Pick the first ACTIVE+verified+active row so a stale
   // APPLICATION_PENDING / SUSPENDED row never wins over a usable one.
-  // Falls back to the most recent row of any status if none is ACTIVE — that
+  // Falls back to the most recent row of any status if none is ACTIVE - that
   // way the role detection (provider_pending / provider_inactive) still works
   // for callers in those states.
   const providerCandidates: Array<{

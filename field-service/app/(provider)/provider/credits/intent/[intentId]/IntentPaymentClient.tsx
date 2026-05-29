@@ -204,7 +204,7 @@ export function IntentPaymentClient({
         <div className="mt-4 rounded-[18px] bg-white p-4 text-center" style={{ boxShadow: 'inset 0 0 0 1px var(--border)' }}>
           {paymentLink ? <QRCode value={paymentLink} size={210} className="mx-auto" /> : null}
           <p className="mt-3 text-[12px]" style={{ color: 'var(--ink-mute)' }}>
-            Scan or open the link to pay at Shoprite, Pick n Pay, Checkers, or any Pay@ supported channel.
+            Scan or open the link to pay at Shoprite, Pick n Pay, Checkers or any Pay@ supported channel.
           </p>
         </div>
 

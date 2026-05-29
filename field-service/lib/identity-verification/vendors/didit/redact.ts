@@ -22,7 +22,7 @@ const PRESERVED_KEYS: ReadonlySet<string> = new Set([
   'callback',
   'status',
   'expires_at',
-  // Decision / feature-array verdict labels — not PII
+  // Decision / feature-array verdict labels - not PII
   'decision',
   'id_verifications',
   'liveness_checks',
@@ -41,7 +41,7 @@ const PRESERVED_KEYS: ReadonlySet<string> = new Set([
   'long_description',
   'score',
   'confidence',
-  // Metadata — we control what goes here; preserve so debug stays useful
+  // Metadata - we control what goes here; preserve so debug stays useful
   'metadata',
 ])
 

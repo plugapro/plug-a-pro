@@ -16,17 +16,17 @@ const TRUST_POINTS: {
   {
     icon: Phone,
     title: "Your number stays private",
-    body: "Plug A Pro handles the intake, quote approval, and status updates from the platform number, so direct contact is not required to get the job moving.",
+    body: "Plug A Pro handles the intake, quote approval and status updates from the platform number, so direct contact is not required to get the job moving.",
   },
   {
     icon: UserCheck,
     title: "Applications are reviewed before activation",
-    body: "A provider must complete an application review before receiving leads. This is an eligibility check for marketplace participation, not a promise of licensing, safety, or workmanship.",
+    body: "A provider must complete an application review before receiving leads. This is an eligibility check for marketplace participation, not a promise of licensing, safety or workmanship.",
   },
   {
     icon: FileText,
     title: "All quotes are documented",
-    body: "Quotes are submitted through the platform, not verbally. You see the price before agreeing, and so does your provider.",
+    body: "Quotes are submitted through the platform, not verbally. You see the price before agreeing and so does your provider.",
   },
   {
     icon: Camera,
@@ -36,7 +36,7 @@ const TRUST_POINTS: {
   {
     icon: MessageCircle,
     title: "Disputes handled on the platform",
-    body: "If something goes wrong, contact Plug A Pro support. We review the written quote, status history, and photos already on the job record.",
+    body: "If something goes wrong, contact Plug A Pro support. We review the written quote, status history and photos already on the job record.",
   },
   {
     icon: Star,
@@ -57,7 +57,7 @@ export function TrustSafety() {
             Built to reduce risk with clearer records
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            Plug A Pro does not remove every risk, but it does create clearer records, staged contact sharing, and better evidence than an informal offline deal.
+            Plug A Pro does not remove every risk, but it does create clearer records, staged contact sharing and better evidence than an informal offline deal.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

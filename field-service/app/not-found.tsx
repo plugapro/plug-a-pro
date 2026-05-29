@@ -49,7 +49,7 @@ export default function NotFound() {
           We can&apos;t find that page
         </h1>
         <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.55 }}>
-          The link may have expired, moved, or never existed.
+          The link may have expired, moved or never existed.
         </p>
       </div>
 

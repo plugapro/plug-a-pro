@@ -73,7 +73,7 @@ describe('evaluateProviderProfileCompleteness', () => {
     expect(result.missing.find((m) => m.field === 'experience')?.severity).toBe('block_customer_display')
   })
 
-  it('treats avatarUrl as recommended only — does not block customer display', () => {
+  it('treats avatarUrl as recommended only - does not block customer display', () => {
     const result = evaluateProviderProfileCompleteness({
       ...completeProfile,
       avatarUrl: null,

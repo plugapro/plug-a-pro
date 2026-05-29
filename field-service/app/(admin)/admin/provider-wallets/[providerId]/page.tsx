@@ -104,7 +104,7 @@ function messageText(message?: string) {
     case 'reactivated':
       return 'Provider wallet reactivated.'
     case 'adjust_failed':
-      return 'Could not apply the adjustment. Check the amount, reason, and current balance.'
+      return 'Could not apply the adjustment. Check the amount, reason and current balance.'
     case 'suspend_failed':
       return 'Could not suspend the wallet. A reason is required.'
     case 'reactivate_failed':

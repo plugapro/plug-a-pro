@@ -18,7 +18,7 @@ describe('identity document details validation', () => {
     })
   })
 
-  it('requires country, nationality, and future expiry for passports', () => {
+  it('requires country, nationality and future expiry for passports', () => {
     expect(validateIdentityDocumentDetails({
       identityBasis: 'PASSPORT',
       identifier: 'A12345678',

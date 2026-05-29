@@ -7,7 +7,7 @@ export type SecurityCheckTrigger =
 
 export type ShouldSendSecurityCheckResult = {
   trigger: SecurityCheckTrigger | null
-  /** Populated only when trigger is non-null — for log/audit shaping. */
+  /** Populated only when trigger is non-null - for log/audit shaping. */
   signalDetail?: {
     sendCountLastHour?: number
     distinctIpsLast30Min?: number
@@ -74,7 +74,7 @@ async function withTimeout<T>(
  * send. Short-circuits on the cheapest signal first.
  *
  * Failure mode: any unexpected throw or timeout returns `{ trigger: null }`
- * (skip silently). The caller MUST treat this as best-effort — the OTP
+ * (skip silently). The caller MUST treat this as best-effort - the OTP
  * delivery itself never blocks on this check.
  */
 export async function shouldSendSecurityCheck(params: {
@@ -84,7 +84,7 @@ export async function shouldSendSecurityCheck(params: {
   const now = params.now ?? new Date()
   const client = signalsDb()
 
-  // Signal 1: send-velocity (cheapest — single COUNT on an indexed column).
+  // Signal 1: send-velocity (cheapest - single COUNT on an indexed column).
   try {
     const sendCountLastHour = await withTimeout(
       client.otpChallenge.count({
@@ -109,7 +109,7 @@ export async function shouldSendSecurityCheck(params: {
   // Signal 2: ip-diversity. We pull up to 50 recent rows and count distinct
   // non-null requestedIpHash values. Capped at 50 because anything past that
   // already crosses the threshold and the cost of the extra rows isn't worth
-  // it — the index covers (phoneE164, createdAt) so the read is cheap anyway.
+  // it - the index covers (phoneE164, createdAt) so the read is cheap anyway.
   try {
     const recentRows = await withTimeout(
       client.otpChallenge.findMany({

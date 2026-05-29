@@ -355,7 +355,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
       {/* ── Flag banner ──────────────────────────────────────────────────────── */}
       {!crudEnabled && (
         <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
-          Provider mutations are disabled. Enable the <code>admin.crud.providers</code> feature flag to verify, suspend, or update providers.
+          Provider mutations are disabled. Enable the <code>admin.crud.providers</code> feature flag to verify, suspend or update providers.
         </div>
       )}
 

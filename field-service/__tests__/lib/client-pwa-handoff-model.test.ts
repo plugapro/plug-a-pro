@@ -1,5 +1,5 @@
 /**
- * CLIENT-02 — Client PWA Channel and Handoff Model
+ * CLIENT-02 - Client PWA Channel and Handoff Model
  *
  * Covers every entry in the WhatsApp-to-PWA handoff map and validates that
  * the resolver is state-aware: the destination is determined by the current
@@ -55,7 +55,7 @@ function makeJobRequest(
 // ---------------------------------------------------------------------------
 // 1. State-aware resolver unit tests (pure function, no mocks needed)
 // ---------------------------------------------------------------------------
-describe('resolveClientPwaScreenForState — handoff map coverage', () => {
+describe('resolveClientPwaScreenForState - handoff map coverage', () => {
   // WhatsApp event: "Start request" → request creation
   it('no status → client_home (start request)', () => {
     expect(resolveClientPwaScreenForState({})).toMatchObject({ screen: 'client_home' })
@@ -179,9 +179,9 @@ describe('resolveClientPwaScreenForState — handoff map coverage', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 2. allowedActions consistency — each screen has a defined action set
+// 2. allowedActions consistency - each screen has a defined action set
 // ---------------------------------------------------------------------------
-describe('allowedActionsForClientPwaScreen — defined for all screens', () => {
+describe('allowedActionsForClientPwaScreen - defined for all screens', () => {
   const screens = [
     'client_home',
     'request_form',
@@ -234,9 +234,9 @@ describe('allowedActionsForClientPwaScreen — defined for all screens', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 3. resolveClientPwaDestination — stale-intent and token cases
+// 3. resolveClientPwaDestination - stale-intent and token cases
 // ---------------------------------------------------------------------------
-describe('resolveClientPwaDestination — stale intent routing', () => {
+describe('resolveClientPwaDestination - stale intent routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -313,9 +313,9 @@ describe('resolveClientPwaDestination — stale intent routing', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 4. resolveClientPwaDestination — invalid / expired fallback
+// 4. resolveClientPwaDestination - invalid / expired fallback
 // ---------------------------------------------------------------------------
-describe('resolveClientPwaDestination — recovery fallback', () => {
+describe('resolveClientPwaDestination - recovery fallback', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -371,9 +371,9 @@ describe('resolveClientPwaDestination — recovery fallback', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 5. Full handoff map — WhatsApp event → correct PWA screen
+// 5. Full handoff map - WhatsApp event → correct PWA screen
 // ---------------------------------------------------------------------------
-describe('full handoff map — WhatsApp event to PWA screen', () => {
+describe('full handoff map - WhatsApp event to PWA screen', () => {
   const handoffCases: Array<{
     whatsappEvent: string
     requestStatus: JobRequestStatus

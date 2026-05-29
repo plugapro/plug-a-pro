@@ -245,7 +245,7 @@ export async function creditPaymentIntentInTransaction(
       referenceType: 'payment_intent',
       referenceId: intent.id,
       description: intent.paymentMethod.startsWith('PAYFAST_')
-        ? `Payfast gateway top-up ${intent.paymentReference} — admin credit`
+        ? `Payfast gateway top-up ${intent.paymentReference} - admin credit`
         : `Manual EFT top-up ${intent.paymentReference}`,
       metadata: {
         paymentReference: intent.paymentReference,

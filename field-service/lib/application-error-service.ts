@@ -74,7 +74,7 @@ export async function captureApplicationError(
     publicRef,
   ].join('\n')
 
-  // Structured log — both publicRef and traceId present for correlation
+  // Structured log - both publicRef and traceId present for correlation
   console.error('[application-error-service] application_submit_failed', {
     event: 'application_submit_failed',
     public_error_ref: publicRef,
@@ -121,7 +121,7 @@ export async function captureApplicationError(
       },
     })
   } catch (persistErr) {
-    // Persistence is non-fatal — the user still gets a safe message
+    // Persistence is non-fatal - the user still gets a safe message
     console.error('[application-error-service] failed to persist error event', {
       public_error_ref: publicRef,
       trace_id: input.traceId,

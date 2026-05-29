@@ -1,5 +1,5 @@
 // ─── RFP Lead Interest handler ────────────────────────────────────────────────
-// Extracted from whatsapp-bot.ts — handles a provider tapping "I'm Available"
+// Extracted from whatsapp-bot.ts - handles a provider tapping "I'm Available"
 // on an RFP (Request-For-Provider) lead notification via WhatsApp.
 // Contains the P2024 connection-pool retry logic for Prisma/PgBouncer.
 
@@ -70,7 +70,7 @@ export async function handleRfpLeadInterest(
   // tap is coming from a sibling provider whose own lead.status hasn't already
   // moved on, the customer has picked someone else. Tell them plainly rather
   // than silently transitioning their lead to INTERESTED or replying "already
-  // noted" — both of which would be misleading.
+  // noted" - both of which would be misleading.
   //
   // Note on `JobRequest.status === 'MATCHED'`: that's the OPS_REVIEW
   // direct-dispatch terminal. It's intentionally excluded from `jobOpenForRfp`
@@ -84,7 +84,7 @@ export async function handleRfpLeadInterest(
   const leadStatusIsTerminalForSibling =
     ['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'].includes(lead.status)
   if (!jobOpenForRfp && !leadStatusIsTerminalForSibling) {
-    await sendText(phone, `This lead is no longer available — the customer has moved forward with another provider. New leads will come through as jobs arise.`)
+    await sendText(phone, `This lead is no longer available - the customer has moved forward with another provider. New leads will come through as jobs arise.`)
     return
   }
 
@@ -99,7 +99,7 @@ export async function handleRfpLeadInterest(
   }
   // Customer has selected this provider but acceptance is not yet locked. Offer
   // the same confirm_accept / confirm_decline buttons that notifySelectedProvider
-  // sends, in case that message scrolled off or never landed — handleSelectedProviderConfirmation
+  // sends, in case that message scrolled off or never landed - handleSelectedProviderConfirmation
   // is idempotent for already-locked leads. Also surface the View lead URL fallback.
   if (['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'].includes(lead.status)) {
     await sendButtons(
@@ -112,7 +112,7 @@ export async function handleRfpLeadInterest(
     )
     return
   }
-  // Acceptance already finalised — provider just needs to act on the job.
+  // Acceptance already finalised - provider just needs to act on the job.
   if (['ACCEPTED_LOCKED', 'ACCEPTED', 'CREDIT_APPLIED'].includes(lead.status)) {
     await sendText(phone, `✅ You've already accepted Ref ${ref}. Tap *View lead* on the previous message to see the customer's contact details and arrange the job.`)
     return
@@ -202,7 +202,7 @@ export async function handleRfpLeadInterest(
       break
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
-        // Unique constraint on idempotencyKey — concurrent tap already handled
+        // Unique constraint on idempotencyKey - concurrent tap already handled
         console.info('[whatsapp-bot] rfp_interest: concurrent_tap_deduped', { traceId, leadId, providerId })
         alreadyRegistered = true
         transactionError = null
@@ -231,11 +231,11 @@ export async function handleRfpLeadInterest(
       contextMessageId: options?.contextMessageId ?? null,
       resolutionSource: options?.source ?? null,
     })
-    // Re-send only the retry button — omitting "Not Available" avoids an accidental
+    // Re-send only the retry button - omitting "Not Available" avoids an accidental
     // decline if the provider taps reflexively after seeing an error.
     await sendButtons(
       phone,
-      `⚠️ We couldn't register your availability right now — please try again.\n\n_Ref: ${traceId}_`,
+      `⚠️ We couldn't register your availability right now - please try again.\n\n_Ref: ${traceId}_`,
       [
         { id: `ops_accept:${leadId}:${providerId}`, title: "I'm Available" },
       ],
@@ -250,7 +250,7 @@ export async function handleRfpLeadInterest(
 
   await sendText(
     phone,
-    `✅ *Availability noted — Ref ${ref}*\n\nWe've let the customer know you're available for this job.\n\nYou'll receive a confirmation message here on WhatsApp if the customer selects you.`,
+    `✅ *Availability noted - Ref ${ref}*\n\nWe've let the customer know you're available for this job.\n\nYou'll receive a confirmation message here on WhatsApp if the customer selects you.`,
   )
 
   // Notify the customer that a provider responded so they can review and select

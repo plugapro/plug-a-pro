@@ -65,7 +65,7 @@ export async function loadCandidatePool(
       console.log('[candidate-pool] pool.hit', { categorySlug, count: poolResults.length })
       return poolResults
     }
-    console.warn('[candidate-pool] pool.miss — falling back to direct scan', { categorySlug })
+    console.warn('[candidate-pool] pool.miss - falling back to direct scan', { categorySlug })
   }
 
   return loadFromDirectScan({ category, address, limit, isTestRequest: Boolean(params.isTestRequest) })

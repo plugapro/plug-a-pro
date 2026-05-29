@@ -228,7 +228,7 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     mockSendTemplate.mockResolvedValue('wamid-e2e')
   })
 
-  it('accepts, checks credit, deducts exactly once, locks MVP1 state, and sends basic confirmations', async () => {
+  it('accepts, checks credit, deducts exactly once, locks MVP1 state and sends basic confirmations', async () => {
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-e2e-1',
       providerId: 'provider-e2e-1',

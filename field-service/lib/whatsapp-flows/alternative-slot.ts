@@ -13,7 +13,7 @@
 //     3. Customer ok → update job window + preferredProviderId → re-run orchestrateMatch.
 //     4. Customer no OR provider decline → fall through / mark outcome.
 //
-// Button ID scheme (all stateless — IDs carry the data):
+// Button ID scheme (all stateless - IDs carry the data):
 //   Customer picks slot:       alt_slot_c:{slotKey}:{jobRequestId}
 //   Customer declines all:     alt_slot_c:none:{jobRequestId}
 //   Provider picks slot:       alt_slot_p:{slotKey}:{jobRequestId}
@@ -25,7 +25,7 @@ import { db } from '../db'
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import type { SlotOption } from '../matching/types'
 
-// ── Public entry point — called by orchestrator on NO_MATCH ──────────────────
+// ── Public entry point - called by orchestrator on NO_MATCH ──────────────────
 
 export async function initiateAlternativeSlotNegotiation(params: {
   jobRequestId: string
@@ -74,7 +74,7 @@ export async function initiateAlternativeSlotNegotiation(params: {
       `🕐 *Still searching for your ${categoryDisplay} pro!*\n\nHi *${firstName}*, we found a nearby provider and are checking their availability. We'll confirm shortly.\n\nReply *Hi* anytime to check your request status.`
     ).catch(() => {})
   } else {
-    // customer_first — offer slots directly to customer
+    // customer_first - offer slots directly to customer
     await sendCustomerSlotOffer({
       jobRequestId,
       customerPhone,
@@ -97,7 +97,7 @@ async function sendProviderSlotOffer(params: {
   const { jobRequestId, providerPhone, providerName, categoryDisplay, slotOptions } = params
   const provFirstName = providerName.split(/\s+/)[0]
 
-  // Max 3 buttons — use first 2 slots + decline (sendButtons cap = 3)
+  // Max 3 buttons - use first 2 slots + decline (sendButtons cap = 3)
   const slotButtons = slotOptions.slice(0, 2).map((s, i) => ({
     id: `alt_slot_p:${s.slotKey}:${jobRequestId}`,
     title: s.slotLabel.slice(0, 20),  // WA button title max 20 chars
@@ -127,7 +127,7 @@ async function sendCustomerSlotOffer(params: {
   const { jobRequestId, customerPhone, customerName, categoryDisplay, slotOptions } = params
 
   if (slotOptions.length === 0) {
-    // No alternatives found — send a sorry message
+    // No alternatives found - send a sorry message
     await sendText(
       customerPhone,
       `😔 *No providers available*\n\nHi *${customerName}*, we searched but couldn't find a ${categoryDisplay} provider for your requested time or any nearby alternatives.\n\nWe'll keep trying to match you. You'll receive a notification as soon as a provider becomes available.\n\nReply *Hi* to check status or *Cancel* to withdraw your request.`
@@ -135,7 +135,7 @@ async function sendCustomerSlotOffer(params: {
     return
   }
 
-  // Use sendList (supports 4 rows — 3 slots + "None of these work")
+  // Use sendList (supports 4 rows - 3 slots + "None of these work")
   const rows = slotOptions.map((s) => ({
     id: `alt_slot_c:${s.slotKey}:${jobRequestId}`,
     title: s.slotLabel.slice(0, 24),
@@ -150,7 +150,7 @@ async function sendCustomerSlotOffer(params: {
 
   await sendList(
     customerPhone,
-    `📅 *Alternative times for ${categoryDisplay}*\n\nHi *${customerName}*, no providers were available for your requested window.\n\nGood news — here are times when nearby providers ARE available:`,
+    `📅 *Alternative times for ${categoryDisplay}*\n\nHi *${customerName}*, no providers were available for your requested window.\n\nGood news - here are times when nearby providers ARE available:`,
     [{ title: 'Pick a time slot', rows }],
     {
       header: '🔄 Alternative Slots',
@@ -171,7 +171,7 @@ export async function handleCustomerSlotResponse(
   buttonId: string
 ): Promise<void> {
   // Parse: alt_slot_c:{slotKey}:{jobRequestId}
-  // slotKey format: "2026-04-29:morning" — contains a colon, so we split from the end
+  // slotKey format: "2026-04-29:morning" - contains a colon, so we split from the end
   const withoutPrefix = buttonId.slice('alt_slot_c:'.length)
 
   if (withoutPrefix.startsWith('none:')) {
@@ -180,7 +180,7 @@ export async function handleCustomerSlotResponse(
     return
   }
 
-  // slotKey = "{date}:{band}", jobRequestId follows — split on last colon
+  // slotKey = "{date}:{band}", jobRequestId follows - split on last colon
   const lastColon = withoutPrefix.lastIndexOf(':')
   const jobRequestId = withoutPrefix.slice(lastColon + 1)
   const slotKey = withoutPrefix.slice(0, lastColon)
@@ -212,7 +212,7 @@ async function handleCustomerSelectedSlot(
     return
   }
   if (jobRequest.altSlotNegotiationOutcome != null) {
-    // Already responded — idempotent
+    // Already responded - idempotent
     await sendText(phone, "✅ You've already responded to this slot offer. Reply *Hi* to check your request status.")
     return
   }
@@ -275,7 +275,7 @@ async function handleCustomerDeclinedAllSlots(
 
   await sendText(
     phone,
-    `📋 *Understood — keeping your original request.*\n\nWe'll continue searching for a *${categoryDisplay}* provider for your preferred time.\n\nYou'll be notified as soon as someone becomes available. Reply *Hi* anytime to check status.`
+    `📋 *Understood - keeping your original request.*\n\nWe'll continue searching for a *${categoryDisplay}* provider for your preferred time.\n\nYou'll be notified as soon as someone becomes available. Reply *Hi* anytime to check status.`
   )
 }
 
@@ -343,7 +343,7 @@ async function handleProviderSelectedSlot(
 
   const customerPhone = jobRequest.customer?.phone
   if (!customerPhone) {
-    await sendText(phone, "❌ Customer contact details unavailable — this request has been passed back to our team.")
+    await sendText(phone, "❌ Customer contact details unavailable - this request has been passed back to our team.")
     return
   }
 
@@ -403,7 +403,7 @@ async function handleProviderDeclinedAllSlots(
     },
   })
 
-  await sendText(phone, "No problem — we'll look for other providers. Thanks for letting us know. 👍")
+  await sendText(phone, "No problem - we'll look for other providers. Thanks for letting us know. 👍")
 
   // Notify customer
   const customerPhone = jobRequest.customer?.phone
@@ -477,7 +477,7 @@ async function handleCustomerConfirmedProviderSlot(
   })
 
   if (!jobRequest || jobRequest.altSlotNegotiationOutcome != null) {
-    await sendText(phone, "✅ Already confirmed — check your request status by replying *Hi*.")
+    await sendText(phone, "✅ Already confirmed - check your request status by replying *Hi*.")
     return
   }
 

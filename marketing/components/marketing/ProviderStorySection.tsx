@@ -64,7 +64,7 @@ export function ProviderStorySection() {
               </p>
               <p>
                 Plug A Pro brings that local skill into a digital marketplace where
-                customers can find help faster, and service providers become easier
+                customers can find help faster and service providers become easier
                 to discover.
               </p>
             </div>

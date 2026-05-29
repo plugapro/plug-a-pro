@@ -66,7 +66,7 @@ describe('qualified shortlist state helpers', () => {
     expect(canShowExpiryCountdown({ status: 'ACCEPTED', expiresAt: future })).toBe(false)
   })
 
-  it('requires customer-selected invite, confirmation-pending request, and approved provider for final acceptance', () => {
+  it('requires customer-selected invite, confirmation-pending request and approved provider for final acceptance', () => {
     const provider = { active: true, verified: true, status: 'ACTIVE', kycStatus: 'VERIFIED' }
     const selectedInvite = {
       status: 'VIEWED',

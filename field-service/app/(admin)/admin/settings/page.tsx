@@ -62,7 +62,7 @@ export default async function SettingsPage() {
         </h2>
         <div className="rounded-xl border bg-card p-4 space-y-2 text-sm text-muted-foreground">
           <p>
-            WhatsApp, payments, storage, and notification settings are configured via
+            WhatsApp, payments, storage and notification settings are configured via
             environment variables. See{' '}
             <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
               .env.local.example

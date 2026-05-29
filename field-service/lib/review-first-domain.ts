@@ -2,7 +2,7 @@
  * review-first-domain.ts
  *
  * Pure helper functions extracted from review-first.ts.
- * No DB calls, no side effects — safe to unit-test directly.
+ * No DB calls, no side effects - safe to unit-test directly.
  */
 
 // ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ export function filterDisplayableReviewAttempts<T extends ReviewDisplayAttemptDo
 }
 
 // ---------------------------------------------------------------------------
-// providerCoversRequestArea — exported for use in review-first.ts (line ~791)
+// providerCoversRequestArea - exported for use in review-first.ts (line ~791)
 // It is pure and lives here so filterDisplayableReviewAttempts can reference it.
 // ---------------------------------------------------------------------------
 

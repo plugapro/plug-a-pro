@@ -30,7 +30,7 @@ function parseFailureToErrorCode(reason: VoucherParseFailureReason): VoucherRede
 /**
  * Redeems a voucher for an approved provider.
  * Shared by the WhatsApp bot and the PWA server action.
- * Do NOT duplicate this logic in either channel — call this function.
+ * Do NOT duplicate this logic in either channel - call this function.
  *
  * Campaign uniqueness guarantee (two layers):
  * 1. Pre-check: a SELECT on provider_campaign_redemptions before any writes gives a fast,
@@ -38,7 +38,7 @@ function parseFailureToErrorCode(reason: VoucherParseFailureReason): VoucherRede
  * 2. DB constraint: UNIQUE(providerId, campaignCode) on provider_campaign_redemptions is the
  *    authoritative guard. Two concurrent requests that both pass the pre-check will race to
  *    INSERT; the second receives a P2002 error, the transaction rolls back automatically
- *    (including the voucher claim), and the caller gets PROVIDER_ALREADY_REDEEMED_CAMPAIGN.
+ *    (including the voucher claim) and the caller gets PROVIDER_ALREADY_REDEEMED_CAMPAIGN.
  *
  * Voucher-level race condition:
  * - The voucher status update uses updateMany with WHERE status='ACTIVE'.
@@ -117,7 +117,7 @@ export async function redeemVoucher(
     }
     attemptTarget.campaignCode = voucher.batch.campaignCode
 
-    // 3. Validate voucher state — check CANCELLED before maxRedemptions to avoid information leak
+    // 3. Validate voucher state - check CANCELLED before maxRedemptions to avoid information leak
     if (voucher.status === 'REDEEMED') {
       return { ok: false, code: 'VOUCHER_ALREADY_REDEEMED', message: 'That voucher has already been redeemed.' } as const
     }
@@ -170,7 +170,7 @@ export async function redeemVoucher(
       },
     })
 
-    // 7. Credit the wallet — must happen in the same transaction
+    // 7. Credit the wallet - must happen in the same transaction
     const walletResult = await creditVoucherRedemptionInTransaction(
       tx,
       providerId,
@@ -178,7 +178,7 @@ export async function redeemVoucher(
       {
         referenceType: 'voucher',
         referenceId: voucher.id,
-        description: `Voucher redemption — ${voucher.creditAmount} credit`,
+        description: `Voucher redemption - ${voucher.creditAmount} credit`,
         source: 'voucher_redemption',
         createdBy: 'system:voucher',
         metadata: {
@@ -194,10 +194,10 @@ export async function redeemVoucher(
   }).catch((error: unknown) => {
     // A P2002 on the campaign slot (step 6) means two concurrent requests both passed the
     // pre-check and both claimed separate vouchers, but only one can hold the campaign slot.
-    // PostgreSQL rolls back this transaction automatically — the voucher claim from step 5 is
-    // undone — and we return the same user-facing error as the pre-check.
+    // PostgreSQL rolls back this transaction automatically - the voucher claim from step 5 is
+    // undone - and we return the same user-facing error as the pre-check.
     if (isCampaignSlotConflict(error)) {
-      console.info('[voucher] campaign slot conflict — concurrent duplicate rejected', { providerId })
+      console.info('[voucher] campaign slot conflict - concurrent duplicate rejected', { providerId })
       return { ok: false, code: 'PROVIDER_ALREADY_REDEEMED_CAMPAIGN', message: 'You have already redeemed a voucher for this campaign.' } as const
     }
     throw error

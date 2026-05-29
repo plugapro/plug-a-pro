@@ -25,7 +25,7 @@ interface MDXContentProps {
 function useMDXComponent(code: string) {
   // new Function is safe here: `code` is produced by Velite's build-time
   // MDX compiler (not user input) and the function body only receives the
-  // React JSX runtime object — no global scope access.
+  // React JSX runtime object - no global scope access.
   // eslint-disable-next-line no-new-func
   const fn = new Function(code);
   return fn({ ...runtime }).default as React.ComponentType<{

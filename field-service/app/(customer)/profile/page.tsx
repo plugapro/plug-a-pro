@@ -98,9 +98,9 @@ export default async function ProfilePage() {
 
   // Role-aware: a provider's account lives on the provider area, never the customer
   // account page (which labels everyone "Customer"). Covers portal-eligible providers
-  // AND providers still in verification (role==='customer' but isProvider) — the
+  // AND providers still in verification (role==='customer' but isProvider) - the
   // latter previously fell through and were shown as "Customer". Runs on every server
-  // render, so it also covers manual URL edits, deep links, and refreshes.
+  // render, so it also covers manual URL edits, deep links and refreshes.
   const providerDest = resolveProviderRedirect(session, 'profile')
   if (providerDest) {
     console.log('[profile] provider routed away from customer profile', {

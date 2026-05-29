@@ -1,6 +1,6 @@
 // ─── Webhook handler tests ────────────────────────────────────────────────────
 // Tests the WhatsApp webhook verification and payment webhook parsing.
-// No DB connections — all external dependencies are mocked.
+// No DB connections - all external dependencies are mocked.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 

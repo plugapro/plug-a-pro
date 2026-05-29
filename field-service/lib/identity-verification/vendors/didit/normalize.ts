@@ -4,7 +4,7 @@
 // + AML + ID checks before issuing "Approved". When status is Approved we
 // surface livenessVerified=true plus a real confidence value derived from the
 // feature-array scores so the orchestrator's PASS gate (in applyVendorVerdict)
-// is satisfied without weakening — if Didit reports any failure in
+// is satisfied without weakening - if Didit reports any failure in
 // liveness_checks/face_matches, livenessVerified flips false and the
 // orchestrator routes to NEEDS_MANUAL_REVIEW automatically.
 
@@ -35,7 +35,7 @@ export type DiditNormalizeContext = {
 export type DiditNormalizedOutput = {
   // The verdict that should drive applyVendorVerdict, if any. null when the
   // Didit status is non-terminal (NOT_STARTED, IN_PROGRESS, AWAITING_USER,
-  // RESUBMITTED, EXPIRED, ABANDONED, KYC_EXPIRED, or unknown).
+  // RESUBMITTED, EXPIRED, ABANDONED, KYC_EXPIRED or unknown).
   result: NormalizedVerificationResult | null
   // Diagnostic for the webhook event row when the status falls outside the
   // mapping table. Empty for known statuses.
@@ -224,9 +224,9 @@ function featureArray(
 
 function deriveAssuranceLevelHint(ctx: DiditNormalizeContext): 'HIGH' | 'MEDIUM' {
   // Safe default: when the authoritative workflow id isn't configured
-  // (dev / staging running basic-only, or env misconfigured in prod),
+  // (dev / staging running basic-only or env misconfigured in prod),
   // never claim HIGH assurance. A missing discriminator means the
-  // assurance level cannot be authenticated as authoritative — MEDIUM
+  // assurance level cannot be authenticated as authoritative - MEDIUM
   // is the conservative posture and keeps credit-gate / selected-provider
   // acceptance properly blocked.
   if (!ctx.authoritativeWorkflowId) return 'MEDIUM'

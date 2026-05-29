@@ -42,7 +42,7 @@ export async function canSend(phone: string, templateName: TemplateName): Promis
       return { allowed: true }
     }
 
-    // MARKETING — check customer first, then fall back to provider
+    // MARKETING - check customer first, then fall back to provider
     if (customer) {
       return customer.whatsappMarketingOptIn
         ? { allowed: true }

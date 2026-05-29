@@ -490,7 +490,7 @@ describe('createLocationNode', () => {
     ).rejects.toThrow('PROVINCE nodes must have parentId = null')
   })
 
-  it('SUBURB validates parent type — throws on wrong parent type', async () => {
+  it('SUBURB validates parent type - throws on wrong parent type', async () => {
     // Parent is a CITY node, but SUBURB expects REGION parent
     mockDb.locationNode.findUnique.mockResolvedValue({ nodeType: 'CITY' })
 

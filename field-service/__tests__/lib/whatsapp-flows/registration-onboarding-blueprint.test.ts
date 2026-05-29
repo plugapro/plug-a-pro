@@ -1,4 +1,4 @@
-// ─── Blueprint Step 04 — Provider Onboarding WhatsApp-First Flow ─────────────
+// ─── Blueprint Step 04 - Provider Onboarding WhatsApp-First Flow ─────────────
 // Verifies that the registration flow satisfies the blueprint spec:
 //   1. Intro copy contains the required onboarding explanation elements.
 //   2. Application submitted confirmation is sent after successful submit.
@@ -292,7 +292,7 @@ describe('required-field validation prevents submission', () => {
 // This test verifies that the step handlers correctly propagate nextData so that
 // accumulated fields are not lost between WhatsApp messages.
 
-describe('pause/resume — partial state propagation', () => {
+describe('pause/resume - partial state propagation', () => {
   it('handleCollectSkills stores name in nextData for verification step', async () => {
     // In the registration flow, reg_collect_name asks for the name, then the
     // reply reaches handleCollectSkills (step=reg_collect_skills) which is where
@@ -327,7 +327,7 @@ describe('pause/resume — partial state propagation', () => {
 
 // ─── 5. Media uploads accepted ────────────────────────────────────────────────
 
-describe('media upload — accepted at correct steps', () => {
+describe('media upload - accepted at correct steps', () => {
   it('profile photo image is accepted and saves attachment', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const { downloadAndStoreWhatsAppMedia } = await import('@/lib/whatsapp-media')
@@ -452,7 +452,7 @@ describe('call-out fee validation', () => {
 // ─── 8. Registration triggers ─────────────────────────────────────────────────
 
 describe('REGISTRATION_TRIGGERS', () => {
-  it('includes "register", "join", "find work", and "i want to work"', async () => {
+  it('includes "register", "join", "find work" and "i want to work"', async () => {
     const { REGISTRATION_TRIGGERS } = await import('@/lib/whatsapp-flows/registration')
     expect(REGISTRATION_TRIGGERS).toContain('register')
     expect(REGISTRATION_TRIGGERS).toContain('join')

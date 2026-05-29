@@ -1,6 +1,6 @@
 // ─── Match Dispatch ───────────────────────────────────────────────────────────
 // Creates the Lead record and sends the WhatsApp notification after a provider
-// has been atomically reserved. WhatsApp failure is non-fatal — the hold
+// has been atomically reserved. WhatsApp failure is non-fatal - the hold
 // remains active and the provider can still be notified by retry.
 
 import { db } from '@/lib/db'
@@ -58,7 +58,7 @@ export async function dispatchMatchLead(params: {
     select: { id: true, status: true },
   })
   if (existingLead?.status === 'DECLINED') {
-    console.warn('[dispatch] Skipping lead dispatch — provider already declined this job', {
+    console.warn('[dispatch] Skipping lead dispatch - provider already declined this job', {
       jobRequestId: jobRequest.id,
       providerId: provider.id,
       leadId: existingLead.id,
@@ -66,7 +66,7 @@ export async function dispatchMatchLead(params: {
     return
   }
 
-  // Create Lead record — upsert to handle idempotent re-dispatch
+  // Create Lead record - upsert to handle idempotent re-dispatch
   const lead = await db.lead.upsert({
     where: { jobRequestId_providerId: { jobRequestId: jobRequest.id, providerId: provider.id } },
     create: {
@@ -93,7 +93,7 @@ export async function dispatchMatchLead(params: {
     },
   })
 
-  // WhatsApp lead notification — non-blocking, failure does not roll back hold
+  // WhatsApp lead notification - non-blocking, failure does not roll back hold
   const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
   const category = jobRequest.category
   const expiryStr = hold.expiresAt.toLocaleTimeString('en-ZA', {
@@ -120,7 +120,7 @@ export async function dispatchMatchLead(params: {
       : 'Flexible'
   const [balance, previewAttachmentsCount] = await Promise.all([
     getProviderWalletBalanceReadOnly(provider.id),
-    // Count only attachments flagged as safe for preview — protected docs stay hidden.
+    // Count only attachments flagged as safe for preview - protected docs stay hidden.
     db.attachment.count({
       where: { jobRequestId: jobRequest.id, safeForPreview: true },
     }).catch(() => null as number | null),
@@ -188,7 +188,7 @@ export async function dispatchMatchLead(params: {
   })
 
   if (!leadUrl) {
-    console.error('[dispatch] Missing provider lead URL — hold still active', msgMeta)
+    console.error('[dispatch] Missing provider lead URL - hold still active', msgMeta)
     if (!ctaAlreadySent) await db.messageEvent.create({
       data: {
         channel: 'WHATSAPP',
@@ -214,7 +214,7 @@ export async function dispatchMatchLead(params: {
       metadata: msgMeta,
     }).catch(async (err: unknown) => {
       const failureReason = err instanceof Error ? err.message : String(err)
-      console.error('[dispatch] WhatsApp template send failed — hold still active', {
+      console.error('[dispatch] WhatsApp template send failed - hold still active', {
         ...msgMeta,
         error: failureReason,
       })
@@ -259,7 +259,7 @@ export async function dispatchMatchLead(params: {
     { templateName: 'dispatch:job_lead_actions', metadata: msgMeta }
   ).catch(async (err: unknown) => {
     const failureReason = err instanceof Error ? err.message : String(err)
-    console.error('[dispatch] WhatsApp action buttons failed — hold still active', {
+    console.error('[dispatch] WhatsApp action buttons failed - hold still active', {
       ...msgMeta,
       error: failureReason,
     })

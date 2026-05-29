@@ -553,7 +553,7 @@ export default async function CustomerProviderProfilePage({
             {provider.verified ? 'Application reviewed by Plug A Pro' : 'Provider-supplied profile'}
           </p>
           <p className="text-[12px] leading-[1.55]" style={{ color: 'var(--ink-mute)' }}>
-            Skills, bio, and service areas are supplied by the provider. Plug A Pro records completed
+            Skills, bio and service areas are supplied by the provider. Plug A Pro records completed
             jobs and customer reviews but does not claim licensing or workmanship guarantees.
           </p>
         </div>

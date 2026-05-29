@@ -50,7 +50,7 @@ export function verifyStandardWebhookSignature(params: {
     const bufA = Buffer.from(expected)
     const bufB = Buffer.from(provided)
     if (bufA.length !== bufB.length) {
-      // Lengths differ — fail but avoid early exit to prevent timing oracle
+      // Lengths differ - fail but avoid early exit to prevent timing oracle
       timingSafeEqual(bufA, Buffer.alloc(bufA.length))
       continue
     }

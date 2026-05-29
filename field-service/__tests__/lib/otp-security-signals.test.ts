@@ -98,7 +98,7 @@ describe('shouldSendSecurityCheck', () => {
     const { shouldSendSecurityCheck } = await import('@/lib/otp-security-signals')
     const result = await shouldSendSecurityCheck({ phoneE164: PHONE, now: NOW })
     expect(result.trigger).toBeNull()
-    // Subsequent signals NOT queried — fail-fast on first failure to avoid
+    // Subsequent signals NOT queried - fail-fast on first failure to avoid
     // cascading latency when the DB is in trouble.
     expect(mocks.db.otpChallenge.findMany).not.toHaveBeenCalled()
   })

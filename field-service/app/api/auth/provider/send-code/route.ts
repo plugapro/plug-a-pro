@@ -169,7 +169,7 @@ function suggestedActionsFor(code: DiagnosticCode) {
       return ['Check the mobile number and try again.']
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
-      return ['Use customer sign-in, apply as a provider, or contact support.']
+      return ['Use customer sign-in, apply as a provider or contact support.']
     case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return ['Wait for approval or contact support.']

@@ -126,7 +126,7 @@ describe('GET /api/cron/otp-security-prune', () => {
     expect(all.toLowerCase()).not.toContain('token')
   })
 
-  it('isolates failures — one prune throwing does not block the others', async () => {
+  it('isolates failures - one prune throwing does not block the others', async () => {
     mockPruneStaleSecurityEvents.mockRejectedValueOnce(new TypeError('forced fail'))
     const { GET } = await import('@/app/api/cron/otp-security-prune/route')
 

@@ -1,4 +1,4 @@
-// Tests for POST /api/auth/link — name forwarding behaviour added in WP2.
+// Tests for POST /api/auth/link - name forwarding behaviour added in WP2.
 // The broader link route test suite lives in __tests__/api/auth.test.ts.
 // These tests focus specifically on the optional `name` field introduced to
 // support the sign-up flow.
@@ -31,7 +31,7 @@ const VALID_SESSION = {
   phone: '+27821234567',
 }
 
-describe('POST /api/auth/link — name forwarding', () => {
+describe('POST /api/auth/link - name forwarding', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue(VALID_SESSION)
@@ -67,7 +67,7 @@ describe('POST /api/auth/link — name forwarding', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
 
-    // name should be undefined, not a string — linkCustomerAccount ignores undefined
+    // name should be undefined, not a string - linkCustomerAccount ignores undefined
     expect(mockLinkCustomerAccount).toHaveBeenCalledWith({
       userId: 'user-123',
       phone: '+27821234567',

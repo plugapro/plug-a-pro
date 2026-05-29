@@ -706,15 +706,15 @@ async function sendAutomationOutcome(
   if (automation.status === 'AWAITING_LIVENESS' && automation.livenessUrl) {
     await sendText(
       phone,
-      `One more step — tap this secure link to complete a quick face-match: ${automation.livenessUrl}. The link expires when your face-match session does.`,
+      `One more step - tap this secure link to complete a quick face-match: ${automation.livenessUrl}. The link expires when your face-match session does.`,
     )
     return
   }
   if (automation.status === 'PROCESSING') {
-    await sendText(phone, "Thanks, we're verifying your details now — I'll message you the moment it's done.")
+    await sendText(phone, "Thanks, we're verifying your details now - I'll message you the moment it's done.")
     return
   }
-  await sendText(phone, 'Thanks. Your details are with our review team — usually within 30 minutes during business hours; otherwise next working day.')
+  await sendText(phone, 'Thanks. Your details are with our review team - usually within 30 minutes during business hours; otherwise next working day.')
 }
 
 function identityMediaFailureReason(error: unknown) {
@@ -838,7 +838,7 @@ function invalidIdentifierMessage(identityBasis: IdentityBasis): string {
 function documentPrompt(documentKind: IdentityDocumentKind, identityBasis: IdentityBasis): string {
   switch (documentKind) {
     case 'ID_FRONT':
-      return 'Please send a clear photo of your South African ID card front, or the photo page of your green ID book.'
+      return 'Please send a clear photo of your South African ID card front or the photo page of your green ID book.'
     case 'ID_BACK':
       return 'Please send a clear photo of the back of your South African smart ID card.'
     case 'GREEN_ID_BOOK':

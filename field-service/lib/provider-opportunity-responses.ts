@@ -91,7 +91,7 @@ export async function getSafeProviderOpportunityPreview(leadId: string, provider
   }
 
   // This return shape intentionally excludes customer, phone, email, street,
-  // unit, complex, access notes, and GPS fields. Do not broaden without a
+  // unit, complex, access notes and GPS fields. Do not broaden without a
   // matching privacy test.
   return {
     id: lead.id,

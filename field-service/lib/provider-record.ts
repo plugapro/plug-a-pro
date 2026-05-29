@@ -73,7 +73,7 @@ type SyncProviderRecordInput = {
   strictEnrichment?: boolean
   /**
    * When true, skip syncProviderSkills and upsertStructuredServiceAreas.
-   * Use this when calling inside a db.$transaction — a caught DB error inside those
+   * Use this when calling inside a db.$transaction - a caught DB error inside those
    * helpers puts the PostgreSQL connection in ABORTED state even if swallowed in JS,
    * causing all subsequent tx queries to fail. Run enrichment after the tx commits instead.
    */

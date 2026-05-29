@@ -40,8 +40,8 @@ vi.mock('@/lib/db', () => {
       create: vi.fn().mockResolvedValue({}),
     },
     // Required by lib/whatsapp-media-batch.ts (debounceMediaBatch). The flow
-    // tests don't exercise the debounce window — they fast-path through the
-    // batch claim — but the mock surface must exist.
+    // tests don't exercise the debounce window - they fast-path through the
+    // batch claim - but the mock surface must exist.
     conversation: {
       findUnique: vi.fn().mockResolvedValue({ data: {} }),
       update: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
@@ -54,7 +54,7 @@ vi.mock('@/lib/db', () => {
   return { db: mockDb }
 })
 
-// Bypass the 2.5s debounce in flow tests — we're not testing the debounce
+// Bypass the 2.5s debounce in flow tests - we're not testing the debounce
 // here, just the file-accumulation paths.
 vi.mock('@/lib/whatsapp-media-batch', () => ({
   debounceMediaBatch: vi.fn().mockResolvedValue({ mySeq: 1, isLatest: true }),
@@ -95,7 +95,7 @@ vi.mock('@/lib/matching/customer-recontact', () => ({
   }),
 }))
 
-// 20 fake suburbs — intentionally more than SUBURB_PAGE_SIZE to validate pagination cap
+// 20 fake suburbs - intentionally more than SUBURB_PAGE_SIZE to validate pagination cap
 vi.mock('@/lib/location-nodes', () => ({
   getCities: vi.fn().mockResolvedValue([]),
   getRegions: vi.fn().mockResolvedValue([]),
@@ -147,7 +147,7 @@ function makeCtx(step: string, replyId?: string, replyText?: string, data: objec
   }
 }
 
-describe('registration flow — duplicate prevention', () => {
+describe('registration flow - duplicate prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbMocks()
@@ -213,7 +213,7 @@ describe('registration flow — duplicate prevention', () => {
 
       const result = await handleRegistrationFlow(makeCtx('reg_start'))
 
-      // REJECTED is treated as no active application — shows the welcome prompt
+      // REJECTED is treated as no active application - shows the welcome prompt
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
         expect.stringContaining('starter credits'),
@@ -239,7 +239,7 @@ describe('registration flow — duplicate prevention', () => {
     })
 
     it('blocks registration and sends conflict message when phone already belongs to a customer', async () => {
-      // No provider/application — the inner customer guard in startRegistration should fire
+      // No provider/application - the inner customer guard in startRegistration should fire
       ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
       ;(db.customer.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'cust_abc123',
@@ -258,7 +258,7 @@ describe('registration flow — duplicate prevention', () => {
 
   // ── handlePending (submit step) ────────────────────────────────────────────
 
-  describe('handlePending (reg_pending step) — submit_yes', () => {
+  describe('handlePending (reg_pending step) - submit_yes', () => {
     const dataWithFullProfile = {
       name: 'Thabo Nkosi',
       providerIdNumber: '8001015009087',
@@ -456,7 +456,7 @@ describe('registration flow — duplicate prevention', () => {
         id: 'app_norm_12345678',
       })
 
-      // Phone comes from ctx.phone which is already E.164 in production —
+      // Phone comes from ctx.phone which is already E.164 in production -
       // this test confirms the normalized value flows through correctly
       await handleRegistrationFlow(
         makeCtx('reg_pending', 'submit_yes', undefined, dataWithFullProfile)
@@ -553,13 +553,13 @@ describe('registration flow — duplicate prevention', () => {
   })
 })
 
-describe('registration flow — numbered bulk skill selection', () => {
+describe('registration flow - numbered bulk skill selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbMocks()
   })
 
-  it('shows optional verification prompt after name — email and mandatory ID steps no longer prompted', async () => {
+  it('shows optional verification prompt after name - email and mandatory ID steps no longer prompted', async () => {
     const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
 
     expect(wa.sendButtons).toHaveBeenCalledWith(
@@ -689,7 +689,7 @@ describe('registration flow — numbered bulk skill selection', () => {
   })
 
   it('reg_verify_enter_id: 13-digit number that fails Luhn shows error with skip button and stays on step', async () => {
-    // 8001015009080 — last digit changed so Luhn fails
+    // 8001015009080 - last digit changed so Luhn fails
     const result = await handleRegistrationFlow(
       makeCtx('reg_verify_enter_id', undefined, '8001015009080', { name: 'Thabo Nkosi' })
     )
@@ -843,7 +843,7 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(body).not.toContain('✅ 1.')
   })
 
-  it('parses "1,3" — selects two skills and shows Continue / Change buttons', async () => {
+  it('parses "1,3" - selects two skills and shows Continue / Change buttons', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, '1,3', {
         name: 'Thabo Nkosi',
@@ -885,9 +885,9 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextData?.skills).toHaveLength(3)
   })
 
-  it('strips trailing periods — "1.,3." selects skills 1 and 3', async () => {
+  it('strips trailing periods - "1.,3." selects skills 1 and 3', async () => {
     // WhatsApp renders the numbered list as "1. Plumbing" and some users copy
-    // the format and reply "1.,3." — the trailing period must be ignored.
+    // the format and reply "1.,3." - the trailing period must be ignored.
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, '1.,3.', {
         name: 'Thabo Nkosi',
@@ -900,7 +900,7 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextData?.skills).toContain('Garden & Landscaping')
   })
 
-  it('"1,99" — accepts skill 1, warns about ignored number 99', async () => {
+  it('"1,99" - accepts skill 1, warns about ignored number 99', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, '1,99', {
         name: 'Thabo Nkosi',
@@ -916,7 +916,7 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextData?.skills).toHaveLength(1)
   })
 
-  it('"99" only — re-shows numbered list with "None of those numbers" error', async () => {
+  it('"99" only - re-shows numbered list with "None of those numbers" error', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, '99', {
         name: 'Thabo Nkosi',
@@ -948,7 +948,7 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextData?.skills).toContain('Plumbing')
   })
 
-  it('sends a restriction notice for "pest control" — not accepted in pilot', async () => {
+  it('sends a restriction notice for "pest control" - not accepted in pilot', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, 'pest control', {
         name: 'Thabo Nkosi',
@@ -1062,7 +1062,7 @@ describe('registration flow — numbered bulk skill selection', () => {
 
 // ─── Evidence file upload paths ───────────────────────────────────────────────
 
-describe('registration flow — evidence file uploads', () => {
+describe('registration flow - evidence file uploads', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbMocks()
@@ -1330,7 +1330,7 @@ describe('registration flow — evidence file uploads', () => {
 // Suburbs are presented as plain numbered text (not interactive lists).
 // Provider replies with comma-separated numbers; global 1-based numbering across pages.
 
-describe('registration flow — numbered bulk suburb selection', () => {
+describe('registration flow - numbered bulk suburb selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbMocks()
@@ -1457,7 +1457,7 @@ describe('registration flow — numbered bulk suburb selection', () => {
     expect(result.nextData?.locationNodeIds).toHaveLength(20)
   })
 
-  it('"99" only — sends "None of those numbers" error and re-shows list', async () => {
+  it('"99" only - sends "None of those numbers" error and re-shows list', async () => {
     await handleRegistrationFlow(
       makeCtx('reg_collect_suburb_select', undefined, '99', suburbBaseData)
     )
@@ -1499,7 +1499,7 @@ describe('registration flow — numbered bulk suburb selection', () => {
 
 // ─── syncProviderRecord phone normalization ───────────────────────────────────
 
-describe('syncProviderRecord — phone normalization', () => {
+describe('syncProviderRecord - phone normalization', () => {
   // We test the public behavior via the real implementation (not mocked here).
   // Import provider-record directly and supply a minimal test client.
 

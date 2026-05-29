@@ -10,7 +10,7 @@ export default async function AdminVouchersPage() {
       <div>
         <h1 className="text-2xl font-semibold">Vouchers</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Pilot voucher batches — each code grants 1 credit on redemption.
+          Pilot voucher batches - each code grants 1 credit on redemption.
           To generate new codes, run:{' '}
           <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
             pnpm tsx scripts/generate-vouchers.ts --help

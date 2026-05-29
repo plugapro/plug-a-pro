@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 
-// Singleton pattern — prevents connection pool exhaustion in serverless
+// Singleton pattern - prevents connection pool exhaustion in serverless
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 
 export const db =

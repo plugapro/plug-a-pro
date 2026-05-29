@@ -3,7 +3,7 @@
  *
  * These tests verify that:
  * 1. The CustomerAddress type exists with all expected fields (compile-time check
- *    via Prisma-generated types — no live DB required).
+ *    via Prisma-generated types - no live DB required).
  * 2. Customer has isBusinessAccount and businessName fields.
  * 3. JobRequest has customerAddressId field.
  * 4. db.customerAddress accessor is reachable on the Prisma client.
@@ -45,7 +45,7 @@ vi.mock('../../lib/db', () => ({ db: mockDb }))
 
 // ─── Type-level checks ────────────────────────────────────────────────────────
 // These assertions fail at compile time if the generated Prisma types do not
-// include the expected fields — no runtime DB required.
+// include the expected fields - no runtime DB required.
 
 type _AssertCustomerAddressFields = {
   id: CustomerAddress['id']
@@ -75,7 +75,7 @@ type _AssertJobRequestAddressId = {
 
 // ─── Runtime: db.customerAddress accessor ────────────────────────────────────
 
-describe('CustomerAddress — Prisma model (M1-T1)', () => {
+describe('CustomerAddress - Prisma model (M1-T1)', () => {
   it('db.customerAddress accessor is present on the mocked client', () => {
     expect(mockDb.customerAddress).toBeDefined()
     expect(typeof mockDb.customerAddress.findMany).toBe('function')

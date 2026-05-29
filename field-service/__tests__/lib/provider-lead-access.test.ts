@@ -444,7 +444,7 @@ describe('provider lead access tokens', () => {
 
     const resolved = await resolveProviderLeadAccessToken(token)
 
-    // status stays 'active' — the caller inspects lead.status to determine the idempotency path.
+    // status stays 'active' - the caller inspects lead.status to determine the idempotency path.
     // declineLeadWithToken checks lead.status === 'DECLINED' and redirects to ?declined=already.
     expect(resolved.status).toBe('active')
     expect(resolved.lead?.status).toBe('DECLINED')
@@ -468,7 +468,7 @@ describe('provider lead access tokens', () => {
       .mockResolvedValueOnce(makeLead({
         status: 'ACCEPTED',
       }))
-      // Second query fetches only customer PII + full address — attachments are NOT re-fetched
+      // Second query fetches only customer PII + full address - attachments are NOT re-fetched
       .mockResolvedValueOnce({
         jobRequest: {
           customer: { id: 'customer-1', name: 'Nomsa Dlamini', phone: '+27821234567' },
@@ -523,7 +523,7 @@ describe('provider lead access tokens', () => {
 
 // ─── Security: phone hash binding and cross-provider access prevention ─────────
 
-describe('provider lead access — phone hash and sender verification', () => {
+describe('provider lead access - phone hash and sender verification', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
@@ -539,7 +539,7 @@ describe('provider lead access — phone hash and sender verification', () => {
       providerId: 'provider-1',
       providerPhone: '+27820000000',
     })
-    // But the DB record has a different phone — indicates token was replayed
+    // But the DB record has a different phone - indicates token was replayed
     mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({
       provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27829999999', active: true, status: 'ACTIVE' },
     }))
@@ -584,7 +584,7 @@ describe('provider lead access — phone hash and sender verification', () => {
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
     mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
 
-    // Wrong number is sending the command — different WhatsApp user
+    // Wrong number is sending the command - different WhatsApp user
     const resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: '+27821111111' })
 
     expect(resolved.status).toBe('invalid')

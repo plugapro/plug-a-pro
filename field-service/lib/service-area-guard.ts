@@ -51,8 +51,8 @@ export function getCityServiceStatus(input: {
 
 export function describeCityServiceStatus(input: { cityKey?: string | null }): string {
   return getCityServiceStatus(input) === 'active'
-    ? `🟢 Active pilot — ${ACTIVE_PILOT_REGION_LABEL}`
-    : '🔜 Coming soon — register now'
+    ? `🟢 Active pilot - ${ACTIVE_PILOT_REGION_LABEL}`
+    : '🔜 Coming soon - register now'
 }
 
 export function describeRegionServiceStatus(input: {
@@ -61,10 +61,10 @@ export function describeRegionServiceStatus(input: {
 }): string {
   return getRegionServiceStatus(input) === 'active'
     ? '🟢 Active pilot'
-    : '🔜 Coming soon — register now'
+    : '🔜 Coming soon - register now'
 }
 
-// Normalised city keys currently accepting new job requests (legacy guard — kept
+// Normalised city keys currently accepting new job requests (legacy guard - kept
 // for the `handleCollectAddress` fallback path that checks city label free-text).
 export const ACTIVE_CITY_KEYS = new Set([
   'johannesburg',
@@ -105,7 +105,7 @@ export function isInActiveServiceArea(cityLabel: string): boolean {
 
 /**
  * Upserts a record in service_area_waitlist.
- * Safe to call twice — the @@unique([phone, city]) constraint makes it idempotent.
+ * Safe to call twice - the @@unique([phone, city]) constraint makes it idempotent.
  */
 export async function addToServiceAreaWaitlist(params: {
   phone: string
@@ -120,7 +120,7 @@ export async function addToServiceAreaWaitlist(params: {
   const city = normaliseLocationDisplayName(params.city)
   const province = normaliseLocationDisplayName(params.province) || null
   // Use case-insensitive findFirst so that existing rows stored with lowercase city
-  // (before normalisation was introduced) are matched correctly — the @@unique([phone, city])
+  // (before normalisation was introduced) are matched correctly - the @@unique([phone, city])
   // constraint is case-sensitive by default in Postgres.
   const existing = await db.serviceAreaWaitlist.findFirst({
     where: {

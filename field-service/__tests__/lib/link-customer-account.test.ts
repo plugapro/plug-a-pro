@@ -1,4 +1,4 @@
-// Unit tests for linkCustomerAccount — the real creation/linking logic.
+// Unit tests for linkCustomerAccount - the real creation/linking logic.
 //
 // Regression guard for the "provider shown as Customer" bug: a provider who
 // reaches the customer sign-in flow must NOT have a spurious Customer record

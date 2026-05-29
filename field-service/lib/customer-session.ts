@@ -47,7 +47,7 @@ export async function resolveCustomerForSession(
   // Runs AFTER the userId lookup but BEFORE the phone lookup so that a member's
   // userId is never self-linked to a phone-only principal record via the fallback
   // path. When an active membership exists the session resolves to the principal
-  // customer account — per spec, members always book under the company account
+  // customer account - per spec, members always book under the company account
   // regardless of whether they also have their own Customer row.
   if (client.customerMember) {
     try {

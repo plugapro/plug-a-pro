@@ -142,7 +142,7 @@ function mockJobWithStatus(status: string) {
 
 // ─── Tests: job lifecycle → WhatsApp notification wiring ─────────────────────
 
-describe('WhatsApp booking lifecycle notifications — wiring assertions (GAP-19)', () => {
+describe('WhatsApp booking lifecycle notifications - wiring assertions (GAP-19)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -306,7 +306,7 @@ describe('WhatsApp booking lifecycle notifications — wiring assertions (GAP-19
     })
   })
 
-  describe('no booking — no notification', () => {
+  describe('no booking - no notification', () => {
     it('does not call any WhatsApp send when booking is null', async () => {
       ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ...mockJobWithStatus('SCHEDULED'),
@@ -329,7 +329,7 @@ describe('WhatsApp booking lifecycle notifications — wiring assertions (GAP-19
 
 // ─── Tests: notifyCustomerReviewRequested (post-job review request path) ──────
 
-describe('notifyCustomerReviewRequested — WhatsApp wiring', () => {
+describe('notifyCustomerReviewRequested - WhatsApp wiring', () => {
   beforeEach(() => {
     vi.resetAllMocks()
   })
@@ -396,7 +396,7 @@ describe('notifyCustomerReviewRequested — WhatsApp wiring', () => {
 
 // ─── Tests: notifyCustomerPaymentFailed ───────────────────────────────────────
 
-describe('notifyCustomerPaymentFailed — WhatsApp wiring', () => {
+describe('notifyCustomerPaymentFailed - WhatsApp wiring', () => {
   beforeEach(() => {
     vi.resetAllMocks()
   })

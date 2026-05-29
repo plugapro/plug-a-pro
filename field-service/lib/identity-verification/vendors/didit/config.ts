@@ -5,14 +5,14 @@
 // { enabled: false } so unit tests run without secrets.
 //
 // Required (production):
-//   DIDIT_API_KEY                                 — server-side API key (X-Api-Key header on outbound calls)
-//   DIDIT_BASE_URL                                — host, e.g. https://verification.didit.me
-//   DIDIT_WEBHOOK_SECRET                          — destination secret used for HMAC verification on inbound webhooks
-//   DIDIT_PROVIDER_KYC_WORKFLOW_ID                — basic workflow uuid
-//   DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID  — SA-DHA-included workflow uuid (default for provider onboarding)
+//   DIDIT_API_KEY                                 - server-side API key (X-Api-Key header on outbound calls)
+//   DIDIT_BASE_URL                                - host, e.g. https://verification.didit.me
+//   DIDIT_WEBHOOK_SECRET                          - destination secret used for HMAC verification on inbound webhooks
+//   DIDIT_PROVIDER_KYC_WORKFLOW_ID                - basic workflow uuid
+//   DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID  - SA-DHA-included workflow uuid (default for provider onboarding)
 //
 // Optional:
-//   DIDIT_SESSION_EXPIRY_HOURS                    — internal session-expiry derivation (Didit does not return expires_at). Default 168 (7 days).
+//   DIDIT_SESSION_EXPIRY_HOURS                    - internal session-expiry derivation (Didit does not return expires_at). Default 168 (7 days).
 //
 // Webhook destination URL is configured in the Didit Console (per-destination)
 // rather than passed by us; only the secret is in env.

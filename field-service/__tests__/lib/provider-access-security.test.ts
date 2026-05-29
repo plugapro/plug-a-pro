@@ -1,4 +1,4 @@
-// ─── Provider access security — unauthorized access prevention ────────────────
+// ─── Provider access security - unauthorized access prevention ────────────────
 // Focused regression suite for CODEX-15 security requirements:
 //  1. WhatsApp sender number must map to the correct provider (done via whatsapp-identity)
 //  2. Secure tokens scoped to provider/lead/job cannot be replayed by wrong party
@@ -36,7 +36,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
       id: 'jr-1',
       category: 'Plumbing',
       title: 'Leaking pipe',
-      // 14× repetition = 280 chars; previewNotes truncates at 180 — private text after that is hidden
+      // 14× repetition = 280 chars; previewNotes truncates at 180 - private text after that is hidden
       description: `${'Preview notes visible. '.repeat(14)}Gate code 9999 and private unit after unlock.`,
       requestedWindowStart: null,
       requestedWindowEnd: null,
@@ -50,7 +50,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
   }
 }
 
-describe('secure token scope — cross-provider access prevention', () => {
+describe('secure token scope - cross-provider access prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
@@ -134,7 +134,7 @@ describe('secure token scope — cross-provider access prevention', () => {
   })
 })
 
-describe('customer PII gating — pre/post acceptance', () => {
+describe('customer PII gating - pre/post acceptance', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
@@ -143,7 +143,7 @@ describe('customer PII gating — pre/post acceptance', () => {
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-pla-secret-step14'
   })
 
-  it('safe preview must not include street, unit, complex, GPS, or customer phone', async () => {
+  it('safe preview must not include street, unit, complex, GPS or customer phone', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
     mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
@@ -296,7 +296,7 @@ describe('expired and superseded token revocation', () => {
   })
 })
 
-describe('resolveProviderLeadAttachmentScope — isAccepted flag for safeForPreview enforcement', () => {
+describe('resolveProviderLeadAttachmentScope - isAccepted flag for safeForPreview enforcement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
@@ -324,7 +324,7 @@ describe('resolveProviderLeadAttachmentScope — isAccepted flag for safeForPrev
       .mockResolvedValueOnce(
         makeLead({ status: 'ACCEPTED' }),
       )
-      // Second call for the sensitive data fetch — return minimal shape
+      // Second call for the sensitive data fetch - return minimal shape
       .mockResolvedValueOnce({
         jobRequest: {
           customer: { id: 'c-1', name: 'Test', phone: '+27820000001' },

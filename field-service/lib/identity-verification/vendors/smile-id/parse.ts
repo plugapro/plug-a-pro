@@ -44,7 +44,7 @@ function deriveLivenessVerified(actions: SmileEvdActions | undefined): boolean |
   const check = actions?.Liveness_Check
   if (check === 'Passed') return true
   if (check === 'Failed') return false
-  return null  // 'Under Review', 'Not Applicable', missing — all ambiguous
+  return null  // 'Under Review', 'Not Applicable', missing - all ambiguous
 }
 
 function deriveBinaryConfidence(payload: SmileEvdWebhookPayload, isFinal: boolean): number {

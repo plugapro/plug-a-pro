@@ -20,7 +20,7 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "For Customers",
   description:
-    "Get help with any small home job. Plumbing, painting, gardening, handyman work, and more. Message us on WhatsApp and we'll match you to a nearby service provider.",
+    "Get help with any small home job. Plumbing, painting, gardening, handyman work and more. Message us on WhatsApp and we'll match you to a nearby service provider.",
 });
 
 const HOW_IT_WORKS = [
@@ -57,7 +57,7 @@ const HOW_IT_WORKS = [
     step: "05",
     title: "Provider arrives and does the job",
     detail:
-      "Your selected service provider arrives at the agreed time. Photos, notes, and status updates can be added to the job record where the workflow supports them. You can follow progress via WhatsApp.",
+      "Your selected service provider arrives at the agreed time. Photos, notes and status updates can be added to the job record where the workflow supports them. You can follow progress via WhatsApp.",
   },
   {
     icon: Star,
@@ -72,12 +72,12 @@ const PROTECTIONS = [
   {
     icon: ShieldCheck,
     title: "Your number stays private",
-    body: "We never need to share your personal phone number just to get the job moving. Plug A Pro handles intake, quote approval, and status updates from the platform number.",
+    body: "We never need to share your personal phone number just to get the job moving. Plug A Pro handles intake, quote approval and status updates from the platform number.",
   },
   {
     icon: UserCheck,
     title: "Applications reviewed before activation",
-    body: "Applications are manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each service provider has submitted and recorded on Plug A Pro.",
+    body: "Applications are manually reviewed before activation - an eligibility check for marketplace participation, not a guarantee of licensing, safety or workmanship. Provider profiles show what each service provider has submitted and recorded on Plug A Pro.",
   },
   {
     icon: FileText,
@@ -92,7 +92,7 @@ const PROTECTIONS = [
   {
     icon: Clock,
     title: "Platform mediation for disputes",
-    body: "If something goes wrong, contact Plug A Pro support. We review the written quote, job history, and photos already attached to the record.",
+    body: "If something goes wrong, contact Plug A Pro support. We review the written quote, job history and photos already attached to the record.",
   },
   {
     icon: Star,
@@ -113,7 +113,7 @@ export default function ForCustomersPage() {
           Home jobs sorted. On WhatsApp.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          Describe what you need. We&apos;ll match you to a nearby service provider, send the quote for approval, and keep the job moving on WhatsApp.
+          Describe what you need. We&apos;ll match you to a nearby service provider, send the quote for approval and keep the job moving on WhatsApp.
         </p>
         <p className="text-sm font-medium mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}
@@ -231,7 +231,7 @@ export default function ForCustomersPage() {
         <div className="max-w-3xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30 text-center">
           <h2 className="text-xl font-bold mb-3">What jobs can I request?</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Plumbing, painting, garden work, general handyman, appliance repair, DIY assistance, and roofing. If it&apos;s a small job around the home, there&apos;s likely a provider near you who can do it.
+            Plumbing, painting, garden work, general handyman, appliance repair, DIY assistance and roofing. If it&apos;s a small job around the home, there&apos;s likely a provider near you who can do it.
           </p>
           <Button
             nativeButton={false}

@@ -172,7 +172,7 @@ describe('lead unlock service', () => {
     })
   })
 
-  it('charges exactly 1 credit, creates a lead unlock, and writes a debit ledger entry', async () => {
+  it('charges exactly 1 credit, creates a lead unlock and writes a debit ledger entry', async () => {
     const result = await unlockLeadForProvider('lead-1', 'provider-1')
 
     expect(result.alreadyUnlocked).toBe(false)

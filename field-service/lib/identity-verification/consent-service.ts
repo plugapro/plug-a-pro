@@ -61,7 +61,7 @@ export async function recordConsentAcceptance(
 
 export function renderIdentityConsentText(vendorDisplayName: string): string {
   return [
-    'To verify your identity, Plug A Pro shares your ID number, photographs, and selfie',
+    'To verify your identity, Plug A Pro shares your ID number, photographs and selfie',
     `with ${vendorDisplayName}, an identity-verification provider.`,
     'You can withdraw consent by contacting support; withdrawal cancels your verification.',
   ].join(' ')

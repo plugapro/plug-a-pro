@@ -1,5 +1,5 @@
 /**
- * Step 09 — Provider Credit Balance and Ledger Flow
+ * Step 09 - Provider Credit Balance and Ledger Flow
  *
  * Verifies:
  * 1. WhatsApp credits/balance/credit-history commands route to pj_credits
@@ -8,7 +8,7 @@
  * 3. Ledger entries contain all required fields (schema columns + metadata)
  * 4. No-deduction rules: free-action command aliases do not carry the
  *    debitCreditsForLeadUnlock signature
- * 5. Negative balance prevention — INSUFFICIENT_FUNDS guard and
+ * 5. Negative balance prevention - INSUFFICIENT_FUNDS guard and
  *    optimistic-concurrency guard both prevent balance going below zero
  */
 
@@ -76,7 +76,7 @@ describe('credits command routing (step 09)', () => {
 
 import { buildProviderCreditSummaryMessage } from '../../lib/provider-credit-copy'
 
-describe('buildProviderCreditSummaryMessage — blueprint format (step 09)', () => {
+describe('buildProviderCreditSummaryMessage - blueprint format (step 09)', () => {
   it('includes the exact blueprint header "Your credits"', () => {
     const msg = buildProviderCreditSummaryMessage({
       totalCreditBalance: 5,
@@ -86,7 +86,7 @@ describe('buildProviderCreditSummaryMessage — blueprint format (step 09)', () 
     expect(msg).toContain('Your credits')
   })
 
-  it('shows Available, Starter/onboarding, and Purchased lines', () => {
+  it('shows Available, Starter/onboarding and Purchased lines', () => {
     const msg = buildProviderCreditSummaryMessage({
       totalCreditBalance: 7,
       promoCreditBalance: 4,
@@ -401,7 +401,7 @@ describe('ledger entry field completeness (step 09)', () => {
 describe('no-deduction rules (step 09)', () => {
   it('preview/interest command aliases do not include debitCreditsForLeadUnlock in their step', () => {
     // The blueprint mandates: preview, interest response, shortlist, customer
-    // selection, decline, and expiry must NOT deduct credits.
+    // selection, decline and expiry must NOT deduct credits.
     //
     // This test verifies at the command-model level: the free-action aliases
     // all resolve to steps OTHER than the lead-unlock debit path.

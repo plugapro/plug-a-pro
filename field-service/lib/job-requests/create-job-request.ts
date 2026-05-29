@@ -24,7 +24,7 @@ import {
 } from '../customer-address-book'
 
 export interface CreateJobRequestParams {
-  // Customer identity — supply one of the two sets:
+  // Customer identity - supply one of the two sets:
   // Web path: userId + phone (from session)
   // WhatsApp path: phone only (userId null / omitted)
   userId?: string | null
@@ -61,7 +61,7 @@ export interface CreateJobRequestParams {
 
   // Address
   // Supply existingAddressId to reuse a saved address (skips address.create).
-  // The address must belong to the resolved customer — verified inside the transaction.
+  // The address must belong to the resolved customer - verified inside the transaction.
   existingAddressId?: string | null
   street: string
   addressLine1?: string | null
@@ -77,7 +77,7 @@ export interface CreateJobRequestParams {
   city: string
   province: string
   postalCode?: string | null
-  locationNodeId?: string | null   // SUBURB node ID — null for legacy/WhatsApp paths
+  locationNodeId?: string | null   // SUBURB node ID - null for legacy/WhatsApp paths
 
   // WhatsApp photos are stored before the JobRequest exists. Link them inside
   // this transaction so request creation and photo ownership stay consistent.
@@ -132,7 +132,7 @@ function maskPhone(phone?: string | null) {
 export async function createJobRequest(
   params: CreateJobRequestParams,
 ): Promise<CreateJobRequestResult> {
-  // Normalise phone to E.164 once at the boundary — WhatsApp delivers numbers
+  // Normalise phone to E.164 once at the boundary - WhatsApp delivers numbers
   // without the + prefix (e.g. 27821234567) while the PWA session always has
   // +27…. A mismatch causes linkCustomerAccount to miss existing records.
   const phone = normalizePhone(params.phone)
@@ -161,7 +161,7 @@ export async function createJobRequest(
     requiredVehicleTypes: params.requiredVehicleTypes,
   })
 
-  // Geocode before the transaction — non-blocking, failure is safe to ignore
+  // Geocode before the transaction - non-blocking, failure is safe to ignore
   const geo = await geocodeAddress({
     street:   params.street,
     suburb:   locality.suburb,
@@ -198,7 +198,7 @@ export async function createJobRequest(
       )
     }
 
-    // Resolve or create customer — support both userId-keyed (web) and
+    // Resolve or create customer - support both userId-keyed (web) and
     // phone-keyed (WhatsApp) lookups so duplicate records never appear.
     const incomingCustomerName = normalizeCustomerName(params.customerName)
     const existingCustomerForPhone = await tx.customer.findUnique({
@@ -282,7 +282,7 @@ export async function createJobRequest(
 
     // Reuse a saved address if the caller supplies an existingAddressId that
     // belongs to this customer.  Fall back to creating a new address row when
-    // the ID is absent, cannot be found, or belongs to a different customer.
+    // the ID is absent, cannot be found or belongs to a different customer.
     let address: { id: string }
     if (params.existingAddressId) {
       const existing = await tx.address.findFirst({
@@ -292,7 +292,7 @@ export async function createJobRequest(
       if (existing) {
         address = existing
       } else {
-        // ID not found or ownership mismatch — create fresh to stay consistent
+        // ID not found or ownership mismatch - create fresh to stay consistent
         address = await tx.address.create({
           data: {
             customerId: customer.id,
@@ -450,7 +450,7 @@ export async function createJobRequest(
     return { jobRequestId: jobRequest.id, requestRef, customerId: customer.id }
   })
 
-  // Open a DISPATCH case for the new job request (fire and forget — cron can backfill on failure).
+  // Open a DISPATCH case for the new job request (fire and forget - cron can backfill on failure).
   openCase({ queueType: 'DISPATCH', entityType: 'JOB_REQUEST', entityId: result.jobRequestId })
     .catch((err) => console.error('[create-job-request] openCase failed:', err))
 
@@ -467,7 +467,7 @@ export async function createJobRequest(
   // Trigger matching via after() so Vercel keeps the function alive until matching completes.
   // after() runs post-response, preventing the Vercel cold-start timeout from killing the match.
   // If after() is unavailable (e.g. called from inside another after() callback such as the
-  // WhatsApp webhook handler), fall back to a plain fire-and-forget promise — the 5-min cron
+  // WhatsApp webhook handler), fall back to a plain fire-and-forget promise - the 5-min cron
   // will catch anything that doesn't complete.
   const runMatching = async () => {
     try {
@@ -475,7 +475,7 @@ export async function createJobRequest(
       const matchResult = await orchestrateMatch(result.jobRequestId, { triggeredBy: 'job_creation' })
 
       if (matchResult.status === 'NO_MATCH') {
-        console.log('[create-job-request] no providers found — cron will retry', {
+        console.log('[create-job-request] no providers found - cron will retry', {
           jobRequestId: result.jobRequestId,
           consideredCount: matchResult.consideredCount,
         })

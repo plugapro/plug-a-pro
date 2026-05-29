@@ -225,7 +225,7 @@ describe('provider credit application', () => {
     mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' })
   })
 
-  it('deducts credit once, creates a transaction, and marks the lead CREDIT_APPLIED', async () => {
+  it('deducts credit once, creates a transaction and marks the lead CREDIT_APPLIED', async () => {
     const result = await applyProviderCreditForAcceptedLead({
       leadId: 'lead-1',
       providerId: 'provider-1',
@@ -566,7 +566,7 @@ describe('provider credit application', () => {
 
     // Reset for Job 2: use a different lead id.
     // The lead's jobRequest.selectedLeadInviteId must match the lead id for the
-    // PROVIDER_NOT_SELECTED guard to pass — so use makeLead with id: 'lead-2' and
+    // PROVIDER_NOT_SELECTED guard to pass - so use makeLead with id: 'lead-2' and
     // override selectedLeadInviteId to match.
     state.unlock = null
     state.lead = makeLead({
@@ -593,8 +593,8 @@ describe('provider credit application', () => {
   })
 
   it('idempotent replay uses ledger entry balance, not stale wallet row balance', async () => {
-    // Setup: lead already has an unlock — this is an idempotent replay scenario.
-    // The wallet row shows paidCreditBalance = 3 (stale — another deduction hasn't propagated),
+    // Setup: lead already has an unlock - this is an idempotent replay scenario.
+    // The wallet row shows paidCreditBalance = 3 (stale - another deduction hasn't propagated),
     // but the authoritative ledger entry recorded balanceAfterPaidCredits = 2 at deduction time.
     state.unlock = {
       id: 'unlock-stale',

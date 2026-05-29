@@ -38,7 +38,7 @@ export type DiagnosticCode =
   | 'JOB_NOT_FOUND'
   | 'JOB_REASSIGNED'
   | 'JOB_CANCELLED'
-  /** @deprecated No longer emitted by production code. Retained for historical log compatibility — use AUTH_RESPONSE_INVALID instead. */
+  /** @deprecated No longer emitted by production code. Retained for historical log compatibility - use AUTH_RESPONSE_INVALID instead. */
   | 'UNKNOWN_AUTH_ERROR'
   // Customer-flow codes
   | 'REQUEST_SUBMISSION_FAILED'

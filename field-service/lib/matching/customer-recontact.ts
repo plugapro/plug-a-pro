@@ -115,7 +115,7 @@ function buildExhaustedMessage(jobRequest: MatchableJobRequestRecord) {
   }
 
   if (!deadline) {
-    // ASAP request — no specific time window was set
+    // ASAP request - no specific time window was set
     return (
       `😔 *Sorry, ${name}*.\n\n` +
       `We were not able to match your *${serviceName}* request in *${area}* at this time.\n\n` +
@@ -367,7 +367,7 @@ export async function notifyCustomerNoMatch(jobRequestId: string) {
   if (!jobRequest || jobRequest.status !== 'EXPIRED') return false
   if (!jobRequest.customer?.phone || jobRequest.customerNoMatchNotifiedAt) return false
 
-  // Don't send the hard decline while alternative-slot negotiation is in flight —
+  // Don't send the hard decline while alternative-slot negotiation is in flight -
   // the customer is currently being offered alternative times.
   if (jobRequest.altSlotNegotiationSentAt && !jobRequest.altSlotNegotiationOutcome) return false
 

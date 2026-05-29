@@ -1,6 +1,6 @@
 // ─── User-journey recovery taxonomy + resolver ──────────────────────────────
-// Central rule: a customer, provider, or technician should always know what
-// happened, whether progress was saved, and what they can do next.
+// Central rule: a customer, provider or technician should always know what
+// happened, whether progress was saved and what they can do next.
 
 import { createTraceId, maskPhone, safeErrorMessage } from './support-diagnostics'
 import type { QuickReply } from './whatsapp-interactive'
@@ -92,8 +92,8 @@ export const JOURNEY_RECOVERY_COPY = {
   addressSaveFailed: "We couldn't save that address. Please send the street address again, for example: 14 Main Street.",
   staleAction: "That option is no longer active. Let's continue from the latest step.",
   expiredSession: 'This session expired, but your saved progress may still be available. Continue where you left off?',
-  mediaFailed: "We couldn't process that file. Please try another one, or continue without it.",
-  storageFailed: "We couldn't save that file right now. Please try again, or continue without it.",
+  mediaFailed: "We couldn't process that file. Please try another one or continue without it.",
+  storageFailed: "We couldn't save that file right now. Please try again or continue without it.",
   matchingPending: "We haven't found suitable providers yet. We're still checking.",
   noProvidersFound: "We haven't found suitable providers yet. We're still checking.",
   requestNotFound: "We couldn't find that request. You can start a new request or return to the main menu.",
@@ -211,7 +211,7 @@ export function resolveJourneyRecovery(input: ResolveJourneyRecoveryInput): Jour
 }
 
 export function logJourneyRecovery(input: ResolveJourneyRecoveryInput, plan: JourneyRecoveryPlan): void {
-  // Privacy note: phone is masked; addresses, OTPs, media URLs, and raw payloads
+  // Privacy note: phone is masked; addresses, OTPs, media URLs and raw payloads
   // are intentionally excluded from the common journey-failure log.
   const event = plan.shouldAlert ? 'error' : 'warn'
   const payload = {

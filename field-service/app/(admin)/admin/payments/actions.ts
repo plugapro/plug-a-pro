@@ -191,7 +191,7 @@ export async function issueRefundAction(formData: FormData) {
     })
     redirect('/admin/payments?message=refund_issued')
   } catch (err) {
-    // redirect() throws a NEXT_REDIRECT sentinel — must re-throw before other checks
+    // redirect() throws a NEXT_REDIRECT sentinel - must re-throw before other checks
     if (
       typeof err === 'object' &&
       err !== null &&
@@ -400,7 +400,7 @@ export async function writeOffPaymentFromFormAction(formData: FormData) {
   }
 }
 
-// Returns ActionResult — use inside <ActionForm> for toast feedback.
+// Returns ActionResult - use inside <ActionForm> for toast feedback.
 // The redirect-based issueRefundAction remains for legacy direct form POSTs.
 export async function issueRefundFromFormAction(formData: FormData) {
   const { requireAdmin } = await import('@/lib/auth')

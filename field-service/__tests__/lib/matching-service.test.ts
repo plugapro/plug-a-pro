@@ -906,7 +906,7 @@ describe('matching service', () => {
 
     expect(result.ok).toBe(true)
     expect(result).toMatchObject({ responseOutcome: 'REJECTED', nextOfferedProviderId: null })
-    // Decline must never touch the wallet — no reads, no writes, no ledger entries.
+    // Decline must never touch the wallet - no reads, no writes, no ledger entries.
     expect(mockDb.providerWallet.findUnique).not.toHaveBeenCalled()
     expect(mockDb.providerWallet.upsert).not.toHaveBeenCalled()
     expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
@@ -919,7 +919,7 @@ describe('matching service', () => {
   ] as const)(
     'accept via %s debits exactly 1 credit through the shared unlock module',
     async (source, _label) => {
-      // Both entry channels — WhatsApp quick-reply and PWA signed page — call
+      // Both entry channels - WhatsApp quick-reply and PWA signed page - call
       // acceptAssignmentOffer which delegates to unlockLeadForProviderInTransaction.
       // This confirms neither channel has its own wallet logic.
       mockDb.provider.findUnique.mockResolvedValue({

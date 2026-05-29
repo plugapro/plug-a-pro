@@ -52,7 +52,7 @@ interface CustomerActionOptions<TInput, TOutput> {
   entityId?: string
   /** Audit action string, e.g. 'update_account_type'. */
   action: string
-  /** Snapshot of the record before mutation — written to AuditLog.before. */
+  /** Snapshot of the record before mutation - written to AuditLog.before. */
   before?: Record<string, unknown> | null
   /** Zod schema to validate raw input. Required when input is provided. */
   schema?: z.ZodType<TInput>
@@ -61,7 +61,7 @@ interface CustomerActionOptions<TInput, TOutput> {
   /**
    * The mutation to execute inside the transaction.
    * IMPORTANT: Only return the minimal fields needed (use a narrow `select`).
-   * The return value is written verbatim to AuditLog.after — do not return
+   * The return value is written verbatim to AuditLog.after - do not return
    * fields containing PII (phone, email, name) that are not needed by the caller.
    */
   run: (input: TInput, customer: ResolvedCustomer, tx: TxClient) => Promise<TOutput>
@@ -96,7 +96,7 @@ export async function customerAction<TInput = unknown, TOutput = unknown>(
 
   // ── 3. Blocked guard ──────────────────────────────────────────────────────────
   // customerSessionSelect now includes `isBlocked`, so this check is always
-  // populated from the DB — no cast required.
+  // populated from the DB - no cast required.
   if (customer.isBlocked) {
     throw new CustomerActionError('BLOCKED', 'Account is blocked')
   }

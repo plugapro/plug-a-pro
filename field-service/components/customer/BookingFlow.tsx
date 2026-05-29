@@ -893,7 +893,7 @@ export function BookingFlow({
             </div>
             <Textarea id="description" value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Describe the problem, any access notes, or urgency…"
+                      placeholder="Describe the problem, any access notes or urgency…"
                       rows={4} className="rounded-[14px]" />
           </div>
 

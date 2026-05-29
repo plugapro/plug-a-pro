@@ -48,7 +48,7 @@ export async function sendOtpSecurityCheckBestEffort(
     })
 
     // Structured success log so we can grep for triggered prompts in production.
-    // No raw token, no full phone — only the trigger reason + masked metadata.
+    // No raw token, no full phone - only the trigger reason + masked metadata.
     console.info(
       JSON.stringify({
         event: 'otp.security_check.sent',

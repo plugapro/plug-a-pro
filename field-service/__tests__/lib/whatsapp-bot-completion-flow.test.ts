@@ -150,7 +150,7 @@ function makeImageMessage(mediaId: string) {
   }
 }
 
-// Conversation in 'note' step — waiting for the provider's note text
+// Conversation in 'note' step - waiting for the provider's note text
 function noteStepConversation() {
   mockDb.conversation.upsert.mockResolvedValue({
     phone: PHONE,
@@ -164,7 +164,7 @@ function noteStepConversation() {
   })
 }
 
-// Conversation in 'photo' step — waiting for a photo or SKIP
+// Conversation in 'photo' step - waiting for a photo or SKIP
 function photoStepConversation(note = 'Replaced valve.') {
   mockDb.conversation.upsert.mockResolvedValue({
     phone: PHONE,
@@ -179,7 +179,7 @@ function photoStepConversation(note = 'Replaced valve.') {
   })
 }
 
-describe('WhatsApp bot — provider job completion capture', () => {
+describe('WhatsApp bot - provider job completion capture', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSendText.mockResolvedValue('msg-text')
@@ -187,7 +187,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
       ok: true,
       jobId: JOB_ID,
       duplicate: false,
-      message: 'Job complete — awaiting customer confirmation.\n\nThe customer has been notified.',
+      message: 'Job complete - awaiting customer confirmation.\n\nThe customer has been notified.',
     })
     // By default, parseProviderJobCommand returns null (not a shortcut command)
     mockParseProviderJobCommand.mockReturnValue(null)
@@ -200,7 +200,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
     })
 
     it('prompts the provider again when the note is empty', async () => {
-      // Sending whitespace — the note step re-prompts
+      // Sending whitespace - the note step re-prompts
       await processInboundMessage(makeTextMessage('   '))
       expect(mockSendText).toHaveBeenCalledWith(PHONE, 'Please send a short completion note.')
       expect(mockCompleteProviderJobFromWhatsApp).not.toHaveBeenCalled()
@@ -208,7 +208,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
 
     it('advances to photo step and prompts upload or SKIP when a note is provided', async () => {
       await processInboundMessage(makeTextMessage('Replaced the valve and tested pressure.'))
-      expect(mockSendText).toHaveBeenCalledWith(PHONE, 'Please upload a completion photo, or reply SKIP.')
+      expect(mockSendText).toHaveBeenCalledWith(PHONE, 'Please upload a completion photo or reply SKIP.')
       expect(mockCompleteProviderJobFromWhatsApp).not.toHaveBeenCalled()
       // Conversation should be saved with photo step
       const upsertCall = mockDb.conversation.upsert.mock.calls.find(
@@ -244,7 +244,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
       )
       expect(mockSendText).toHaveBeenCalledWith(
         PHONE,
-        'Job complete — awaiting customer confirmation.\n\nThe customer has been notified.',
+        'Job complete - awaiting customer confirmation.\n\nThe customer has been notified.',
       )
     })
 
@@ -259,7 +259,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
       await processInboundMessage(makeTextMessage('Here is the photo'))
       expect(mockSendText).toHaveBeenCalledWith(
         PHONE,
-        'Please upload a completion photo, or reply SKIP.',
+        'Please upload a completion photo or reply SKIP.',
       )
       expect(mockCompleteProviderJobFromWhatsApp).not.toHaveBeenCalled()
     })
@@ -285,7 +285,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
           )
         },
       )
-      // The bot must have responded in some way — not silently dropped the message.
+      // The bot must have responded in some way - not silently dropped the message.
       expect(jobCompleted || reprompted).toBe(true)
     })
 
@@ -293,12 +293,12 @@ describe('WhatsApp bot — provider job completion capture', () => {
       mockCompleteProviderJobFromWhatsApp.mockResolvedValueOnce({
         ok: false,
         reason: 'INVALID_STATE',
-        message: 'This job is currently *Scheduled* — reply *start* before completing it.',
+        message: 'This job is currently *Scheduled* - reply *start* before completing it.',
       })
       await processInboundMessage(makeTextMessage('skip'))
       expect(mockSendText).toHaveBeenCalledWith(
         PHONE,
-        'This job is currently *Scheduled* — reply *start* before completing it.',
+        'This job is currently *Scheduled* - reply *start* before completing it.',
       )
     })
   })

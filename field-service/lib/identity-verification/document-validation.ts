@@ -143,7 +143,7 @@ export function identityIdentifierHint(identityBasis: IdentityBasis): string {
     case 'PASSPORT':
       return 'Use letters and numbers only, with no spaces.'
     default:
-      return 'Use letters, numbers, slash, or hyphen only, with no spaces.'
+      return 'Use letters, numbers, slash or hyphen only, with no spaces.'
   }
 }
 

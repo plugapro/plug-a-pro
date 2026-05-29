@@ -84,7 +84,7 @@ describe('redeemVoucher', () => {
     mockCheckVoucherLimit.mockResolvedValue({ ok: true })
   })
 
-  it('succeeds: approves credit, marks voucher redeemed, records campaign redemption, and returns canonical', async () => {
+  it('succeeds: approves credit, marks voucher redeemed, records campaign redemption and returns canonical', async () => {
     const tx = makeTx(makeProvider(), makeVoucher())
     setupTransaction(tx)
 
@@ -147,7 +147,7 @@ describe('redeemVoucher', () => {
     setupTransaction(tx)
 
     // 'not-a-real-code' strips to 'NOTAREALCODE' (12 chars after separators removed)
-    // → TOO_LONG branch — specific, actionable feedback rather than generic invalid.
+    // → TOO_LONG branch - specific, actionable feedback rather than generic invalid.
     const result = await redeemVoucher('prov_1', 'not-a-real-code')
 
     expect(result.ok).toBe(false)
@@ -328,7 +328,7 @@ describe('redeemVoucher', () => {
     const tx = makeTx(makeProvider(), makeVoucher())
     setupTransaction(tx)
 
-    const result = await redeemVoucher('prov_1', 'PAP—7KQ9—M2XD')
+    const result = await redeemVoucher('prov_1', 'PAP-7KQ9-M2XD')
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('should be ok')
@@ -497,7 +497,7 @@ describe('redeemVoucher', () => {
   })
 
   it('rejects: cancelled voucher returns CANCELLED not MAX_REDEMPTIONS (ordering guard)', async () => {
-    // redemptionCount >= maxRedemptions AND status=CANCELLED — must return CANCELLED, not MAX_REDEMPTIONS
+    // redemptionCount >= maxRedemptions AND status=CANCELLED - must return CANCELLED, not MAX_REDEMPTIONS
     const tx = makeTx(makeProvider(), makeVoucher({ status: 'CANCELLED', redemptionCount: 1, maxRedemptions: 1 }))
     setupTransaction(tx)
 
@@ -530,7 +530,7 @@ describe('redeemVoucher', () => {
     expect(result.code).toBe('VOUCHER_EXPIRED')
   })
 
-  it('rejects: provider already redeemed from same campaign — pre-check fires before any claim', async () => {
+  it('rejects: provider already redeemed from same campaign - pre-check fires before any claim', async () => {
     const existingRecord = { id: 'pcr_existing' }
     const tx = makeTx(makeProvider(), makeVoucher(), existingRecord)
     setupTransaction(tx)
@@ -542,7 +542,7 @@ describe('redeemVoucher', () => {
     expect(result.code).toBe('PROVIDER_ALREADY_REDEEMED_CAMPAIGN')
     expect(result.message).toBe('You have already redeemed a voucher for this campaign.')
 
-    // Pre-check fires before any write — no voucher claim should be attempted
+    // Pre-check fires before any write - no voucher claim should be attempted
     expect(tx.promoVoucher.updateMany).not.toHaveBeenCalled()
     expect(tx.providerCampaignRedemption.create).not.toHaveBeenCalled()
     expect(mockCreditFn).not.toHaveBeenCalled()

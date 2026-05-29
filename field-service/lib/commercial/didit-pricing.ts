@@ -1,7 +1,7 @@
 // Didit identity-verification pricing.
 // Source: https://didit.me/pricing (verified 2026-05-27).
 //
-// Values are expressed in CENTS USD to keep the math integer-clean —
+// Values are expressed in CENTS USD to keep the math integer-clean -
 // downstream callers convert to dollars / ZAR at display time.
 //
 // Finance can override any value at runtime via `applyOverrides` without

@@ -67,7 +67,7 @@ export default async function AdminIdentityVerificationsPage({
         <div>
           <h1 className="text-xl font-semibold">Identity verifications</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review provider ID, passport, permit, document, and selfie submissions.
+            Review provider ID, passport, permit, document and selfie submissions.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">

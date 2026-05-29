@@ -143,7 +143,7 @@ describe('deliverOtp', () => {
     expect(caught?.code).toBe('WA_TRANSIENT')
   })
 
-  it('never leaks the OTP value into logs, audit, or the persisted attempt row', async () => {
+  it('never leaks the OTP value into logs, audit or the persisted attempt row', async () => {
     vi.mocked(sendTemplate).mockResolvedValueOnce('wamid.HBgLleak1')
     await deliverOtp({
       phone: TEST_PHONE_RAW,

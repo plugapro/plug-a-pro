@@ -238,7 +238,7 @@ export default async function PaymentsPage({
             )}
             {payments.map((p) => {
               const customer = p.booking.match?.jobRequest.customer
-              const jobTitle = p.booking.match?.jobRequest.title ?? '—'
+              const jobTitle = p.booking.match?.jobRequest.title ?? '-'
               const assignment = assignments.get(p.id)
               const claimedByCurrentUser = assignment?.claimedById === admin.id
               const payAtMeta =
@@ -257,7 +257,7 @@ export default async function PaymentsPage({
                 <tr key={p.id} className="hover:bg-muted/30">
                   <td className="px-4 py-3 font-mono text-xs">{p.id.slice(-8).toUpperCase()}</td>
                   <td className="px-4 py-3">
-                    <p>{customer?.name ?? '—'}</p>
+                    <p>{customer?.name ?? '-'}</p>
                     <p className="text-xs text-muted-foreground">{customer?.phone ?? ''}</p>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{jobTitle}</td>
@@ -281,7 +281,7 @@ export default async function PaymentsPage({
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                    {p.pspReference ? p.pspReference.slice(-12) : '—'}
+                    {p.pspReference ? p.pspReference.slice(-12) : '-'}
                     {payAtReference ? (
                       <p className="mt-1 text-[11px] text-muted-foreground">Pay@ ref: {payAtReference}</p>
                     ) : null}
@@ -292,7 +292,7 @@ export default async function PaymentsPage({
                   <td className="px-4 py-3 text-muted-foreground">
                     {p.paidAt
                       ? p.paidAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
-                      : '—'}
+                      : '-'}
                     {payAtLastChecked ? (
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         Last check: {new Date(payAtLastChecked).toLocaleString('en-ZA')}

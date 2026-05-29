@@ -6,7 +6,7 @@ import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
 
 export const metadata = buildMetadata({
   title: 'Provider Credits - Terms & Rules',
-  description: 'How provider credits, top-ups, lead acceptance, and billing work on Plug A Pro.',
+  description: 'How provider credits, top-ups, lead acceptance and billing work on Plug A Pro.',
   path: '/credit-terms',
 })
 
@@ -22,19 +22,19 @@ function WhatsAppIcon() {
 const SECTIONS = [
   {
     heading: 'What are provider credits?',
-    body: `Provider credits are prepaid platform units used by approved independent service providers to accept customer-selected opportunities on Plug A Pro. 1 provider credit currently equals R${PROVIDER_CREDIT_PRICE_ZAR}. Provider credits are not customer credits, cash, legal tender, loans, bank deposits, or financial credit.`,
+    body: `Provider credits are prepaid platform units used by approved independent service providers to accept customer-selected opportunities on Plug A Pro. 1 provider credit currently equals R${PROVIDER_CREDIT_PRICE_ZAR}. Provider credits are not customer credits, cash, legal tender, loans, bank deposits or financial credit.`,
   },
   {
     heading: 'Who can buy or receive credits',
-    body: 'Provider credits are for approved providers only. Paid top-ups may require identity verification and an active provider wallet. Plug A Pro may also award starter, promotional, onboarding, voucher, or goodwill credits. Promo and voucher credits are separate from purchased credits and cannot be withdrawn as cash.',
+    body: 'Provider credits are for approved providers only. Paid top-ups may require identity verification and an active provider wallet. Plug A Pro may also award starter, promotional, onboarding, voucher or goodwill credits. Promo and voucher credits are separate from purchased credits and cannot be withdrawn as cash.',
   },
   {
     heading: 'When a credit is deducted',
-    body: 'One provider credit is deducted only when a customer selects you and you complete final acceptance of that customer-selected opportunity through WhatsApp, the PWA, or the Worker Portal. Full customer contact details, exact address, and access notes unlock only after final acceptance succeeds.',
+    body: 'One provider credit is deducted only when a customer selects you and you complete final acceptance of that customer-selected opportunity through WhatsApp, the PWA or the Worker Portal. Full customer contact details, exact address and access notes unlock only after final acceptance succeeds.',
   },
   {
     heading: 'When credits are not deducted',
-    body: 'Previewing a lead, showing interest, being shortlisted, customer selection before your final acceptance, declining, expiry, failed acceptance, insufficient balance, or failed payment top-up does not use provider credits.',
+    body: 'Previewing a lead, showing interest, being shortlisted, customer selection before your final acceptance, declining, expiry, failed acceptance, insufficient balance or failed payment top-up does not use provider credits.',
   },
   {
     heading: 'Insufficient credits',
@@ -42,23 +42,23 @@ const SECTIONS = [
   },
   {
     heading: 'Top-ups',
-    body: 'Credits can be purchased through the top-up methods shown in the Worker Portal. Purchased credits are added only after payment is confirmed by Plug A Pro, the payment processor, or manual finance reconciliation. Failed, cancelled, or reversed payments do not add credits.',
+    body: 'Credits can be purchased through the top-up methods shown in the Worker Portal. Purchased credits are added only after payment is confirmed by Plug A Pro, the payment processor or manual finance reconciliation. Failed, cancelled or reversed payments do not add credits.',
   },
   {
     heading: 'Refunds and disputes',
-    body: 'Purchased provider credits are generally non-refundable once bought, except where required by law or where Plug A Pro approves a reversal because of a clear platform or system error, duplicate payment, failed credit allocation, incorrect deduction, suspected fraud or chargeback reversal, or another admin-approved exception. Lead-credit disputes may be approved for invalid customer number, duplicate lead, wrong category, wrong location, customer did not request, cancellation before unlock, or platform error.',
+    body: 'Purchased provider credits are generally non-refundable once bought, except where required by law or where Plug A Pro approves a reversal because of a clear platform or system error, duplicate payment, failed credit allocation, incorrect deduction, suspected fraud or chargeback reversal or another admin-approved exception. Lead-credit disputes may be approved for invalid customer number, duplicate lead, wrong category, wrong location, customer did not request, cancellation before unlock or platform error.',
   },
   {
     heading: 'Expiry',
-    body: 'Purchased provider credits do not currently expire in the implemented wallet. Any future purchased-credit expiry rule requires notice and legal review. Promotional, starter, onboarding, or voucher credits may expire if a lawful expiry rule is stated when they are awarded.',
+    body: 'Purchased provider credits do not currently expire in the implemented wallet. Any future purchased-credit expiry rule requires notice and legal review. Promotional, starter, onboarding or voucher credits may expire if a lawful expiry rule is stated when they are awarded.',
   },
   {
     heading: 'Audit records',
-    body: 'Plug A Pro records credit purchases, allocations, deductions, reversals, payment reversals, lead unlocks, disputes, and admin adjustments in wallet ledger and audit records.',
+    body: 'Plug A Pro records credit purchases, allocations, deductions, reversals, payment reversals, lead unlocks, disputes and admin adjustments in wallet ledger and audit records.',
   },
   {
     heading: 'Misuse and policy changes',
-    body: 'Plug A Pro may reverse credits, suspend wallet access, or block lead access where there is fraud, abuse, false information, bypassing, or behaviour that harms customers, providers, or the marketplace. Policy changes are communicated with notice, subject to applicable law.',
+    body: 'Plug A Pro may reverse credits, suspend wallet access or block lead access where there is fraud, abuse, false information, bypassing or behaviour that harms customers, providers or the marketplace. Policy changes are communicated with notice, subject to applicable law.',
   },
 ]
 
@@ -89,7 +89,7 @@ export default function CreditTermsPage() {
             Provider credits - terms &amp; rules
           </h1>
           <p className="mt-1.5 text-[13.5px] text-[var(--ink-mute)] leading-relaxed">
-            Plain-language rules for provider prepaid credits, top-ups, lead acceptance, and credits use.
+            Plain-language rules for provider prepaid credits, top-ups, lead acceptance and credits use.
           </p>
         </div>
       </div>

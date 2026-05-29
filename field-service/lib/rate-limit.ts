@@ -138,7 +138,7 @@ function allowMemoryFallback(): boolean {
 function getRedis(): Redis | null {
   if (_redis) return _redis
   // Accept canonical Upstash names, the names Vercel's Marketplace integration
-  // injects (KV_REST_API_*), and the names the Vercel Upstash-for-Redis
+  // injects (KV_REST_API_*) and the names the Vercel Upstash-for-Redis
   // integration injects (UPSTASH_REDIS_KV_REST_API_*).
   const url =
     process.env.UPSTASH_REDIS_REST_URL ??
@@ -187,7 +187,7 @@ async function emitDegradedAudit(reason: string): Promise<void> {
       entityId: reason,
     })
   } catch {
-    // swallow — we never want audit to break the auth path
+    // swallow - we never want audit to break the auth path
   }
 }
 
@@ -412,7 +412,7 @@ export async function checkVoucherRedemptionLimit(params: {
   return { ok: true }
 }
 
-/** Test helper. Clears the lazy clients, one-shot warning state, and in-memory store. */
+/** Test helper. Clears the lazy clients, one-shot warning state and in-memory store. */
 export function resetRateLimitForTests(): void {
   _redis = null
   _limiters = {}

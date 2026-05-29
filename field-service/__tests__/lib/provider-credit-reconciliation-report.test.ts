@@ -119,7 +119,7 @@ describe('provider credit reconciliation report', () => {
     mockDb.provider.findUnique.mockImplementation(async () => state.provider)
   })
 
-  it('returns ok when wallet, ledger, payments, awards, and unlocks reconcile', async () => {
+  it('returns ok when wallet, ledger, payments, awards and unlocks reconcile', async () => {
     const report = await buildProviderCreditReconciliationReport('provider-1')
 
     expect(report.ok).toBe(true)
@@ -156,7 +156,7 @@ describe('provider credit reconciliation report', () => {
     }))
   })
 
-  it('detects credited top-ups, promo awards, and lead unlocks missing ledger rows', async () => {
+  it('detects credited top-ups, promo awards and lead unlocks missing ledger rows', async () => {
     state.provider = provider({
       wallet: {
         id: 'wallet-1',
@@ -219,7 +219,7 @@ describe('provider credit reconciliation report', () => {
   it('does not flag TEST_LEDGER_FLAG_MISMATCH when a non-test provider unlocks a test lead', async () => {
     // A live provider (isTestUser=false) may unlock a test lead during QA runs.
     // The resulting ledger entry has isTestTransaction=true and referenceType
-    // 'test_lead_unlock'. This is expected behaviour — not a mismatch.
+    // 'test_lead_unlock'. This is expected behaviour - not a mismatch.
     state.provider = provider({
       isTestUser: false,
       walletLedgerEntries: [

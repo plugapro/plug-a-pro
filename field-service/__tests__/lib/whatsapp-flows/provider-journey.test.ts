@@ -525,7 +525,7 @@ describe('handleProviderJourneyFlow', () => {
         id: 'prov_1', name: 'Sipho', status: 'ACTIVE', availableNow: true, technicianAvailability: null,
       })
       ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
-      // lead whose jobRequest is CANCELLED — should be excluded by the DB query
+      // lead whose jobRequest is CANCELLED - should be excluded by the DB query
       ;(db.lead.findMany as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce([]) // accepted leads query returns empty (DB excluded it)
         .mockResolvedValueOnce([]) // pending available leads
@@ -667,7 +667,7 @@ describe('handleProviderJourneyFlow', () => {
     })
   })
 
-  describe('pj_pause_confirm — provider_pause_today', () => {
+  describe('pj_pause_confirm - provider_pause_today', () => {
     it('sets breakUntil to 23:59:59 of today when provider_pause_today selected', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
@@ -703,7 +703,7 @@ describe('handleProviderJourneyFlow', () => {
       technicianServiceAreas: [{ label: 'Randburg' }],
     }
 
-    it('shows availability mode, service areas, and emergency flag in message body', async () => {
+    it('shows availability mode, service areas and emergency flag in message body', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(baseProvider)
       await handleProviderJourneyFlow(mockCtx('pj_provider_status'))
       expect(wa.sendButtons).toHaveBeenCalledWith(

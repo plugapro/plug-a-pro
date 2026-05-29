@@ -3,7 +3,7 @@ import { main } from '../../scripts/backfill-location-nodes'
 
 /**
  * The backfill script uses PrismaClient via dependency injection (main(prisma)).
- * We construct a mock prisma client inline — no module-level vi.mock needed.
+ * We construct a mock prisma client inline - no module-level vi.mock needed.
  *
  * The script now has two phases:
  * Phase A: Address.locationNodeId resolution

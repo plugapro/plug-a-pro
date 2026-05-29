@@ -142,7 +142,7 @@ export default async function AdminDashboardPage({
                 <h1 className="text-2xl font-semibold tracking-tight">Operations Dashboard</h1>
                 <p className="max-w-2xl text-sm text-muted-foreground">
                   Run the platform from queues, not lagging reports. This view surfaces validation,
-                  dispatch, quote, field, finance, trust, and supply actions that need an owner
+                  dispatch, quote, field, finance, trust and supply actions that need an owner
                   now.
                 </p>
               </div>
@@ -221,7 +221,7 @@ export default async function AdminDashboardPage({
               <div className="space-y-1">
                 <CardTitle className="text-base">Matching health - last 24 h</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Dispatch decisions, hold outcomes, and queue depth from the orchestrator.
+                  Dispatch decisions, hold outcomes and queue depth from the orchestrator.
                 </p>
               </div>
               <Link href="/admin/dispatch" className="text-sm text-muted-foreground hover:underline">
@@ -441,7 +441,7 @@ export default async function AdminDashboardPage({
             <div className="space-y-1">
               <CardTitle className="text-base">Finance follow-up</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Payments that can block closeout, payout, or dispute resolution.
+                Payments that can block closeout, payout or dispute resolution.
               </p>
             </div>
             <Badge variant={slaBadgeClass(paymentExceptionCount > 0 ? 'danger' : 'default')}>
@@ -597,7 +597,7 @@ export default async function AdminDashboardPage({
               <div className="space-y-1">
                 <CardTitle className="text-base">Operational trends - {snapshot.range.label}</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Daily demand, bookings, and completions over the selected window.
+                  Daily demand, bookings and completions over the selected window.
                 </p>
               </div>
               <RangePresets active={activePreset} />

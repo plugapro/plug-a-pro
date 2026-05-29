@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 
   const startedAt = Date.now()
 
-  // Run all three prunes independently — a failure in one MUST NOT block the
+  // Run all three prunes independently - a failure in one MUST NOT block the
   // others. Each gets its own try/catch and surfaces partial results so the
   // response (and structured logs) capture what succeeded vs what errored.
   let challengesDeleted = 0

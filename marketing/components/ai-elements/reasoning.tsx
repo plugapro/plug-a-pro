@@ -104,7 +104,7 @@ export const Reasoning = memo(
       }
     }, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed]);
 
-    // Auto-close when streaming ends (once only, and only if it ever streamed)
+    // Auto-close when streaming ends (once only and only if it ever streamed)
     useEffect(() => {
       if (
         hasEverStreamedRef.current &&

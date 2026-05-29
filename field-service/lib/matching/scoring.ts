@@ -1,5 +1,5 @@
 // ─── Candidate Scoring ────────────────────────────────────────────────────────
-// Pure scoring function — no DB calls.
+// Pure scoring function - no DB calls.
 // Takes the eligible provider set (already filtered and hydrated by filter.ts)
 // and returns candidates sorted descending by score, then ascending by travel.
 //
@@ -112,13 +112,13 @@ function buildScoreBreakdown(
     reasons.push('Preferred or repeat technician')
   }
   if (provider.coverageTier === 'REGION_FALLBACK') {
-    reasons.push('Matched on region — provider may not cover this exact suburb')
+    reasons.push('Matched on region - provider may not cover this exact suburb')
   }
   if (provider.coverageTier === 'LEGACY_STRING') {
-    reasons.push('Service area matched by name (legacy — structured areas not yet configured)')
+    reasons.push('Service area matched by name (legacy - structured areas not yet configured)')
   }
   if (dailyJobs >= MATCHING_CONFIG.preferredDailyLoad) {
-    reasons.push(`Provider already has ${dailyJobs} job(s) today — fairness penalty applied`)
+    reasons.push(`Provider already has ${dailyJobs} job(s) today - fairness penalty applied`)
   }
   reasons.push(
     provider.verified ? 'Marketplace-reviewed profile' : 'Profile pending marketplace review'

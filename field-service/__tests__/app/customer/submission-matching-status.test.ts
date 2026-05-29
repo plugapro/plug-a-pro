@@ -1,5 +1,5 @@
 /**
- * CLIENT-06 — Submission and Matching Status Screens
+ * CLIENT-06 - Submission and Matching Status Screens
  *
  * Covers:
  *  1. Status → screen resolution for PENDING_VALIDATION, OPEN, MATCHING
@@ -216,7 +216,7 @@ describe('CLIENT-06: matching-in-progress WhatsApp notification', () => {
     expect(text).toContain("we'll try the next suitable provider")
   })
 
-  it('is idempotent — skips send when isAlreadySent is true', async () => {
+  it('is idempotent - skips send when isAlreadySent is true', async () => {
     const { notifyCustomerMatchingInProgress } = await import(
       '../../../lib/client-pwa-submission-notifications'
     )

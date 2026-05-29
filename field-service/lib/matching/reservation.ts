@@ -191,7 +191,7 @@ export async function reserveBestProviderAtomically(params: {
   }
 }
 
-// ── Decrement capacity counter — call when a hold resolves ─────────────────────
+// ── Decrement capacity counter - call when a hold resolves ─────────────────────
 
 export async function releaseProviderCapacity(providerId: string): Promise<void> {
   await db.providerCapacity.updateMany({

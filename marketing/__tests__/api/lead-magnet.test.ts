@@ -28,7 +28,7 @@ function makeRequest(body: unknown, ip = "127.0.0.1"): Request {
   });
 }
 
-describe("POST /api/leads — lead_magnet type", () => {
+describe("POST /api/leads - lead_magnet type", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     marketingInsertMock.mockResolvedValue({ error: null });

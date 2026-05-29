@@ -119,7 +119,7 @@ export default async function BookingReschedulePage({
             rows={3}
             required
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
-            placeholder="e.g. Any weekday morning, or Saturday after 9am"
+            placeholder="e.g. Any weekday morning or Saturday after 9am"
           />
         </div>
 

@@ -1,7 +1,7 @@
 /**
  * API authentication helpers.
  *
- * Page routes use requireAdmin() / requireProvider() from lib/auth.ts — those redirect on failure.
+ * Page routes use requireAdmin() / requireProvider() from lib/auth.ts - those redirect on failure.
  * API routes must NOT redirect; they must return structured JSON 401/403 responses.
  *
  * Use unauthorizedResponse() and forbiddenResponse() as the canonical response builders.

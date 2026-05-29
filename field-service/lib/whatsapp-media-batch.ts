@@ -97,7 +97,7 @@ export async function readMediaBatchSeq(
  * Wait `debounceMs` then re-check whether the caller's claimed seq is still
  * the latest one for this phone+scope. Returns true iff the caller may now
  * proceed to send the consolidated response. False means a newer event has
- * superseded — the caller MUST exit without sending anything.
+ * superseded - the caller MUST exit without sending anything.
  */
 export async function awaitAndCheckLatest(
   phone: string,
@@ -113,7 +113,7 @@ export async function awaitAndCheckLatest(
 
 /**
  * Convenience wrapper: claim → debounce → check. Returns the consolidated
- * batch state if the caller is the latest event, or null if superseded.
+ * batch state if the caller is the latest event or null if superseded.
  */
 export async function debounceMediaBatch(params: {
   phone: string

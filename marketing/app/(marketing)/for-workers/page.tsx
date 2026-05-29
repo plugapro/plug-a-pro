@@ -10,19 +10,19 @@ import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 export const metadata: Metadata = buildMetadata({
   title: "For Service Providers",
   description:
-    "Register as a local service provider on Plug A Pro. Get matched to nearby customers for small home jobs, receive WhatsApp lead alerts, submit quotes in writing, and build your reputation with real reviews.",
+    "Register as a local service provider on Plug A Pro. Get matched to nearby customers for small home jobs, receive WhatsApp lead alerts, submit quotes in writing and build your reputation with real reviews.",
 });
 
 const BENEFITS = [
   {
     icon: MapPin,
     title: "Leads matched to your area",
-    body: "Tell us which areas you work in once. Eligible requests are matched against your service areas, skills, and availability.",
+    body: "Tell us which areas you work in once. Eligible requests are matched against your service areas, skills and availability.",
   },
   {
     icon: Smartphone,
     title: "Works on your WhatsApp",
-    body: "Start onboarding, receive lead previews, and open secure job links from the WhatsApp you already use.",
+    body: "Start onboarding, receive lead previews and open secure job links from the WhatsApp you already use.",
   },
   {
     icon: ShieldCheck,
@@ -32,7 +32,7 @@ const BENEFITS = [
   {
     icon: Star,
     title: "Build a visible work record",
-    body: "Accepted jobs, quotes, updates, photos, and customer reviews help turn your service history into a stronger digital profile.",
+    body: "Accepted jobs, quotes, updates, photos and customer reviews help turn your service history into a stronger digital profile.",
   },
 ];
 
@@ -41,7 +41,7 @@ const HOW_TO_JOIN = [
     step: "1",
     title: "Start on WhatsApp",
     detail:
-      "Tell Plug A Pro your name, what jobs you do, which areas you cover, when you're normally available, and upload the requested evidence or photos.",
+      "Tell Plug A Pro your name, what jobs you do, which areas you cover, when you're normally available and upload the requested evidence or photos.",
   },
   {
     step: "2",
@@ -53,7 +53,7 @@ const HOW_TO_JOIN = [
     step: "3",
     title: "Activate your provider profile",
     detail:
-      "If approved, your provider record is activated. You can open the Provider PWA, sign in with phone OTP, review your profile, set availability, and check wallet credits.",
+      "If approved, your provider record is activated. You can open the Provider PWA, sign in with phone OTP, review your profile, set availability and check wallet credits.",
   },
   {
     step: "4",
@@ -63,9 +63,9 @@ const HOW_TO_JOIN = [
   },
   {
     step: "5",
-    title: "Accept, quote, and update the job",
+    title: "Accept, quote and update the job",
     detail:
-      "After acceptance, Plug A Pro notifies the customer and the job moves into handover. You can contact the customer, submit a quote, schedule arrival, and update progress from your phone.",
+      "After acceptance, Plug A Pro notifies the customer and the job moves into handover. You can contact the customer, submit a quote, schedule arrival and update progress from your phone.",
   },
 ];
 
@@ -81,7 +81,7 @@ export default function ForWorkersPage() {
           More jobs. Less waiting.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          You have the skills. Getting steady, paying customers is the hard part. Plug A Pro matches you to nearby customers looking for exactly your trade — and delivers job lead previews to your WhatsApp. Register once. Set your areas. Start receiving matched jobs.
+          You have the skills. Getting steady, paying customers is the hard part. Plug A Pro matches you to nearby customers looking for exactly your trade - and delivers job lead previews to your WhatsApp. Register once. Set your areas. Start receiving matched jobs.
         </p>
         <p className="text-sm font-medium mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}

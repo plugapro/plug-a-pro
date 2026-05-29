@@ -85,14 +85,14 @@ describe('selectCustomerRequestMatchingMode', () => {
   })
 
   it('providers are NOT contacted when request is still PENDING_VALIDATION before mode is selected', async () => {
-    // Simulates the post-submission state — no mode chosen yet, orchestration must not fire.
+    // Simulates the post-submission state - no mode chosen yet, orchestration must not fire.
     // This is the "deferred contact" invariant from criterion 1.
     mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
 
-    // Mode has NOT been selected yet — orchestrateMatch must be zero calls up to this point.
+    // Mode has NOT been selected yet - orchestrateMatch must be zero calls up to this point.
     expect(mockOrchestrateMatch).not.toHaveBeenCalled()
 
-    // Now customer selects quick_match — orchestration fires.
+    // Now customer selects quick_match - orchestration fires.
     const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
     await selectCustomerRequestMatchingMode({ requestId: 'jr-1', customerId: 'cust-1', mode: 'quick_match' })
 

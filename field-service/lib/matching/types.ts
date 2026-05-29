@@ -55,9 +55,9 @@ export type MatchingAddress = {
   province: string
   lat: number | null
   lng: number | null
-  locationNodeId: string | null   // SUBURB node id — null for legacy addresses
+  locationNodeId: string | null   // SUBURB node id - null for legacy addresses
   regionKey: string | null         // denormalised from the linked LocationNode
-  provinceKey: string | null       // denormalised from the linked LocationNode — enables province-level pool fallback
+  provinceKey: string | null       // denormalised from the linked LocationNode - enables province-level pool fallback
 }
 
 export type MatchingProvider = Pick<
@@ -188,8 +188,8 @@ export type DispatchHistoryResult = {
  * slotKey is stable across WA button round-trips: "2026-04-29:morning"
  */
 export type SlotOption = {
-  slotKey: string       // "{yyyy-MM-dd}:{morning|afternoon}" — stable routing key
-  slotLabel: string     // "Wed 29 Apr · Morning (7–12)" — display text
+  slotKey: string       // "{yyyy-MM-dd}:{morning|afternoon}" - stable routing key
+  slotLabel: string     // "Wed 29 Apr · Morning (7–12)" - display text
   band: 'morning' | 'afternoon'
   probeStartUtc: string // ISO string of window open (UTC)
   probeEndUtc: string   // ISO string of window close (UTC)

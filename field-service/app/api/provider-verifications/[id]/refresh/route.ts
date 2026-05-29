@@ -1,6 +1,6 @@
 // POST /api/provider-verifications/[id]/refresh
 // Server-side poll: re-fetches the Didit decision and applies the verdict
-// via the orchestrator. Admin (TRUST+) only — for missed-webhook recovery.
+// via the orchestrator. Admin (TRUST+) only - for missed-webhook recovery.
 
 import { NextResponse } from 'next/server'
 import { requireRoleApi } from '@/lib/auth'

@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils'
 export interface CRUDColumn<T> {
   /** Column header label */
   label: string
-  /** Key of T, or a render function */
+  /** Key of T or a render function */
   key?: keyof T
   render?: (row: T) => React.ReactNode
   /** Width hint (Tailwind class, e.g. 'w-40') */

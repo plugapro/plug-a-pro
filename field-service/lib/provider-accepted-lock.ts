@@ -351,7 +351,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     // Backfill: leads locked before post-lock fulfilment was wired up may not
     // have a Match row. Materialise it (and a stub Quote) here so the provider
     // portal can surface the job. materializeFulfilmentArtifacts is idempotent
-    // — re-entering on an already-materialised lead is a no-op lookup.
+    // - re-entering on an already-materialised lead is a no-op lookup.
     const backfillArtifacts = await materializeFulfilmentArtifacts(tx, {
       jobRequestId: lead.jobRequestId,
       providerId: params.providerId,
@@ -608,7 +608,7 @@ export async function notifyAcceptedLeadLocked(params: { leadId: string; provide
     })
     if (!result.ok) return false
 
-    // Fire template-based contact exchange (lead_unlock_provider) — works outside the 24h
+    // Fire template-based contact exchange (lead_unlock_provider) - works outside the 24h
     // re-engagement window because it uses a registered template, not an interactive button.
     // Look up the unlock record created during credit application.
     void db.leadUnlock.findFirst({
@@ -632,7 +632,7 @@ export async function notifyAcceptedLeadLocked(params: { leadId: string; provide
       })
     })
 
-    // Fire interactive CTA intro messages (contact exchange) — requires 24h re-engagement
+    // Fire interactive CTA intro messages (contact exchange) - requires 24h re-engagement
     // window; falls back gracefully when outside the window. The template path above is the
     // reliable fallback for providers who have not messaged recently.
     void sendPostMatchIntroductions({ leadId: params.leadId, providerId: params.providerId })
@@ -1127,7 +1127,7 @@ export async function sendAcceptedLockConfirmations(params: {
       traceId: params.traceId,
     })
   } catch (err) {
-    console.error('[provider-accepted-lock] customer notification failed — will not retry automatically:', err)
+    console.error('[provider-accepted-lock] customer notification failed - will not retry automatically:', err)
     customer = { sent: false, failureReason: err instanceof Error ? err.message : String(err) }
   }
   try {
@@ -1143,7 +1143,7 @@ export async function sendAcceptedLockConfirmations(params: {
       traceId: params.traceId,
     })
   } catch (err) {
-    console.error('[provider-accepted-lock] provider notification failed — will not retry automatically:', err)
+    console.error('[provider-accepted-lock] provider notification failed - will not retry automatically:', err)
     provider = { sent: false, failureReason: err instanceof Error ? err.message : String(err) }
   }
 
@@ -1203,7 +1203,7 @@ export async function notifyNonSelectedRfpProviders(params: {
         `Thank you for your availability on Ref ${ref} (${acceptedLead.jobRequest.category}).`,
         'The customer has confirmed another provider for this job.',
         '',
-        'More opportunities will come your way — keep your availability up to date!',
+        'More opportunities will come your way - keep your availability up to date!',
       ].join('\n')
 
       await sendWhatsAppText({

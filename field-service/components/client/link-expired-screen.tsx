@@ -14,7 +14,7 @@ export function LinkExpiredScreen({ kind = 'expired' }: LinkExpiredScreenProps) 
     ? 'We could not verify this link. Ask support for a fresh link or sign in to continue from your account.'
     : isNotFound
       ? 'This invoice link is no longer available. Open the latest WhatsApp message from Plug A Pro for an updated receipt link.'
-      : 'Open the latest WhatsApp message from Plug A Pro for a fresh link, or sign in to continue.'
+      : 'Open the latest WhatsApp message from Plug A Pro for a fresh link or sign in to continue.'
 
   return (
     <div className="mx-auto max-w-md px-5 py-12">

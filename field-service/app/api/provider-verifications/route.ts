@@ -1,6 +1,6 @@
 // POST /api/provider-verifications
 // Issues an internal Plug A Pro verification link for a provider, routed
-// through the Didit adapter by default. Does NOT create the Didit session —
+// through the Didit adapter by default. Does NOT create the Didit session -
 // the provider must accept consent first via the PWA flow.
 //
 // Admin-only (or system caller with admin credentials). Returns the INTERNAL
