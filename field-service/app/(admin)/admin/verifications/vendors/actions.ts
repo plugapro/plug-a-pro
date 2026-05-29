@@ -8,13 +8,13 @@ import { db } from '@/lib/db'
 const FLAG = 'admin.crud.verifications'
 
 const VendorConfigSchema = z.object({
-  vendorKey: z.enum(['smile_id', 'thisisme', 'datanamix', 'omnicheck', 'manual', 'mock']),
+  vendorKey: z.enum(['smile_id', 'didit', 'thisisme', 'datanamix', 'omnicheck', 'manual', 'mock']),
   confidenceThreshold: z.coerce.number().min(0).max(1),
   livenessRequired: z.coerce.boolean(),
 })
 
 const ToggleActiveSchema = z.object({
-  vendorKey: z.enum(['smile_id', 'thisisme', 'datanamix', 'omnicheck', 'manual', 'mock']),
+  vendorKey: z.enum(['smile_id', 'didit', 'thisisme', 'datanamix', 'omnicheck', 'manual', 'mock']),
 })
 
 type VendorConfigInput = z.infer<typeof VendorConfigSchema>
@@ -89,7 +89,7 @@ export async function activateVendorConfigFormAction(formData: FormData) {
 }
 
 export async function seedDefaultVendorConfigs() {
-  const vendors = ['manual', 'mock', 'smile_id', 'thisisme', 'datanamix', 'omnicheck'] as const
+  const vendors = ['manual', 'mock', 'smile_id', 'didit', 'thisisme', 'datanamix', 'omnicheck'] as const
   await db.$transaction(vendors.map((vendorKey) => db.verificationVendorConfig.upsert({
     where: { vendorKey },
     create: {
@@ -105,6 +105,7 @@ export async function seedDefaultVendorConfigs() {
 
 function vendorLabel(vendorKey: string) {
   if (vendorKey === 'smile_id') return 'Smile ID'
+  if (vendorKey === 'didit') return 'Didit'
   if (vendorKey === 'thisisme') return 'ThisIsMe'
   if (vendorKey === 'datanamix') return 'Datanamix'
   if (vendorKey === 'omnicheck') return 'OmniCheck'

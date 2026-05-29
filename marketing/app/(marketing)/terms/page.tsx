@@ -16,8 +16,8 @@ export default function TermsPage() {
 
         <p>
           These Terms of Service (&ldquo;Terms&rdquo;) govern your use of the Plug A Pro platform, including
-          the website at <strong>plugapro.co.za</strong>, the web app at <strong>app.plugapro.co.za</strong>,
-          and our WhatsApp booking channel (&ldquo;the Platform&rdquo;). By registering, booking a service,
+          the website at <strong>plugapro.co.za</strong>, the web app at <strong>app.plugapro.co.za</strong>
+          and our WhatsApp booking channel (&ldquo;the Platform&rdquo;). By registering, booking a service
           or using any part of the Platform, you agree to these Terms in full. If you do not agree, do not
           use the Platform.
         </p>
@@ -206,7 +206,7 @@ export default function TermsPage() {
         <h2>14. User Content</h2>
         <p>
           You may submit content to the Platform including job descriptions, photos and reviews. You grant
-          Plug A Pro a non-exclusive, royalty-free licence to use that content for Platform operation, safety,
+          Plug A Pro a non-exclusive, royalty-free licence to use that content for Platform operation, safety
           and improvement purposes. Job photos submitted by Providers are used to evidence job completion
           and support dispute resolution. They are retained for the period stated in our Privacy Policy and
           are not sold to third parties.
@@ -630,7 +630,7 @@ export default function TermsPage() {
         <p>
           Plug A Pro may suspend or terminate your Provider account where you breach these Provider
           Terms or the Terms of Service; engage in fraudulent, abusive or unlawful activity; accumulate
-          repeated complaints, cancellations or no-shows; fail to maintain required licences, insurance,
+          repeated complaints, cancellations or no-shows; fail to maintain required licences, insurance
           or qualifications; attempt to bypass the Platform; or pose a risk to Customers, other
           Providers or Plug A Pro. Where practical, we will give you notice and an opportunity to
           respond before suspending or terminating your account. Immediate suspension may occur without
@@ -642,7 +642,7 @@ export default function TermsPage() {
 
         <h3>28.19 Plug A Pro audit rights</h3>
         <p>
-          Plug A Pro may review your Platform records, job history, customer feedback, payment records,
+          Plug A Pro may review your Platform records, job history, customer feedback, payment records
           and profile information for compliance, safety and quality assurance purposes. We may request
           proof of licences, certifications or insurance at any time.
         </p>
