@@ -17,8 +17,8 @@ export default function CreditsPolicyPage() {
         <p>
           These rules apply to approved independent service providers who use Plug A Pro to receive
           and accept customer-selected opportunities. Customers do not buy these provider credits.
-          Provider credits are platform units used by providers to accept eligible leads or jobs on
-          Plug A Pro. They are not payment for the provider&apos;s actual work.
+          Provider credits are prepaid platform units used by providers to accept eligible leads or
+          jobs on Plug A Pro. They are not payment for the provider&apos;s actual work.
         </p>
 
         <h2>1. What provider credits are</h2>

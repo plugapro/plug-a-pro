@@ -39,7 +39,7 @@ export default function TermsPage() {
           <li><strong>&ldquo;Customer&rdquo;</strong> means a person who uses the Platform to request or book a service.</li>
           <li><strong>&ldquo;Provider&rdquo; or &ldquo;Service Provider&rdquo;</strong> means an independent person or business that uses the Platform to find and complete service jobs.</li>
           <li><strong>&ldquo;Booking&rdquo;</strong> means a confirmed service appointment between a Customer and a Provider, facilitated through the Platform.</li>
-          <li><strong>&ldquo;Provider Credits&rdquo;</strong> means provider-side platform units used by approved Providers to accept eligible customer-selected opportunities. Provider Credits are not customer credits, not payment for the Provider&apos;s actual work, not legal tender, not interest-bearing, and cannot be withdrawn as cash unless Plug A Pro expressly approves a lawful reversal. See our <a href="/credits-policy">Provider Credits Terms and Rules</a> for full details.</li>
+          <li><strong>&ldquo;Provider Credits&rdquo;</strong> means prepaid provider-side platform units used by approved Providers to accept eligible customer-selected opportunities. Provider Credits are not customer credits, not payment for the Provider&apos;s actual work, not legal tender, not interest-bearing, and cannot be withdrawn as cash unless Plug A Pro expressly approves a lawful reversal. See our <a href="/credits-policy">Provider Credits Terms and Rules</a> for full details.</li>
           <li><strong>&ldquo;Quote&rdquo;</strong> means a written estimate provided by a Provider through the Platform for a specific job.</li>
         </ul>
 

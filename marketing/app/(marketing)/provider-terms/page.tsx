@@ -29,8 +29,9 @@ export default function ProviderTermsPage() {
 
         <h2>1. Your Status as Independent Contractor</h2>
         <p>
-          You are an <strong>independent contractor</strong>, not an employee, agent, partner, or
-          joint venture party of Plug A Pro. Plug A Pro does not control how you perform your work,
+          You are an <strong>independent contractor</strong>, not an employee, agent, partner,
+          subcontractor, or joint venture party of Plug A Pro. Plug A Pro does not control how you
+          perform your work,
           your working hours, your equipment, or your methods — we facilitate the introduction of
           customers to you and provide Platform tools to manage the booking and job record.
         </p>
