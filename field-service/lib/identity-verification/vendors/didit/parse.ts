@@ -41,6 +41,9 @@ export async function parseDiditWebhook(input: ParseWebhookInput): Promise<Parse
   const signatureValid = signature.valid
 
   const sessionId = typeof envelope.session_id === 'string' ? envelope.session_id : null
+  const verificationId = typeof envelope.vendor_data === 'string' && envelope.vendor_data.trim()
+    ? envelope.vendor_data.trim()
+    : null
   const eventId = typeof envelope.event_id === 'string' ? envelope.event_id : null
   const eventType = typeof envelope.webhook_type === 'string' ? envelope.webhook_type : null
   const redactedPayload = redactDiditPayload(envelope)
@@ -63,6 +66,7 @@ export async function parseDiditWebhook(input: ParseWebhookInput): Promise<Parse
     vendorEventId: eventId,
     vendorReference: sessionId,
     livenessSessionReference: sessionId,
+    verificationId,
     eventType,
     payloadHash,
     redactedPayload,
@@ -95,6 +99,7 @@ function emptyResult(payloadHash: string): ParseWebhookResult {
     vendorEventId: null,
     vendorReference: null,
     livenessSessionReference: null,
+    verificationId: null,
     eventType: null,
     payloadHash,
     redactedPayload: null,

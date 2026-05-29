@@ -85,6 +85,7 @@ export type ParseWebhookResult = {
   vendorEventId: string | null
   vendorReference: string | null
   livenessSessionReference: string | null
+  verificationId?: string | null
   eventType: string | null
   payloadHash: string
   redactedPayload: Record<string, unknown> | null

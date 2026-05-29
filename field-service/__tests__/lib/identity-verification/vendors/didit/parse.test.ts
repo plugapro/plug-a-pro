@@ -97,6 +97,22 @@ describe('parseDiditWebhook', () => {
     expect(parsed.vendorEventId).toBe('evt-progress')
   })
 
+  it('exposes vendor_data as the internal verification id for Didit entity events without a session_id', async () => {
+    const body = JSON.stringify({
+      event_id: 'evt-user-status',
+      webhook_type: 'user.status.updated',
+      vendor_data: 'ver_from_vendor_data',
+      status: 'APPROVED',
+    })
+
+    const parsed = await parseDiditWebhook({ rawBody: body, headers: signedHeaders(body) })
+
+    expect(parsed.signatureValid).toBe(true)
+    expect(parsed.vendorReference).toBeNull()
+    expect((parsed as { verificationId?: string | null }).verificationId).toBe('ver_from_vendor_data')
+    expect(parsed.result).toBeNull()
+  })
+
   it('returns an empty result when the body is unparsable', async () => {
     const parsed = await parseDiditWebhook({ rawBody: 'not-json', headers: signedHeaders('{}') })
     expect(parsed.signatureValid).toBe(false)

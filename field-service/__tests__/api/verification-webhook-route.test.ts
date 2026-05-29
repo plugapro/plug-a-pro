@@ -133,4 +133,41 @@ describe('verification provider webhook route', () => {
       }),
     }))
   })
+
+  it('links valid Didit entity webhooks by the vendor_data verification id', async () => {
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-user-status',
+      vendorReference: null,
+      livenessSessionReference: null,
+      verificationId: 'ver-from-vendor-data',
+      eventType: 'user.status.updated',
+      payloadHash: 'hash-user-status',
+      redactedPayload: { event: 'user.status.updated' },
+      result: null,
+    })
+    mockDb.providerVerificationWebhookEvent.create.mockResolvedValue({ id: 'wh-user-status' })
+    mockDb.providerIdentityVerification.findMany.mockResolvedValue([{ id: 'ver-from-vendor-data' }])
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({ id: 'ver-from-vendor-data' })
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-user-status"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockDb.providerIdentityVerification.findMany).toHaveBeenCalledWith({
+      where: {
+        sourceCheckProvider: 'didit',
+        OR: [{ id: 'ver-from-vendor-data' }],
+      },
+      select: { id: true },
+    })
+    expect(mockDb.providerVerificationWebhookEvent.update).toHaveBeenCalledWith({
+      where: { id: 'wh-user-status' },
+      data: {
+        verificationId: 'ver-from-vendor-data',
+        processedAt: expect.any(Date),
+      },
+    })
+    expect(mockApplyVendorVerdict).not.toHaveBeenCalled()
+  })
 })

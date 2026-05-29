@@ -581,6 +581,7 @@ async function resolveVendorDisplayName(vendorKey: VendorKey, client = db) {
   const displayName = readDisplayName(row?.configJson)
   if (displayName) return displayName
   if (vendorKey === 'smile_id') return 'Smile ID'
+  if (vendorKey === 'didit') return 'Didit'
   if (vendorKey === 'thisisme') return 'ThisIsMe'
   if (vendorKey === 'datanamix') return 'Datanamix'
   if (vendorKey === 'omnicheck') return 'OmniCheck'

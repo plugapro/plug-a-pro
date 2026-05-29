@@ -9,6 +9,7 @@ export type DiditSessionCreateRequest = {
   workflow_id: string
   vendor_data: string          // we set this to our internal verificationId
   callback?: string            // browser return URL after user finishes on Didit
+  callback_method?: 'initiator' | 'completer' | 'both'
   metadata?: Record<string, unknown>
   contact_details?: {
     email?: string | null

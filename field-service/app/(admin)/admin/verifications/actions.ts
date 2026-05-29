@@ -3,10 +3,11 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { requireAdmin } from '@/lib/auth'
+import { requireAdmin, requireRole } from '@/lib/auth'
 import { estimateDiditCost } from '@/lib/commercial/didit-pricing'
 import { crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { decryptIdentifier } from '@/lib/identity-verification/crypto'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import {
@@ -322,6 +323,9 @@ type RefreshDiditInput = z.infer<typeof RefreshDiditSchema>
  * directly in crudAction.
  */
 export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput) {
+  const preflight = await authorizeDiditLinkIssue()
+  if (!preflight.ok) return preflight
+
   // Two-phase pattern (mirrors retryIdentityVerificationWithVendorAction):
   //   1. Pre-flight: validate Didit config + issue the link OUTSIDE crudAction
   //      (issueProviderIdentityVerificationLink does not accept a tx and
@@ -378,6 +382,13 @@ export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput)
         expiresAt: link.expiresAt.toISOString(),
       }
     : { ok: false as const }
+}
+
+async function authorizeDiditLinkIssue(): Promise<{ ok: true } | { ok: false; error: 'feature_disabled' }> {
+  const admin = await requireRole([...REVIEW_ROLES])
+  const enabled = await isEnabled(FLAG, { userId: admin.id })
+  if (!enabled) return { ok: false, error: 'feature_disabled' }
+  return { ok: true }
 }
 
 /**

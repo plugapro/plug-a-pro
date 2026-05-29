@@ -58,6 +58,7 @@ describe('createDiditSession', () => {
     expect(body.workflow_id).toBe(WORKFLOW_AUTH)
     expect(body.vendor_data).toBe('ver-123')
     expect(body.callback).toBe('https://app.plugapro.com/provider/verify/tok-1/liveness/complete')
+    expect(body.callback_method).toBe('both')
     expect(body.metadata.workflow_profile).toBe('KYC_AUTHORITATIVE')
 
     expect(result.vendorReference).toBe('sess-abc')

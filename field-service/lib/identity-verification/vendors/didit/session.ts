@@ -36,6 +36,7 @@ export async function createDiditSession(
     workflow_id: workflowId,
     vendor_data: input.verificationId,
     callback: input.returnUrl,
+    callback_method: 'both',
     metadata: {
       verification_id: input.verificationId,
       provider_id: input.providerId,

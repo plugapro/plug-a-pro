@@ -18,6 +18,7 @@ vi.mock('@/lib/identity-verification/vendors/registry', () => ({
   toVendorKey: (value: string | null | undefined) => {
     if (
       value === 'smile_id' ||
+      value === 'didit' ||
       value === 'thisisme' ||
       value === 'datanamix' ||
       value === 'omnicheck' ||
@@ -32,6 +33,7 @@ vi.mock('@/lib/identity-verification/vendors/registry', () => ({
 
 import {
   applyVendorVerdict,
+  resolveIdentityVerificationConsentVendorForSubject,
   submitVerificationForAutomation,
 } from '../../../lib/identity-verification/orchestrator'
 
@@ -140,6 +142,33 @@ describe('provider identity verification orchestrator', () => {
     expect(result.status).toBe('NEEDS_MANUAL_REVIEW')
     expect(mocks.getAdapter).not.toHaveBeenCalled()
     expect(client.state.verification.failureReasonCode).toBe('PROVIDER_CONSENT_REQUIRED')
+  })
+
+  it('uses Didit as the consent vendor display fallback when configJson has no displayName', async () => {
+    mocks.isEnabled.mockImplementation(async (key: string) => (
+      key === 'provider.identity.verification.automation' ||
+      key === 'provider.identity.vendor.didit'
+    ))
+    const client = makeClient()
+    client.verificationVendorConfig.findMany = vi.fn(async () => [{
+      vendorKey: 'didit',
+      active: true,
+      confidenceThreshold: 0.85,
+      livenessRequired: true,
+    }]) as unknown as typeof client.verificationVendorConfig.findMany
+    client.verificationVendorConfig.findUnique = vi.fn(async () => ({
+      vendorKey: 'didit',
+      confidenceThreshold: 0.85,
+      livenessRequired: true,
+      configJson: null,
+    })) as unknown as typeof client.verificationVendorConfig.findUnique
+
+    const consentVendor = await resolveIdentityVerificationConsentVendorForSubject({ providerId: 'prov_1' }, client)
+
+    expect(consentVendor).toEqual({
+      vendorKey: 'didit',
+      vendorDisplayName: 'Didit',
+    })
   })
 
   it('routes to manual review if the configured adapter cannot be loaded safely', async () => {

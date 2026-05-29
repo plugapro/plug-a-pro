@@ -89,6 +89,7 @@ export async function POST(
         vendorKey,
         vendorReference: parsed.vendorReference,
         livenessSessionReference: parsed.livenessSessionReference,
+        verificationId: parsed.verificationId,
         matchedVerificationIds: distinctIds,
         reasonCode: 'WEBHOOK_AMBIGUOUS_REFERENCE_RESOLUTION',
       },
@@ -132,9 +133,10 @@ function computeIdempotencyKey(vendorKey: string, parsed: ParseWebhookResult) {
 
 async function findVerificationCandidates(vendorKey: string, parsed: ParseWebhookResult) {
   const orClauses = [
+    parsed.verificationId ? { id: parsed.verificationId } : null,
     parsed.vendorReference ? { vendorReference: parsed.vendorReference } : null,
     parsed.livenessSessionReference ? { livenessSessionReference: parsed.livenessSessionReference } : null,
-  ].filter((clause): clause is { vendorReference: string } | { livenessSessionReference: string } => Boolean(clause))
+  ].filter((clause): clause is { id: string } | { vendorReference: string } | { livenessSessionReference: string } => Boolean(clause))
   if (orClauses.length === 0) return []
 
   return db.providerIdentityVerification.findMany({
