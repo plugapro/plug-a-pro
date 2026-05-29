@@ -65,8 +65,10 @@ export default function CreditsPolicyPage() {
         <h2>5. Purchased credits, promo credits, and voucher credits</h2>
         <p>
           Purchased credits are added only after payment is confirmed by Plug A Pro, the relevant
-          payment processor, or manual finance reconciliation. Promotional, starter, onboarding, and
-          voucher credits are non-purchased credits. They cannot be withdrawn or refunded as cash.
+          payment processor (currently <strong>PayFast</strong> and <strong>Pay@ / PayAt</strong>, or
+          another processor shown in the Worker Portal at the time of purchase), or manual finance
+          reconciliation. Promotional, starter, onboarding, and voucher credits are non-purchased
+          credits. They cannot be withdrawn or refunded as cash.
         </p>
         <p>
           When the Platform deducts credits for an accepted lead, promo or voucher credits may be used

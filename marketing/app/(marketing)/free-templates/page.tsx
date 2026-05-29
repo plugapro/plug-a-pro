@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
+import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { LeadMagnetForm } from "@/components/marketing/LeadMagnetForm";
 
 export const metadata: Metadata = buildMetadata({
@@ -103,7 +104,7 @@ export default function FreeTemplatesPage() {
                 A one-page printable checklist for providers and service team managers to check jobs before leaving for site.
               </p>
               <a
-                href="https://wa.me/27693552447?text=Hi+Plug+A+Pro%2C+I%27d+like+the+free+dispatch+checklist+please."
+                href={buildWhatsAppLink("Hi Plug A Pro, I'd like the free dispatch checklist please.")}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-4 inline-flex h-9 items-center rounded-full border border-border px-4 text-sm font-medium transition-colors hover:bg-muted"
@@ -118,7 +119,7 @@ export default function FreeTemplatesPage() {
                 Track jobs, invoices, and payment status. Includes a dashboard showing outstanding invoices and monthly revenue.
               </p>
               <a
-                href="https://wa.me/27693552447?text=Hi+Plug+A+Pro%2C+I%27d+like+the+free+cash+flow+tracker+please."
+                href={buildWhatsAppLink("Hi Plug A Pro, I'd like the free cash flow tracker please.")}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-4 inline-flex h-9 items-center rounded-full border border-border px-4 text-sm font-medium transition-colors hover:bg-muted"

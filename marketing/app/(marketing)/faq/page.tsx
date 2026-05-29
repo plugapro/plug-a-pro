@@ -75,7 +75,7 @@ const WORKER_FAQS = [
   },
   {
     q: "Is there a cost to join?",
-    a: "Not at launch. We're in early access mode. Join now and we'll let you know how monetisation works before it affects you.",
+    a: "Joining is free. Providers use prepaid platform credits to unlock and accept customer-selected jobs (typically R50 per credit, deducted on acceptance). Previewing leads, being shortlisted, and customer pre-selection do not use credits. See our Provider Credits Terms for the full pricing rules.",
   },
 ];
 

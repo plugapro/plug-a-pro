@@ -349,8 +349,8 @@ export default function TermsPage() {
         <p>
           For complaints about how we handle personal information, contact the Information Regulator of
           South Africa at{" "}
-          <a href="https://www.justice.gov.za/inforeg/" target="_blank" rel="noopener noreferrer">
-            justice.gov.za/inforeg
+          <a href="https://inforegulator.org.za/" target="_blank" rel="noopener noreferrer">
+            inforegulator.org.za
           </a>.
         </p>
         <p>
