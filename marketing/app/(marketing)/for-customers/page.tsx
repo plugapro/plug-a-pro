@@ -57,7 +57,7 @@ const HOW_IT_WORKS = [
     step: "05",
     title: "Provider arrives and does the job",
     detail:
-      "Your matched service provider arrives at the agreed time. Before and after photos are attached to the job record. You can follow progress via WhatsApp.",
+      "Your selected service provider arrives at the agreed time. Photos, notes, and status updates can be added to the job record where the workflow supports them. You can follow progress via WhatsApp.",
   },
   {
     icon: Star,
@@ -87,7 +87,7 @@ const PROTECTIONS = [
   {
     icon: Camera,
     title: "Photo documentation",
-    body: "Before-and-after photos are attached to every completed job. If there's a dispute about the quality of work, there's a record.",
+    body: "Photos and job notes can be attached to the job record where available. If there is a dispute about the work, the written record gives support a starting point.",
   },
   {
     icon: Clock,

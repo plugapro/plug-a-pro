@@ -5,9 +5,9 @@ export const siteConfig = {
   name: "Plug A Pro",
   legalEntity: "Kgolaentle Solutions (Pty) Ltd",
   legalEntityRegistration: "2014/077326/07",
-  tagline: "Reliable Local Services Made Simple",
+  tagline: "Find Independent Local Service Providers",
   description:
-    "Find rated plumbers, handymen, gardeners and more through Plug A Pro. Get a written quote on WhatsApp and pay your provider on completion.",
+    "Plug A Pro helps South Africans request small home jobs and connect with independent local service providers through WhatsApp and the PWA.",
   url: "https://plugapro.co.za", // TODO: update with production URL
   accent: "oklch(0.55 0.2 250)",
   ogImage: "/og.png",

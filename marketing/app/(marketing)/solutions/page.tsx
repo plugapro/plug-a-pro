@@ -18,9 +18,9 @@ import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 import { WhatsAppTextLink } from "@/components/marketing/WhatsAppTextLink";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Services",
+  title: "Service Categories",
   description:
-    "Plug A Pro matches you to nearby local service providers for small home jobs including plumbing, painting, gardening, handyman work, appliance fixes, and DIY support.",
+    "Plug A Pro helps customers request small home jobs and connect with independent local service providers.",
 });
 
 const SERVICES: {
@@ -33,7 +33,7 @@ const SERVICES: {
   {
     icon: Home,
     name: "Handyman & General Repairs",
-    headline: "Everyday home maintenance done properly",
+    headline: "Everyday home maintenance from independent providers",
     examples: [
       "Shelf fitting, door adjustments, hinge replacements",
       "Grouting, tiling repairs, and minor plastering",
@@ -57,7 +57,7 @@ const SERVICES: {
   {
     icon: Flower2,
     name: "Garden & Lawn",
-    headline: "Outdoor spaces cleared, cut, and cared for",
+    headline: "Outdoor spaces cleared, cut, and maintained",
     examples: [
       "Lawn mowing and edging",
       "Clearing overgrown garden areas",
@@ -93,7 +93,7 @@ const SERVICES: {
   {
     icon: Hammer,
     name: "DIY Assistance",
-    headline: "Started a job yourself? Get it finished properly",
+    headline: "Started a job yourself? Find help to finish it",
     examples: [
       "Project assessment and honest advice",
       "Continuing a half-finished repair",
@@ -121,13 +121,13 @@ export default function ServicesPage() {
     <>
       <div className="py-16 md:py-20 px-4 border-b border-border/40 text-center">
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
-          Services
+          Service categories
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          Small jobs done right
+          Find independent providers for small jobs
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          Plug A Pro matches you to nearby local service providers for small home jobs. Describe what you need — we&apos;ll find the right person.
+          Plug A Pro helps you describe the job and connect with nearby independent service providers. Your selected provider performs the work.
         </p>
         <p className="text-sm font-medium mt-6 mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}
@@ -204,7 +204,7 @@ export default function ServicesPage() {
             Don&apos;t see what you need?
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            If it&apos;s a small job, there&apos;s probably a trusted local provider near you who can help. Describe your job and we&apos;ll try to match you.
+            If it&apos;s a small job, there may be an independent local provider near you who can help. Describe your job and we&apos;ll try to match you.
           </p>
           <WhatsAppTextLink
             audience="customer"
@@ -213,6 +213,16 @@ export default function ServicesPage() {
           />
         </div>
       </div>
+
+      <section className="px-4 pb-12">
+        <div className="mx-auto max-w-3xl border-t border-border/40 pt-8 text-center">
+          <p className="text-sm leading-6 text-muted-foreground">
+            Plug A Pro is the platform. Independent service providers are responsible for their own work,
+            tools, licensing, insurance, safety compliance, site conduct, and workmanship unless the
+            platform expressly states otherwise for a specific check.
+          </p>
+        </div>
+      </section>
 
       <CTAStrip />
     </>

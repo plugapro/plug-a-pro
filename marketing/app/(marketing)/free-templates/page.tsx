@@ -3,9 +3,9 @@ import { buildMetadata } from "@/lib/metadata";
 import { LeadMagnetForm } from "@/components/marketing/LeadMagnetForm";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Free WhatsApp Template Pack for Service Businesses",
+  title: "Free WhatsApp Template Pack for Service Providers",
   description:
-    "5 ready-to-use WhatsApp message templates for SA service businesses — quote, booking confirmation, technician dispatched, job complete, and payment request. Free.",
+    "5 ready-to-use WhatsApp message templates for South African independent service providers and small service teams.",
 });
 
 const templates = [
@@ -19,11 +19,11 @@ const templates = [
   },
   {
     title: "Booking confirmation",
-    preview: "Hi [Name], your booking is confirmed for [date] between [time window]. Your technician will be [name].",
+    preview: "Hi [Name], your booking is confirmed for [date] between [time window]. Your provider will be [name].",
   },
   {
-    title: "Technician on the way",
-    preview: "Hi [Name], your technician [name] is on the way and should arrive in approximately [X] minutes.",
+    title: "Provider on the way",
+    preview: "Hi [Name], your provider [name] is on the way and should arrive in approximately [X] minutes.",
   },
   {
     title: "Job complete — payment request",
@@ -43,11 +43,11 @@ export default function FreeTemplatesPage() {
             Free resource
           </p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">
-            WhatsApp Template Pack for Service Businesses
+            WhatsApp Template Pack for Service Providers
           </h1>
           <p className="mt-5 text-base leading-7 text-muted-foreground">
             5 ready-to-use WhatsApp messages for every stage of a service job. Copy, paste, and send.
-            Built for South African service businesses with 3–15 technicians.
+            Built for South African independent providers and small service teams.
           </p>
         </div>
 
@@ -100,7 +100,7 @@ export default function FreeTemplatesPage() {
             <div className="rounded-2xl border border-border bg-background p-5">
               <p className="text-sm font-semibold">Daily Dispatch Checklist</p>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                A one-page printable checklist for service team managers to run every morning before dispatching technicians.
+                A one-page printable checklist for providers and service team managers to check jobs before leaving for site.
               </p>
               <a
                 href="https://wa.me/27693552447?text=Hi+Plug+A+Pro%2C+I%27d+like+the+free+dispatch+checklist+please."

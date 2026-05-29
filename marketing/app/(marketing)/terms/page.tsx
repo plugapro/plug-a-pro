@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = buildMetadata({ title: "Terms of Service" });
+export const metadata: Metadata = buildMetadata({
+  title: "Terms of Service",
+  description:
+    "Terms for customers and independent service providers using the Plug A Pro marketplace platform.",
+});
 
 export default function TermsPage() {
   return (
     <div className="py-24 max-w-3xl mx-auto px-4">
       <h1 className="text-4xl font-bold mb-8">Terms of Service</h1>
       <div className="prose prose-zinc dark:prose-invert max-w-none">
-        <p>Last updated: 29 April 2026</p>
+        <p>Last updated: 29 May 2026</p>
 
         <p>
           These Terms of Service (&ldquo;Terms&rdquo;) govern your use of the Plug A Pro platform, including
@@ -35,7 +39,7 @@ export default function TermsPage() {
           <li><strong>&ldquo;Customer&rdquo;</strong> means a person who uses the Platform to request or book a service.</li>
           <li><strong>&ldquo;Provider&rdquo; or &ldquo;Service Provider&rdquo;</strong> means an independent person or business that uses the Platform to find and complete service jobs.</li>
           <li><strong>&ldquo;Booking&rdquo;</strong> means a confirmed service appointment between a Customer and a Provider, facilitated through the Platform.</li>
-          <li><strong>&ldquo;Credits&rdquo;</strong> means platform-issued accounting units that can be applied toward eligible fees or services on the Platform. Credits are not legal tender, not interest-bearing, and cannot be withdrawn as cash unless Plug A Pro expressly agrees or law requires it. See our <a href="/credits-policy">Provider Credits Terms and Rules</a> for full details.</li>
+          <li><strong>&ldquo;Provider Credits&rdquo;</strong> means provider-side platform units used by approved Providers to accept eligible customer-selected opportunities. Provider Credits are not customer credits, not payment for the Provider&apos;s actual work, not legal tender, not interest-bearing, and cannot be withdrawn as cash unless Plug A Pro expressly approves a lawful reversal. See our <a href="/credits-policy">Provider Credits Terms and Rules</a> for full details.</li>
           <li><strong>&ldquo;Quote&rdquo;</strong> means a written estimate provided by a Provider through the Platform for a specific job.</li>
         </ul>
 
@@ -118,13 +122,17 @@ export default function TermsPage() {
 
         <h2>8. Payments</h2>
         <p>
-          Plug A Pro facilitates payment for bookings using third-party payment processors (currently Peach
-          Payments and PayFast). Plug A Pro does not store card numbers. Payment processor availability is
-          subject to the processor&apos;s own terms, outages, and fraud rules.
+          Plug A Pro may facilitate customer service payments using third-party payment processors or
+          payment reference providers shown at checkout. Plug A Pro does not store card numbers.
+          Payment processor availability is subject to the processor&apos;s own terms, outages, and fraud
+          rules.
         </p>
         <p>
-          Credits may be applied at checkout where available. See our <a href="/credits-policy">Credits and
-          Wallet Policy</a> for the full rules governing Credits, top-ups, expiry, and refunds involving Credits.
+          Provider Credits are separate from customer service payments. Customers do not buy Provider
+          Credits, and Provider Credits are not a customer wallet for paying for services unless Plug A
+          Pro expressly launches a separate customer credit product and publishes the applicable rules.
+          See our <a href="/credits-policy">Provider Credits Terms and Rules</a> for the full rules
+          governing Provider Credits, top-ups, deductions, expiry, and reversals.
         </p>
         <p>
           If Plug A Pro facilitated payment and the service is not performed or is materially defective,
@@ -140,7 +148,7 @@ export default function TermsPage() {
         <p>
           Cancellation and refund rights depend on who cancels, when, and whether service has commenced.
           See our <a href="/refund-policy">Refund and Cancellation Policy</a> for the full matrix covering
-          all scenarios, including Platform-facilitated payment refunds, credit reversals, Provider cancellations,
+          all scenarios, including Platform-facilitated customer payment refunds, Provider Credit reversals, Provider cancellations,
           Customer no-shows, and partial completions.
         </p>
         <p>
@@ -155,13 +163,15 @@ export default function TermsPage() {
           notify you and may offer a waitlist or alternative options where possible.
         </p>
 
-        <h2>11. Credits and Wallet</h2>
+        <h2>11. Provider Credits and Wallet</h2>
         <p>
-          Credits are a Platform accounting mechanism. They are not cash, bank deposits, or legal tender.
-          The full rules for Credits — including types, expiry, top-up, use at checkout, refund behaviour,
-          and what happens on cancellation or dispute — are set out in our{" "}
-          <a href="/credits-policy">Provider Credits Terms and Rules</a>. That policy is incorporated into these
-          Terms by reference.
+          Provider Credits are a provider-side Platform mechanism. They are not cash, bank deposits,
+          legal tender, loans, or financial credit. Provider Credits are used by approved Providers to
+          accept eligible customer-selected opportunities. They are not used by Customers to buy
+          services from Plug A Pro. The full rules for Provider Credits, including types, top-ups,
+          deductions, expiry, reversals, and disputes, are set out in our{" "}
+          <a href="/credits-policy">Provider Credits Terms and Rules</a>. That policy is incorporated
+          into these Terms by reference.
         </p>
 
         <h2>12. WhatsApp, SMS, and Communication</h2>
@@ -208,11 +218,11 @@ export default function TermsPage() {
           <li>Harass, threaten, or abuse other users, Providers, or Plug A Pro staff.</li>
           <li>Attempt to reverse-engineer, scrape, automate, or disrupt the Platform.</li>
           <li>Create duplicate accounts to circumvent a suspension or ban.</li>
-          <li>Abuse the refund, credit, or dispute process (including fraudulent chargebacks or fabricated complaints).</li>
+          <li>Abuse the refund, Provider Credit, or dispute process (including fraudulent chargebacks or fabricated complaints).</li>
           <li>Solicit Providers or Customers to transact outside the Platform for Platform-introduced services.</li>
-          <li>Use credits in a manner inconsistent with the Provider Credits Rules.</li>
+          <li>Use Provider Credits in a manner inconsistent with the Provider Credits Rules.</li>
         </ul>
-        <p>Violations may result in account suspension, credit forfeiture, and/or referral to law enforcement.</p>
+        <p>Violations may result in account suspension, Provider Credit reversal or forfeiture where legally permitted, and/or referral to law enforcement.</p>
 
         <h2>16. Platform Availability and Technical Limitations</h2>
         <p>
@@ -225,10 +235,12 @@ export default function TermsPage() {
 
         <h2>17. Third-Party Services</h2>
         <p>
-          Plug A Pro uses third-party services including Meta (WhatsApp), Supabase (database/authentication),
-          Vercel (hosting), and payment processors. Your use of those services is also subject to their
-          terms. Plug A Pro is not liable for third-party service failures, outages, or data handling beyond
-          the scope of our contractual arrangements with those parties and the requirements of South African law.
+          Plug A Pro uses third-party services including Meta (WhatsApp), Supabase (database and
+          authentication), Vercel (hosting), payment processors or payment reference providers, and
+          other processors described in our Privacy Policy. Your use of those services is also subject
+          to their terms. Plug A Pro is not liable for third-party service failures, outages, or data
+          handling beyond the scope of our contractual arrangements with those parties and the
+          requirements of South African law.
         </p>
 
         <h2>18. Disputes Between Customers and Providers</h2>
@@ -239,8 +251,9 @@ export default function TermsPage() {
         <p>
           Plug A Pro provides a support and escalation service. We will review the Platform record, job
           photos, communication history, and any other available evidence. Where we facilitated payment,
-          we may take steps to facilitate a resolution, including refunds or credits, in accordance with
-          our Refund and Cancellation Policy. We do not act as arbiters and our decisions are operational
+          we may take steps to facilitate a resolution, including customer payment refunds, provider
+          settlement holds, or Provider Credit reversals, in accordance with our Refund and
+          Cancellation Policy. We do not act as arbiters and our decisions are operational
           determinations, not legal judgments.
         </p>
         <p>
@@ -297,7 +310,7 @@ export default function TermsPage() {
         <h2>22. Suspension and Termination</h2>
         <p>
           We may suspend or terminate your account if you breach these Terms, engage in fraudulent activity,
-          abuse the credits or refund systems, or pose a risk to other users. We will give you advance
+          abuse the Provider Credit or refund systems, or pose a risk to other users. We will give you advance
           notice where reasonably practical, except where we must act immediately to protect the Platform
           or other users.
         </p>
@@ -305,7 +318,7 @@ export default function TermsPage() {
           You may close your account at any time by contacting{" "}
           <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a>. Closure is subject to our
           data retention obligations under POPIA and our <a href="/privacy">Privacy Policy</a>. Outstanding
-          credits, disputes, or payment obligations will be resolved before or at account closure.
+          Provider Credits, disputes, or payment obligations will be resolved before or at account closure.
         </p>
 
         <h2>23. Changes to These Terms</h2>

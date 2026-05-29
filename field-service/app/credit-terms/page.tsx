@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowLeft, Info } from 'lucide-react'
 import { buildMetadata } from '@/lib/metadata'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
+import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
 
 export const metadata = buildMetadata({
   title: 'Provider Credits - Terms & Rules',
@@ -21,35 +22,43 @@ function WhatsAppIcon() {
 const SECTIONS = [
   {
     heading: 'What are provider credits?',
-    body: 'Credits are prepaid units used by service providers to accept job leads on Plug A Pro. One credit is deducted each time you formally accept a customer-selected lead and confirm the booking. Credits are not refundable once consumed.',
+    body: `Provider credits are prepaid platform units used by approved independent service providers to accept customer-selected opportunities on Plug A Pro. 1 provider credit currently equals R${PROVIDER_CREDIT_PRICE_ZAR}. Provider credits are not customer credits, cash, legal tender, loans, bank deposits, or financial credit.`,
   },
   {
-    heading: 'Onboarding credits',
-    body: 'New providers approved during qualifying periods may receive promotional credits. These are awarded to your wallet on approval and valid for 90 days. Promotional credits expire and are forfeited if unused. They cannot be transferred or exchanged for cash.',
+    heading: 'Who can buy or receive credits',
+    body: 'Provider credits are for approved providers only. Paid top-ups may require identity verification and an active provider wallet. Plug A Pro may also award starter, promotional, onboarding, voucher, or goodwill credits. Promo and voucher credits are separate from purchased credits and cannot be withdrawn as cash.',
   },
   {
-    heading: 'Accepting a job',
-    body: 'When a customer selects you from a shortlist and you confirm, 1 credit is deducted from your wallet. Declining a lead or letting it expire does not cost credits. If a customer cancels their booking within 2 hours of your acceptance, the credit is returned automatically.',
+    heading: 'When a credit is deducted',
+    body: 'One provider credit is deducted only when a customer selects you and you complete final acceptance of that customer-selected opportunity through WhatsApp, the PWA, or the Worker Portal. Full customer contact details, exact address, and access notes unlock only after final acceptance succeeds.',
   },
   {
-    heading: 'Viewing a lead',
-    body: 'You can view a lead\'s category, area, and urgency without spending credits. Customer contact details and the full job address are only revealed after you accept. Declining after viewing a lead does not cost credits.',
+    heading: 'When credits are not deducted',
+    body: 'Previewing a lead, showing interest, being shortlisted, customer selection before your final acceptance, declining, expiry, failed acceptance, insufficient balance, or failed payment top-up does not use provider credits.',
   },
   {
     heading: 'Insufficient credits',
-    body: 'If your balance is zero, you cannot accept new leads until you top up. You can still view the lead summary, but the full customer details remain hidden. Leads expire after a set window regardless of your balance - top up before they arrive to stay competitive.',
+    body: 'If your balance is too low, you cannot complete final acceptance of paid matched leads until you top up or receive additional credits. You may still see allowed preview information, but full customer details remain hidden.',
   },
   {
     heading: 'Top-ups',
-    body: 'Credits can be purchased via Pay@, PayFast, or manual EFT. Pay@ and PayFast top-ups reflect immediately. EFT top-ups are confirmed within 1–2 business days. Credits are sold in fixed bundles - partial bundles are not available.',
+    body: 'Credits can be purchased through the top-up methods shown in the Worker Portal. Purchased credits are added only after payment is confirmed by Plug A Pro, the payment processor, or manual finance reconciliation. Failed, cancelled, or reversed payments do not add credits.',
   },
   {
     heading: 'Refunds and disputes',
-    body: 'Credits consumed for accepted jobs are non-refundable. If you believe a credit was deducted in error, contact support via WhatsApp within 14 days with your job reference number. We investigate all credit disputes and respond within 3 business days.',
+    body: 'Purchased provider credits are generally non-refundable once bought, except where required by law or where Plug A Pro approves a reversal because of a clear platform or system error, duplicate payment, failed credit allocation, incorrect deduction, suspected fraud or chargeback reversal, or another admin-approved exception. Lead-credit disputes may be approved for invalid customer number, duplicate lead, wrong category, wrong location, customer did not request, cancellation before unlock, or platform error.',
+  },
+  {
+    heading: 'Expiry',
+    body: 'Purchased provider credits do not currently expire in the implemented wallet. Any future purchased-credit expiry rule requires notice and legal review. Promotional, starter, onboarding, or voucher credits may expire if a lawful expiry rule is stated when they are awarded.',
+  },
+  {
+    heading: 'Audit records',
+    body: 'Plug A Pro records credit purchases, allocations, deductions, reversals, payment reversals, lead unlocks, disputes, and admin adjustments in wallet ledger and audit records.',
   },
   {
     heading: 'Misuse and policy changes',
-    body: 'Plug A Pro may reverse credits, suspend wallet access, or block lead access where there is fraud, abuse, false information, or behaviour that harms customers or other providers. Policy changes are communicated with 14 days notice - continued use after the effective date constitutes acceptance.',
+    body: 'Plug A Pro may reverse credits, suspend wallet access, or block lead access where there is fraud, abuse, false information, bypassing, or behaviour that harms customers, providers, or the marketplace. Policy changes are communicated with notice, subject to applicable law.',
   },
 ]
 
@@ -103,7 +112,7 @@ export default function CreditTermsPage() {
           </div>
           <p className="text-[13.5px] text-[var(--ink-mute)] leading-relaxed">
             These terms apply to all providers using the Plug A Pro credit wallet. Last updated{' '}
-            <strong style={{ color: 'var(--ink)' }}>May 2026</strong>. Credits are non-transferable and cannot be exchanged for cash.
+            <strong style={{ color: 'var(--ink)' }}>29 May 2026</strong>. Provider credits are non-transferable and cannot be exchanged for cash.
           </p>
         </div>
 
