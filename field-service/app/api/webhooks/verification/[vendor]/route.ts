@@ -47,6 +47,20 @@ export async function POST(
           secret !== null
             ? createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')
             : null
+        // TEMP-DIDIT-DEBUG: also try the secret base64-decoded into raw bytes.
+        // secret_length:43 is suspicious — it's the exact unpadded length of
+        // base64-encoded 32 bytes (a 256-bit HMAC key). If Didit signs with
+        // the raw 32 bytes but exposes the secret base64-encoded, our string-
+        // keyed HMAC will mismatch theirs while the b64-decoded one will match.
+        const secretB64Bytes = secret ? Buffer.from(secret, 'base64') : null
+        const ourHmacB64Canonical =
+          secretB64Bytes && canonical !== null
+            ? createHmac('sha256', secretB64Bytes).update(canonical, 'utf8').digest('hex')
+            : null
+        const ourHmacB64Raw =
+          secretB64Bytes !== null
+            ? createHmac('sha256', secretB64Bytes).update(rawBody, 'utf8').digest('hex')
+            : null
         console.log(
           'TEMP-DIDIT-DEBUG',
           JSON.stringify({
@@ -56,8 +70,11 @@ export async function POST(
             provided_timestamp: headers['x-timestamp'] ?? null,
             our_hmac_canonical: ourHmac,
             our_hmac_raw_body: ourHmacRaw,
+            our_hmac_b64decoded_canonical: ourHmacB64Canonical,
+            our_hmac_b64decoded_raw: ourHmacB64Raw,
             secret_present: secret !== null,
             secret_length: secret?.length ?? null,
+            secret_b64decoded_length: secretB64Bytes?.length ?? null,
             raw_body_length: rawBody.length,
             canonical_length: canonical?.length ?? null,
             raw_body: rawBody,
