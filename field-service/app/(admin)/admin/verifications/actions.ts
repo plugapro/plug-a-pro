@@ -48,6 +48,13 @@ const RevealIdentifierSchema = z.object({
 })
 
 type RevealIdentifierInput = z.infer<typeof RevealIdentifierSchema>
+type RefreshDiditFailure =
+  | 'feature_disabled'
+  | 'invalid_input'
+  | 'not_found'
+  | 'not_didit'
+  | 'no_didit_session'
+  | 'refresh_failed'
 
 export async function approveIdentityVerificationAction(input: ReviewInput) {
   const admin = await requireAdmin()
@@ -413,7 +420,7 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
   if (!preflight.ok) return preflight
 
   const parsed = RefreshDiditSchema.safeParse(input)
-  if (!parsed.success) return { ok: false as const }
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' as const }
 
   const verification = await db.providerIdentityVerification.findUnique({
     where: { id: parsed.data.verificationId },
@@ -427,15 +434,15 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
       vendorWorkflowId: true,
     },
   })
-  if (!verification) throw new Error('Verification not found')
+  if (!verification) return { ok: false as const, error: 'not_found' as const }
   if (verification.sourceCheckProvider !== 'didit') {
-    throw new Error('Refresh action only supports Didit-sourced verifications')
+    return { ok: false as const, error: 'not_didit' as const }
   }
   const diditSessionReference = verification.livenessSessionReference
     ?? (verification.vendorReference?.startsWith('didit-pre:') ? null : verification.vendorReference)
 
   if (!diditSessionReference) {
-    throw new Error('Verification has no Didit session_id to refresh against')
+    return { ok: false as const, error: 'no_didit_session' as const }
   }
 
   const refreshed = await refreshDiditSession(diditSessionReference, {
@@ -464,13 +471,13 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
     },
   })
 
-  if (!result.ok) return { ok: false as const }
+  if (!result.ok) return { ok: false as const, error: 'refresh_failed' as const }
 
   const post = await db.providerIdentityVerification.findUnique({
     where: { id: verification.id },
     select: { id: true, status: true, decision: true },
   })
-  if (!post) throw new Error('Verification not found after Didit refresh')
+  if (!post) return { ok: false as const, error: 'not_found' as const }
 
   try {
     await persistDiditDecision(verification.id, refreshed.raw, { source: 'admin_refresh' })
@@ -500,8 +507,26 @@ export async function issueDiditOnboardingLinkFormAction(formData: FormData) {
 
 export async function refreshDiditSessionFormAction(formData: FormData) {
   const verificationId = formData.get('verificationId')?.toString() ?? ''
-  await refreshDiditSessionAction({ verificationId })
-  redirect(`/admin/verifications/${verificationId}?message=didit-refreshed`)
+  const result = await refreshDiditSessionAction({ verificationId })
+  const message = result.ok ? 'didit-refreshed' : diditRefreshFailureMessage(result.error)
+  redirect(`/admin/verifications/${verificationId}?message=${message}`)
+}
+
+function diditRefreshFailureMessage(error: RefreshDiditFailure) {
+  switch (error) {
+    case 'feature_disabled':
+      return 'didit-refresh-failed-feature-disabled'
+    case 'invalid_input':
+      return 'didit-refresh-failed-invalid-input'
+    case 'not_found':
+      return 'didit-refresh-failed-not-found'
+    case 'not_didit':
+      return 'didit-refresh-failed-not-didit'
+    case 'no_didit_session':
+      return 'didit-refresh-failed-no-session'
+    case 'refresh_failed':
+      return 'didit-refresh-failed'
+  }
 }
 
 type IdentityApprovalNotificationResult = 'sent' | 'failed' | 'skipped'

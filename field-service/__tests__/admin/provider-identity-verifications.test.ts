@@ -295,6 +295,53 @@ describe('admin identity verification actions', () => {
     expect(html).toContain('LOW_LIVENESS_SCORE')
   })
 
+  it('renders the redacted full Didit decision panel for TRUST admins', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      ...(await baseVerification()),
+      status: 'NEEDS_MANUAL_REVIEW',
+      sourceCheckProvider: 'didit',
+      vendorReference: 'sess-redacted',
+      rawPayloadRedacted: {
+        decision: {
+          liveness_checks: [{ score: 0.43, warnings: [{ risk: 'LOW_LIVENESS_SCORE' }] }],
+          aml_screenings: [{ status: 'In Review', name: '<HASH:1234abcd>' }],
+        },
+      },
+    })
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({}),
+      }),
+    )
+
+    expect(html).toContain('Full Didit decision')
+    expect(html).toContain('liveness_checks')
+    expect(html).toContain('0.43')
+    expect(html).toContain('aml_screenings')
+    expect(html).toContain('&lt;HASH:1234abcd&gt;')
+  })
+
+  it('does not render the redacted full Didit decision panel when no payload is stored', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      ...(await baseVerification()),
+      sourceCheckProvider: 'didit',
+      rawPayloadRedacted: null,
+    })
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({}),
+      }),
+    )
+
+    expect(html).not.toContain('Full Didit decision')
+  })
+
   it('shows the TRUST Didit refresh control for terminal rows missing local documents', async () => {
     mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
       ...(await baseVerification()),
@@ -325,6 +372,11 @@ describe('admin identity verification actions', () => {
       decision: 'PASS',
       sourceCheckProvider: 'didit',
       vendorReference: 'sess-terminal',
+      rawPayloadRedacted: {
+        decision: {
+          liveness_checks: [{ score: 0.43 }],
+        },
+      },
       documents: [
         {
           id: 'doc-front',
@@ -347,6 +399,7 @@ describe('admin identity verification actions', () => {
 
     expect(html).not.toContain('Open private preview')
     expect(html).not.toContain('Refresh from Didit')
+    expect(html).not.toContain('Full Didit decision')
     expect(html).toContain('TRUST access required')
   })
 
@@ -448,6 +501,7 @@ async function baseVerification() {
     costCurrency: null,
     decisionAt: null,
     livenessSessionReference: null,
+    rawPayloadRedacted: null,
     createdAt: new Date('2026-05-25T08:00:00.000Z'),
     provider: {
       id: 'provider-1',

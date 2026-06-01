@@ -230,6 +230,20 @@ describe('Didit decision persistence helpers', () => {
     ])
   })
 
+  it('leaves score fields unset when Didit omits numeric scores', () => {
+    const fields = mapDecisionToVerificationFields({
+      session_id: 'sess_missing_scores',
+      status: 'Approved',
+      id_verifications: [{ status: 'Passed' }],
+      liveness_checks: [{ status: 'Passed' }],
+      face_matches: [{ status: 'Passed' }],
+    } as DiditDecisionResponse)
+
+    expect(fields.documentConfidenceScore).toBeUndefined()
+    expect(fields.livenessScore).toBeUndefined()
+    expect(fields.selfieMatchScore).toBeUndefined()
+  })
+
   it('does not substitute explicitly excluded Didit artifacts for the four stored image kinds', () => {
     const refs = extractImageRefs({
       session_id: 'sess_excluded',
@@ -313,6 +327,68 @@ describe('Didit decision persistence helpers', () => {
         video_url: '[REDACTED_URL]',
       },
     })
+  })
+
+  it('preserves non-URL quality metadata and unrelated number fields in the redacted payload', () => {
+    const redacted = redactPayload({
+      session_id: 'sess_quality',
+      document: {
+        number: 'DOC-123456',
+        full_front_image: 'https://didit.test/full-front.jpg?token=secret',
+        front_image_quality_score: {
+          overall_score: 0.87,
+          brightness_issue: false,
+        },
+        image_quality_score: {
+          focus: 0.91,
+        },
+        file_extension: 'jpg',
+        link_id: 'didit-link-123',
+      },
+      attempt: {
+        number: 'attempt-2',
+      },
+      id_verifications: [
+        {
+          front_video: 'https://didit.test/front-video.mp4?token=secret',
+          image_quality_score: {
+            focus: 0.76,
+            is_document_fully_visible: true,
+          },
+        },
+      ],
+    }) as {
+      document: {
+        number: string
+        full_front_image: string
+        front_image_quality_score: { overall_score: number; brightness_issue: boolean }
+        image_quality_score: { focus: number }
+        file_extension: string
+        link_id: string
+      }
+      attempt: { number: string }
+      id_verifications: Array<{
+        front_video: string
+        image_quality_score: { focus: number; is_document_fully_visible: boolean }
+      }>
+    }
+
+    expect(redacted.document.number).toMatch(/^<HASH:[a-f0-9]{8}>$/)
+    expect(redacted.document.full_front_image).toBe('[REDACTED_URL]')
+    expect(redacted.id_verifications[0].front_video).toBe('[REDACTED_URL]')
+    expect(redacted.document.front_image_quality_score).toEqual({
+      overall_score: 0.87,
+      brightness_issue: false,
+    })
+    expect(redacted.document.image_quality_score).toEqual({ focus: 0.91 })
+    expect(redacted.id_verifications[0].image_quality_score).toEqual({
+      focus: 0.76,
+      is_document_fully_visible: true,
+    })
+    expect(redacted.document.file_extension).toBe('jpg')
+    expect(redacted.document.link_id).toBe('didit-link-123')
+    expect(redacted.attempt.number).toBe('attempt-2')
+    expect(JSON.stringify(redacted)).not.toContain('token=secret')
   })
 })
 

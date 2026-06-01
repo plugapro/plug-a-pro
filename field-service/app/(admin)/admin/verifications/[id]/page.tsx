@@ -128,6 +128,9 @@ export default async function AdminIdentityVerificationDetailPage({
               <Field label="Submitted" value={formatDate(verification.createdAt)} />
             </dl>
             <RiskFlags value={verification.riskFlags} />
+            {verification.sourceCheckProvider === 'didit' && canPreviewDocuments && verification.rawPayloadRedacted ? (
+              <RedactedDiditPayload value={verification.rawPayloadRedacted} />
+            ) : null}
           </div>
 
           <div className="rounded-xl border bg-card p-4">
@@ -327,6 +330,18 @@ function reviewActionMessage(message?: string) {
       return { tone: 'tone-success', text: 'Retry request recorded.' }
     case 'vendor-retry':
       return { tone: 'tone-success', text: 'Vendor retry requested.' }
+    case 'didit-refresh-failed-feature-disabled':
+      return { tone: 'tone-warning', text: 'Didit refresh is disabled for this admin session.' }
+    case 'didit-refresh-failed-invalid-input':
+      return { tone: 'tone-warning', text: 'Didit refresh failed because the verification id was invalid.' }
+    case 'didit-refresh-failed-not-found':
+      return { tone: 'tone-warning', text: 'Didit refresh failed because the verification could not be found.' }
+    case 'didit-refresh-failed-not-didit':
+      return { tone: 'tone-warning', text: 'Didit refresh is only available for Didit-sourced verifications.' }
+    case 'didit-refresh-failed-no-session':
+      return { tone: 'tone-warning', text: 'Didit refresh failed because this verification has no Didit session reference.' }
+    case 'didit-refresh-failed':
+      return { tone: 'tone-warning', text: 'Didit refresh failed before the latest decision could be applied.' }
     default:
       return null
   }
@@ -357,6 +372,19 @@ function RiskFlags({ value }: { value: unknown }) {
         ))}
       </dl>
     </div>
+  )
+}
+
+function RedactedDiditPayload({ value }: { value: unknown }) {
+  return (
+    <details className="mt-4 rounded-md border bg-muted/30 p-3 text-xs">
+      <summary className="cursor-pointer font-medium text-foreground">
+        Full Didit decision (redacted - PII hashed, image URLs dropped)
+      </summary>
+      <pre className="mt-3 max-h-[480px] overflow-auto whitespace-pre-wrap break-all rounded bg-background p-3 text-[11px] leading-relaxed">
+        <code>{JSON.stringify(value, null, 2)}</code>
+      </pre>
+    </details>
   )
 }
 

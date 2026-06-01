@@ -114,6 +114,8 @@ test.describe('authenticated', () => {
 
   test.describe('Didit refresh smoke', () => {
     const verificationId = process.env.E2E_DIDIT_VERIFICATION_ID
+    // CI needs both E2E_BASE_URL and a real Didit-backed verification id with
+    // TRUST access; otherwise this smoke is intentionally skipped.
     test.skip(!verificationId, 'E2E_DIDIT_VERIFICATION_ID not set — skipping Didit refresh smoke')
 
     test('backfills local evidence when configured', async ({ page }) => {

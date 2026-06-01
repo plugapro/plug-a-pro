@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  afterCallbacks,
+  mockAfter,
   mockAdapter,
   mockDb,
   mockApplyVendorVerdict,
@@ -10,6 +12,10 @@ const {
   mockPersistDiditDecision,
   mockRaiseSecurityReviewEvent,
 } = vi.hoisted(() => ({
+  afterCallbacks: [] as Array<() => void | Promise<void>>,
+  mockAfter: vi.fn((callback: () => void | Promise<void>) => {
+    afterCallbacks.push(callback)
+  }),
   mockAdapter: {
     parseWebhook: vi.fn(),
   },
@@ -34,6 +40,13 @@ const {
   mockRaiseSecurityReviewEvent: vi.fn(),
 }))
 
+vi.mock('next/server', async (importOriginal) => {
+  const original = await importOriginal<typeof import('next/server')>()
+  return {
+    ...original,
+    after: mockAfter,
+  }
+})
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
 vi.mock('@/lib/identity-verification/vendors/registry', () => ({
@@ -62,9 +75,17 @@ function request(body = '{}', headers: Record<string, string> = {}) {
   })
 }
 
+async function flushAfterCallbacks() {
+  const callbacks = afterCallbacks.splice(0)
+  for (const callback of callbacks) {
+    await callback()
+  }
+}
+
 describe('verification provider webhook route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    afterCallbacks.splice(0)
     mockAdapter.parseWebhook.mockResolvedValue({
       signatureValid: true,
       vendorEventId: 'evt-1',
@@ -260,6 +281,7 @@ describe('verification provider webhook route', () => {
     const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
 
     const response = await POST(request('{"event_id":"evt-didit-approved"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+    await flushAfterCallbacks()
 
     expect(response.status).toBe(200)
     expect(mockIsEnabled).toHaveBeenCalledWith('provider.identity.vendor.didit.persist_documents')
@@ -290,6 +312,7 @@ describe('verification provider webhook route', () => {
     const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
 
     const response = await POST(request('{"event_id":"evt-didit-liveness-only"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+    await flushAfterCallbacks()
 
     expect(response.status).toBe(200)
     expect(mockGetSessionDecision).toHaveBeenCalledWith('sess-live')
@@ -312,10 +335,51 @@ describe('verification provider webhook route', () => {
     const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
 
     const response = await POST(request('{"event_id":"evt-didit-disabled"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+    await flushAfterCallbacks()
 
     expect(response.status).toBe(200)
     expect(mockGetSessionDecision).not.toHaveBeenCalled()
     expect(mockPersistDiditDecision).not.toHaveBeenCalled()
+  })
+
+  it('acknowledges Didit webhooks before deferred persistence completes', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-didit-slow-persist',
+      vendorReference: 'sess-slow',
+      livenessSessionReference: 'sess-slow',
+      verificationId: null,
+      eventType: 'status.updated',
+      payloadHash: 'hash-didit-slow-persist',
+      redactedPayload: { event: 'status.updated' },
+      result: { decision: 'PASS', confidence: 0.99, livenessVerified: true },
+    })
+    mockApplyVendorVerdict.mockResolvedValue({
+      verificationId: 'ver-1',
+      status: 'PASSED',
+      vendorReference: 'sess-slow',
+    })
+    const fullDecision = { session_id: 'sess-slow', status: 'Approved' }
+    mockGetSessionDecision.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      return fullDecision
+    })
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const start = Date.now()
+    const response = await POST(request('{"event_id":"evt-didit-slow-persist"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+    const elapsed = Date.now() - start
+
+    expect(response.status).toBe(200)
+    expect(elapsed).toBeLessThan(150)
+    expect(mockAfter).toHaveBeenCalledTimes(1)
+    expect(mockGetSessionDecision).not.toHaveBeenCalled()
+    expect(mockPersistDiditDecision).not.toHaveBeenCalled()
+
+    await flushAfterCallbacks()
+    expect(mockGetSessionDecision).toHaveBeenCalledWith('sess-slow')
+    expect(mockPersistDiditDecision).toHaveBeenCalledWith('ver-1', fullDecision, { source: 'webhook' })
   })
 
   it('does not persist Didit decisions when the webhook result is null', async () => {
@@ -363,6 +427,7 @@ describe('verification provider webhook route', () => {
     const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
 
     const response = await POST(request('{"event_id":"evt-didit-persist-fails"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+    await flushAfterCallbacks()
 
     expect(response.status).toBe(200)
     expect(mockDb.providerVerificationEvent.create).toHaveBeenCalledWith({

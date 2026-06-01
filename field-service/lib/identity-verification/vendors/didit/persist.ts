@@ -19,7 +19,62 @@ const PERSISTABLE_STATUSES: ReadonlySet<VerificationStatus> = new Set([
   'NEEDS_MANUAL_REVIEW',
 ])
 const RAW_DOCUMENT_RETENTION_DAYS = 60
-const URL_KEY_PATTERN = /(url|uri|href|link|image|video|file)/i
+const URL_KEYS = new Set([
+  'url',
+  'uri',
+  'href',
+  'link',
+  'front_image_url',
+  'frontImageUrl',
+  'back_image_url',
+  'backImageUrl',
+  'image_url',
+  'imageUrl',
+  'frame_url',
+  'frameUrl',
+  'video_url',
+  'videoUrl',
+  'front_image',
+  'frontImage',
+  'back_image',
+  'backImage',
+  'portrait_image',
+  'portraitImage',
+  'full_front_image',
+  'fullFrontImage',
+  'full_back_image',
+  'fullBackImage',
+  'front_image_camera_front',
+  'frontImageCameraFront',
+  'back_image_camera_front',
+  'backImageCameraFront',
+  'face_image',
+  'faceImage',
+  'reference_image',
+  'referenceImage',
+  'source_image',
+  'sourceImage',
+  'target_image',
+  'targetImage',
+  'signature_image',
+  'signatureImage',
+  'document_file',
+  'documentFile',
+  'front_video',
+  'frontVideo',
+  'back_video',
+  'backVideo',
+  'id_front_url',
+  'idFrontUrl',
+  'id_back_url',
+  'idBackUrl',
+  'selfie_url',
+  'selfieUrl',
+  'liveness_frame_url',
+  'livenessFrameUrl',
+  'extra_files',
+  'extraFiles',
+])
 const PII_KEYS = new Set([
   'first_name',
   'firstName',
@@ -64,7 +119,6 @@ const PII_KEYS = new Set([
   'mrzKey',
   'serial_number',
   'serialNumber',
-  'number',
 ])
 
 export type DiditStoredImageKind = typeof DIDIT_STORED_IMAGE_KINDS[number]
@@ -460,10 +514,11 @@ function firstFeature(features: DiditFeatureCheck[] | undefined): DiditFeatureCh
 function numericScore(feature: DiditFeatureCheck | null): number | undefined {
   if (!feature) return undefined
   if (typeof feature.score === 'number') return normalizeScore(feature.score)
-  if (feature.status === 'Passed') return 1.0
   return undefined
 }
 
+// Didit sometimes reports document confidence in `confidence` instead of the
+// generic `score`; keep the fallback scoped to document-confidence mapping.
 function numericScoreWithFallback(feature: DiditFeatureCheck | null, fallbackKey: 'confidence' | 'score'): number | undefined {
   if (!feature) return undefined
   const score = numericScore(feature)
@@ -519,17 +574,21 @@ function redactValue(value: unknown, key: string | null): unknown {
 
   const out: Record<string, unknown> = {}
   for (const [nestedKey, nestedValue] of Object.entries(value as Record<string, unknown>)) {
-    if (URL_KEY_PATTERN.test(nestedKey)) {
+    if (URL_KEYS.has(nestedKey)) {
       out[nestedKey] = '[REDACTED_URL]'
       continue
     }
-    if (PII_KEYS.has(nestedKey) && typeof nestedValue === 'string') {
+    if (shouldHashPiiValue(nestedKey, key) && typeof nestedValue === 'string') {
       out[nestedKey] = hashToken(nestedValue)
       continue
     }
     out[nestedKey] = redactValue(nestedValue, nestedKey)
   }
   return out
+}
+
+function shouldHashPiiValue(key: string, parentKey: string | null): boolean {
+  return PII_KEYS.has(key) || (key === 'number' && parentKey === 'document')
 }
 
 function hashToken(value: string): string {
