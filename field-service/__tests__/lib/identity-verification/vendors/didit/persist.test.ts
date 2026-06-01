@@ -36,6 +36,7 @@ vi.mock('@/lib/storage', () => ({
 import {
   downloadDocumentImage,
   extractImageRefs,
+  isPersistableStatus,
   mapDecisionToVerificationFields,
   persistDiditDecision,
   redactPayload,
@@ -78,8 +79,14 @@ function fullDecision(): DiditDecisionResponse {
       expiration_date: '2031-04-05',
       front_image_url: 'https://didit.test/front.jpg?token=front-secret',
       back_image_url: 'https://didit.test/back.jpg?token=back-secret',
+      document_file: 'https://didit.test/document-file.pdf?token=file-secret',
       formatted_address: '123 Secret Street, Pretoria',
       mrz_string: 'IDZAA123456789JANE<CITIZEN',
+      parsed_address: {
+        street_1: '123 Secret Street',
+        street_2: 'Unit 4',
+      },
+      extra_files: ['https://didit.test/extra-file.jpg?token=extra-secret'],
     },
     document_images: [
       { kind: 'ID_FRONT', url: 'https://didit.test/front-from-list.jpg' },
@@ -123,6 +130,15 @@ describe('Didit decision persistence helpers', () => {
     mocks.mockUploadIdentityDocument.mockResolvedValue({ pathname: 'supabase://identity-documents/identity/ver-1/ID_FRONT.jpg' })
   })
 
+  it('treats only persisted verdict states as webhook-persistable', () => {
+    expect(isPersistableStatus('PASSED')).toBe(true)
+    expect(isPersistableStatus('FAILED')).toBe(true)
+    expect(isPersistableStatus('NEEDS_MANUAL_REVIEW')).toBe(true)
+    expect(isPersistableStatus('PROCESSING')).toBe(false)
+    expect(isPersistableStatus('EXPIRED')).toBe(false)
+    expect(isPersistableStatus('CANCELLED')).toBe(false)
+  })
+
   it('maps Didit structured fields without storing raw document numbers', () => {
     const fields = mapDecisionToVerificationFields(fullDecision())
 
@@ -156,14 +172,18 @@ describe('Didit decision persistence helpers', () => {
           status: 'Approved',
           document_number: 'CAA000000',
           personal_number: '99999999R',
+          portrait_image: 'https://didit.test/portrait-v3.jpg',
           front_image: 'https://didit.test/front-v3.jpg',
           back_image: 'https://didit.test/back-v3.jpg',
+          full_front_image: 'https://didit.test/full-front-v3.jpg',
+          full_back_image: 'https://didit.test/full-back-v3.jpg',
           date_of_birth: '1980-01-01',
           expiration_date: '2031-06-02',
           issuing_state: 'ESP',
           gender: 'F',
           nationality: 'ESP',
           score: 85.2,
+          front_image_quality_score: { overall_score: 88.7 },
           warnings: [{ risk: 'QR_NOT_DETECTED' }],
         },
       ],
@@ -179,8 +199,8 @@ describe('Didit decision persistence helpers', () => {
         {
           status: 'In Review',
           score: 65.43,
-          source_image: 'https://didit.test/selfie-v3.jpg',
-          target_image: 'https://didit.test/portrait-v3.jpg',
+          source_image: 'https://didit.test/face-source-v3.jpg',
+          target_image: 'https://didit.test/face-target-v3.jpg',
           warnings: [{ risk: 'LOW_FACE_MATCH_SIMILARITY' }],
         },
       ],
@@ -198,16 +218,49 @@ describe('Didit decision persistence helpers', () => {
     expect(fields.nationality).toBe('ESP')
     expect(fields.issuingCountry).toBe('ESP')
     expect(fields.documentExpiryDate).toEqual(new Date('2031-06-02T00:00:00.000Z'))
-    expect(fields.documentConfidenceScore).toBeCloseTo(0.852)
+    expect(fields.documentConfidenceScore).toBeCloseTo(0.887)
     expect(fields.livenessScore).toBeCloseTo(0.8992)
     expect(fields.selfieMatchScore).toBeCloseTo(0.6543)
     expect(fields.riskFlags).toEqual(['QR_NOT_DETECTED', 'LOW_LIVENESS_SCORE', 'LOW_FACE_MATCH_SIMILARITY'])
     expect(extractImageRefs(decision)).toEqual([
       { kind: 'ID_FRONT', url: 'https://didit.test/front-v3.jpg' },
       { kind: 'ID_BACK', url: 'https://didit.test/back-v3.jpg' },
-      { kind: 'SELFIE', url: 'https://didit.test/selfie-v3.jpg' },
+      { kind: 'SELFIE', url: 'https://didit.test/portrait-v3.jpg' },
       { kind: 'LIVENESS_FRAME', url: 'https://didit.test/liveness-v3.jpg' },
     ])
+  })
+
+  it('does not substitute explicitly excluded Didit artifacts for the four stored image kinds', () => {
+    const refs = extractImageRefs({
+      session_id: 'sess_excluded',
+      status: 'Approved',
+      id_verifications: [
+        {
+          status: 'Approved',
+          full_front_image: 'https://didit.test/full-front.jpg',
+          full_back_image: 'https://didit.test/full-back.jpg',
+          front_image_camera_front: 'https://didit.test/front-camera.jpg',
+          back_image_camera_front: 'https://didit.test/back-camera.jpg',
+          front_video: 'https://didit.test/front.mp4',
+          back_video: 'https://didit.test/back.mp4',
+        },
+      ],
+      face_matches: [
+        {
+          status: 'Approved',
+          source_image: 'https://didit.test/face-source.jpg',
+          target_image: 'https://didit.test/face-target.jpg',
+        },
+      ],
+      liveness_checks: [
+        {
+          status: 'Approved',
+          video_url: 'https://didit.test/liveness.mp4',
+        },
+      ],
+    } as DiditDecisionResponse)
+
+    expect(refs).toEqual([])
   })
 
   it('returns a shape mismatch instead of throwing from the safe mapper', () => {
@@ -233,16 +286,20 @@ describe('Didit decision persistence helpers', () => {
     const text = JSON.stringify(redacted)
 
     expect(text).not.toContain('front-secret')
+    expect(text).not.toContain('file-secret')
+    expect(text).not.toContain('extra-secret')
     expect(text).not.toContain('selfie-secret')
     expect(text).not.toContain('liveness.mp4')
     expect(text).not.toContain('900203')
     expect(text).not.toContain('A123456789')
     expect(text).not.toContain('123 Secret Street')
+    expect(text).not.toContain('Unit 4')
     expect(text).not.toContain('Pretoria')
     expect(text).not.toContain('jane@example.test')
     expect(text).not.toContain('+27123456789')
     expect(text).not.toContain('IDZAA123456789JANE')
     expect(text).toMatch(/<HASH:[a-f0-9]{8}>/)
+    expect(text).toContain(`<HASH:${createHmac('sha256', TEST_PEPPER).update('Jane').digest('hex').slice(0, 8)}>`)
     expect(redacted).toMatchObject({
       session_id: 'sess_123',
       status: 'Approved',

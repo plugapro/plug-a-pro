@@ -1,6 +1,6 @@
-import { createHash } from 'crypto'
+import { createHash, createHmac } from 'crypto'
 
-import type { Prisma } from '@prisma/client'
+import type { Prisma, VerificationStatus } from '@prisma/client'
 
 import { db } from '../../../db'
 import { uploadIdentityDocument } from '../../../storage'
@@ -13,8 +13,13 @@ import {
 import type { DiditDecisionResponse, DiditFeatureCheck } from './types'
 
 const DIDIT_STORED_IMAGE_KINDS = ['ID_FRONT', 'ID_BACK', 'SELFIE', 'LIVENESS_FRAME'] as const
+const PERSISTABLE_STATUSES: ReadonlySet<VerificationStatus> = new Set([
+  'PASSED',
+  'FAILED',
+  'NEEDS_MANUAL_REVIEW',
+])
 const RAW_DOCUMENT_RETENTION_DAYS = 60
-const URL_KEY_PATTERN = /(url|uri|href|link|image|video)/i
+const URL_KEY_PATTERN = /(url|uri|href|link|image|video|file)/i
 const PII_KEYS = new Set([
   'first_name',
   'firstName',
@@ -28,6 +33,10 @@ const PII_KEYS = new Set([
   'dob',
   'birth_date',
   'birthDate',
+  'street_1',
+  'street_2',
+  'street1',
+  'street2',
   'address',
   'formatted_address',
   'formattedAddress',
@@ -39,6 +48,8 @@ const PII_KEYS = new Set([
   'phone',
   'phone_number',
   'phoneNumber',
+  'full_number',
+  'fullNumber',
   'personal_number',
   'personalNumber',
   'national_id',
@@ -102,6 +113,10 @@ export type PersistResult = {
 type QueuedDocumentWrite = {
   kind: DiditStoredImageKind
   run: (tx: Prisma.TransactionClient) => Promise<unknown>
+}
+
+export function isPersistableStatus(status: VerificationStatus): boolean {
+  return PERSISTABLE_STATUSES.has(status)
 }
 
 export function mapDecisionToVerificationFields(decision: DiditDecisionResponse): DiditVerificationFieldUpdate {
@@ -196,7 +211,7 @@ export function mapDecisionToVerificationFields(decision: DiditDecisionResponse)
       decision.document_expiry_date,
       decision.documentExpiryDate,
     )),
-    documentConfidenceScore: numericScoreWithFallback(firstFeature(decision.id_verifications), 'confidence'),
+    documentConfidenceScore: documentConfidenceScore(firstFeature(decision.id_verifications)),
     livenessScore: numericScore(firstFeature(decision.liveness_checks)),
     selfieMatchScore: numericScore(firstFeature(decision.face_matches)),
     decisionAt: parseDateTime(firstString(decision.completed_at, decision.decision_at, decision.updated_at, decision.created_at)),
@@ -234,7 +249,6 @@ export function extractImageRefs(decision: DiditDecisionResponse): DiditImageRef
   const selfie = readRecord(decision.selfie)
   const liveness = readRecord(decision.liveness)
   const idVerification = readRecord(firstFeature(decision.id_verifications))
-  const faceMatch = readRecord(firstFeature(decision.face_matches))
   const livenessCheck = readRecord(firstFeature(decision.liveness_checks))
 
   return [
@@ -245,8 +259,6 @@ export function extractImageRefs(decision: DiditDecisionResponse): DiditImageRef
         document?.frontImageUrl,
         idVerification?.front_image,
         idVerification?.frontImage,
-        idVerification?.full_front_image,
-        idVerification?.fullFrontImage,
         decision.id_front_url,
       ),
     },
@@ -257,8 +269,6 @@ export function extractImageRefs(decision: DiditDecisionResponse): DiditImageRef
         document?.backImageUrl,
         idVerification?.back_image,
         idVerification?.backImage,
-        idVerification?.full_back_image,
-        idVerification?.fullBackImage,
         decision.id_back_url,
       ),
     },
@@ -267,10 +277,8 @@ export function extractImageRefs(decision: DiditDecisionResponse): DiditImageRef
       url: firstString(
         selfie?.image_url,
         selfie?.imageUrl,
-        faceMatch?.source_image,
-        faceMatch?.sourceImage,
-        faceMatch?.target_image,
-        faceMatch?.targetImage,
+        idVerification?.portrait_image,
+        idVerification?.portraitImage,
         decision.selfie_url,
       ),
     },
@@ -463,6 +471,14 @@ function numericScoreWithFallback(feature: DiditFeatureCheck | null, fallbackKey
   return typeof feature[fallbackKey] === 'number' ? normalizeScore(feature[fallbackKey] as number) : undefined
 }
 
+function documentConfidenceScore(feature: DiditFeatureCheck | null): number | undefined {
+  if (!feature) return undefined
+  const frontImageQualityScore = readRecord(feature.front_image_quality_score)
+  const overallScore = frontImageQualityScore?.overall_score
+  if (typeof overallScore === 'number') return normalizeScore(overallScore)
+  return numericScoreWithFallback(feature, 'confidence')
+}
+
 function normalizeScore(value: number): number | undefined {
   if (!Number.isFinite(value)) return undefined
   return value > 1 && value <= 100 ? value / 100 : value
@@ -517,7 +533,11 @@ function redactValue(value: unknown, key: string | null): unknown {
 }
 
 function hashToken(value: string): string {
-  const digest = createHash('sha256').update(value).digest('hex').slice(0, 8)
+  const pepper = process.env.IDENTITY_HASH_PEPPER
+  if (!pepper) {
+    throw new Error('IDENTITY_HASH_PEPPER is required for Didit payload redaction')
+  }
+  const digest = createHmac('sha256', pepper).update(value).digest('hex').slice(0, 8)
   return `<HASH:${digest}>`
 }
 

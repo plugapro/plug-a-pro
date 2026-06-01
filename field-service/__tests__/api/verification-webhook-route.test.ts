@@ -47,6 +47,7 @@ vi.mock('@/lib/identity-verification/vendors/didit/client', () => ({
   getSessionDecision: mockGetSessionDecision,
 }))
 vi.mock('@/lib/identity-verification/vendors/didit/persist', () => ({
+  isPersistableStatus: (status: string) => ['PASSED', 'FAILED', 'NEEDS_MANUAL_REVIEW'].includes(status),
   persistDiditDecision: mockPersistDiditDecision,
 }))
 vi.mock('@/lib/security/security-event-service', () => ({

@@ -4,18 +4,12 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { applyVendorVerdict } from '@/lib/identity-verification/orchestrator'
 import { getSessionDecision } from '@/lib/identity-verification/vendors/didit/client'
-import { persistDiditDecision } from '@/lib/identity-verification/vendors/didit/persist'
+import { isPersistableStatus, persistDiditDecision } from '@/lib/identity-verification/vendors/didit/persist'
 import { getAdapter, toVendorKey } from '@/lib/identity-verification/vendors/registry'
 import type { ParseWebhookResult } from '@/lib/identity-verification/vendors/types'
 import { raiseSecurityReviewEvent } from '@/lib/security/security-event-service'
 
 export const runtime = 'nodejs'
-
-const DIDIT_PERSISTABLE_STATUSES = new Set<VerificationStatus>([
-  'PASSED',
-  'FAILED',
-  'NEEDS_MANUAL_REVIEW',
-])
 
 export async function POST(
   request: Request,
@@ -183,7 +177,7 @@ async function maybePersistDiditDecision(params: {
   applied: Awaited<ReturnType<typeof applyVendorVerdict>>
 }) {
   if (params.vendorKey !== 'didit') return
-  if (!DIDIT_PERSISTABLE_STATUSES.has(params.applied.status)) return
+  if (!isPersistableStatus(params.applied.status)) return
   if (!(await isEnabled('provider.identity.vendor.didit.persist_documents'))) return
 
   const vendorReference = params.applied.vendorReference ?? params.parsed.vendorReference
