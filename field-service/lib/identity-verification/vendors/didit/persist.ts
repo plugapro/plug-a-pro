@@ -517,6 +517,8 @@ function numericScore(feature: DiditFeatureCheck | null): number | undefined {
   return undefined
 }
 
+// Didit sometimes reports document confidence in `confidence` instead of the
+// generic `score`; keep the fallback scoped to document-confidence mapping.
 function numericScoreWithFallback(feature: DiditFeatureCheck | null, fallbackKey: 'confidence' | 'score'): number | undefined {
   if (!feature) return undefined
   const score = numericScore(feature)
