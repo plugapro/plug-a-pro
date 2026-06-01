@@ -1832,6 +1832,104 @@ git commit -m "feat(identity): render Didit structured fields on verification de
 
 ---
 
+### Task 14b: Render `rawPayloadRedacted` as a collapsible TRUST-only debug panel
+
+**Files:**
+- Modify: `field-service/app/(admin)/admin/verifications/[id]/page.tsx`
+
+**Why this task exists:** Didit's decision payload carries a lot more than the mapper stamps into typed columns — AML hit details, document image quality sub-scores (focus, brightness, resolution, brightness_issue, is_document_fully_visible), liveness check sub-warnings, IP analysis (country/VPN/proxy/Tor flags), and any additional `id_verifications[]` entries beyond `[0]`. Task 5's mapper writes `[0]`-only and a curated subset; the rest lives in `rawPayloadRedacted` after Task 8. Without rendering that JSON somewhere, an ops reviewer doing manual review of a `NEEDS_MANUAL_REVIEW` Didit case is missing the supporting detail. This task surfaces the full redacted payload as a collapsible `<details>` element gated to TRUST/ADMIN/OWNER, so the reviewer sees everything Didit returned in one place without the UI team having to render every field individually.
+
+**Safety note:** PII has already been redacted in Task 4 (`personal_number`, `document_number`, addresses, AML screened-data names/DOB replaced with `<HASH:xxxx>` markers; all image/video URLs dropped). The JSON is safe to display to authorised reviewers without further sanitisation. Standard `provider_sensitive_data_access_logs` row writing applies — if you need access auditing on this panel specifically, add an access-log write on render; otherwise the page-level view audit already covers it.
+
+- [ ] **Step 1: Write the failing test (or smoke step if render tests aren't wired)**
+
+If `__tests__/admin/` already has render-level tests for the verification detail page (created in Task 13), append:
+
+```ts
+describe('Admin verification detail — rawPayloadRedacted panel', () => {
+  it('renders a collapsible Full Didit decision panel when rawPayloadRedacted is present and current admin is TRUST+', async () => {
+    // Fixture: verification with rawPayloadRedacted = { decision: { liveness_checks: [{ score: 0.43 }] } }
+    // Current admin role: TRUST
+    // Render the page
+    const details = screen.getByText(/full didit decision/i)
+    expect(details).toBeVisible()
+    // Click to expand
+    fireEvent.click(details)
+    expect(screen.getByText(/"score": 0\.43/)).toBeVisible()
+  })
+
+  it('does NOT render the panel when rawPayloadRedacted is null', async () => {
+    // Fixture: verification with rawPayloadRedacted = null (e.g., manual-vendor row)
+    // Render
+    expect(screen.queryByText(/full didit decision/i)).toBeNull()
+  })
+
+  it('does NOT render the panel when current admin role is below TRUST', async () => {
+    // Fixture: rawPayloadRedacted present, but currentAdmin.role = 'OPS'
+    expect(screen.queryByText(/full didit decision/i)).toBeNull()
+  })
+})
+```
+
+If no render-test harness exists, skip the test here and add an assertion to Task 15's smoke test instead (see Task 15 step 2 update note below).
+
+- [ ] **Step 2: Run test to verify failure**
+
+```bash
+cd field-service && pnpm vitest run __tests__/admin
+```
+Expected: FAIL — panel does not exist yet.
+
+- [ ] **Step 3: Add the collapsible panel to the detail page**
+
+Open `field-service/app/(admin)/admin/verifications/[id]/page.tsx`. Locate the bottom of the "Verification case" section (just before the Documents section, or wherever feels natural for "additional detail"). Add:
+
+```tsx
+{verification.rawPayloadRedacted &&
+  currentAdmin.role &&
+  (['TRUST', 'ADMIN', 'OWNER'] as const).includes(currentAdmin.role as 'TRUST' | 'ADMIN' | 'OWNER') && (
+  <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-xs">
+    <summary className="cursor-pointer font-medium text-foreground">
+      Full Didit decision (redacted — PII hashed, image URLs dropped)
+    </summary>
+    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed">
+      <code>{JSON.stringify(verification.rawPayloadRedacted, null, 2)}</code>
+    </pre>
+  </details>
+)}
+```
+
+(Adapt class names to whatever Tailwind tokens the file already uses. The semantics — gated by `rawPayloadRedacted != null` AND role ∈ {TRUST, ADMIN, OWNER} — are the load-bearing parts.)
+
+If the detail page does not currently have `currentAdmin` in scope, fetch it via the same auth helper the rest of the admin pages use (probably `requireAdmin()` from `lib/auth.ts` already returns the admin row, including `role`). Pass `currentAdmin.role` through props if the rendering layer is a separate client component.
+
+- [ ] **Step 4: Run test + typecheck + lint**
+
+```bash
+cd field-service && pnpm vitest run __tests__/admin
+cd field-service && pnpm tsc --noEmit && pnpm lint
+```
+Expected: PASS — new test green; tsc + lint clean.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add field-service/app/\(admin\)/admin/verifications/\[id\]/page.tsx
+# If a test file was modified:
+# git add field-service/__tests__/admin/<relevant-test-file>.test.ts
+git commit -m "feat(identity): TRUST+ collapsible panel renders raw Didit decision (redacted)"
+```
+
+**Update to Task 15 (smoke test):** If you reach Task 15 after this, extend the assertion list with:
+
+```ts
+await expect(page.getByText(/Full Didit decision/i)).toBeVisible()
+```
+
+(Single line; do not re-test JSON contents in the smoke step — that's the unit test's job. Smoke just confirms the collapsible is present on a TRUST-signed-in session.)
+
+---
+
 ## Final verification
 
 ### Task 15: Smoke test — refresh-from-Didit shows docs + fields

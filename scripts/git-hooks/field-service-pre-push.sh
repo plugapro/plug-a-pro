@@ -136,7 +136,7 @@ if [[ -n "${FIELD_SERVICE_FOCUSED_TESTS:-}" ]]; then
   done <<< "$FIELD_SERVICE_FOCUSED_TESTS"
 fi
 
-unique_tests="$(printf '%s\n' "${tests[@]}" | sed '/^[[:space:]]*$/d' | sort -u)"
+unique_tests="$(printf '%s\n' ${tests[@]+"${tests[@]}"} | sed '/^[[:space:]]*$/d' | sort -u)"
 
 if [[ -z "$unique_tests" ]]; then
   unique_tests="__tests__/api/health.test.ts"
