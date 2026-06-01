@@ -423,6 +423,7 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
       decision: true,
       sourceCheckProvider: true,
       vendorReference: true,
+      livenessSessionReference: true,
       vendorWorkflowId: true,
     },
   })
@@ -430,11 +431,14 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
   if (verification.sourceCheckProvider !== 'didit') {
     throw new Error('Refresh action only supports Didit-sourced verifications')
   }
-  if (!verification.vendorReference) {
+  const diditSessionReference = verification.livenessSessionReference
+    ?? (verification.vendorReference?.startsWith('didit-pre:') ? null : verification.vendorReference)
+
+  if (!diditSessionReference) {
     throw new Error('Verification has no Didit session_id to refresh against')
   }
 
-  const refreshed = await refreshDiditSession(verification.vendorReference, {
+  const refreshed = await refreshDiditSession(diditSessionReference, {
     storedVendorWorkflowId: verification.vendorWorkflowId,
   })
   const shouldApplyVerdict =
@@ -474,7 +478,7 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
     await logDiditPersistFailed({
       verificationId: verification.id,
       status: post.status,
-      vendorReference: verification.vendorReference,
+      vendorReference: diditSessionReference,
       source: 'admin_refresh',
       error: errorMessage(error),
     })

@@ -253,9 +253,9 @@ describe('verification provider webhook route', () => {
     mockApplyVendorVerdict.mockResolvedValue({
       verificationId: 'ver-1',
       status: 'PASSED',
-      vendorReference: 'sess-applied',
+      vendorReference: 'didit-pre:placeholder',
     })
-    const fullDecision = { session_id: 'sess-applied', status: 'Approved' }
+    const fullDecision = { session_id: 'sess-parsed', status: 'Approved' }
     mockGetSessionDecision.mockResolvedValue(fullDecision)
     const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
 
@@ -263,7 +263,7 @@ describe('verification provider webhook route', () => {
 
     expect(response.status).toBe(200)
     expect(mockIsEnabled).toHaveBeenCalledWith('provider.identity.vendor.didit.persist_documents')
-    expect(mockGetSessionDecision).toHaveBeenCalledWith('sess-applied')
+    expect(mockGetSessionDecision).toHaveBeenCalledWith('sess-parsed')
     expect(mockPersistDiditDecision).toHaveBeenCalledWith('ver-1', fullDecision, { source: 'webhook' })
   })
 

@@ -180,7 +180,7 @@ async function maybePersistDiditDecision(params: {
   if (!isPersistableStatus(params.applied.status)) return
   if (!(await isEnabled('provider.identity.vendor.didit.persist_documents'))) return
 
-  const vendorReference = params.applied.vendorReference ?? params.parsed.vendorReference
+  const vendorReference = params.parsed.vendorReference ?? params.applied.vendorReference
   if (!vendorReference) {
     await logDiditPersistFailed({
       verificationId: params.verificationId,

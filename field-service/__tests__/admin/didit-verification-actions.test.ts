@@ -117,7 +117,8 @@ describe('Didit verification admin actions', () => {
       status: 'PROCESSING',
       decision: null,
       sourceCheckProvider: 'didit',
-      vendorReference: 'sess-1',
+      vendorReference: 'didit-pre:placeholder',
+      livenessSessionReference: 'sess-1',
       vendorWorkflowId: 'wf-auth',
     })
     mocks.mockDb.providerVerificationEvent.create.mockResolvedValue({ id: 'event-1' })
@@ -161,7 +162,8 @@ describe('Didit verification admin actions', () => {
         status: 'PROCESSING',
         decision: null,
         sourceCheckProvider: 'didit',
-        vendorReference: 'sess-1',
+        vendorReference: 'didit-pre:placeholder',
+        livenessSessionReference: 'sess-1',
         vendorWorkflowId: 'wf-auth',
       })
       .mockResolvedValueOnce({ id: 'ver-1', status: 'PASSED', decision: 'PASS' })
