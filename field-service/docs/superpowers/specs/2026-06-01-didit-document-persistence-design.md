@@ -1,7 +1,7 @@
 # Didit decision persistence — design spec
 
 **Date:** 2026-06-01
-**Status:** Approved (sections 1–9) — ready for implementation planning
+**Status:** Review-ready — awaiting implementation planning approval
 **Owners:** Engineering (Lebogang)
 **Related:**
 - `lib/identity-verification/vendors/didit/` (existing adapter)
@@ -12,13 +12,13 @@
 
 Didit is wired as a hosted-flow identity-verification vendor (PR #24, merged 2026-05-25). The adapter creates Didit sessions, receives signed webhooks, normalises decisions, and applies verdicts via `applyVendorVerdict`. End-to-end signature verification was proven against live production traffic on 2026-06-01 (5/5 real webhooks → 200 OK).
 
-Today, when a Didit-routed verification terminates (PASSED, FAILED, NEEDS_MANUAL_REVIEW, EXPIRED), PlugAPro stores only the verdict + minimal metadata. **Document images, structured ID fields, scores, and AML/liveness/face-match artifacts remain on Didit's side.** The admin manual-review screen for a Didit-routed verification displays "No documents uploaded" because we never download them.
+Today, when a Didit-routed verification reaches a persisted verdict state (PASSED, FAILED, NEEDS_MANUAL_REVIEW), PlugAPro stores only the verdict + minimal metadata. **Document images, structured ID fields, scores, and AML/liveness/face-match artifacts remain on Didit's side.** The admin manual-review screen for a Didit-routed verification displays "No documents uploaded" because we never download them.
 
 This blocks any meaningful manual review of Didit-routed verifications. Today's smoke test for Lovemore Sibanda (verification id `cmpv7l9j8000dl2042porhv0g`) landed in `NEEDS_MANUAL_REVIEW` with reason `PROVIDER_LIVENESS_FAILED` — but the reviewer has nothing to look at locally.
 
 ## 2. Goals
 
-1. Persist Didit's verification artifacts (images + structured fields + redacted raw payload) into PlugAPro after each terminal-state webhook, idempotently.
+1. Persist Didit's verification artifacts (images + structured fields + redacted raw payload) into PlugAPro after each Didit webhook that produces a persisted verdict state, idempotently.
 2. Backfill Lovemore's existing record so his in-flight manual review can proceed with full context.
 3. Provide a clean code path that the admin "Refresh from Didit" action can also use for missed-webhook recovery.
 
@@ -26,7 +26,7 @@ This blocks any meaningful manual review of Didit-routed verifications. Today's 
 
 - New schema columns or tables. The existing `ProviderIdentityVerification` and `ProviderIdentityDocument` models cover the requirement.
 - A `documentNumberEncrypted` column. Schema only supports hash + last4 for document number; raw doc number is never persisted.
-- Manual-review UI redesign. The existing admin verification page already renders the fields we populate; this spec assumes the UI inherits the populated values.
+- Manual-review UI redesign. V1 only gap-fills the current admin verification detail view so the newly populated structured fields and private document links are visible.
 - Multi-attempt document history within a single verification (one image per kind per verification).
 - A new background-job infrastructure. Persist runs inline after the verdict transaction; if needed, future PR can add async.
 - POPIA right-to-erasure flow for stored documents. (Existing identity-document deletion flow applies; out of scope here.)
@@ -44,7 +44,7 @@ This blocks any meaningful manual review of Didit-routed verifications. Today's 
 - `field-service/app/api/webhooks/verification/[vendor]/route.ts` — call `persistDiditDecision` after the verdict transaction commits, gated on flag
 - `field-service/app/(admin)/admin/verifications/actions.ts:refreshDiditSessionAction` — call `persistDiditDecision` after `crudAction` returns (admin-explicit; ignores flag)
 - `field-service/lib/feature-flags-registry.ts` — register `provider.identity.vendor.didit.persist_documents` (default `false`)
-- `field-service/app/(admin)/admin/verifications/[id]/page.tsx` — render any populated fields/documents that the current detail view does not already surface (gap-fill only)
+- `field-service/app/(admin)/admin/verifications/[id]/page.tsx` — render any populated fields/documents that the current detail view does not already surface (gap-fill only), and expose a TRUST-only "Refresh from Didit" / backfill action for Didit rows that are missing local persisted documents even if the verdict is already terminal.
 
 **No schema changes.** Existing columns suffice (see §6).
 
@@ -73,10 +73,12 @@ export async function persistDiditDecision(
 
 Internal helpers, each independently testable:
 
-- `mapDecisionToVerificationFields(decision, encContext)` — pure. Returns the Prisma update payload for `providerIdentityVerification.update({ data: ... })`.
-  - For `id_verifications[0].personal_number` (SA ID equivalent): `encryptIdentifier` + `hashIdentifier('didit-personal-number', ...)` + `identifierLast4` → stamps `identifierEncrypted`, `identifierHash`, `identifierLast4`
-  - For `id_verifications[0].document_number`: `hashIdentifier('didit-document-number', ...)` + `identifierLast4` → stamps `documentNumberHash`, `documentNumberLast4`. **Raw doc number is never written.**
-  - Derived/plain columns: `dobDerived`, `genderDerived`, `citizenshipDerived` (from `nationality`), `nationality`, `issuingCountry` (from `issuing_state`), `documentExpiryDate` (from `expiration_date`), `selfieMatchScore` (from `face_matches[0].face_match_score`), `livenessScore` (from `liveness_checks[0].liveness_score`), `documentConfidenceScore` (from `id_verifications[0].front_image_quality_score.overall_score`), `failureReasonCode`, `riskFlags` (compiled from warnings + aml hits), `decisionAt` (from `created_at` ts → Date)
+- `mapDecisionToVerificationFields(decision)` — unit-testable. Returns the Prisma update payload for `providerIdentityVerification.update({ data: ... })`. It is not strictly deterministic because `encryptIdentifier` uses a random IV, so tests assert decryptability/shape rather than exact ciphertext.
+  - For `id_verifications[0].personal_number` (SA ID equivalent): `encryptIdentifier(value)` + `hashIdentifier(value, 'identity:didit-personal-number')` + `identifierLast4(value)` → stamps `identifierEncrypted`, `identifierHash`, `identifierLast4`.
+  - For `id_verifications[0].document_number`: `hashIdentifier(value, 'identity:didit-document-number')` + `identifierLast4(value)` → stamps `documentNumberHash`, `documentNumberLast4`. **Raw doc number is never written.**
+  - Derived/plain columns: `dobDerived`, `genderDerived`, `citizenshipDerived` (from `nationality`), `nationality`, `issuingCountry` (from `issuing_state`), `documentExpiryDate` (from `expiration_date`), `selfieMatchScore` (from `face_matches[0].score`, fallback `face_match_score`), `livenessScore` (from `liveness_checks[0].score`, fallback `liveness_score`), `documentConfidenceScore` (from `id_verifications[0].front_image_quality_score.overall_score`, fallback `id_verifications[0].score` / `confidence`), `failureReasonCode`, `riskFlags` (compiled from warnings + aml hits), `decisionAt` (from `created_at` ts/string → Date)
+
+- `tryMapDecisionToVerificationFields(decision)` — thin wrapper around the mapper. Returns `{ ok: true, data }` or `{ ok: false, reason }` so document persistence can still complete when Didit returns an unexpected field shape.
 
 - `extractImageRefs(decision)` — pure. Returns `Array<{ kind: IdentityDocumentKind; sourceUrl: string }>`. **Only the four mapped kinds:**
   | Didit field | Our kind |
@@ -87,7 +89,9 @@ Internal helpers, each independently testable:
   | `liveness_checks[0].reference_image` | `LIVENESS_FRAME` |
   Skips `full_front_image`, `full_back_image`, `front_image_camera_front`, `back_image_camera_front`, all video URLs, `face_matches[].source_image`/`target_image`, NFC and POA artifacts. Not in V1 scope.
 
-- `downloadDocumentImage(url)` — side-effectful HTTP. `fetch(url, { headers: { 'X-Api-Key': diditConfig.apiKey } })`. Returns `{ bytes: Buffer; sha256: string; mimeType: string }` or throws `DiditImageDownloadError(reason, status?)`. If 401 with X-Api-Key, retry once with bare GET and surface the finding in the persist event metadata (Didit docs do not explicitly state CDN auth; we expect X-Api-Key but verify).
+- `downloadDocumentImage(url)` — side-effectful HTTP. `fetch(url, { headers: { 'X-Api-Key': diditConfig.apiKey } })`. Returns `{ bytes: Buffer; sha256: string; mimeType: string }` or throws `DiditImageDownloadError(reason, status?)`. If 401 with `X-Api-Key`, retry once with lowercase `x-api-key` and surface the finding in persist event metadata. Didit's decision endpoint documents `x-api-key`; the retry guards against CDN/header-normalisation quirks.
+
+- `toIdentityDocumentFile({ bytes, mimeType, kind })` — pure wrapper that converts downloaded bytes into a `File` accepted by existing `uploadIdentityDocument({ verificationId, documentKind, file })`.
 
 - `redactPayload(decision)` — pure. Produces JSON for `rawPayloadRedacted`:
   - **Drops** every image URL (`front_image`, `back_image`, `portrait_image`, `full_*`, `*_camera_front`, `face_image`, `reference_image`, `source_image`, `target_image`, `signature_image`, `document_file`) and every video URL (`front_video`, `back_video`, `video_url`).
@@ -100,21 +104,26 @@ Persist is called **at caller boundaries, NOT inside `applyVendorVerdict`**. The
 
 **Webhook path (`app/api/webhooks/verification/[vendor]/route.ts`):**
 1. Existing: `parseWebhook` → signature gate → idempotent webhook-event row → `applyVendorVerdict(verification.id, parsed.result, 'webhook')`
-2. **(NEW)** After `applyVendorVerdict` returns:
+2. **(NEW)** After `applyVendorVerdict` returns, gate on the applied status, not `parsed.result.decision`:
    ```ts
    const flagOn = await isEnabled('provider.identity.vendor.didit.persist_documents')
-   if (vendorKey === 'didit' && flagOn && parsed.result && isTerminalDecision(parsed.result.decision)) {
+   let applied: SubmitVerificationForAutomationResult | null = null
+   if (parsed.result) {
+     applied = await applyVendorVerdict(verification.id, parsed.result, 'webhook')
+   }
+   if (vendorKey === 'didit' && flagOn && applied && isPersistableStatus(applied.status)) {
      try {
-       const full = await getSessionDecision(verification.vendorReference!)
+       if (!applied.vendorReference) throw new Error('Didit vendorReference missing after verdict')
+       const full = await getSessionDecision(applied.vendorReference)
        await persistDiditDecision(verification.id, full, { source: 'webhook' })
      } catch (err) {
-       // Audit-only event: reuse verification.status for both from/to since this
+       // Audit-only event: reuse the applied status for both from/to since this
        // is a side-effect log, not a state transition.
        await db.providerVerificationEvent.create({
          data: {
            verificationId: verification.id,
-           fromStatus: verification.status,
-           toStatus: verification.status,
+           fromStatus: applied.status,
+           toStatus: applied.status,
            reasonCode: 'DIDIT_PERSIST_FAILED',
            metadata: { source: 'webhook', error: String(err) },
          },
@@ -124,10 +133,11 @@ Persist is called **at caller boundaries, NOT inside `applyVendorVerdict`**. The
    ```
 3. Webhook returns 200 regardless of persist success/failure.
 4. **Why refetch full decision?** Didit's webhook envelope may not carry every image URL (status.updated may contain only the metadata delta). The decision endpoint is the canonical, complete source.
+5. **Persistable statuses:** V1 auto-persists only `PASSED`, `FAILED`, and `NEEDS_MANUAL_REVIEW`. Didit `Expired`, `Kyc Expired`, and `Abandoned` currently normalise to `result: null`, so they produce an audit webhook row but no `applyVendorVerdict` call and no auto-persist. If we later add explicit expiry transitions, persist can be extended then.
 
 **Admin refresh (`app/(admin)/admin/verifications/actions.ts:refreshDiditSessionAction`):**
-1. Existing: `refreshDiditSession` returns `{ raw, normalized }` (outside `crudAction`).
-2. Existing: `crudAction(...)` block calls `applyVendorVerdict(verification.id, refreshed.normalized.result, 'webhook', tx)` (currently labelled 'webhook'; left as-is).
+1. **Refactor:** preflight inside the action, outside `crudAction`, to validate admin access, load the verification's Didit `vendorReference` + `vendorWorkflowId`, and call `refreshDiditSession(...)` so `{ raw, normalized }` is available after the transaction. Current code fetches inside `crudAction`; implementation must move that fetch out of the transaction.
+2. Existing transaction semantics remain: `crudAction(...)` block calls `applyVendorVerdict(verification.id, refreshed.normalized.result, 'webhook', tx)` (currently labelled 'webhook'; left as-is) when `refreshed.normalized.result` exists.
 3. **(NEW)** After `crudAction` returns ok:
    ```ts
    try {
@@ -137,6 +147,8 @@ Persist is called **at caller boundaries, NOT inside `applyVendorVerdict`**. The
    }
    ```
 4. **No flag check** — admin clicked the button; they opted in. This is the path we use to backfill Lovemore on day 1.
+5. Terminal verifications: if the verification is already `PASSED`, `FAILED`, `EXPIRED`, or `CANCELLED`, still fetch the latest Didit decision during admin refresh and run `persistDiditDecision`; skip `applyVendorVerdict` if no state transition is needed. This preserves the backfill use case for rows whose verdict already landed before V1 shipped.
+6. UI exposure: current detail page hides the refresh form for most terminal rows. V1 must show a TRUST-only refresh/backfill control for Didit rows with missing local documents or missing structured Didit fields, even if the status is already `PASSED` or `FAILED`.
 
 ### 4.4 Idempotency sequence inside `persistDiditDecision`
 
@@ -158,20 +170,38 @@ results = await Promise.allSettled(refs.map(async ({ kind, sourceUrl }) => {
     return { kind, action: 'skip' as const }     // image unchanged; no upload, no DB write
   }
 
-  // 3. Upload only when new or changed.
-  const ref = await uploadIdentityDocument({ verificationId, bytes, mimeType, kind })
+  // 3. Upload only when new or changed. Existing helper expects a File, not raw bytes.
+  const file = toIdentityDocumentFile({ bytes, mimeType, kind })
+  const uploaded = await uploadIdentityDocument({ verificationId, documentKind: kind, file })
+  const storageRef = uploaded.pathname
 
   return existing
-    ? { kind, action: 'update' as const, existingId: existing.id, ref, sha256, mimeType, sizeBytes: bytes.length }
-    : { kind, action: 'create' as const, ref, sha256, mimeType, sizeBytes: bytes.length }
+    ? { kind, action: 'update' as const, existingId: existing.id, storageRef, sha256, mimeType, sizeBytes: bytes.length }
+    : { kind, action: 'create' as const, storageRef, sha256, mimeType, sizeBytes: bytes.length }
 }))
 
-// 4. Short tx for field stamp + queued doc upserts + summary event.
+// 4. Build field stamp before the tx. If it fails, keep document persistence
+// best-effort and record fieldsStamped:false in the summary event.
+const fieldMapping = tryMapDecisionToVerificationFields(decision)
+
+// 5. Short tx for field stamp + queued doc upserts + summary event.
 await db.$transaction(async (tx) => {
-  await tx.providerIdentityVerification.update({
+  const current = await tx.providerIdentityVerification.findUniqueOrThrow({
     where: { id: verificationId },
-    data: { ...mapDecisionToVerificationFields(decision), rawPayloadRedacted: redactPayload(decision) },
+    select: { status: true },
   })
+
+  if (fieldMapping.ok) {
+    await tx.providerIdentityVerification.update({
+      where: { id: verificationId },
+      data: { ...fieldMapping.data, rawPayloadRedacted: redactPayload(decision) },
+    })
+  } else {
+    await tx.providerIdentityVerification.update({
+      where: { id: verificationId },
+      data: { rawPayloadRedacted: redactPayload(decision) },
+    })
+  }
 
   for (const result of results) {
     if (result.status !== 'fulfilled') continue
@@ -179,24 +209,39 @@ await db.$transaction(async (tx) => {
     if (action.action === 'update') {
       await tx.providerIdentityDocument.update({
         where: { id: action.existingId },
-        data: { blobKey: action.ref, sha256: action.sha256, mimeType: action.mimeType, sizeBytes: action.sizeBytes, status: 'UPLOADED' },
+        data: { blobKey: action.storageRef, sha256: action.sha256, mimeType: action.mimeType, sizeBytes: action.sizeBytes, status: 'UPLOADED' },
       })
     } else if (action.action === 'create') {
       await tx.providerIdentityDocument.create({
-        data: { verificationId, documentKind: action.kind, blobKey: action.ref, sha256: action.sha256, mimeType: action.mimeType, sizeBytes: action.sizeBytes, status: 'UPLOADED' },
+        data: {
+          verificationId,
+          documentKind: action.kind,
+          blobKey: action.storageRef,
+          sha256: action.sha256,
+          mimeType: action.mimeType,
+          sizeBytes: action.sizeBytes,
+          status: 'UPLOADED',
+          deleteAfter: addDays(now, RAW_DOCUMENT_RETENTION_DAYS),
+        },
       })
     }
   }
 
-  // Audit-only event: read current verification.status once at the top of the
-  // tx and reuse for both from/to (not a state transition).
+  // Audit-only event: reuse current.status for both from/to (not a state transition).
   await tx.providerVerificationEvent.create({
     data: {
       verificationId,
-      fromStatus: currentStatus,
-      toStatus: currentStatus,
+      fromStatus: current.status,
+      toStatus: current.status,
       reasonCode: 'DIDIT_PERSIST_COMPLETED',
-      metadata: { source, stored: storedKinds, skipped: skippedKinds, failed: failedKinds },
+      metadata: {
+        source,
+        fieldsStamped: fieldMapping.ok,
+        fieldError: fieldMapping.ok ? null : fieldMapping.reason,
+        stored: storedKinds,
+        skipped: skippedKinds,
+        failed: failedKinds,
+      },
     },
   })
 })
@@ -212,9 +257,10 @@ Persist is best-effort and isolated per kind.
 |---|---|
 | `downloadDocumentImage` throws | That kind is recorded in `documentsFailed`; no upload, no row written for it. Other kinds proceed. |
 | `uploadIdentityDocument` throws | Same — failure recorded, no DB write. |
-| `mapDecisionToVerificationFields` throws (unexpected Didit shape) | Caller emits `DIDIT_PERSIST_FAILED` event; entire persist aborts; verdict stands. |
+| `mapDecisionToVerificationFields` throws (unexpected Didit shape) | Field stamp is skipped; `rawPayloadRedacted` + successful document rows still persist; summary event records `fieldsStamped:false` + `fieldError`. Verdict stands. |
 | DB tx fails | Already-uploaded Supabase objects remain. They are not referenced by any active row (active row, if any, still points at the old ref). **Orphan retained** until future cleanup. |
 | `getSessionDecision` throws (webhook path) | `DIDIT_PERSIST_FAILED` event; webhook still returns 200; admin refresh later will recover. |
+| Already-terminal admin refresh | Persist still runs from the freshly fetched raw decision; verdict mutation is skipped. |
 
 ### 4.6 Privacy + storage rules
 
@@ -230,7 +276,7 @@ Persist is best-effort and isolated per kind.
 
 `provider.identity.vendor.didit.persist_documents` — default `false`.
 - `false`: webhook path is a no-op. Admin refresh path **still runs persist** (admin explicit opt-in).
-- `true`: webhook path runs persist after every terminal-state Didit webhook.
+- `true`: webhook path runs persist after every Didit webhook that produces `PASSED`, `FAILED`, or `NEEDS_MANUAL_REVIEW` via `applyVendorVerdict`.
 
 Rollout pattern: ship code with flag off → admin manually backfills Lovemore via refresh → verify outputs → flip flag on.
 
@@ -251,7 +297,7 @@ parseWebhook + sig check                                  refreshDiditSession (f
 applyVendorVerdict (tx)                                   crudAction { applyVendorVerdict (tx) }
             │                                                           │
             ▼ (NEW)                                                     ▼ (NEW)
-flag on && terminal?                                       always
+flag on && applied status is persistable?                  always
             │                                                           │
             ▼                                                           │
 getSessionDecision (full)                                               │
@@ -288,9 +334,9 @@ getSessionDecision (full)                                               │
 | `id_verifications[0].nationality` | `nationality`, `citizenshipDerived` |
 | `id_verifications[0].issuing_state` | `issuingCountry` |
 | `id_verifications[0].expiration_date` | `documentExpiryDate` |
-| `id_verifications[0].front_image_quality_score.overall_score` | `documentConfidenceScore` |
-| `liveness_checks[0].liveness_score` | `livenessScore` |
-| `face_matches[0].face_match_score` | `selfieMatchScore` |
+| `id_verifications[0].front_image_quality_score.overall_score` | `documentConfidenceScore` (fallback `id_verifications[0].score` / `confidence`) |
+| `liveness_checks[0].score` | `livenessScore` (fallback `liveness_score`) |
+| `face_matches[0].score` | `selfieMatchScore` (fallback `face_match_score`) |
 | `id_verifications[0].warnings`, `aml_screenings[0].hits`, etc. | compiled into `riskFlags` JSON |
 | `failureReasonCode` (orchestrator-derived) | already by orchestrator |
 | `id_verifications[0].front_image` | `ProviderIdentityDocument(kind=ID_FRONT, blobKey, sha256, mimeType, sizeBytes)` |
@@ -309,6 +355,7 @@ Per TDD discipline:
 - `redactPayload`: fixture decision; assert image URLs gone, PII fields hashed, scores preserved.
 - `persistDiditDecision` (with mocked HTTP + mocked storage + in-memory Prisma):
   - Happy path: 4 images downloaded, uploaded, doc rows created, fields stamped, event written
+  - Upload contract: downloaded bytes are converted to a `File` and passed to `uploadIdentityDocument({ verificationId, documentKind, file })`; created rows include required `deleteAfter`
   - Idempotency: re-running with same decision skips uploads (sha256 match), no new doc rows
   - Sha-changed: existing doc updated in place, no new row
   - Per-kind isolation: ID_BACK download fails → ID_FRONT/SELFIE/LIVENESS_FRAME still persist; failed kind in `documentsFailed`
@@ -317,10 +364,12 @@ Per TDD discipline:
 
 **Integration tests:**
 - Webhook handler integration: simulate a terminal status.updated arriving → confirm `applyVendorVerdict` runs THEN `persistDiditDecision` is called when flag on; not called when flag off.
-- Admin refresh integration: simulate `refreshDiditSessionAction` invocation → confirm persist runs regardless of flag.
+- Webhook handler integration: simulate Didit `Expired` / `Abandoned` with `result:null` → confirm webhook audit still succeeds and auto-persist does not run.
+- Admin refresh integration: simulate `refreshDiditSessionAction` invocation → confirm persist runs regardless of flag, including for an already-terminal verification.
+- Admin detail integration/render test: terminal Didit row with no local documents still exposes the TRUST-only refresh/backfill control.
 
 **Smoke test (`e2e/smoke.spec.ts`):**
-- After admin clicks "Refresh from Didit" on a Didit verification, the verification detail page renders ≥1 document thumbnail.
+- After admin clicks "Refresh from Didit" on a Didit verification, the verification detail page renders private document links and the populated structured fields: DOB, gender, citizenship, document-number last4, document confidence, liveness score, and selfie-match score.
 
 ## 8. Rollout
 
@@ -329,17 +378,18 @@ Per TDD discipline:
 3. **PR review** with owner sign-off.
 4. **Merge to `main`** → Vercel auto-deploys to production with flag off.
 5. **Backfill Lovemore:** admin (Lebogang) opens `https://app.plugapro.co.za/admin/verifications/cmpv7l9j8000dl2042porhv0g` → clicks "Refresh from Didit" → persist runs (flag-independent admin path) → documents + fields populate.
-6. **Verify** in admin UI: 4 document thumbnails, structured fields visible, decision metadata complete. Reviewer proceeds with manual review.
+6. **Verify** in admin UI: 4 private document links, structured fields visible (DOB, gender, citizenship, document-number last4, scores), decision metadata complete. Reviewer proceeds with manual review.
 7. **Flag flip:** set `feature_flags.enabled = true` for `provider.identity.vendor.didit.persist_documents` in production DB. Future terminal webhooks auto-persist.
 8. **Monitor:** watch `provider_verification_events` for `DIDIT_PERSIST_FAILED` over the next 48h; tune retry / error handling if anything pops.
 
 ## 9. Known limitations (intentional)
 
-- **Orphan storage objects in rare upload-succeeds-DB-tx-fails window.** Active doc row is unchanged so no functional impact. Future PR will add a nightly cron to detect storage objects not referenced by any non-DELETED `ProviderIdentityDocument` and delete them.
+- **Orphan storage objects in rare upload-succeeds-DB-tx-fails window, and when a changed image replaces an old storage ref.** Active doc rows stay correct, so there is no functional impact. Future PR will add a nightly cron to detect storage objects not referenced by any non-DELETED `ProviderIdentityDocument` and delete them.
 - **`document_number` hashed only.** No `documentNumberEncrypted` column. Reviewers can compare hashes (e.g., re-enter a candidate doc number to verify match) but cannot read the raw doc number from PlugAPro. Acceptable for SA-context KYC where personal_number is the primary identifier.
 - **One image per kind per verification.** If a re-attempt fits within the same verification (rare — Didit usually issues a new session id), only the latest is kept. Multi-attempt history is a future concern.
-- **Didit CDN auth assumed `X-Api-Key`.** Docs are silent. Implementation includes a 401-fallback path that retries with no auth header and surfaces the finding in event metadata. Bumps the spec on first finding.
+- **Didit CDN auth assumed `X-Api-Key`.** Retrieve Session docs require `x-api-key` for the decision endpoint. Implementation includes a 401-fallback path that retries lowercase `x-api-key` and surfaces the finding in event metadata. Bumps the spec on first finding.
 - **Webhook persist requires a `vendorReference` to refetch the full decision.** If the verification has only `livenessSessionReference` (edge case where refs got out of sync), persist logs a fail-safe event and exits. Caller falls back to admin refresh.
+- **Expired/abandoned sessions are audit-only in V1.** Current Didit normalisation returns `result:null` for `Expired`, `Kyc Expired`, and `Abandoned`, so webhook auto-persist does not run for those events.
 
 ## 10. Decisions captured during brainstorm
 
@@ -348,7 +398,7 @@ Per TDD discipline:
 | Question | Decision |
 |---|---|
 | Persist scope | Images + structured fields + raw payload (full archive) |
-| Trigger | Terminal webhook + manual admin refresh (the recommended hybrid) |
+| Trigger | Persisted verdict webhook (`PASSED`, `FAILED`, `NEEDS_MANUAL_REVIEW`) + manual admin refresh (the recommended hybrid) |
 | Approach | Single module called from both webhook + admin (Approach A) |
 | Call site for persist | Caller boundary (route + action), not inside `applyVendorVerdict` |
 | Document number encryption | Hash + last4 only (no encrypted column in schema) |
