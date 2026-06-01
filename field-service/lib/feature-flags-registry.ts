@@ -305,6 +305,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.identity.vendor.didit.persist_documents': {
+    description: 'Persist Didit decision fields and private document images after terminal vendor verdicts or admin backfills.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'admin.commercial.economics.didit_scenario': {
     description: 'Show the Didit onboarding-vendor scenario on the Provider Economics dashboard (companion to provider.identity.vendor.didit).',
     owner: 'ops',

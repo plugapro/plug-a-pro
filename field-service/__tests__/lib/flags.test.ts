@@ -42,6 +42,13 @@ describe('feature flag registry', () => {
       defaultValue: false,
     })
   })
+
+  it('registers Didit document persistence disabled by default', () => {
+    expect(FEATURE_FLAGS_REGISTRY['provider.identity.vendor.didit.persist_documents']).toMatchObject({
+      owner: 'eng',
+      defaultValue: false,
+    })
+  })
 })
 
 describe('isEnabled - default behaviour', () => {
