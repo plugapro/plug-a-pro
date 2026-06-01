@@ -111,6 +111,20 @@ test.describe('authenticated', () => {
     await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
     await expect(page.locator('text=Could not load customer')).toHaveCount(0)
   })
+
+  test('Didit verification refresh backfills local evidence when configured', async ({ page }) => {
+    const verificationId = process.env.E2E_DIDIT_VERIFICATION_ID
+    test.skip(!verificationId, 'E2E_DIDIT_VERIFICATION_ID not set — skipping Didit refresh smoke')
+
+    await page.goto(`/admin/verifications/${verificationId}`)
+    await page.getByRole('button', { name: 'Refresh from Didit' }).click()
+
+    await expect(page).toHaveURL(/message=didit-refreshed/)
+    await expect(page.getByRole('link', { name: 'Open private preview' }).first()).toBeVisible()
+    await expect(page.getByText('Document confidence')).toBeVisible()
+    await expect(page.getByText('Liveness score')).toBeVisible()
+    await expect(page.getByText('Selfie match')).toBeVisible()
+  })
 })
 
 // ─── Mobile viewport smoke ────────────────────────────────────────────────────

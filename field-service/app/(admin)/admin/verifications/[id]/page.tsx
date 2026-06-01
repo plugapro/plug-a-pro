@@ -29,6 +29,7 @@ const NON_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'NEEDS_MANUAL_REVIEW',
   'RETRY_REQUIRED',
 ])
+const DIDIT_DOCUMENT_KINDS = ['ID_FRONT', 'ID_BACK', 'SELFIE', 'LIVENESS_FRAME'] as const
 
 export const metadata = buildMetadata({ title: 'Identity Verification Review', noIndex: true })
 
@@ -60,6 +61,9 @@ export default async function AdminIdentityVerificationDetailPage({
   const approveAssurance = verification.channel === 'WHATSAPP' ? 'LOW' : 'HIGH'
   const webhookEvents = verification.webhookEvents ?? []
   const reviewMessage = reviewActionMessage(message)
+  const canRefreshDidit = verification.sourceCheckProvider === 'didit' &&
+    roleAtLeast(admin.adminRole, 'TRUST') &&
+    (NON_TERMINAL_STATUSES.has(verification.status) || diditNeedsBackfill(verification))
 
   return (
     <div className="space-y-6">
@@ -110,9 +114,16 @@ export default async function AdminIdentityVerificationDetailPage({
               />
               <Field label="Liveness ref" value={verification.livenessSessionReference ?? 'None'} mono />
               <Field label="Identifier" value={verification.identifierLast4 ? `****${verification.identifierLast4}` : 'Not captured'} mono />
+              <Field label="Document number" value={verification.documentNumberLast4 ? `****${verification.documentNumberLast4}` : 'Not captured'} mono />
+              <Field label="Date of birth" value={verification.dobDerived ? formatDateOnly(verification.dobDerived) : 'Not captured'} />
+              <Field label="Gender" value={verification.genderDerived ?? 'Not captured'} />
+              <Field label="Citizenship" value={verification.citizenshipDerived ?? 'Not captured'} />
               <Field label="Issuing country" value={verification.issuingCountry ?? 'Not captured'} />
               <Field label="Nationality" value={verification.nationality ?? 'Not captured'} />
               <Field label="Document expiry" value={verification.documentExpiryDate ? formatDate(verification.documentExpiryDate) : 'Not captured'} />
+              <Field label="Document confidence" value={formatScore(verification.documentConfidenceScore)} />
+              <Field label="Liveness score" value={formatScore(verification.livenessScore)} />
+              <Field label="Selfie match" value={formatScore(verification.selfieMatchScore)} />
               <Field label="Failure reason" value={verification.failureReasonCode ?? 'None'} />
               <Field label="Submitted" value={formatDate(verification.createdAt)} />
             </dl>
@@ -195,11 +206,11 @@ export default async function AdminIdentityVerificationDetailPage({
             </div>
           </div>
 
-          {verification.sourceCheckProvider === 'didit' && NON_TERMINAL_STATUSES.has(verification.status) && roleAtLeast(admin.adminRole, 'TRUST') ? (
+          {canRefreshDidit ? (
             <div className="rounded-xl border bg-card p-4">
               <h2 className="font-semibold">Didit session</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Webhook missed? Pull the latest decision from Didit and re-apply it through the orchestrator.
+                Webhook missed or local evidence incomplete? Pull the latest decision from Didit and backfill this case.
               </p>
               <form action={refreshDiditSessionFormAction} className="mt-3">
                 <input type="hidden" name="verificationId" value={verification.id} />
@@ -362,6 +373,46 @@ function formatRiskFlagValue(value: unknown) {
   return JSON.stringify(value)
 }
 
+function diditNeedsBackfill(verification: {
+  documents: Array<{ documentKind: string; status: string }>
+  dobDerived?: Date | null
+  genderDerived?: string | null
+  citizenshipDerived?: string | null
+  documentNumberLast4?: string | null
+  documentConfidenceScore?: number | null
+  livenessScore?: number | null
+  selfieMatchScore?: number | null
+}) {
+  return missingDiditDocuments(verification.documents) || missingDiditStructuredFields(verification)
+}
+
+function missingDiditDocuments(documents: Array<{ documentKind: string; status: string }>) {
+  const activeKinds = new Set(
+    documents
+      .filter((document) => document.status !== 'DELETED')
+      .map((document) => document.documentKind),
+  )
+  return DIDIT_DOCUMENT_KINDS.some((kind) => !activeKinds.has(kind))
+}
+
+function missingDiditStructuredFields(verification: {
+  dobDerived?: Date | null
+  genderDerived?: string | null
+  citizenshipDerived?: string | null
+  documentNumberLast4?: string | null
+  documentConfidenceScore?: number | null
+  livenessScore?: number | null
+  selfieMatchScore?: number | null
+}) {
+  return !verification.dobDerived ||
+    !verification.genderDerived ||
+    !verification.citizenshipDerived ||
+    !verification.documentNumberLast4 ||
+    verification.documentConfidenceScore == null ||
+    verification.livenessScore == null ||
+    verification.selfieMatchScore == null
+}
+
 const ROLE_LEVEL: Record<Role, number> = {
   OPS: 1,
   FINANCE: 2,
@@ -386,4 +437,18 @@ function formatDate(value: Date) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatDateOnly(value: Date) {
+  return value.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+function formatScore(value: number | null) {
+  if (value == null) return 'Not captured'
+  return `${Math.round(value * 100)}%`
 }

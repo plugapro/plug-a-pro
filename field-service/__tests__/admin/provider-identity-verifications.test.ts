@@ -199,6 +199,135 @@ describe('admin identity verification actions', () => {
     expect(html).toContain('true')
   })
 
+  it('renders Didit-derived structured fields on the admin verification detail page', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      id: 'ver-1',
+      identityBasis: 'SA_ID',
+      channel: 'PWA',
+      assuranceLevel: 'HIGH',
+      decision: 'PASS',
+      identifierLast4: '0088',
+      documentNumberLast4: '6789',
+      identifierEncrypted: null,
+      dobDerived: new Date('1990-02-03T00:00:00.000Z'),
+      genderDerived: 'FEMALE',
+      citizenshipDerived: 'ZA',
+      issuingCountry: 'ZAF',
+      nationality: 'South African',
+      documentExpiryDate: new Date('2031-04-05T00:00:00.000Z'),
+      documentConfidenceScore: 0.96,
+      livenessScore: 0.92,
+      selfieMatchScore: 0.89,
+      failureReasonCode: null,
+      riskFlags: [],
+      status: 'PASSED',
+      sourceCheckProvider: 'didit',
+      vendorReference: 'sess-1',
+      vendorWorkflowId: 'wf-auth',
+      costEstimateCents: 348,
+      costCurrency: 'USD',
+      decisionAt: new Date('2026-05-31T09:05:00.000Z'),
+      livenessSessionReference: 'sess-1',
+      createdAt: new Date('2026-05-25T08:00:00.000Z'),
+      provider: {
+        id: 'provider-1',
+        name: 'Sarah Provider',
+        phone: '+27820000000',
+        email: 'sarah@example.test',
+        kycStatus: 'VERIFIED',
+        status: 'ACTIVE',
+      },
+      providerApplication: null,
+      documents: [
+        { id: 'doc-front', documentKind: 'ID_FRONT', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+        { id: 'doc-back', documentKind: 'ID_BACK', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+        { id: 'doc-selfie', documentKind: 'SELFIE', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+        { id: 'doc-live', documentKind: 'LIVENESS_FRAME', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+      ],
+      events: [],
+      webhookEvents: [],
+      reviews: [],
+    })
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({}),
+      }),
+    )
+
+    expect(html).toContain('Date of birth')
+    expect(html).toContain('3 Feb 1990')
+    expect(html).toContain('Gender')
+    expect(html).toContain('FEMALE')
+    expect(html).toContain('Citizenship')
+    expect(html).toContain('ZA')
+    expect(html).toContain('Document number')
+    expect(html).toContain('****6789')
+    expect(html).toContain('Document confidence')
+    expect(html).toContain('96%')
+    expect(html).toContain('Liveness score')
+    expect(html).toContain('92%')
+    expect(html).toContain('Selfie match')
+    expect(html).toContain('89%')
+  })
+
+  it('shows the TRUST Didit refresh control for terminal rows missing local documents', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      ...(await baseVerification()),
+      status: 'PASSED',
+      decision: 'PASS',
+      sourceCheckProvider: 'didit',
+      vendorReference: 'sess-terminal',
+      documents: [],
+    })
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({}),
+      }),
+    )
+
+    expect(html).toContain('Didit session')
+    expect(html).toContain('Refresh from Didit')
+  })
+
+  it('hides private previews and Didit refresh controls from OPS admins', async () => {
+    mockRequireAdmin.mockResolvedValueOnce({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'OPS' })
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      ...(await baseVerification()),
+      status: 'PASSED',
+      decision: 'PASS',
+      sourceCheckProvider: 'didit',
+      vendorReference: 'sess-terminal',
+      documents: [
+        {
+          id: 'doc-front',
+          documentKind: 'ID_FRONT',
+          mimeType: 'image/jpeg',
+          sizeBytes: 1000,
+          status: 'UPLOADED',
+          createdAt: new Date('2026-05-31T09:05:00.000Z'),
+        },
+      ],
+    })
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({}),
+      }),
+    )
+
+    expect(html).not.toContain('Open private preview')
+    expect(html).not.toContain('Refresh from Didit')
+    expect(html).toContain('TRUST access required')
+  })
+
   it('renders a warning when approval succeeds but provider notification fails', async () => {
     const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
 
@@ -267,3 +396,49 @@ describe('admin identity verification actions', () => {
     })
   })
 })
+
+async function baseVerification() {
+  return {
+    id: 'ver-1',
+    identityBasis: 'SA_ID',
+    channel: 'PWA',
+    assuranceLevel: 'MEDIUM',
+    decision: null,
+    identifierLast4: '9087',
+    documentNumberLast4: null,
+    identifierEncrypted: null,
+    dobDerived: null,
+    genderDerived: null,
+    citizenshipDerived: null,
+    issuingCountry: 'South Africa',
+    nationality: 'South Africa',
+    documentExpiryDate: null,
+    documentConfidenceScore: null,
+    livenessScore: null,
+    selfieMatchScore: null,
+    failureReasonCode: null,
+    riskFlags: { nameMismatch: true, documentExpired: false },
+    status: 'NEEDS_MANUAL_REVIEW',
+    sourceCheckProvider: null,
+    vendorReference: null,
+    vendorWorkflowId: null,
+    costEstimateCents: null,
+    costCurrency: null,
+    decisionAt: null,
+    livenessSessionReference: null,
+    createdAt: new Date('2026-05-25T08:00:00.000Z'),
+    provider: {
+      id: 'provider-1',
+      name: 'Sarah Provider',
+      phone: '+27820000000',
+      email: 'sarah@example.test',
+      kycStatus: 'SUBMITTED',
+      status: 'ACTIVE',
+    },
+    providerApplication: null,
+    documents: [],
+    events: [],
+    webhookEvents: [],
+    reviews: [],
+  }
+}
