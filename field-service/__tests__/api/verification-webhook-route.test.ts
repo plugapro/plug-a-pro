@@ -267,6 +267,35 @@ describe('verification provider webhook route', () => {
     expect(mockPersistDiditDecision).toHaveBeenCalledWith('ver-1', fullDecision, { source: 'webhook' })
   })
 
+  it('uses the Didit liveness session reference when the applied verdict still has a placeholder', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-didit-liveness-only',
+      vendorReference: null,
+      livenessSessionReference: 'sess-live',
+      verificationId: null,
+      eventType: 'status.updated',
+      payloadHash: 'hash-didit-liveness-only',
+      redactedPayload: { event: 'status.updated' },
+      result: { decision: 'REVIEW', confidence: 0.72, livenessVerified: true },
+    })
+    mockApplyVendorVerdict.mockResolvedValue({
+      verificationId: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      vendorReference: 'didit-pre:placeholder',
+    })
+    const fullDecision = { session_id: 'sess-live', status: 'In Review' }
+    mockGetSessionDecision.mockResolvedValue(fullDecision)
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-didit-liveness-only"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockGetSessionDecision).toHaveBeenCalledWith('sess-live')
+    expect(mockPersistDiditDecision).toHaveBeenCalledWith('ver-1', fullDecision, { source: 'webhook' })
+  })
+
   it('does not fetch or persist Didit decisions when the persistence flag is disabled', async () => {
     mockIsEnabled.mockResolvedValue(false)
     mockAdapter.parseWebhook.mockResolvedValue({

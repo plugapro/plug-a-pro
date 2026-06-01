@@ -180,7 +180,7 @@ async function maybePersistDiditDecision(params: {
   if (!isPersistableStatus(params.applied.status)) return
   if (!(await isEnabled('provider.identity.vendor.didit.persist_documents'))) return
 
-  const vendorReference = params.parsed.vendorReference ?? params.applied.vendorReference
+  const vendorReference = diditDecisionSessionReference(params.parsed, params.applied.vendorReference)
   if (!vendorReference) {
     await logDiditPersistFailed({
       verificationId: params.verificationId,
@@ -202,6 +202,15 @@ async function maybePersistDiditDecision(params: {
       error: errorMessage(error),
     })
   }
+}
+
+function diditDecisionSessionReference(
+  parsed: ParseWebhookResult,
+  appliedVendorReference: string | null,
+): string | null {
+  return parsed.vendorReference
+    ?? parsed.livenessSessionReference
+    ?? (appliedVendorReference?.startsWith('didit-pre:') ? null : appliedVendorReference)
 }
 
 async function logDiditPersistFailed(params: {
