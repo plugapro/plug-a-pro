@@ -3,7 +3,9 @@ import { db } from '../db'
 import { isEnabled } from '../flags'
 import { getPublicAppUrl } from '../provider-credit-copy'
 import { issueProviderVerificationToken } from '../provider-verification-token'
+import { sendText } from '../whatsapp-interactive'
 import { decryptIdentifier, encryptIdentifier } from './crypto'
+import { logIdentityVerificationError, logIdentityVerificationEvent } from './log'
 import type { VerificationDecision, VerificationStatus } from './types'
 import { getAdapter, toVendorKey } from './vendors/registry'
 import type { NormalizedVerificationResult, SubmitDocumentCheckInput, VendorKey } from './vendors/types'
@@ -498,7 +500,7 @@ function terminalNotificationText(status: VerificationStatus): string | null {
   return null
 }
 
-async function notifyTerminalVerificationStatus(
+export async function notifyTerminalVerificationStatus(
   verificationId: string,
   toStatus: VerificationStatus,
 ): Promise<void> {
@@ -510,14 +512,22 @@ async function notifyTerminalVerificationStatus(
       select: { provider: { select: { phone: true } } },
     })
     const phone = verification?.provider?.phone
-    if (!phone) return
-    const { sendText } = await import('../whatsapp-interactive')
+    if (!phone) {
+      logIdentityVerificationEvent('verify.terminal_notify.skip_no_phone', {
+        verificationId,
+        toStatus,
+      })
+      return
+    }
     await sendText(phone, text)
-  } catch (error) {
-    console.warn('[identity-verification] terminal notification failed', {
+    logIdentityVerificationEvent('verify.terminal_notify.sent', {
       verificationId,
       toStatus,
-      reason: error instanceof Error ? error.message : 'unknown',
+    })
+  } catch (error) {
+    logIdentityVerificationError('verify.terminal_notify.failed', error, {
+      verificationId,
+      toStatus,
     })
   }
 }

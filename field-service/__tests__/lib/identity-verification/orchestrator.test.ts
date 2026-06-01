@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   getAdapter: vi.fn(),
   issueProviderVerificationToken: vi.fn(),
   getPublicAppUrl: vi.fn(),
+  sendText: vi.fn(),
+  dbFindUnique: vi.fn(),
 }))
 
 vi.mock('@/lib/flags', () => ({ isEnabled: mocks.isEnabled }))
@@ -13,6 +15,14 @@ vi.mock('@/lib/provider-verification-token', () => ({
   issueProviderVerificationToken: mocks.issueProviderVerificationToken,
 }))
 vi.mock('@/lib/provider-credit-copy', () => ({ getPublicAppUrl: mocks.getPublicAppUrl }))
+vi.mock('@/lib/whatsapp-interactive', () => ({ sendText: mocks.sendText }))
+vi.mock('@/lib/db', () => ({
+  db: {
+    providerIdentityVerification: {
+      findUnique: mocks.dbFindUnique,
+    },
+  },
+}))
 vi.mock('@/lib/identity-verification/vendors/registry', () => ({
   getAdapter: mocks.getAdapter,
   toVendorKey: (value: string | null | undefined) => {
@@ -33,6 +43,7 @@ vi.mock('@/lib/identity-verification/vendors/registry', () => ({
 
 import {
   applyVendorVerdict,
+  notifyTerminalVerificationStatus,
   resolveIdentityVerificationConsentVendorForSubject,
   submitVerificationForAutomation,
 } from '../../../lib/identity-verification/orchestrator'
@@ -318,6 +329,56 @@ describe('provider identity verification orchestrator', () => {
     expect(result.status).toBe('NEEDS_MANUAL_REVIEW')
     expect(mocks.getAdapter).not.toHaveBeenCalled()
     expect(client.state.verification.failureReasonCode).toBe('PROVIDER_LIVENESS_UNAVAILABLE')
+  })
+})
+
+describe('notifyTerminalVerificationStatus', () => {
+  beforeEach(() => {
+    mocks.sendText.mockReset()
+    mocks.dbFindUnique.mockReset()
+    mocks.sendText.mockResolvedValue('msg_1')
+    mocks.dbFindUnique.mockResolvedValue({ provider: { phone: '+27711111111' } })
+  })
+
+  it('sends the completion message on PASSED', async () => {
+    await notifyTerminalVerificationStatus('ver_1', 'PASSED')
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('verification is complete'),
+    )
+  })
+
+  it('sends the review-team message on NEEDS_MANUAL_REVIEW', async () => {
+    await notifyTerminalVerificationStatus('ver_1', 'NEEDS_MANUAL_REVIEW')
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('review team'),
+    )
+  })
+
+  it('sends the support-contact message on FAILED', async () => {
+    await notifyTerminalVerificationStatus('ver_1', 'FAILED')
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('could not approve'),
+    )
+  })
+
+  it('skips non-terminal statuses without sending', async () => {
+    await notifyTerminalVerificationStatus('ver_1', 'PROCESSING')
+    expect(mocks.dbFindUnique).not.toHaveBeenCalled()
+    expect(mocks.sendText).not.toHaveBeenCalled()
+  })
+
+  it('skips silently when the provider has no phone on file', async () => {
+    mocks.dbFindUnique.mockResolvedValueOnce({ provider: { phone: null } })
+    await notifyTerminalVerificationStatus('ver_1', 'PASSED')
+    expect(mocks.sendText).not.toHaveBeenCalled()
+  })
+
+  it('swallows send failures so a flaky WhatsApp API does not break the state transition', async () => {
+    mocks.sendText.mockRejectedValueOnce(new Error('WhatsApp API 500'))
+    await expect(notifyTerminalVerificationStatus('ver_1', 'PASSED')).resolves.toBeUndefined()
   })
 })
 
