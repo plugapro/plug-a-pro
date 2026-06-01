@@ -224,7 +224,9 @@ export async function downloadDocumentImage(ref: DiditImageRef): Promise<Downloa
 }
 
 export function toIdentityDocumentFile(image: DownloadedDiditImage): File {
-  return new File([image.bytes], `${image.kind.toLowerCase()}.${extensionForMimeType(image.mimeType)}`, {
+  const body = new ArrayBuffer(image.bytes.byteLength)
+  new Uint8Array(body).set(image.bytes)
+  return new File([body], `${image.kind.toLowerCase()}.${extensionForMimeType(image.mimeType)}`, {
     type: image.mimeType,
   })
 }

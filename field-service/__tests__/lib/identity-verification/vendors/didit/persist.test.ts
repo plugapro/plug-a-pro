@@ -116,7 +116,7 @@ describe('Didit decision persistence helpers', () => {
   it('maps Didit structured fields without storing raw document numbers', () => {
     const fields = mapDecisionToVerificationFields(fullDecision())
 
-    expect(decryptIdentifier(fields.identifierEncrypted!)).toBe('9002035000088')
+    expect(decryptIdentifier(fields.identifierEncrypted as string)).toBe('9002035000088')
     expect(fields.identifierHash).toBe(hmacIdentity('9002035000088', 'identity:SA_ID'))
     expect(fields.identifierLast4).toBe('0088')
     expect(fields.documentNumberHash).toBe(hmacIdentity('A123456789', 'document_number'))
