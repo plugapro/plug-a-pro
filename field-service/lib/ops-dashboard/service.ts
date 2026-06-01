@@ -359,6 +359,7 @@ async function loadQueueSection(
       providerItems,
       providerCount,
       identityVerificationItems,
+      identityVerificationHealthItems,
       identityVerificationCount,
     ] = await Promise.all([
       client.job.findMany({
@@ -431,6 +432,14 @@ async function loadQueueSection(
         orderBy: { updatedAt: 'asc' },
         take: 6,
       }),
+      client.providerIdentityVerification.findMany({
+        where: { status: IDENTITY_VERIFICATION_MANUAL_REVIEW_STATUS },
+        select: {
+          id: true,
+          updatedAt: true,
+        },
+        orderBy: { updatedAt: 'asc' },
+      }),
       client.providerIdentityVerification.count({
         where: { status: IDENTITY_VERIFICATION_MANUAL_REVIEW_STATUS },
       }),
@@ -457,7 +466,7 @@ async function loadQueueSection(
       listOpsQueueAssignments(
         client,
         OPS_QUEUE_TYPES.IDENTITY_VERIFICATION,
-        identityVerificationItems.map((verification) => verification.id),
+        identityVerificationHealthItems.map((verification) => verification.id),
       ),
     ])
 
@@ -505,7 +514,7 @@ async function loadQueueSection(
       'providerOnboarding',
     )
     const identityVerificationHealth = buildHealth(
-      identityVerificationItems.map((verification) => ({ id: verification.id, _ts: verification.updatedAt })),
+      identityVerificationHealthItems.map((verification) => ({ id: verification.id, _ts: verification.updatedAt })),
       identityVerificationAssignments,
       'identityVerification',
     )

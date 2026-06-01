@@ -40,14 +40,14 @@ export default async function AdminIdentityVerificationsPage({
   const admin = await requireAdmin()
   const enabled = await isEnabled(FLAG, { userId: admin.id })
   const params = await searchParams
-  const status = pick(params.status, STATUS_OPTIONS)
+  const status = pick(params.status, STATUS_OPTIONS) ?? 'NEEDS_MANUAL_REVIEW'
   const channel = pick(params.channel, CHANNEL_OPTIONS)
   const basis = pick(params.basis, BASIS_OPTIONS)
   const assurance = pick(params.assurance, ASSURANCE_OPTIONS)
 
   const verifications = await db.providerIdentityVerification.findMany({
     where: {
-      ...(status && status !== 'ALL' ? { status: status as VerificationStatus } : {}),
+      ...(status !== 'ALL' ? { status: status as VerificationStatus } : {}),
       ...(channel && channel !== 'ALL' ? { channel: channel as VerificationChannel } : {}),
       ...(basis && basis !== 'ALL' ? { identityBasis: basis as IdentityBasis } : {}),
       ...(assurance && assurance !== 'ALL' ? { assuranceLevel: assurance as VerificationAssuranceLevel } : {}),
@@ -82,7 +82,7 @@ export default async function AdminIdentityVerificationsPage({
       ) : null}
 
       <form className="grid gap-3 rounded-xl border bg-card p-4 md:grid-cols-4">
-        <FilterSelect name="status" value={status ?? 'NEEDS_MANUAL_REVIEW'} options={STATUS_OPTIONS} label="Status" />
+        <FilterSelect name="status" value={status} options={STATUS_OPTIONS} label="Status" />
         <FilterSelect name="channel" value={channel ?? 'ALL'} options={CHANNEL_OPTIONS} label="Channel" />
         <FilterSelect name="basis" value={basis ?? 'ALL'} options={BASIS_OPTIONS} label="Identity type" />
         <FilterSelect name="assurance" value={assurance ?? 'ALL'} options={ASSURANCE_OPTIONS} label="Assurance" />

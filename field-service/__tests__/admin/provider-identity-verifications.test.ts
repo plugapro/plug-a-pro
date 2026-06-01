@@ -1,14 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb, mockSendText } = vi.hoisted(() => ({
+const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb, mockSendText, mockIsEnabled } = vi.hoisted(() => ({
   mockCrudAction: vi.fn(),
   mockTransition: vi.fn(),
   mockRequireAdmin: vi.fn(),
   mockSendText: vi.fn(),
+  mockIsEnabled: vi.fn(),
   mockDb: {
     providerIdentityVerification: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
     },
     providerVerificationReview: {
       create: vi.fn(),
@@ -24,6 +26,8 @@ const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb, mockSendText }
 
 vi.mock('../../lib/crud-action', () => ({ crudAction: mockCrudAction }))
 vi.mock('../../lib/auth', () => ({ requireAdmin: mockRequireAdmin }))
+vi.mock('../../lib/flags', () => ({ isEnabled: mockIsEnabled }))
+vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
 vi.mock('../../lib/identity-verification/orchestrator', () => ({
   transitionIdentityVerification: mockTransition,
 }))
@@ -45,11 +49,13 @@ describe('admin identity verification actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireAdmin.mockResolvedValue({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'TRUST' })
+    mockIsEnabled.mockResolvedValue(true)
     mockTransition.mockResolvedValue({ id: 'ver-1', status: 'PASSED' })
     mockSendText.mockResolvedValue('wamid.identity-approved')
     mockDb.providerVerificationReview.create.mockResolvedValue({ id: 'review-1' })
     mockDb.providerSensitiveDataAccessLog.create.mockResolvedValue({ id: 'access-log-1' })
     mockDb.messageEvent.create.mockResolvedValue({ id: 'message-1' })
+    mockDb.providerIdentityVerification.findMany.mockResolvedValue([])
     mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
       id: 'ver-1',
       identityBasis: 'SA_ID',
@@ -218,6 +224,20 @@ describe('admin identity verification actions', () => {
     )
 
     expect(html).toContain('Approval recorded, but no provider phone was available')
+  })
+
+  it('defaults the identity verification list to manual-review work', async () => {
+    const Page = (await import('../../app/(admin)/admin/verifications/page')).default
+
+    await Page({
+      searchParams: Promise.resolve({}),
+    })
+
+    expect(mockDb.providerIdentityVerification.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        status: 'NEEDS_MANUAL_REVIEW',
+      }),
+    }))
   })
 
   it('reveals an encrypted identifier through audited crudAction only when one exists', async () => {
