@@ -349,7 +349,7 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
   if (!provider) {
     await sendText(
       ctx.phone,
-      "👷 You're not registered as a Plug A Pro provider yet.\n\nReply *join* to apply or *Hi* for the main menu."
+      "👷🏽 You're not registered as a Plug A Pro provider yet.\n\nReply *join* to apply or *Hi* for the main menu."
     )
     return { nextStep: 'done' }
   }

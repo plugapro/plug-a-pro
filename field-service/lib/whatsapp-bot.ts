@@ -1323,7 +1323,7 @@ async function processInboundMessageUnlocked(
       if (oldFlow === 'job_request' && oldData.selectedCategory) {
         await sendButtons(
           phone,
-          `👋 Your session timed out. You were booking *${oldData.selectedCategory}*.\n\nPick up where you left off?`,
+          `👋🏽 Your session timed out. You were booking *${oldData.selectedCategory}*.\n\nPick up where you left off?`,
           [
             { id: 'book', title: '🔧 Continue booking' },
             { id: 'session_restart', title: '🏠 Main Menu' },
@@ -1340,7 +1340,7 @@ async function processInboundMessageUnlocked(
       if (oldFlow === 'registration') {
         await sendButtons(
           phone,
-          `👋 Your session timed out during your provider application.\n\nContinue where you left off?`,
+          `👋🏽 Your session timed out during your provider application.\n\nContinue where you left off?`,
           [
             { id: 'reg_start', title: '▶️ Continue application' },
             { id: 'session_restart', title: '🏠 Main Menu' },
@@ -1373,7 +1373,7 @@ async function processInboundMessageUnlocked(
     ) {
       await sendButtons(
         phone,
-        "👋 You're still completing your provider application.\n\nContinue from where you left off?",
+        "👋🏽 You're still completing your provider application.\n\nContinue from where you left off?",
         [
           { id: 'reg_start', title: '▶️ Continue application' },
           { id: 'session_restart', title: '🏠 Main Menu' },
@@ -2731,7 +2731,7 @@ Log in to complete your profile, set your schedule and start responding to match
       `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule and start responding to matching requests.`,
       ctaLabelFor('worker_portal'),
       portalUrl,
-      { footer: 'Welcome to the Plug A Pro network! 👋' }
+      { footer: 'Welcome to the Plug A Pro network! 👋🏽' }
     )
   } else {
     // Intentional direct sendTemplate bypass: provider applicants have no Customer record,
@@ -2911,13 +2911,13 @@ async function handleCancelFlow(
     })
     await sendText(
       ctx.phone,
-      `✅ Your ${truncateField(jobRequest.category, 50)} job request has been cancelled.\n\nSend 'Hi' to submit a new request anytime. 👋`
+      `✅ Your ${truncateField(jobRequest.category, 50)} job request has been cancelled.\n\nSend 'Hi' to submit a new request anytime. 👋🏽`
     )
     return { nextStep: 'done' }
   }
 
   if (ctx.reply.id === 'cancel_no') {
-    await sendText(ctx.phone, "Great! Your job request has been kept. Send 'Hi' to return to the menu. 👍")
+    await sendText(ctx.phone, "Great! Your job request has been kept. Send 'Hi' to return to the menu. 👍🏽")
     return { nextStep: 'done' }
   }
 

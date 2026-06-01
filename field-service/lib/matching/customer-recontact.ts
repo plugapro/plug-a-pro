@@ -551,7 +551,7 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
     if (careWindowOpen) {
       await sendButtons(
         jobRequest.customer.phone,
-        `👋 *Hi ${firstName(jobRequest.customer.name)}*\n\nWe may now have a provider who can help with your *${jobRequest.title || jobRequest.category}* request in *${formatArea(jobRequest)}* for *${formatRequestedTimeLabel(jobRequest)}*.\n\nDo you still need help?`,
+        `👋🏽 *Hi ${firstName(jobRequest.customer.name)}*\n\nWe may now have a provider who can help with your *${jobRequest.title || jobRequest.category}* request in *${formatArea(jobRequest)}* for *${formatRequestedTimeLabel(jobRequest)}*.\n\nDo you still need help?`,
         [
           { id: `rematch_yes:${jobRequest.id}`, title: '✅ Yes, still do' },
           { id: `rematch_no:${jobRequest.id}`, title: '❌ No, not now' },

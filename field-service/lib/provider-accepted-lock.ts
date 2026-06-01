@@ -1198,7 +1198,7 @@ export async function notifyNonSelectedRfpProviders(params: {
       const ref = lead.id.slice(-6).toUpperCase()
       const firstName = lead.provider.name?.split(' ')[0] ?? 'there'
       const text = [
-        `Hi ${firstName} 👋`,
+        `Hi ${firstName} 👋🏽`,
         '',
         `Thank you for your availability on Ref ${ref} (${acceptedLead.jobRequest.category}).`,
         'The customer has confirmed another provider for this job.',

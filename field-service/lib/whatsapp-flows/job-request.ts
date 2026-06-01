@@ -596,7 +596,7 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
       // manual street entry (unchanged legacy path).
       await sendText(
         ctx.phone,
-        `Nice to meet you, *${customerName}*! 👋\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+        `Nice to meet you, *${customerName}*! 👋🏽\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
       )
       return { nextStep: 'collect_address_street', nextData: { customerId: customer?.id } }
     }
@@ -612,7 +612,7 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
 
     await sendList(
       ctx.phone,
-      `Nice to meet you, *${customerName}*! 👋\n\nWhich site is this *${category}* service for?`,
+      `Nice to meet you, *${customerName}*! 👋🏽\n\nWhich site is this *${category}* service for?`,
       [{ title: 'Saved sites', rows }],
       { buttonLabel: 'Choose Site' },
     )
@@ -801,7 +801,7 @@ async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
     }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
     await sendText(
       ctx.phone,
-      `Thanks for your interest! 🙏\n\n` +
+      `Thanks for your interest! 🙏🏽\n\n` +
       `Plug A Pro is currently only available in *Gauteng*, but we're expanding fast.\n\n` +
       `We've noted your details and will send you a WhatsApp the moment we go live in your area. No action needed from you! 🚀`,
     )
@@ -853,7 +853,7 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
     }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
     await sendText(
       ctx.phone,
-      `Thanks for your interest! 🙏\n\n` +
+      `Thanks for your interest! 🙏🏽\n\n` +
       `We're currently only serving *Johannesburg* in ${provinceLabel}, but we're expanding soon.\n\n` +
       `We've saved your details and will send you a WhatsApp the moment we activate your city. No action needed! 🚀`,
     )
@@ -892,7 +892,7 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
 
       await sendText(
         ctx.phone,
-        `Thank you for reaching out! 🙏\n\n` +
+        `Thank you for reaching out! 🙏🏽\n\n` +
         `We're not in *${selected.label}* just yet, but we're expanding fast.\n\n` +
         `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
         `No action needed from you. 🚀`,
@@ -935,7 +935,7 @@ async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
     }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
     await sendText(
       ctx.phone,
-      `Thanks for your interest! 🙏\n\n` +
+      `Thanks for your interest! 🙏🏽\n\n` +
       `We're currently only serving *JHB West* (Roodepoort, Florida, Little Falls and surrounding areas) in ${cityLabel}.\n\n` +
       `We're expanding to more ${cityLabel} areas soon - we've saved your details and will notify you via WhatsApp when your area goes live! 🚀`,
     )
@@ -1521,7 +1521,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
   if (ctx.reply.id === 'confirm_no') {
     await sendText(
       ctx.phone,
-      "No problem! Your request has been discarded. Send 'Hi' anytime to start a new request. 👋"
+      "No problem! Your request has been discarded. Send 'Hi' anytime to start a new request. 👋🏽"
     )
     return { nextStep: 'cancelled' }
   }
@@ -1727,7 +1727,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       } else {
         await sendText(
           ctx.phone,
-          `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status or *Cancel* if you'd like to start a fresh request. 👍`,
+          `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status or *Cancel* if you'd like to start a fresh request. 👍🏽`,
         )
       }
       return { nextStep: 'done', nextData: { jobRequestId: err.existingId, customerId: err.customerId } }
@@ -1798,7 +1798,7 @@ async function handleLegacyConfirmAddress(ctx: FlowContext): Promise<FlowResult>
 
     await sendText(
       ctx.phone,
-      `Thank you for reaching out! 🙏\n\n` +
+      `Thank you for reaching out! 🙏🏽\n\n` +
       `We're not in *${city}* just yet, but we're expanding fast.\n\n` +
       `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
       `No action needed from you. 🚀`,
@@ -1993,7 +1993,7 @@ export async function showMainMenu(phone: string): Promise<void> {
 
   await sendList(
     phone,
-    '👋 Welcome to Plug A Pro!\n\nHow can I help you today?',
+    '👋🏽 Welcome to Plug A Pro!\n\nHow can I help you today?',
     [
       {
         title: 'Services',
@@ -2006,7 +2006,7 @@ export async function showMainMenu(phone: string): Promise<void> {
       {
         title: 'For Service Providers',
         rows: [
-          { id: 'find_work', title: '👷 Find Work',         description: 'Apply, get reviewed, then accept leads with credits' },
+          { id: 'find_work', title: '👷🏽 Find Work',         description: 'Apply, get reviewed, then accept leads with credits' },
         ],
       },
     ],

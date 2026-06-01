@@ -731,10 +731,9 @@ async function sendAutomationOutcome(
   phone: string,
   automation: Awaited<ReturnType<typeof submitVerificationForAutomation>>,
 ) {
-  if (automation.status === 'PASSED') {
-    await sendText(phone, 'Your identity verification is complete. Your profile has been updated.')
-    return
-  }
+  // Terminal statuses (PASSED / NEEDS_MANUAL_REVIEW / FAILED) are notified
+  // centrally by transitionIdentityVerification, so this helper only handles
+  // the in-flight statuses the WhatsApp flow needs to surface directly.
   if (automation.status === 'AWAITING_LIVENESS' && automation.livenessUrl) {
     await sendText(
       phone,
@@ -746,7 +745,6 @@ async function sendAutomationOutcome(
     await sendText(phone, "Thanks, we're verifying your details now - I'll message you the moment it's done.")
     return
   }
-  await sendText(phone, 'Thanks. Your details are with our review team - usually within 30 minutes during business hours; otherwise next working day.')
 }
 
 function identityMediaFailureReason(error: unknown) {

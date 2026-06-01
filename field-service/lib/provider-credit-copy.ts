@@ -250,7 +250,7 @@ export function buildProviderCreditSummaryMessage(
 // "View credits rules" CTA - see callers in lib/whatsapp-flows/registration.ts.
 export function buildProviderOnboardingIntroMessage() {
   return [
-    '👷 *Join Plug A Pro as a Service Provider*',
+    '👷🏽 *Join Plug A Pro as a Service Provider*',
     '',
     'Get matched with customer job leads in your area.',
     '',

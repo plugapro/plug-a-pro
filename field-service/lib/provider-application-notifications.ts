@@ -148,7 +148,7 @@ export function buildInterestSubmittedMessage(params: {
     : []
 
   return [
-    '👍 *Interest registered*',
+    '👍🏽 *Interest registered*',
     '',
     `Your interest in the *${params.category}* job in *${params.area}* has been submitted.`,
     '',

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { buildMetadata } from '@/lib/metadata'
+import { buildMetadata, siteConfig } from '@/lib/metadata'
 import { renderIdentityConsentText } from '@/lib/identity-verification/consent-service'
 import { resolveIdentityVerificationConsentVendor } from '@/lib/identity-verification/orchestrator'
 import { getRequiredDocumentKinds, isIdentityBasis, type IdentityBasis } from '@/lib/identity-verification/types'
@@ -275,7 +275,9 @@ export default async function ProviderIdentityVerifyPage({
         </p>
       </header>
 
-      <StatusStrip status={verification.status} />
+      {!['NEEDS_MANUAL_REVIEW', 'PASSED', 'FAILED'].includes(verification.status) ? (
+        <StatusStrip status={verification.status} />
+      ) : null}
       {feedback ? <FeedbackBanner feedback={feedback} /> : null}
 
       {verification.status === 'NOT_STARTED' || verification.status === 'STARTED' ? (
@@ -443,13 +445,7 @@ export default async function ProviderIdentityVerifyPage({
       ) : null}
 
       {['NEEDS_MANUAL_REVIEW', 'PASSED', 'FAILED'].includes(verification.status) ? (
-        <section className="rounded-lg border bg-card p-4 text-sm leading-6">
-          <h2 className="text-base font-semibold">{terminalTitle(verification.status)}</h2>
-          <p className="mt-1 text-muted-foreground">{terminalCopy(verification.status)}</p>
-          <Link href="/provider/verification" className="mt-4 inline-block text-sm font-medium underline underline-offset-4">
-            Verification help
-          </Link>
-        </section>
+        <TerminalHandoff status={verification.status} />
       ) : null}
     </main>
   )
@@ -509,14 +505,48 @@ function ExpiredLink() {
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plug A Pro verification</p>
       <h1 className="text-2xl font-semibold tracking-normal">Verification link unavailable</h1>
       <p className="text-sm leading-6 text-muted-foreground">
-        This secure link is invalid, expired or already complete. Return to WhatsApp and request a new verification
-        link.
+        This secure link is invalid, expired or already complete. Return to WhatsApp and reply <span className="font-semibold">VERIFY</span> to request a new link.
       </p>
-      <Link href="/provider/verification" className="text-sm font-medium underline underline-offset-4">
+      <a
+        href={whatsappReturnUrl()}
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+      >
+        Back to WhatsApp
+      </a>
+      <Link href="/provider/verification" className="text-center text-sm font-medium underline underline-offset-4">
         Open verification help
       </Link>
     </main>
   )
+}
+
+function TerminalHandoff({ status }: { status: string }) {
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-4 text-sm leading-6">
+      <h2 className="text-base font-semibold">{terminalTitle(status)}</h2>
+      <p className="text-muted-foreground">{terminalCopy(status)}</p>
+      <p className="text-muted-foreground">
+        Plug A Pro will message you in WhatsApp when there&apos;s an update. You can close this page.
+      </p>
+      <a
+        href={whatsappReturnUrl()}
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+      >
+        Back to WhatsApp
+      </a>
+      <Link
+        href="/provider/verification"
+        className="block text-center text-sm font-medium underline underline-offset-4"
+      >
+        Verification help
+      </Link>
+    </section>
+  )
+}
+
+function whatsappReturnUrl() {
+  const digits = siteConfig.whatsappNumber.replace(/\D/g, '')
+  return `https://wa.me/${digits}`
 }
 
 function StatusStrip({ status }: { status: string }) {

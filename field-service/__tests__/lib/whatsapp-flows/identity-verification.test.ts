@@ -710,7 +710,9 @@ describe('WhatsApp identity verification fallback flow', () => {
       metadata: { submittedFrom: 'whatsapp' },
     }))
     expect(mockSubmitAutomation).toHaveBeenCalledWith('ver-wa-1')
-    expect(mockSendText).toHaveBeenCalledWith('+27711111111', expect.stringContaining('review team'))
+    // Terminal-status WhatsApp notifications are now fired centrally from
+    // transitionIdentityVerification, not from sendAutomationOutcome.
+    expect(mockSendText).not.toHaveBeenCalled()
     expect(result).toEqual({ nextStep: 'done', nextData: {} })
   })
 

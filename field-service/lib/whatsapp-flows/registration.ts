@@ -460,7 +460,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
     await sendButtons(
       ctx.phone,
       inactive
-        ? `👷 Hi ${existingProvider.name}, your provider profile is currently inactive.\n\nIf your application is waiting for review, your profile will stay inactive until approval is complete. You won't receive job leads yet.`
+        ? `👷🏽 Hi ${existingProvider.name}, your provider profile is currently inactive.\n\nIf your application is waiting for review, your profile will stay inactive until approval is complete. You won't receive job leads yet.`
         : `✅ Hi ${existingProvider.name}, you're already registered as a Plug A Pro provider.\n\nWhat would you like to manage?`,
       inactive
         ? [
@@ -656,7 +656,7 @@ async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
 
   if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
     await sendText(ctx.phone, 'No problem. You can verify your identity later from the Worker Portal.')
-    await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
   }
 
@@ -664,12 +664,12 @@ async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
   const raw = ctx.reply.text?.trim() ?? ''
   const saId = validateSaId(raw)
   if (saId) {
-    await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: saId, verificationMethod: 'id_number', skills: [] } }
   }
   const passport = validatePassportNumber(raw)
   if (passport) {
-    await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: passport, verificationMethod: 'id_number', skills: [] } }
   }
 
@@ -700,14 +700,14 @@ async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
       )
       return { nextStep: 'reg_verify_enter_id' }
     }
-    await sendText(ctx.phone, buildSkillPromptText(`✅ ID verified.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    await sendText(ctx.phone, buildSkillPromptText(`✅ ID verified.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: saId, verificationMethod: 'id_number', skills: [] } }
   }
 
   // Passport number: 6-30 alphanumeric. Foreign passport numbers can be numeric-only.
   const passport = validatePassportNumber(raw)
   if (passport) {
-    await sendText(ctx.phone, buildSkillPromptText(`✅ Passport number saved.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    await sendText(ctx.phone, buildSkillPromptText(`✅ Passport number saved.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: passport, verificationMethod: 'id_number', skills: [] } }
   }
 
@@ -742,7 +742,7 @@ async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
         mediaIdSuffix: ctx.reply.mediaId.slice(-8),
         attachmentId,
       })
-      await sendText(ctx.phone, '✅ Document received.\n\n🤳 Now please send a *selfie holding your ID document* so we can match your face to it.')
+      await sendText(ctx.phone, '✅ Document received.\n\n🤳🏽 Now please send a *selfie holding your ID document* so we can match your face to it.')
       return {
         nextStep: 'reg_verify_upload_selfie',
         nextData: { verificationDocAttachmentId: attachmentId, verificationDocMediaId: ctx.reply.mediaId },
@@ -793,7 +793,7 @@ async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
         mediaIdSuffix: ctx.reply.mediaId.slice(-8),
         attachmentId,
       })
-      await sendText(ctx.phone, buildSkillPromptText(`✅ Selfie received. Identity documents uploaded.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+      await sendText(ctx.phone, buildSkillPromptText(`✅ Selfie received. Identity documents uploaded.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
       return {
         nextStep: 'reg_collect_skills_more',
         nextData: {
@@ -820,7 +820,7 @@ async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    '🤳 Please send a *selfie holding your ID document*.',
+    '🤳🏽 Please send a *selfie holding your ID document*.',
     [{ id: 'verify_skip', title: 'Skip selfie' }],
   )
   return { nextStep: 'reg_verify_upload_selfie' }
@@ -1744,7 +1744,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 Identity: *${verificationStatusLabel(merged)}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n${highRiskLabels.length ? `⚠️ High-risk review: *${highRiskLabels.join(', ')}*\n🧾 Certification proof: *${certificationProofStatus}*\n` : ''}📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📞 Alternate mobile: *${alternateMobileE164 ?? 'Not provided'}*\n🗣️ Preferred language: *${preferredLanguage ?? 'Not specified'}*\n${reference1Name || reference1Mobile ? `👥 Reference 1: *${reference1Name ?? 'Not provided'}*${reference1Mobile ? ` (${reference1Mobile})` : ''}\n` : ''}${reference2Name || reference2Mobile ? `👥 Reference 2: *${reference2Name ?? 'Not provided'}*${reference2Mobile ? ` (${reference2Mobile})` : ''}\n` : ''}📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 Identity: *${verificationStatusLabel(merged)}*\n👷🏽 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n${highRiskLabels.length ? `⚠️ High-risk review: *${highRiskLabels.join(', ')}*\n🧾 Certification proof: *${certificationProofStatus}*\n` : ''}📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝🏽 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📞 Alternate mobile: *${alternateMobileE164 ?? 'Not provided'}*\n🗣️ Preferred language: *${preferredLanguage ?? 'Not specified'}*\n${reference1Name || reference1Mobile ? `👥 Reference 1: *${reference1Name ?? 'Not provided'}*${reference1Mobile ? ` (${reference1Mobile})` : ''}\n` : ''}${reference2Name || reference2Mobile ? `👥 Reference 2: *${reference2Name ?? 'Not provided'}*${reference2Mobile ? ` (${reference2Mobile})` : ''}\n` : ''}📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -2010,11 +2010,11 @@ async function promptPreferredLanguageAfterAlternateMobile(
       'You can update this later in your Worker Portal.',
     ].join('\n'),
     [
-      { id: 'preferred_language_english', title: '🇬🇧 English' },
-      { id: 'preferred_language_afrikaans', title: '🇿🇦 Afrikaans' },
-      { id: 'preferred_language_zulu', title: '🗣️ isiZulu' },
-      { id: 'preferred_language_xhosa', title: '🗣️ isiXhosa' },
-      { id: 'preferred_language_other', title: '✍️ Other' },
+      { id: 'preferred_language_english', title: 'English' },
+      { id: 'preferred_language_afrikaans', title: 'Afrikaans' },
+      { id: 'preferred_language_zulu', title: 'isiZulu' },
+      { id: 'preferred_language_xhosa', title: 'isiXhosa' },
+      { id: 'preferred_language_other', title: '✍🏽 Other' },
       { id: 'preferred_language_skip', title: '⏭️ Skip' },
     ],
   )
@@ -2157,7 +2157,7 @@ async function promptEvidenceAfterBio(
         'Submitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.',
       ].join('\n'),
       [
-        { id: 'evidence_add', title: '✍️ Add proof note' },
+        { id: 'evidence_add', title: '✍🏽 Add proof note' },
         { id: 'evidence_upload', title: '📎 Upload proof' },
         { id: 'evidence_skip', title: '⏭️ Skip for now' },
       ],
@@ -2173,7 +2173,7 @@ async function promptEvidenceAfterBio(
       'Examples: past jobs, references or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
     ].join('\n'),
     [
-      { id: 'evidence_add', title: '✍️ Add proof note' },
+      { id: 'evidence_add', title: '✍🏽 Add proof note' },
       { id: 'evidence_skip', title: '⏭️ Skip for now' },
     ],
   )

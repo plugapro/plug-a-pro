@@ -244,7 +244,7 @@ export default async function ProviderHomePage() {
           Provider portal
         </p>
         <h1 className="text-[28px] font-bold tracking-[-0.025em] leading-[1.1] text-[var(--ink)]">
-          Hi {firstName} 👋
+          Hi {firstName} 👋🏽
         </h1>
         <p className="mt-1 text-[14px] text-[var(--ink-mute)]">
           Your jobs, leads and credits at a glance.

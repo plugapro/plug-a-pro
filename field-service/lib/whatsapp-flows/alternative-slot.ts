@@ -110,7 +110,7 @@ async function sendProviderSlotOffer(params: {
 
   await sendButtons(
     providerPhone,
-    `👷 *New Job Opportunity*\n\nHi *${provFirstName}*! A customer needs *${categoryDisplay}* services but their preferred time doesn't fit your schedule.\n\nCan you take this job on one of these alternative slots?`,
+    `👷🏽 *New Job Opportunity*\n\nHi *${provFirstName}*! A customer needs *${categoryDisplay}* services but their preferred time doesn't fit your schedule.\n\nCan you take this job on one of these alternative slots?`,
     buttons
   )
 }
@@ -403,7 +403,7 @@ async function handleProviderDeclinedAllSlots(
     },
   })
 
-  await sendText(phone, "No problem - we'll look for other providers. Thanks for letting us know. 👍")
+  await sendText(phone, "No problem - we'll look for other providers. Thanks for letting us know. 👍🏽")
 
   // Notify customer
   const customerPhone = jobRequest.customer?.phone

@@ -74,7 +74,7 @@ export async function handleCompletionCheckWhyRescheduled(params: { matchId: str
   if (!m) return
   if (m.completionCheckRetries >= MAX_RETRIES) { await flagMatchToAdmin(params.matchId); await sendText({ to: params.customerPhone, text: 'Thanks for letting us know. Our team will follow up shortly.' }); return }
   await db.match.update({ where: { id: params.matchId }, data: { completionCheckStatus: 'NO_RESCHEDULED', completionCheckSentAt: new Date() } })
-  await sendText({ to: params.customerPhone, text: "Got it - we'll check in again in a few days. Hope the rescheduled job goes well! 👍" })
+  await sendText({ to: params.customerPhone, text: "Got it - we'll check in again in a few days. Hope the rescheduled job goes well! 👍🏽" })
 }
 
 export async function handleCompletionCheckWhyNotFinished(params: { matchId: string; customerPhone: string }) {

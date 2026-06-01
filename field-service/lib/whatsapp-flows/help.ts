@@ -41,7 +41,7 @@ async function handleHelpMenu(ctx: FlowContext): Promise<FlowResult> {
         { id: 'faq_cancel',          title: '❌ Cancellations',       description: 'Cancel a booking & refunds' },
         { id: 'faq_reschedule',      title: '🔄 Rescheduling',        description: 'Change your booking time' },
         { id: 'faq_payment',         title: '💳 How payment works',   description: 'Cards, EFT and when to pay' },
-        { id: 'faq_technician',      title: '👷 Our providers',       description: 'How profiles and records work' },
+        { id: 'faq_technician',      title: '👷🏽 Our providers',       description: 'How profiles and records work' },
         { id: 'faq_problem_with_job', title: '🚨 Problem with a job', description: 'Report an issue with a job' },
         { id: 'faq_contact_human',   title: '📞 Speak to a person',   description: 'Talk to our support team' },
       ],
@@ -122,7 +122,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_technician':
       await sendButtons(
         ctx.phone,
-        `👷 *Our Providers*\n\nPlug A Pro shows provider profiles, completed job history and customer ratings where those records exist on the platform.\n\nProfile details such as skills and service areas come from the provider unless a field says it was checked by Plug A Pro.\n\nWe keep the early quote and update flow on the platform so there is a written record of what was agreed.`,
+        `👷🏽 *Our Providers*\n\nPlug A Pro shows provider profiles, completed job history and customer ratings where those records exist on the platform.\n\nProfile details such as skills and service areas come from the provider unless a field says it was checked by Plug A Pro.\n\nWe keep the early quote and update flow on the platform so there is a written record of what was agreed.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },

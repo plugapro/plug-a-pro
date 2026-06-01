@@ -472,7 +472,54 @@ export async function transitionIdentityVerification(
     }
   }
 
+  if (current.status !== input.toStatus && TERMINAL_NOTIFICATION_STATUSES.has(input.toStatus)) {
+    void notifyTerminalVerificationStatus(input.verificationId, input.toStatus)
+  }
+
   return updated
+}
+
+const TERMINAL_NOTIFICATION_STATUSES = new Set<VerificationStatus>([
+  'PASSED',
+  'NEEDS_MANUAL_REVIEW',
+  'FAILED',
+])
+
+function terminalNotificationText(status: VerificationStatus): string | null {
+  if (status === 'PASSED') {
+    return 'Your identity verification is complete. Your profile has been updated.'
+  }
+  if (status === 'NEEDS_MANUAL_REVIEW') {
+    return "Thanks. Your details are with our review team - usually within 30 minutes during business hours; otherwise next working day."
+  }
+  if (status === 'FAILED') {
+    return 'We could not approve your identity verification. Please contact Plug A Pro support so we can help with next steps.'
+  }
+  return null
+}
+
+async function notifyTerminalVerificationStatus(
+  verificationId: string,
+  toStatus: VerificationStatus,
+): Promise<void> {
+  try {
+    const text = terminalNotificationText(toStatus)
+    if (!text) return
+    const verification = await db.providerIdentityVerification.findUnique({
+      where: { id: verificationId },
+      select: { provider: { select: { phone: true } } },
+    })
+    const phone = verification?.provider?.phone
+    if (!phone) return
+    const { sendText } = await import('../whatsapp-interactive')
+    await sendText(phone, text)
+  } catch (error) {
+    console.warn('[identity-verification] terminal notification failed', {
+      verificationId,
+      toStatus,
+      reason: error instanceof Error ? error.message : 'unknown',
+    })
+  }
 }
 
 function kycStatusForTransition(
