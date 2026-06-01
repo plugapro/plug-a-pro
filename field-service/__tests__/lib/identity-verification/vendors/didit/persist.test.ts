@@ -107,6 +107,8 @@ describe('Didit decision persistence helpers', () => {
     vi.clearAllMocks()
     vi.stubGlobal('fetch', mocks.mockFetch)
     process.env.DIDIT_API_KEY = 'didit-test-key'
+    process.env.IDENTITY_HASH_PEPPER = TEST_PEPPER
+    process.env.IDENTITY_ENC_KEY = '12345678901234567890123456789012'
     mocks.mockDb.$transaction.mockImplementation(async (callback) => callback(mocks.mockDb))
     mocks.mockDb.providerIdentityVerification.update.mockResolvedValue({ status: 'PASSED' })
     mocks.mockDb.providerVerificationEvent.create.mockResolvedValue({ id: 'event-1' })
@@ -185,6 +187,8 @@ describe('Didit document persistence', () => {
     vi.clearAllMocks()
     vi.stubGlobal('fetch', mocks.mockFetch)
     process.env.DIDIT_API_KEY = 'didit-test-key'
+    process.env.IDENTITY_HASH_PEPPER = TEST_PEPPER
+    process.env.IDENTITY_ENC_KEY = '12345678901234567890123456789012'
     mocks.mockDb.$transaction.mockImplementation(async (callback) => callback(mocks.mockDb))
     mocks.mockDb.providerIdentityVerification.update.mockResolvedValue({ status: 'PASSED' })
     mocks.mockDb.providerVerificationEvent.create.mockResolvedValue({ id: 'event-1' })
