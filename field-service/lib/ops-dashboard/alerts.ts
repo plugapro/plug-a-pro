@@ -16,6 +16,7 @@ export const QUEUE_SLA: QueueSlaConfig[] = [
   { queueKey: 'financeFollowUp', label: 'Finance Follow-up', warnAtMinutes: 720, breachAtMinutes: 1440 },
   { queueKey: 'trustRecovery', label: 'Disputes', warnAtMinutes: 120, breachAtMinutes: 240 },
   { queueKey: 'providerOnboarding', label: 'Provider Onboarding', warnAtMinutes: 720, breachAtMinutes: 1440 },
+  { queueKey: 'identityVerification', label: 'Identity Verifications', warnAtMinutes: 180, breachAtMinutes: 240 },
 ]
 
 type QueueBreachRow = {
@@ -84,6 +85,7 @@ export async function detectQueueBreaches(client: PrismaClient): Promise<QueueBr
     financeRow,
     disputeRow,
     providerRow,
+    identityVerificationRow,
   ] = await Promise.all([
     client.$queryRaw<QueueBreachRow[]>`
       SELECT
@@ -134,6 +136,13 @@ export async function detectQueueBreaches(client: PrismaClient): Promise<QueueBr
       FROM "provider_applications"
       WHERE "status" = 'PENDING'
     `,
+    client.$queryRaw<QueueBreachRow[]>`
+      SELECT
+        COUNT(*) FILTER (WHERE "updatedAt" <= ${new Date(now.getTime() - QUEUE_SLA_BY_KEY.identityVerification.breachAtMinutes * 60000)})::bigint AS "overdueCount",
+        MIN("updatedAt") AS "oldestAt"
+      FROM "provider_identity_verifications"
+      WHERE "status" = 'NEEDS_MANUAL_REVIEW'
+    `,
   ])
 
   const queueRows: Array<[OpsDashboardQueueKey, QueueBreachRow | undefined]> = [
@@ -144,6 +153,7 @@ export async function detectQueueBreaches(client: PrismaClient): Promise<QueueBr
     ['financeFollowUp', financeRow[0]],
     ['trustRecovery', disputeRow[0]],
     ['providerOnboarding', providerRow[0]],
+    ['identityVerification', identityVerificationRow[0]],
   ]
 
   return queueRows.flatMap(([queueKey, row]) => {

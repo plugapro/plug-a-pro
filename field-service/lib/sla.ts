@@ -24,6 +24,7 @@ const QUEUE_TYPE_TO_KEY: Record<OpsQueueType, OpsDashboardQueueKey | null> = {
   PAYMENT_FOLLOW_UP:  'financeFollowUp',
   DISPUTE:            'trustRecovery',
   PROVIDER_ONBOARDING:'providerOnboarding',
+  IDENTITY_VERIFICATION:'identityVerification',
 }
 
 export function slaFor(queueType: OpsQueueType): SlaSpec {

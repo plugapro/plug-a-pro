@@ -33,6 +33,7 @@ export const OPS_QUEUE_TYPES = {
   DISPUTE: 'DISPUTE',
   PAYMENT_FOLLOW_UP: 'PAYMENT_FOLLOW_UP',
   PROVIDER_ONBOARDING: 'PROVIDER_ONBOARDING',
+  IDENTITY_VERIFICATION: 'IDENTITY_VERIFICATION',
 } as const satisfies Record<string, OpsQueueType>
 
 export async function listOpsQueueAssignments(

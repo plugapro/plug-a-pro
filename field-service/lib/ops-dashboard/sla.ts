@@ -61,6 +61,13 @@ export const OPS_DASHBOARD_QUEUE_SLA: Record<OpsDashboardQueueKey, QueueSlaConfi
     targetMinutes: getAlertSlaConfig('providerOnboarding').breachAtMinutes,
     targetLabel: 'Review inside 1 day',
   },
+  identityVerification: {
+    key: 'identityVerification',
+    queueType: OPS_QUEUE_TYPES.IDENTITY_VERIFICATION,
+    title: 'Identity verifications',
+    targetMinutes: getAlertSlaConfig('identityVerification').breachAtMinutes,
+    targetLabel: 'Review inside 4 hours',
+  },
 }
 
 export function getQueueSlaConfig(queueKey: OpsDashboardQueueKey) {

@@ -2203,6 +2203,7 @@ enum OpsQueueType {
   DISPUTE
   PAYMENT_FOLLOW_UP
   PROVIDER_ONBOARDING
+  IDENTITY_VERIFICATION
 }
 
 enum InspectionStatus {

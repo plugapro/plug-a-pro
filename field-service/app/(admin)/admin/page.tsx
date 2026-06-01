@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
-import type { ApplicationStatus, DisputeStatus, PaymentStatus } from '@prisma/client'
+import type { ApplicationStatus, DisputeStatus, PaymentStatus, VerificationStatus } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
@@ -119,6 +119,10 @@ export default async function AdminDashboardPage({
   const providerReviewCount = queueData?.cards.find((c) => c.key === 'providerOnboarding')?.health.openCount ?? 0
   const providerAssignments = queueData?.assignments.providerOnboarding ?? new Map<string, AssignmentRecord>()
 
+  const identityVerificationQueue = queueData?.previews.identityVerification ?? []
+  const identityVerificationCount = queueData?.cards.find((c) => c.key === 'identityVerification')?.health.openCount ?? 0
+  const identityVerificationAssignments = queueData?.assignments.identityVerification ?? new Map<string, AssignmentRecord>()
+
   const revenueFunnel = funnelMetrics.find((m) => m.key === 'revenue')
   const coreFunnel = funnelMetrics.filter((m) => m.key !== 'revenue')
 
@@ -201,6 +205,12 @@ export default async function AdminDashboardPage({
             <Button asChild variant="outline" className="w-full justify-between">
               <Link href="/admin/applications">
                 Approve providers
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
+              <Link href="/admin/verifications?status=NEEDS_MANUAL_REVIEW">
+                Review identity checks
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
@@ -592,6 +602,66 @@ export default async function AdminDashboardPage({
         </Card>
 
         <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Identity verifications</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Provider ID, document and selfie checks waiting for a manual decision.
+              </p>
+            </div>
+            <Badge variant={slaBadgeClass(identityVerificationCount > 0 ? 'warning' : 'default')}>
+              {identityVerificationCount} to review
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {identityVerificationQueue.length === 0 ? (
+              <EmptyState
+                title="Identity verification queue is clear"
+                message="No provider identity checks are waiting for manual review."
+                actionHref="/admin/verifications?status=NEEDS_MANUAL_REVIEW"
+                actionLabel="Open verification queue"
+              />
+            ) : (
+              identityVerificationQueue.map((verification) => (
+                <div key={verification.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{verification.providerName}</p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {verification.providerPhone ?? 'No phone on record'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <IdentityVerificationBadge status={verification.status} />
+                      <Badge
+                        variant={assignmentBadgeVariant(
+                          identityVerificationAssignments.get(verification.id),
+                          admin.id,
+                        )}
+                      >
+                        {ownerLabel(identityVerificationAssignments.get(verification.id), admin.id)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge variant="outline">{verification.identityBasis.replaceAll('_', ' ')}</Badge>
+                    <Badge variant="outline">{verification.channel}</Badge>
+                    <Badge variant="outline">{verification.assuranceLevel} assurance</Badge>
+                    <Badge variant="outline">{verification.documentCount} docs</Badge>
+                    <Badge variant="outline">Age {formatAge(verification.updatedAt, now)}</Badge>
+                  </div>
+                  <div className="mt-3">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/admin/verifications/${verification.id}`}>Open verification</Link>
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1">
@@ -793,6 +863,18 @@ function DisputeBadge({ status }: { status: DisputeStatus }) {
 
 function ApplicationBadge({ status }: { status: ApplicationStatus }) {
   return <Badge variant="warning">{status}</Badge>
+}
+
+function IdentityVerificationBadge({ status }: { status: VerificationStatus }) {
+  const variant =
+    status === 'NEEDS_MANUAL_REVIEW'
+      ? 'warning'
+      : status === 'PASSED'
+        ? 'success'
+        : status === 'FAILED'
+          ? 'danger'
+          : 'neutral'
+  return <Badge variant={variant}>{status.replaceAll('_', ' ')}</Badge>
 }
 
 function formatAge(from: Date, to: Date) {

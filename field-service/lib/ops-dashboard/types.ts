@@ -1,4 +1,16 @@
-import type { ApplicationStatus, DisputeStatus, JobRequestStatus, JobStatus, PaymentStatus, QuoteStatus, OpsQueueType } from '@prisma/client'
+import type {
+  ApplicationStatus,
+  DisputeStatus,
+  IdentityBasis,
+  JobRequestStatus,
+  JobStatus,
+  OpsQueueType,
+  PaymentStatus,
+  QuoteStatus,
+  VerificationAssuranceLevel,
+  VerificationChannel,
+  VerificationStatus,
+} from '@prisma/client'
 
 export type OpsDashboardRangePreset = 'today' | '7d' | '14d' | '30d' | 'custom'
 
@@ -25,6 +37,7 @@ export type OpsDashboardQueueKey =
   | 'financeFollowUp'
   | 'trustRecovery'
   | 'providerOnboarding'
+  | 'identityVerification'
 
 export type OpsDashboardHeroMetricKey =
   | 'requestsNeedingValidation'
@@ -207,6 +220,19 @@ export type ProviderApplicationPreview = {
   submittedAt: Date
 }
 
+export type IdentityVerificationPreview = {
+  id: string
+  providerName: string
+  providerPhone: string | null
+  status: VerificationStatus
+  channel: VerificationChannel
+  assuranceLevel: VerificationAssuranceLevel
+  identityBasis: IdentityBasis
+  documentCount: number
+  createdAt: Date
+  updatedAt: Date
+}
+
 // ─── Assignment record (subset needed by dashboard) ──────────────────────────
 
 export type AssignmentRecord = {
@@ -225,6 +251,7 @@ export type OpsDashboardQueueSection = {
     financeFollowUp: PaymentPreview[]
     trustRecovery: DisputePreview[]
     providerOnboarding: ProviderApplicationPreview[]
+    identityVerification: IdentityVerificationPreview[]
   }
   assignments: {
     validation: Map<string, AssignmentRecord>
@@ -234,6 +261,7 @@ export type OpsDashboardQueueSection = {
     financeFollowUp: Map<string, AssignmentRecord>
     trustRecovery: Map<string, AssignmentRecord>
     providerOnboarding: Map<string, AssignmentRecord>
+    identityVerification: Map<string, AssignmentRecord>
   }
 }
 

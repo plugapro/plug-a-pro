@@ -19,11 +19,12 @@ import type {
   OpsDashboardTrendSection,
   PaymentPreview,
   DisputePreview,
+  IdentityVerificationPreview,
   ProviderApplicationPreview,
   QuotePreview,
   SectionResult,
 } from './types'
-import type { DisputeStatus, JobStatus, PaymentStatus, ApplicationStatus } from '@prisma/client'
+import type { ApplicationStatus, DisputeStatus, JobStatus, PaymentStatus, VerificationStatus } from '@prisma/client'
 
 type DashboardSearchParams =
   | URLSearchParams
@@ -57,6 +58,7 @@ const PAYMENT_EXCEPTION_STATUSES: PaymentStatus[] = [
 ]
 
 const OPEN_DISPUTE_STATUSES: DisputeStatus[] = ['OPEN', 'UNDER_REVIEW']
+const IDENTITY_VERIFICATION_MANUAL_REVIEW_STATUS: VerificationStatus = 'NEEDS_MANUAL_REVIEW'
 
 // ─── Range parser ─────────────────────────────────────────────────────────────
 
@@ -356,6 +358,8 @@ async function loadQueueSection(
       disputeCount,
       providerItems,
       providerCount,
+      identityVerificationItems,
+      identityVerificationCount,
     ] = await Promise.all([
       client.job.findMany({
         where: { status: { in: FIELD_EXCEPTION_STATUSES } },
@@ -410,6 +414,26 @@ async function loadQueueSection(
         take: 6,
       }),
       client.providerApplication.count({ where: { status: 'PENDING' } }),
+      client.providerIdentityVerification.findMany({
+        where: { status: IDENTITY_VERIFICATION_MANUAL_REVIEW_STATUS },
+        select: {
+          id: true,
+          status: true,
+          channel: true,
+          assuranceLevel: true,
+          identityBasis: true,
+          createdAt: true,
+          updatedAt: true,
+          provider: { select: { id: true, name: true, phone: true, kycStatus: true } },
+          providerApplication: { select: { id: true, name: true, phone: true, status: true } },
+          _count: { select: { documents: true } },
+        },
+        orderBy: { updatedAt: 'asc' },
+        take: 6,
+      }),
+      client.providerIdentityVerification.count({
+        where: { status: IDENTITY_VERIFICATION_MANUAL_REVIEW_STATUS },
+      }),
     ])
 
     // ── Assignments ──────────────────────────────────────────────────────────
@@ -421,6 +445,7 @@ async function loadQueueSection(
       financeAssignments,
       disputeAssignments,
       providerAssignments,
+      identityVerificationAssignments,
     ] = await Promise.all([
       listOpsQueueAssignments(client, OPS_QUEUE_TYPES.VALIDATION, validationItems.map((r) => r.id)),
       listOpsQueueAssignments(client, OPS_QUEUE_TYPES.DISPATCH, dispatchItems.map((r) => r.id)),
@@ -429,6 +454,11 @@ async function loadQueueSection(
       listOpsQueueAssignments(client, OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP, financeItems.map((p) => p.id)),
       listOpsQueueAssignments(client, OPS_QUEUE_TYPES.DISPUTE, disputeItems.map((d) => d.id)),
       listOpsQueueAssignments(client, OPS_QUEUE_TYPES.PROVIDER_ONBOARDING, providerItems.map((a) => a.id)),
+      listOpsQueueAssignments(
+        client,
+        OPS_QUEUE_TYPES.IDENTITY_VERIFICATION,
+        identityVerificationItems.map((verification) => verification.id),
+      ),
     ])
 
     // ── Health stats (computed from preview sample) ──────────────────────────
@@ -474,6 +504,11 @@ async function loadQueueSection(
       providerAssignments,
       'providerOnboarding',
     )
+    const identityVerificationHealth = buildHealth(
+      identityVerificationItems.map((verification) => ({ id: verification.id, _ts: verification.updatedAt })),
+      identityVerificationAssignments,
+      'identityVerification',
+    )
 
     // ── Build queue cards ────────────────────────────────────────────────────
     function makeCard(
@@ -503,6 +538,7 @@ async function loadQueueSection(
       makeCard('trustRecovery', disputeHealth, disputeCount),
       makeCard('quoteApprovals', quoteHealth, quoteCount),
       makeCard('providerOnboarding', providerHealth, providerCount),
+      makeCard('identityVerification', identityVerificationHealth, identityVerificationCount),
     ]
 
     // ── Denormalise preview items ────────────────────────────────────────────
@@ -583,6 +619,19 @@ async function loadQueueSection(
       submittedAt: a.submittedAt,
     }))
 
+    const identityVerificationPreviews: IdentityVerificationPreview[] = identityVerificationItems.map((verification) => ({
+      id: verification.id,
+      providerName: verification.provider?.name ?? verification.providerApplication?.name ?? 'Unknown provider',
+      providerPhone: verification.provider?.phone ?? verification.providerApplication?.phone ?? null,
+      status: verification.status,
+      channel: verification.channel,
+      assuranceLevel: verification.assuranceLevel,
+      identityBasis: verification.identityBasis,
+      documentCount: verification._count.documents,
+      createdAt: verification.createdAt,
+      updatedAt: verification.updatedAt,
+    }))
+
     return {
       ok: true,
       data: {
@@ -595,6 +644,7 @@ async function loadQueueSection(
           financeFollowUp: financePreviews,
           trustRecovery: disputePreviews,
           providerOnboarding: providerPreviews,
+          identityVerification: identityVerificationPreviews,
         },
         assignments: {
           validation: validationAssignments,
@@ -604,6 +654,7 @@ async function loadQueueSection(
           financeFollowUp: financeAssignments,
           trustRecovery: disputeAssignments,
           providerOnboarding: providerAssignments,
+          identityVerification: identityVerificationAssignments,
         },
       },
       error: null,
@@ -850,6 +901,7 @@ function queueKeyToLane(key: OpsDashboardQueueKey): string {
     financeFollowUp: 'Finance',
     trustRecovery: 'Trust',
     providerOnboarding: 'Supply',
+    identityVerification: 'Trust',
   }
   return lanes[key]
 }
@@ -863,6 +915,7 @@ function queueKeyToDescription(key: OpsDashboardQueueKey, count: number): string
     financeFollowUp: 'Pending, failed and refund-state payments requiring intervention.',
     trustRecovery: 'Open disputes and complaints with customer-provider risk attached.',
     providerOnboarding: 'Pending applications that block future assignment capacity.',
+    identityVerification: 'Provider identity checks waiting for manual approval, retry or rejection.',
   }
   return descriptions[key]
 }
@@ -876,6 +929,7 @@ function queueKeyToHref(key: OpsDashboardQueueKey): string {
     financeFollowUp: '/admin/payments',
     trustRecovery: '/admin/disputes',
     providerOnboarding: '/admin/applications',
+    identityVerification: '/admin/verifications?status=NEEDS_MANUAL_REVIEW',
   }
   return hrefs[key]
 }

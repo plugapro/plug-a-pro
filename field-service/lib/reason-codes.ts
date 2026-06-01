@@ -92,6 +92,12 @@ const QUEUE_REASON_CODES: Partial<Record<OpsQueueType, ReasonCode[]>> = {
     { code: 'REJECTED_INELIGIBLE',label: 'Rejected - ineligible',   requiresNote: true  },
     { code: 'OTHER',              label: 'Other',                   requiresNote: true  },
   ],
+  IDENTITY_VERIFICATION: [
+    { code: 'APPROVED',           label: 'Identity approved',       requiresNote: false },
+    { code: 'RETRY_REQUIRED',     label: 'Retry requested',         requiresNote: true  },
+    { code: 'REJECTED',           label: 'Identity rejected',       requiresNote: true  },
+    { code: 'OTHER',              label: 'Other',                   requiresNote: true  },
+  ],
 }
 
 export function getReasonCodesForQueue(queueType: OpsQueueType): ReasonCode[] {

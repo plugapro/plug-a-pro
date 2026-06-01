@@ -16,6 +16,7 @@ const QUEUE_HREFS: Record<string, string> = {
   DISPUTE:           '/admin/disputes',
   PAYMENT_FOLLOW_UP: '/admin/payments',
   PROVIDER_ONBOARDING: '/admin/applications',
+  IDENTITY_VERIFICATION: '/admin/verifications?status=NEEDS_MANUAL_REVIEW',
 }
 
 function formatAge(slaDueAt: Date): string {
