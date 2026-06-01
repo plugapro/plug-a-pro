@@ -273,6 +273,28 @@ describe('admin identity verification actions', () => {
     expect(html).toContain('89%')
   })
 
+  it('renders Didit risk flag arrays on the admin verification detail page', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      ...(await baseVerification()),
+      status: 'NEEDS_MANUAL_REVIEW',
+      sourceCheckProvider: 'didit',
+      vendorReference: 'sess-risk',
+      riskFlags: ['QR_NOT_DETECTED', 'LOW_LIVENESS_SCORE'],
+    })
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({}),
+      }),
+    )
+
+    expect(html).toContain('Risk flags')
+    expect(html).toContain('QR_NOT_DETECTED')
+    expect(html).toContain('LOW_LIVENESS_SCORE')
+  })
+
   it('shows the TRUST Didit refresh control for terminal rows missing local documents', async () => {
     mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
       ...(await baseVerification()),

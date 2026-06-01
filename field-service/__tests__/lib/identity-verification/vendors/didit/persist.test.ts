@@ -65,6 +65,12 @@ function fullDecision(): DiditDecisionResponse {
       personal_number: '900203 5000 088',
       citizenship: 'ZA',
       nationality: 'South African',
+      address: '123 Secret Street',
+      place_of_birth: 'Pretoria',
+    },
+    contact_details: {
+      email: 'jane@example.test',
+      phone: '+27123456789',
     },
     document: {
       number: 'A123456789',
@@ -72,6 +78,8 @@ function fullDecision(): DiditDecisionResponse {
       expiration_date: '2031-04-05',
       front_image_url: 'https://didit.test/front.jpg?token=front-secret',
       back_image_url: 'https://didit.test/back.jpg?token=back-secret',
+      formatted_address: '123 Secret Street, Pretoria',
+      mrz_string: 'IDZAA123456789JANE<CITIZEN',
     },
     document_images: [
       { kind: 'ID_FRONT', url: 'https://didit.test/front-from-list.jpg' },
@@ -138,6 +146,70 @@ describe('Didit decision persistence helpers', () => {
     expect(fields.riskFlags).toEqual(['DOC_GLARE', 'LIVENESS_LOW_LIGHT', 'DHA_DELAYED'])
   })
 
+  it('maps the documented Didit v3 feature arrays and normalizes 0-100 scores', () => {
+    const decision = {
+      session_id: 'sess_v3',
+      status: 'Approved',
+      completed_at: '2026-05-31T09:05:00.000Z',
+      id_verifications: [
+        {
+          status: 'Approved',
+          document_number: 'CAA000000',
+          personal_number: '99999999R',
+          front_image: 'https://didit.test/front-v3.jpg',
+          back_image: 'https://didit.test/back-v3.jpg',
+          date_of_birth: '1980-01-01',
+          expiration_date: '2031-06-02',
+          issuing_state: 'ESP',
+          gender: 'F',
+          nationality: 'ESP',
+          score: 85.2,
+          warnings: [{ risk: 'QR_NOT_DETECTED' }],
+        },
+      ],
+      liveness_checks: [
+        {
+          status: 'Approved',
+          score: 89.92,
+          reference_image: 'https://didit.test/liveness-v3.jpg',
+          warnings: [{ risk: 'LOW_LIVENESS_SCORE' }],
+        },
+      ],
+      face_matches: [
+        {
+          status: 'In Review',
+          score: 65.43,
+          source_image: 'https://didit.test/selfie-v3.jpg',
+          target_image: 'https://didit.test/portrait-v3.jpg',
+          warnings: [{ risk: 'LOW_FACE_MATCH_SIMILARITY' }],
+        },
+      ],
+    } as DiditDecisionResponse
+
+    const fields = mapDecisionToVerificationFields(decision)
+
+    expect(decryptIdentifier(fields.identifierEncrypted as string)).toBe('99999999R')
+    expect(fields.identifierHash).toBe(hmacIdentity('99999999R', 'identity:SA_ID'))
+    expect(fields.identifierLast4).toBe('999R')
+    expect(fields.documentNumberHash).toBe(hmacIdentity('CAA000000', 'document_number'))
+    expect(fields.documentNumberLast4).toBe('0000')
+    expect(fields.dobDerived).toEqual(new Date('1980-01-01T00:00:00.000Z'))
+    expect(fields.genderDerived).toBe('F')
+    expect(fields.nationality).toBe('ESP')
+    expect(fields.issuingCountry).toBe('ESP')
+    expect(fields.documentExpiryDate).toEqual(new Date('2031-06-02T00:00:00.000Z'))
+    expect(fields.documentConfidenceScore).toBeCloseTo(0.852)
+    expect(fields.livenessScore).toBeCloseTo(0.8992)
+    expect(fields.selfieMatchScore).toBeCloseTo(0.6543)
+    expect(fields.riskFlags).toEqual(['QR_NOT_DETECTED', 'LOW_LIVENESS_SCORE', 'LOW_FACE_MATCH_SIMILARITY'])
+    expect(extractImageRefs(decision)).toEqual([
+      { kind: 'ID_FRONT', url: 'https://didit.test/front-v3.jpg' },
+      { kind: 'ID_BACK', url: 'https://didit.test/back-v3.jpg' },
+      { kind: 'SELFIE', url: 'https://didit.test/selfie-v3.jpg' },
+      { kind: 'LIVENESS_FRAME', url: 'https://didit.test/liveness-v3.jpg' },
+    ])
+  })
+
   it('returns a shape mismatch instead of throwing from the safe mapper', () => {
     const result = tryMapDecisionToVerificationFields({ status: 'Approved' })
 
@@ -165,6 +237,11 @@ describe('Didit decision persistence helpers', () => {
     expect(text).not.toContain('liveness.mp4')
     expect(text).not.toContain('900203')
     expect(text).not.toContain('A123456789')
+    expect(text).not.toContain('123 Secret Street')
+    expect(text).not.toContain('Pretoria')
+    expect(text).not.toContain('jane@example.test')
+    expect(text).not.toContain('+27123456789')
+    expect(text).not.toContain('IDZAA123456789JANE')
     expect(text).toMatch(/<HASH:[a-f0-9]{8}>/)
     expect(redacted).toMatchObject({
       session_id: 'sess_123',

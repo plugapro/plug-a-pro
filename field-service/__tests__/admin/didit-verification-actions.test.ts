@@ -186,6 +186,18 @@ describe('Didit verification admin actions', () => {
     expect(mocks.mockPersistDiditDecision).toHaveBeenCalledAfter(mocks.mockCrudAction)
   })
 
+  it('does not call Didit when the admin verifications flag is disabled', async () => {
+    mocks.mockIsEnabled.mockResolvedValue(false)
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: false, error: 'feature_disabled' })
+    expect(mocks.mockDb.providerIdentityVerification.findUnique).not.toHaveBeenCalled()
+    expect(mocks.mockRefreshDiditSession).not.toHaveBeenCalled()
+    expect(mocks.mockCrudAction).not.toHaveBeenCalled()
+    expect(mocks.mockPersistDiditDecision).not.toHaveBeenCalled()
+  })
+
   it('fetches and persists already-terminal Didit rows but skips applyVendorVerdict', async () => {
     mocks.mockCrudAction.mockImplementationOnce(async (options) => {
       const data = await options.run(options.input, {})
@@ -224,7 +236,7 @@ describe('Didit verification admin actions', () => {
   })
 
   it('runs admin Didit persistence regardless of the new webhook feature flag', async () => {
-    mocks.mockIsEnabled.mockResolvedValue(false)
+    mocks.mockIsEnabled.mockImplementation(async (key: string) => key === 'admin.crud.verifications')
     mocks.mockCrudAction.mockImplementationOnce(async (options) => ({
       ok: true,
       data: await options.run(options.input, {}),

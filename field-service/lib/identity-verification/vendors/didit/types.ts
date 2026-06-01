@@ -43,6 +43,7 @@ export type DiditFeatureCheck = {
   confidence?: number | null
   warnings?: Array<{
     feature?: string
+    risk?: string
     risk_code?: string
     log_type?: string
     short_description?: string

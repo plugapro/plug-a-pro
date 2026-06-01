@@ -361,7 +361,12 @@ function RiskFlags({ value }: { value: unknown }) {
 }
 
 function riskFlagEntries(value: unknown): Array<[string, unknown]> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  if (Array.isArray(value)) {
+    return value
+      .filter((flag) => flag !== null && flag !== undefined)
+      .map((flag) => [String(flag), true])
+  }
+  if (!value || typeof value !== 'object') return []
   return Object.entries(value)
 }
 

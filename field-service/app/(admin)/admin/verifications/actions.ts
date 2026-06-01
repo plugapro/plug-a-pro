@@ -332,7 +332,7 @@ type RefreshDiditInput = z.infer<typeof RefreshDiditSchema>
  * directly in crudAction.
  */
 export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput) {
-  const preflight = await authorizeDiditLinkIssue()
+  const preflight = await authorizeDiditAdminAction()
   if (!preflight.ok) return preflight
 
   // Two-phase pattern (mirrors retryIdentityVerificationWithVendorAction):
@@ -393,7 +393,7 @@ export async function issueDiditOnboardingLinkAction(input: IssueDiditLinkInput)
     : { ok: false as const }
 }
 
-async function authorizeDiditLinkIssue(): Promise<{ ok: true } | { ok: false; error: 'feature_disabled' }> {
+async function authorizeDiditAdminAction(): Promise<{ ok: true } | { ok: false; error: 'feature_disabled' }> {
   const admin = await requireRole([...REVIEW_ROLES])
   const enabled = await isEnabled(FLAG, { userId: admin.id })
   if (!enabled) return { ok: false, error: 'feature_disabled' }
@@ -409,7 +409,8 @@ async function authorizeDiditLinkIssue(): Promise<{ ok: true } | { ok: false; er
  * issueDiditOnboardingLinkAction for the rationale.
  */
 export async function refreshDiditSessionAction(input: RefreshDiditInput) {
-  await requireRole([...REVIEW_ROLES])
+  const preflight = await authorizeDiditAdminAction()
+  if (!preflight.ok) return preflight
 
   const parsed = RefreshDiditSchema.safeParse(input)
   if (!parsed.success) return { ok: false as const }

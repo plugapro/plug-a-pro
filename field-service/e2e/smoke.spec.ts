@@ -112,18 +112,20 @@ test.describe('authenticated', () => {
     await expect(page.locator('text=Could not load customer')).toHaveCount(0)
   })
 
-  test('Didit verification refresh backfills local evidence when configured', async ({ page }) => {
+  test.describe('Didit refresh smoke', () => {
     const verificationId = process.env.E2E_DIDIT_VERIFICATION_ID
     test.skip(!verificationId, 'E2E_DIDIT_VERIFICATION_ID not set — skipping Didit refresh smoke')
 
-    await page.goto(`/admin/verifications/${verificationId}`)
-    await page.getByRole('button', { name: 'Refresh from Didit' }).click()
+    test('backfills local evidence when configured', async ({ page }) => {
+      await page.goto(`/admin/verifications/${verificationId}`)
+      await page.getByRole('button', { name: 'Refresh from Didit' }).click()
 
-    await expect(page).toHaveURL(/message=didit-refreshed/)
-    await expect(page.getByRole('link', { name: 'Open private preview' }).first()).toBeVisible()
-    await expect(page.getByText('Document confidence')).toBeVisible()
-    await expect(page.getByText('Liveness score')).toBeVisible()
-    await expect(page.getByText('Selfie match')).toBeVisible()
+      await expect(page).toHaveURL(/message=didit-refreshed/)
+      await expect(page.getByRole('link', { name: 'Open private preview' }).first()).toBeVisible()
+      await expect(page.getByText('Document confidence')).toBeVisible()
+      await expect(page.getByText('Liveness score')).toBeVisible()
+      await expect(page.getByText('Selfie match')).toBeVisible()
+    })
   })
 })
 

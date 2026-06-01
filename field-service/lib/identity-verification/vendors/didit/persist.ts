@@ -28,6 +28,17 @@ const PII_KEYS = new Set([
   'dob',
   'birth_date',
   'birthDate',
+  'address',
+  'formatted_address',
+  'formattedAddress',
+  'place_of_birth',
+  'placeOfBirth',
+  'email',
+  'email_address',
+  'emailAddress',
+  'phone',
+  'phone_number',
+  'phoneNumber',
   'personal_number',
   'personalNumber',
   'national_id',
@@ -36,6 +47,12 @@ const PII_KEYS = new Set([
   'idNumber',
   'document_number',
   'documentNumber',
+  'mrz_string',
+  'mrzString',
+  'mrz_key',
+  'mrzKey',
+  'serial_number',
+  'serialNumber',
   'number',
 ])
 
@@ -92,7 +109,17 @@ export function mapDecisionToVerificationFields(decision: DiditDecisionResponse)
 
   const person = readRecord(decision.person)
   const document = readRecord(decision.document)
+  const idVerification = readRecord(firstFeature(decision.id_verifications))
+  const nfcVerification = readRecord(firstFeature((decision as { nfc_verifications?: DiditFeatureCheck[] }).nfc_verifications))
+  const nfcChipData = readRecord(nfcVerification?.chip_data)
+  const mrz = readRecord(idVerification?.mrz)
   const personalNumber = firstString(
+    idVerification?.personal_number,
+    idVerification?.personalNumber,
+    nfcChipData?.personal_number,
+    nfcChipData?.personalNumber,
+    mrz?.personal_number,
+    mrz?.personalNumber,
     person?.personal_number,
     person?.personalNumber,
     person?.national_id,
@@ -103,6 +130,12 @@ export function mapDecisionToVerificationFields(decision: DiditDecisionResponse)
     decision.personalNumber,
   )
   const documentNumber = firstString(
+    idVerification?.document_number,
+    idVerification?.documentNumber,
+    nfcChipData?.document_number,
+    nfcChipData?.documentNumber,
+    mrz?.document_number,
+    mrz?.documentNumber,
     document?.number,
     document?.document_number,
     document?.documentNumber,
@@ -111,16 +144,36 @@ export function mapDecisionToVerificationFields(decision: DiditDecisionResponse)
   )
   const fields: DiditVerificationFieldUpdate = {
     dobDerived: parseDateOnly(firstString(
+      idVerification?.date_of_birth,
+      idVerification?.dateOfBirth,
+      nfcChipData?.date_of_birth,
+      nfcChipData?.dateOfBirth,
+      nfcChipData?.birth_date,
+      nfcChipData?.birthDate,
       person?.date_of_birth,
       person?.dateOfBirth,
       person?.dob,
       decision.date_of_birth,
       decision.dateOfBirth,
     )),
-    genderDerived: firstString(person?.gender, decision.gender),
-    citizenshipDerived: firstString(person?.citizenship, decision.citizenship),
-    nationality: firstString(person?.nationality, decision.nationality),
+    genderDerived: firstString(idVerification?.gender, nfcChipData?.gender, mrz?.sex, person?.gender, decision.gender),
+    citizenshipDerived: firstString(
+      idVerification?.citizenship,
+      nfcChipData?.citizenship,
+      person?.citizenship,
+      decision.citizenship,
+    ),
+    nationality: firstString(idVerification?.nationality, nfcChipData?.nationality, mrz?.nationality, person?.nationality, decision.nationality),
     issuingCountry: firstString(
+      idVerification?.issuing_country,
+      idVerification?.issuingCountry,
+      idVerification?.issuing_state,
+      idVerification?.issuingState,
+      nfcChipData?.issuing_country,
+      nfcChipData?.issuingCountry,
+      nfcChipData?.issuing_state,
+      nfcChipData?.issuingState,
+      mrz?.country,
       document?.issuing_country,
       document?.issuingCountry,
       document?.country,
@@ -128,6 +181,14 @@ export function mapDecisionToVerificationFields(decision: DiditDecisionResponse)
       decision.issuingCountry,
     ),
     documentExpiryDate: parseDateOnly(firstString(
+      idVerification?.expiration_date,
+      idVerification?.expirationDate,
+      idVerification?.expiry_date,
+      idVerification?.expiryDate,
+      nfcChipData?.expiration_date,
+      nfcChipData?.expirationDate,
+      nfcChipData?.expiry_date,
+      nfcChipData?.expiryDate,
       document?.expiration_date,
       document?.expirationDate,
       document?.expiry_date,
@@ -172,12 +233,57 @@ export function extractImageRefs(decision: DiditDecisionResponse): DiditImageRef
   const document = readRecord(decision.document)
   const selfie = readRecord(decision.selfie)
   const liveness = readRecord(decision.liveness)
+  const idVerification = readRecord(firstFeature(decision.id_verifications))
+  const faceMatch = readRecord(firstFeature(decision.face_matches))
+  const livenessCheck = readRecord(firstFeature(decision.liveness_checks))
 
   return [
-    { kind: 'ID_FRONT', url: firstString(document?.front_image_url, document?.frontImageUrl, decision.id_front_url) },
-    { kind: 'ID_BACK', url: firstString(document?.back_image_url, document?.backImageUrl, decision.id_back_url) },
-    { kind: 'SELFIE', url: firstString(selfie?.image_url, selfie?.imageUrl, decision.selfie_url) },
-    { kind: 'LIVENESS_FRAME', url: firstString(liveness?.frame_url, liveness?.frameUrl, decision.liveness_frame_url) },
+    {
+      kind: 'ID_FRONT',
+      url: firstString(
+        document?.front_image_url,
+        document?.frontImageUrl,
+        idVerification?.front_image,
+        idVerification?.frontImage,
+        idVerification?.full_front_image,
+        idVerification?.fullFrontImage,
+        decision.id_front_url,
+      ),
+    },
+    {
+      kind: 'ID_BACK',
+      url: firstString(
+        document?.back_image_url,
+        document?.backImageUrl,
+        idVerification?.back_image,
+        idVerification?.backImage,
+        idVerification?.full_back_image,
+        idVerification?.fullBackImage,
+        decision.id_back_url,
+      ),
+    },
+    {
+      kind: 'SELFIE',
+      url: firstString(
+        selfie?.image_url,
+        selfie?.imageUrl,
+        faceMatch?.source_image,
+        faceMatch?.sourceImage,
+        faceMatch?.target_image,
+        faceMatch?.targetImage,
+        decision.selfie_url,
+      ),
+    },
+    {
+      kind: 'LIVENESS_FRAME',
+      url: firstString(
+        liveness?.frame_url,
+        liveness?.frameUrl,
+        livenessCheck?.reference_image,
+        livenessCheck?.referenceImage,
+        decision.liveness_frame_url,
+      ),
+    },
   ].filter((ref): ref is DiditImageRef => Boolean(ref.url))
 }
 
@@ -345,7 +451,7 @@ function firstFeature(features: DiditFeatureCheck[] | undefined): DiditFeatureCh
 
 function numericScore(feature: DiditFeatureCheck | null): number | undefined {
   if (!feature) return undefined
-  if (typeof feature.score === 'number') return feature.score
+  if (typeof feature.score === 'number') return normalizeScore(feature.score)
   if (feature.status === 'Passed') return 1.0
   return undefined
 }
@@ -354,12 +460,17 @@ function numericScoreWithFallback(feature: DiditFeatureCheck | null, fallbackKey
   if (!feature) return undefined
   const score = numericScore(feature)
   if (score !== undefined) return score
-  return typeof feature[fallbackKey] === 'number' ? feature[fallbackKey] as number : undefined
+  return typeof feature[fallbackKey] === 'number' ? normalizeScore(feature[fallbackKey] as number) : undefined
+}
+
+function normalizeScore(value: number): number | undefined {
+  if (!Number.isFinite(value)) return undefined
+  return value > 1 && value <= 100 ? value / 100 : value
 }
 
 function collectRiskFlags(decision: DiditDecisionResponse): string[] {
   const flags = new Set<string>()
-  for (const key of ['id_verifications', 'liveness_checks', 'face_matches', 'aml_screenings', 'database_validations'] as const) {
+  for (const key of ['id_verifications', 'liveness_checks', 'face_matches', 'aml_screenings', 'database_validations', 'nfc_verifications'] as const) {
     const features = decision[key]
     if (!Array.isArray(features)) continue
     for (const feature of features) {
@@ -367,6 +478,9 @@ function collectRiskFlags(decision: DiditDecisionResponse): string[] {
       for (const warning of feature.warnings) {
         if (typeof warning?.risk_code === 'string' && warning.risk_code.trim()) {
           flags.add(warning.risk_code.trim())
+        }
+        if (typeof warning?.risk === 'string' && warning.risk.trim()) {
+          flags.add(warning.risk.trim())
         }
       }
     }
