@@ -1,12 +1,21 @@
 import { NextResponse } from 'next/server'
-import type { Prisma } from '@prisma/client'
+import type { Prisma, VerificationStatus } from '@prisma/client'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { applyVendorVerdict } from '@/lib/identity-verification/orchestrator'
+import { getSessionDecision } from '@/lib/identity-verification/vendors/didit/client'
+import { persistDiditDecision } from '@/lib/identity-verification/vendors/didit/persist'
 import { getAdapter, toVendorKey } from '@/lib/identity-verification/vendors/registry'
 import type { ParseWebhookResult } from '@/lib/identity-verification/vendors/types'
 import { raiseSecurityReviewEvent } from '@/lib/security/security-event-service'
 
 export const runtime = 'nodejs'
+
+const DIDIT_PERSISTABLE_STATUSES = new Set<VerificationStatus>([
+  'PASSED',
+  'FAILED',
+  'NEEDS_MANUAL_REVIEW',
+])
 
 export async function POST(
   request: Request,
@@ -102,9 +111,10 @@ export async function POST(
     select: { id: true },
   })
 
+  let applied: Awaited<ReturnType<typeof applyVendorVerdict>> | null = null
   if (parsed.result) {
     try {
-      await applyVendorVerdict(verification.id, parsed.result, 'webhook')
+      applied = await applyVendorVerdict(verification.id, parsed.result, 'webhook')
     } catch (error) {
       await db.providerVerificationWebhookEvent.update({
         where: { id: row.id },
@@ -114,6 +124,15 @@ export async function POST(
       })
       return NextResponse.json({ ok: false }, { status: 500 })
     }
+  }
+
+  if (applied) {
+    await maybePersistDiditDecision({
+      vendorKey,
+      verificationId: verification.id,
+      parsed,
+      applied,
+    })
   }
 
   await db.providerVerificationWebhookEvent.update({
@@ -155,4 +174,71 @@ function isUniqueViolation(error: unknown) {
     'code' in error &&
     (error as { code?: string }).code === 'P2002',
   )
+}
+
+async function maybePersistDiditDecision(params: {
+  vendorKey: string
+  verificationId: string
+  parsed: ParseWebhookResult
+  applied: Awaited<ReturnType<typeof applyVendorVerdict>>
+}) {
+  if (params.vendorKey !== 'didit') return
+  if (!DIDIT_PERSISTABLE_STATUSES.has(params.applied.status)) return
+  if (!(await isEnabled('provider.identity.vendor.didit.persist_documents'))) return
+
+  const vendorReference = params.applied.vendorReference ?? params.parsed.vendorReference
+  if (!vendorReference) {
+    await logDiditPersistFailed({
+      verificationId: params.verificationId,
+      status: params.applied.status,
+      vendorReference: null,
+      error: 'Missing Didit session_id for persistence',
+    })
+    return
+  }
+
+  try {
+    const decision = await getSessionDecision(vendorReference)
+    await persistDiditDecision(params.verificationId, decision, { source: 'webhook' })
+  } catch (error) {
+    await logDiditPersistFailed({
+      verificationId: params.verificationId,
+      status: params.applied.status,
+      vendorReference,
+      error: errorMessage(error),
+    })
+  }
+}
+
+async function logDiditPersistFailed(params: {
+  verificationId: string
+  status: VerificationStatus
+  vendorReference: string | null
+  error: string
+}) {
+  try {
+    await db.providerVerificationEvent.create({
+      data: {
+        verificationId: params.verificationId,
+        fromStatus: params.status,
+        toStatus: params.status,
+        reasonCode: 'DIDIT_PERSIST_FAILED',
+        metadata: {
+          source: 'webhook',
+          error: params.error,
+          vendorReference: params.vendorReference,
+        } as Prisma.InputJsonValue,
+      },
+    })
+  } catch (error) {
+    console.error('[verification-webhook] failed to log Didit persistence failure', {
+      verificationId: params.verificationId,
+      vendorReference: params.vendorReference,
+      error: errorMessage(error),
+    })
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

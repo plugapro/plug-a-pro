@@ -1,7 +1,15 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockAdapter, mockDb, mockApplyVendorVerdict, mockRaiseSecurityReviewEvent } = vi.hoisted(() => ({
+const {
+  mockAdapter,
+  mockDb,
+  mockApplyVendorVerdict,
+  mockGetSessionDecision,
+  mockIsEnabled,
+  mockPersistDiditDecision,
+  mockRaiseSecurityReviewEvent,
+} = vi.hoisted(() => ({
   mockAdapter: {
     parseWebhook: vi.fn(),
   },
@@ -15,18 +23,31 @@ const { mockAdapter, mockDb, mockApplyVendorVerdict, mockRaiseSecurityReviewEven
       findMany: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
+    providerVerificationEvent: {
+      create: vi.fn(),
+    },
   },
   mockApplyVendorVerdict: vi.fn(),
+  mockGetSessionDecision: vi.fn(),
+  mockIsEnabled: vi.fn(),
+  mockPersistDiditDecision: vi.fn(),
   mockRaiseSecurityReviewEvent: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
 vi.mock('@/lib/identity-verification/vendors/registry', () => ({
   getAdapter: vi.fn(() => mockAdapter),
   toVendorKey: vi.fn((value: string) => value),
 }))
 vi.mock('@/lib/identity-verification/orchestrator', () => ({
   applyVendorVerdict: mockApplyVendorVerdict,
+}))
+vi.mock('@/lib/identity-verification/vendors/didit/client', () => ({
+  getSessionDecision: mockGetSessionDecision,
+}))
+vi.mock('@/lib/identity-verification/vendors/didit/persist', () => ({
+  persistDiditDecision: mockPersistDiditDecision,
 }))
 vi.mock('@/lib/security/security-event-service', () => ({
   raiseSecurityReviewEvent: mockRaiseSecurityReviewEvent,
@@ -55,9 +76,20 @@ describe('verification provider webhook route', () => {
     })
     mockDb.providerVerificationWebhookEvent.create.mockResolvedValue({ id: 'wh-1' })
     mockDb.providerVerificationWebhookEvent.update.mockResolvedValue({ id: 'wh-1' })
+    mockDb.providerVerificationEvent.create.mockResolvedValue({ id: 'persist-failed-event' })
     mockDb.providerIdentityVerification.findMany.mockResolvedValue([{ id: 'ver-1' }])
     mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({ id: 'ver-1' })
-    mockApplyVendorVerdict.mockResolvedValue({ verificationId: 'ver-1', status: 'PASSED' })
+    mockApplyVendorVerdict.mockResolvedValue({ verificationId: 'ver-1', status: 'PASSED', vendorReference: 'job-1' })
+    mockGetSessionDecision.mockResolvedValue({ session_id: 'job-1', status: 'Approved' })
+    mockIsEnabled.mockResolvedValue(false)
+    mockPersistDiditDecision.mockResolvedValue({
+      verificationId: 'ver-1',
+      fieldsStamped: true,
+      payloadRedacted: true,
+      documentsStored: [],
+      documentsSkipped: [],
+      documentsFailed: [],
+    })
   })
 
   it('applies a valid webhook verdict resolved by vendor reference', async () => {
@@ -199,5 +231,129 @@ describe('verification provider webhook route', () => {
       },
     })
     expect(mockApplyVendorVerdict).not.toHaveBeenCalled()
+  })
+
+  it('persists the full Didit decision after a terminal applied verdict when the flag is enabled', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-didit-approved',
+      vendorReference: 'sess-parsed',
+      livenessSessionReference: 'sess-parsed',
+      verificationId: null,
+      eventType: 'status.updated',
+      payloadHash: 'hash-didit-approved',
+      redactedPayload: { event: 'status.updated' },
+      result: { decision: 'PASS', confidence: 0.99, livenessVerified: true },
+    })
+    mockDb.providerVerificationWebhookEvent.create.mockResolvedValue({ id: 'wh-didit-approved' })
+    mockDb.providerIdentityVerification.findMany.mockResolvedValue([{ id: 'ver-1' }])
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({ id: 'ver-1' })
+    mockApplyVendorVerdict.mockResolvedValue({
+      verificationId: 'ver-1',
+      status: 'PASSED',
+      vendorReference: 'sess-applied',
+    })
+    const fullDecision = { session_id: 'sess-applied', status: 'Approved' }
+    mockGetSessionDecision.mockResolvedValue(fullDecision)
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-didit-approved"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockIsEnabled).toHaveBeenCalledWith('provider.identity.vendor.didit.persist_documents')
+    expect(mockGetSessionDecision).toHaveBeenCalledWith('sess-applied')
+    expect(mockPersistDiditDecision).toHaveBeenCalledWith('ver-1', fullDecision, { source: 'webhook' })
+  })
+
+  it('does not fetch or persist Didit decisions when the persistence flag is disabled', async () => {
+    mockIsEnabled.mockResolvedValue(false)
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-didit-disabled',
+      vendorReference: 'sess-disabled',
+      livenessSessionReference: 'sess-disabled',
+      verificationId: null,
+      eventType: 'status.updated',
+      payloadHash: 'hash-didit-disabled',
+      redactedPayload: { event: 'status.updated' },
+      result: { decision: 'PASS', confidence: 0.99, livenessVerified: true },
+    })
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-didit-disabled"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockGetSessionDecision).not.toHaveBeenCalled()
+    expect(mockPersistDiditDecision).not.toHaveBeenCalled()
+  })
+
+  it('does not persist Didit decisions when the webhook result is null', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-didit-progress',
+      vendorReference: 'sess-progress',
+      livenessSessionReference: 'sess-progress',
+      verificationId: null,
+      eventType: 'status.updated',
+      payloadHash: 'hash-didit-progress',
+      redactedPayload: { event: 'status.updated' },
+      result: null,
+    })
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-didit-progress"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockApplyVendorVerdict).not.toHaveBeenCalled()
+    expect(mockGetSessionDecision).not.toHaveBeenCalled()
+    expect(mockPersistDiditDecision).not.toHaveBeenCalled()
+  })
+
+  it('logs Didit persistence failures and still acknowledges the webhook', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-didit-persist-fails',
+      vendorReference: 'sess-fail',
+      livenessSessionReference: 'sess-fail',
+      verificationId: null,
+      eventType: 'status.updated',
+      payloadHash: 'hash-didit-persist-fails',
+      redactedPayload: { event: 'status.updated' },
+      result: { decision: 'PASS', confidence: 0.99, livenessVerified: true },
+    })
+    mockApplyVendorVerdict.mockResolvedValue({
+      verificationId: 'ver-1',
+      status: 'PASSED',
+      vendorReference: 'sess-fail',
+    })
+    mockPersistDiditDecision.mockRejectedValue(new Error('persist failed'))
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-didit-persist-fails"}'), { params: Promise.resolve({ vendor: 'didit' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockDb.providerVerificationEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        verificationId: 'ver-1',
+        fromStatus: 'PASSED',
+        toStatus: 'PASSED',
+        reasonCode: 'DIDIT_PERSIST_FAILED',
+        metadata: expect.objectContaining({
+          source: 'webhook',
+          error: 'persist failed',
+          vendorReference: 'sess-fail',
+        }),
+      }),
+    })
+    expect(mockDb.providerVerificationWebhookEvent.update).toHaveBeenCalledWith({
+      where: { id: 'wh-1' },
+      data: {
+        verificationId: 'ver-1',
+        processedAt: expect.any(Date),
+      },
+    })
   })
 })
