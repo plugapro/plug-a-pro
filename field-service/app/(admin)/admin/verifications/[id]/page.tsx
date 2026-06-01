@@ -330,6 +330,18 @@ function reviewActionMessage(message?: string) {
       return { tone: 'tone-success', text: 'Retry request recorded.' }
     case 'vendor-retry':
       return { tone: 'tone-success', text: 'Vendor retry requested.' }
+    case 'didit-refresh-failed-feature-disabled':
+      return { tone: 'tone-warning', text: 'Didit refresh is disabled for this admin session.' }
+    case 'didit-refresh-failed-invalid-input':
+      return { tone: 'tone-warning', text: 'Didit refresh failed because the verification id was invalid.' }
+    case 'didit-refresh-failed-not-found':
+      return { tone: 'tone-warning', text: 'Didit refresh failed because the verification could not be found.' }
+    case 'didit-refresh-failed-not-didit':
+      return { tone: 'tone-warning', text: 'Didit refresh is only available for Didit-sourced verifications.' }
+    case 'didit-refresh-failed-no-session':
+      return { tone: 'tone-warning', text: 'Didit refresh failed because this verification has no Didit session reference.' }
+    case 'didit-refresh-failed':
+      return { tone: 'tone-warning', text: 'Didit refresh failed before the latest decision could be applied.' }
     default:
       return null
   }

@@ -86,6 +86,7 @@ vi.mock('@/lib/whatsapp', () => ({
 
 import {
   issueDiditOnboardingLinkAction,
+  refreshDiditSessionFormAction,
   refreshDiditSessionAction,
 } from '@/app/(admin)/admin/verifications/actions'
 
@@ -293,5 +294,57 @@ describe('Didit verification admin actions', () => {
         }),
       }),
     })
+  })
+
+  it('returns a structured failure when the verification is missing', async () => {
+    mocks.mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce(null)
+
+    const result = await refreshDiditSessionAction({ verificationId: 'missing-verification' })
+
+    expect(result).toEqual({ ok: false, error: 'not_found' })
+    expect(mocks.mockRefreshDiditSession).not.toHaveBeenCalled()
+    expect(mocks.mockCrudAction).not.toHaveBeenCalled()
+  })
+
+  it('returns a structured failure when the verification is not Didit-sourced', async () => {
+    mocks.mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      id: 'ver-1',
+      status: 'PROCESSING',
+      decision: null,
+      sourceCheckProvider: 'smile_id',
+      vendorReference: 'smile-job-1',
+      livenessSessionReference: null,
+      vendorWorkflowId: null,
+    })
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: false, error: 'not_didit' })
+    expect(mocks.mockRefreshDiditSession).not.toHaveBeenCalled()
+    expect(mocks.mockCrudAction).not.toHaveBeenCalled()
+  })
+
+  it('returns a structured failure and form redirect when no real Didit session reference exists', async () => {
+    mocks.mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'PROCESSING',
+      decision: null,
+      sourceCheckProvider: 'didit',
+      vendorReference: 'didit-pre:placeholder',
+      livenessSessionReference: null,
+      vendorWorkflowId: null,
+    })
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: false, error: 'no_didit_session' })
+    expect(mocks.mockRefreshDiditSession).not.toHaveBeenCalled()
+    expect(mocks.mockCrudAction).not.toHaveBeenCalled()
+
+    const formData = new FormData()
+    formData.set('verificationId', 'ver-1')
+    await refreshDiditSessionFormAction(formData)
+
+    expect(mocks.mockRedirect).toHaveBeenCalledWith('/admin/verifications/ver-1?message=didit-refresh-failed-no-session')
   })
 })
