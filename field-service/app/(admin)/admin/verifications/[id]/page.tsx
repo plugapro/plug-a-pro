@@ -128,6 +128,9 @@ export default async function AdminIdentityVerificationDetailPage({
               <Field label="Submitted" value={formatDate(verification.createdAt)} />
             </dl>
             <RiskFlags value={verification.riskFlags} />
+            {verification.sourceCheckProvider === 'didit' && canPreviewDocuments && verification.rawPayloadRedacted ? (
+              <RedactedDiditPayload value={verification.rawPayloadRedacted} />
+            ) : null}
           </div>
 
           <div className="rounded-xl border bg-card p-4">
@@ -357,6 +360,19 @@ function RiskFlags({ value }: { value: unknown }) {
         ))}
       </dl>
     </div>
+  )
+}
+
+function RedactedDiditPayload({ value }: { value: unknown }) {
+  return (
+    <details className="mt-4 rounded-md border bg-muted/30 p-3 text-xs">
+      <summary className="cursor-pointer font-medium text-foreground">
+        Full Didit decision (redacted - PII hashed, image URLs dropped)
+      </summary>
+      <pre className="mt-3 max-h-[480px] overflow-auto whitespace-pre-wrap break-all rounded bg-background p-3 text-[11px] leading-relaxed">
+        <code>{JSON.stringify(value, null, 2)}</code>
+      </pre>
+    </details>
   )
 }
 
