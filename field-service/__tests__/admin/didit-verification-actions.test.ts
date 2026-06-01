@@ -7,10 +7,21 @@ const mocks = vi.hoisted(() => ({
   mockGetDiditWorkflowId: vi.fn(),
   mockIsEnabled: vi.fn(),
   mockIssueVerificationLink: vi.fn(),
+  mockApplyVendorVerdict: vi.fn(),
+  mockDb: {
+    providerIdentityVerification: {
+      findUnique: vi.fn(),
+    },
+    providerVerificationEvent: {
+      create: vi.fn(),
+    },
+  },
+  mockPersistDiditDecision: vi.fn(),
   mockRedirect: vi.fn(),
   mockRequireAdmin: vi.fn(),
   mockRequireRole: vi.fn(),
   mockRevalidatePath: vi.fn(),
+  mockRefreshDiditSession: vi.fn(),
 }))
 
 vi.mock('next/cache', () => ({
@@ -39,7 +50,7 @@ vi.mock('@/lib/crud-action', () => ({
 }))
 
 vi.mock('@/lib/db', () => ({
-  db: {},
+  db: mocks.mockDb,
 }))
 
 vi.mock('@/lib/identity-verification/crypto', () => ({
@@ -51,7 +62,7 @@ vi.mock('@/lib/identity-verification/link', () => ({
 }))
 
 vi.mock('@/lib/identity-verification/orchestrator', () => ({
-  applyVendorVerdict: vi.fn(),
+  applyVendorVerdict: mocks.mockApplyVendorVerdict,
   submitVerificationForAutomation: vi.fn(),
   transitionIdentityVerification: vi.fn(),
 }))
@@ -62,14 +73,21 @@ vi.mock('@/lib/identity-verification/vendors/didit/config', () => ({
 }))
 
 vi.mock('@/lib/identity-verification/vendors/didit/decision', () => ({
-  refreshDiditSession: vi.fn(),
+  refreshDiditSession: mocks.mockRefreshDiditSession,
+}))
+
+vi.mock('@/lib/identity-verification/vendors/didit/persist', () => ({
+  persistDiditDecision: mocks.mockPersistDiditDecision,
 }))
 
 vi.mock('@/lib/whatsapp', () => ({
   sendText: vi.fn(),
 }))
 
-import { issueDiditOnboardingLinkAction } from '@/app/(admin)/admin/verifications/actions'
+import {
+  issueDiditOnboardingLinkAction,
+  refreshDiditSessionAction,
+} from '@/app/(admin)/admin/verifications/actions'
 
 describe('Didit verification admin actions', () => {
   beforeEach(() => {
@@ -93,6 +111,31 @@ describe('Didit verification admin actions', () => {
       expiresAt: new Date('2026-05-29T12:00:00.000Z'),
     })
     mocks.mockCrudAction.mockResolvedValue({ ok: true, data: { id: 'ver-1' } })
+    mocks.mockApplyVendorVerdict.mockResolvedValue({ verificationId: 'ver-1', status: 'PASSED' })
+    mocks.mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'PROCESSING',
+      decision: null,
+      sourceCheckProvider: 'didit',
+      vendorReference: 'sess-1',
+      vendorWorkflowId: 'wf-auth',
+    })
+    mocks.mockDb.providerVerificationEvent.create.mockResolvedValue({ id: 'event-1' })
+    mocks.mockRefreshDiditSession.mockResolvedValue({
+      raw: { session_id: 'sess-1', status: 'Approved' },
+      normalized: {
+        result: { decision: 'PASS', confidence: 0.99, livenessVerified: true },
+        unknownStatus: null,
+      },
+    })
+    mocks.mockPersistDiditDecision.mockResolvedValue({
+      verificationId: 'ver-1',
+      fieldsStamped: true,
+      payloadRedacted: true,
+      documentsStored: [],
+      documentsSkipped: [],
+      documentsFailed: [],
+    })
   })
 
   it('does not mint a verification link when the admin verifications flag is disabled', async () => {
@@ -103,5 +146,138 @@ describe('Didit verification admin actions', () => {
     expect(result).toEqual({ ok: false, error: 'feature_disabled' })
     expect(mocks.mockIssueVerificationLink).not.toHaveBeenCalled()
     expect(mocks.mockCrudAction).not.toHaveBeenCalled()
+  })
+
+  it('fetches non-terminal Didit decisions outside crudAction, applies verdict inside it, then persists after success', async () => {
+    const tx = { providerIdentityVerification: { update: vi.fn() } }
+    mocks.mockCrudAction.mockImplementationOnce(async (options) => {
+      expect(mocks.mockRefreshDiditSession).toHaveBeenCalledBefore(mocks.mockCrudAction)
+      const data = await options.run(options.input, tx)
+      return { ok: true, data }
+    })
+    mocks.mockDb.providerIdentityVerification.findUnique
+      .mockResolvedValueOnce({
+        id: 'ver-1',
+        status: 'PROCESSING',
+        decision: null,
+        sourceCheckProvider: 'didit',
+        vendorReference: 'sess-1',
+        vendorWorkflowId: 'wf-auth',
+      })
+      .mockResolvedValueOnce({ id: 'ver-1', status: 'PASSED', decision: 'PASS' })
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: true, status: 'PASSED', decision: 'PASS' })
+    expect(mocks.mockRefreshDiditSession).toHaveBeenCalledWith('sess-1', {
+      storedVendorWorkflowId: 'wf-auth',
+    })
+    expect(mocks.mockApplyVendorVerdict).toHaveBeenCalledWith(
+      'ver-1',
+      { decision: 'PASS', confidence: 0.99, livenessVerified: true },
+      'webhook',
+      tx,
+    )
+    expect(mocks.mockPersistDiditDecision).toHaveBeenCalledWith(
+      'ver-1',
+      { session_id: 'sess-1', status: 'Approved' },
+      { source: 'admin_refresh' },
+    )
+    expect(mocks.mockPersistDiditDecision).toHaveBeenCalledAfter(mocks.mockCrudAction)
+  })
+
+  it('fetches and persists already-terminal Didit rows but skips applyVendorVerdict', async () => {
+    mocks.mockCrudAction.mockImplementationOnce(async (options) => {
+      const data = await options.run(options.input, {})
+      return { ok: true, data }
+    })
+    mocks.mockDb.providerIdentityVerification.findUnique
+      .mockResolvedValueOnce({
+        id: 'ver-1',
+        status: 'PASSED',
+        decision: 'PASS',
+        sourceCheckProvider: 'didit',
+        vendorReference: 'sess-terminal',
+        vendorWorkflowId: 'wf-auth',
+      })
+      .mockResolvedValueOnce({ id: 'ver-1', status: 'PASSED', decision: 'PASS' })
+    mocks.mockRefreshDiditSession.mockResolvedValueOnce({
+      raw: { session_id: 'sess-terminal', status: 'Approved' },
+      normalized: {
+        result: { decision: 'PASS', confidence: 0.99, livenessVerified: true },
+        unknownStatus: null,
+      },
+    })
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: true, status: 'PASSED', decision: 'PASS' })
+    expect(mocks.mockRefreshDiditSession).toHaveBeenCalledWith('sess-terminal', {
+      storedVendorWorkflowId: 'wf-auth',
+    })
+    expect(mocks.mockApplyVendorVerdict).not.toHaveBeenCalled()
+    expect(mocks.mockPersistDiditDecision).toHaveBeenCalledWith(
+      'ver-1',
+      { session_id: 'sess-terminal', status: 'Approved' },
+      { source: 'admin_refresh' },
+    )
+  })
+
+  it('runs admin Didit persistence regardless of the new webhook feature flag', async () => {
+    mocks.mockIsEnabled.mockResolvedValue(false)
+    mocks.mockCrudAction.mockImplementationOnce(async (options) => ({
+      ok: true,
+      data: await options.run(options.input, {}),
+    }))
+    mocks.mockDb.providerIdentityVerification.findUnique
+      .mockResolvedValueOnce({
+        id: 'ver-1',
+        status: 'PASSED',
+        decision: 'PASS',
+        sourceCheckProvider: 'didit',
+        vendorReference: 'sess-flag-off',
+        vendorWorkflowId: 'wf-auth',
+      })
+      .mockResolvedValueOnce({ id: 'ver-1', status: 'PASSED', decision: 'PASS' })
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: true, status: 'PASSED', decision: 'PASS' })
+    expect(mocks.mockPersistDiditDecision).toHaveBeenCalled()
+  })
+
+  it('logs persistence failure and still returns the post-apply DB row status and decision', async () => {
+    mocks.mockCrudAction.mockImplementationOnce(async (options) => ({
+      ok: true,
+      data: await options.run(options.input, {}),
+    }))
+    mocks.mockDb.providerIdentityVerification.findUnique
+      .mockResolvedValueOnce({
+        id: 'ver-1',
+        status: 'PASSED',
+        decision: 'PASS',
+        sourceCheckProvider: 'didit',
+        vendorReference: 'sess-persist-fail',
+        vendorWorkflowId: 'wf-auth',
+      })
+      .mockResolvedValueOnce({ id: 'ver-1', status: 'PASSED', decision: 'PASS' })
+    mocks.mockPersistDiditDecision.mockRejectedValueOnce(new Error('persist failed'))
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: true, status: 'PASSED', decision: 'PASS' })
+    expect(mocks.mockDb.providerVerificationEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        verificationId: 'ver-1',
+        fromStatus: 'PASSED',
+        toStatus: 'PASSED',
+        reasonCode: 'DIDIT_PERSIST_FAILED',
+        metadata: expect.objectContaining({
+          source: 'admin_refresh',
+          error: 'persist failed',
+          vendorReference: 'sess-persist-fail',
+        }),
+      }),
+    })
   })
 })

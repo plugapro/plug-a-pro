@@ -1,5 +1,6 @@
 'use server'
 
+import type { Prisma, VerificationStatus } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
@@ -21,10 +22,18 @@ import {
   type DiditWorkflowProfile,
 } from '@/lib/identity-verification/vendors/didit/config'
 import { refreshDiditSession } from '@/lib/identity-verification/vendors/didit/decision'
+import { persistDiditDecision } from '@/lib/identity-verification/vendors/didit/persist'
 import { sendText } from '@/lib/whatsapp'
 
 const FLAG = 'admin.crud.verifications'
 const REVIEW_ROLES = ['TRUST'] as const
+const DIDIT_REFRESH_TERMINAL_STATUSES = new Set<VerificationStatus>([
+  'PASSED',
+  'FAILED',
+  'NEEDS_MANUAL_REVIEW',
+  'EXPIRED',
+  'CANCELLED',
+])
 
 const ReviewSchema = z.object({
   verificationId: z.string().min(1),
@@ -400,66 +409,78 @@ async function authorizeDiditLinkIssue(): Promise<{ ok: true } | { ok: false; er
  * issueDiditOnboardingLinkAction for the rationale.
  */
 export async function refreshDiditSessionAction(input: RefreshDiditInput) {
-  const result = await crudAction<RefreshDiditInput, { id: string; status: string; decision: string | null }>({
+  await requireRole([...REVIEW_ROLES])
+
+  const parsed = RefreshDiditSchema.safeParse(input)
+  if (!parsed.success) return { ok: false as const }
+
+  const verification = await db.providerIdentityVerification.findUnique({
+    where: { id: parsed.data.verificationId },
+    select: {
+      id: true,
+      status: true,
+      decision: true,
+      sourceCheckProvider: true,
+      vendorReference: true,
+      vendorWorkflowId: true,
+    },
+  })
+  if (!verification) throw new Error('Verification not found')
+  if (verification.sourceCheckProvider !== 'didit') {
+    throw new Error('Refresh action only supports Didit-sourced verifications')
+  }
+  if (!verification.vendorReference) {
+    throw new Error('Verification has no Didit session_id to refresh against')
+  }
+
+  const refreshed = await refreshDiditSession(verification.vendorReference, {
+    storedVendorWorkflowId: verification.vendorWorkflowId,
+  })
+  const shouldApplyVerdict =
+    !DIDIT_REFRESH_TERMINAL_STATUSES.has(verification.status) &&
+    Boolean(refreshed.normalized.result)
+
+  const result = await crudAction<RefreshDiditInput, { id: string }>({
     entity: 'ProviderIdentityVerification',
-    entityId: input.verificationId,
+    entityId: parsed.data.verificationId,
     action: 'provider_identity_verification.refresh_didit_session',
     requiredRole: [...REVIEW_ROLES],
     requiredFlag: FLAG,
     schema: RefreshDiditSchema,
-    input,
-    run: async (data, tx) => {
-      const verification = await tx.providerIdentityVerification.findUnique({
-        where: { id: data.verificationId },
-        select: {
-          id: true,
-          status: true,
-          decision: true,
-          sourceCheckProvider: true,
-          vendorReference: true,
-          vendorWorkflowId: true,
-        },
-      })
-      if (!verification) throw new Error('Verification not found')
-      if (verification.sourceCheckProvider !== 'didit') {
-        throw new Error('Refresh action only supports Didit-sourced verifications')
-      }
-      if (!verification.vendorReference) {
-        throw new Error('Verification has no Didit session_id to refresh against')
-      }
-      if (['PASSED', 'FAILED', 'EXPIRED', 'CANCELLED'].includes(verification.status)) {
-        // Already terminal - return existing snapshot, no Didit call needed.
-        return {
-          id: verification.id,
-          status: verification.status,
-          decision: verification.decision,
-        }
-      }
-
-      const refreshed = await refreshDiditSession(verification.vendorReference, {
-        storedVendorWorkflowId: verification.vendorWorkflowId,
-      })
-
-      if (refreshed.normalized.result) {
+    input: parsed.data,
+    run: async (_data, tx) => {
+      if (shouldApplyVerdict && refreshed.normalized.result) {
         // Thread the crudAction transaction client so the state transition,
         // Provider.kycStatus update and the audit-log writes are committed
         // atomically with the refresh action's audit row.
         await applyVendorVerdict(verification.id, refreshed.normalized.result, 'webhook', tx)
       }
-      const post = await tx.providerIdentityVerification.findUniqueOrThrow({
-        where: { id: verification.id },
-        select: { id: true, status: true, decision: true },
-      })
-      return { id: post.id, status: post.status, decision: post.decision }
+      return { id: verification.id }
     },
   })
 
-  if (result.ok) {
-    revalidateVerificationPaths(input.verificationId)
+  if (!result.ok) return { ok: false as const }
+
+  const post = await db.providerIdentityVerification.findUnique({
+    where: { id: verification.id },
+    select: { id: true, status: true, decision: true },
+  })
+  if (!post) throw new Error('Verification not found after Didit refresh')
+
+  try {
+    await persistDiditDecision(verification.id, refreshed.raw, { source: 'admin_refresh' })
+  } catch (error) {
+    await logDiditPersistFailed({
+      verificationId: verification.id,
+      status: post.status,
+      vendorReference: verification.vendorReference,
+      source: 'admin_refresh',
+      error: errorMessage(error),
+    })
   }
-  return result.ok
-    ? { ok: true as const, status: result.data.status, decision: result.data.decision }
-    : { ok: false as const }
+
+  revalidateVerificationPaths(input.verificationId)
+  return { ok: true as const, status: post.status, decision: post.decision }
 }
 
 export async function issueDiditOnboardingLinkFormAction(formData: FormData) {
@@ -535,4 +556,38 @@ async function notifyProviderIdentityApproval(
     }).catch(() => undefined)
     return 'failed'
   }
+}
+
+async function logDiditPersistFailed(params: {
+  verificationId: string
+  status: VerificationStatus
+  vendorReference: string | null
+  source: 'admin_refresh' | 'webhook'
+  error: string
+}) {
+  try {
+    await db.providerVerificationEvent.create({
+      data: {
+        verificationId: params.verificationId,
+        fromStatus: params.status,
+        toStatus: params.status,
+        reasonCode: 'DIDIT_PERSIST_FAILED',
+        metadata: {
+          source: params.source,
+          error: params.error,
+          vendorReference: params.vendorReference,
+        } as Prisma.InputJsonValue,
+      },
+    })
+  } catch (error) {
+    console.error('[admin/verifications] failed to log Didit persistence failure', {
+      verificationId: params.verificationId,
+      vendorReference: params.vendorReference,
+      error: errorMessage(error),
+    })
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
