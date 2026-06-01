@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import type { Prisma, VerificationStatus } from '@prisma/client'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
@@ -121,7 +121,7 @@ export async function POST(
   }
 
   if (applied) {
-    await maybePersistDiditDecision({
+    scheduleDiditDecisionPersistence({
       vendorKey,
       verificationId: verification.id,
       parsed,
@@ -201,6 +201,14 @@ async function maybePersistDiditDecision(params: {
       vendorReference,
       error: errorMessage(error),
     })
+  }
+}
+
+function scheduleDiditDecisionPersistence(params: Parameters<typeof maybePersistDiditDecision>[0]) {
+  try {
+    after(() => maybePersistDiditDecision(params))
+  } catch {
+    void maybePersistDiditDecision(params)
   }
 }
 
