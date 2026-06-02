@@ -1,6 +1,7 @@
 import { db } from './db'
 
 export type SecurityCheckTrigger =
+  | 'always_on'
   | 'send_velocity'
   | 'ip_diversity'
   | 'prior_event'
@@ -136,7 +137,7 @@ export async function shouldSendSecurityCheck(params: {
     return { trigger: null }
   }
 
-  // Signal 3: prior unresolved event in the last 90 days.
+  // Signal 3: prior unresolved event in the last 14 days.
   try {
     const priorEvent = await withTimeout(
       client.securityEvent.findFirst({

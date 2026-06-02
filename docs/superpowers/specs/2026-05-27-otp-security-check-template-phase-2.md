@@ -1,4 +1,4 @@
-# Phase-2: OTP security-check delivery template + signal-gated trigger
+# Phase-2: OTP security-check delivery template + always-on trigger
 
 **Status:** Implemented behind existing `security.otp.report` feature flag (default-off). Activates only after Meta template approval lands AND the flag flips.
 
@@ -10,17 +10,18 @@ The OTP fraud-response feature (PR #6) shipped with full response machinery — 
 
 ## Design
 
-### Trigger model: signal-gated, not always-on
+### Trigger model: always-on, with signal metadata
 
-The security-check prompt fires **only when fraud signals match**. Predictable users never see the extra message; suspicious sends always do. Three signals, OR-combined, first-match-wins:
+The security-check prompt fires after every successful WhatsApp OTP while `security.otp.report` is enabled. Fraud signals are still evaluated for metadata and logging, but absence of a signal falls back to the explicit `always_on` trigger. This gives every OTP a one-tap report affordance while preserving signal context for suspicious sends. Three optional signals are OR-combined, first-match-wins:
 
 | Signal | Window | Threshold | Captures |
 |---|---|---|---|
 | `send_velocity` | last 60 min | ≥3 sends to same `phoneE164` (inclusive of current) | OTP hammering |
 | `ip_diversity` | last 30 min | ≥2 distinct `requestedIpHash` for same phone | Distributed sources |
-| `prior_event` | last 90 days | Any `NEW` or `ACKNOWLEDGED` `security_event` row | Recurring suspicious patterns |
+| `prior_event` | last 14 days | Any `NEW` or `ACKNOWLEDGED` `security_event` row | Recurring suspicious patterns |
+| `always_on` | current send | No signal matched, or signal evaluation failed | Baseline Strava-style report affordance |
 
-Evaluation is best-effort — any DB error returns "no signal" and the prompt skips. The OTP delivery is already complete by the time we evaluate; the prompt is purely a follow-up.
+Evaluation is best-effort. Any DB error returns "no signal" and the prompt still sends with `trigger=always_on`. The OTP delivery is already complete by the time we evaluate; the prompt is purely a follow-up.
 
 ### Template: `otp_security_check`
 
@@ -42,9 +43,9 @@ t+10ms   Record OTP challenge (codeHash + reportToken + reportTokenHash)
 t+20ms   isDeliveryAllowed check (refuse if locked)
 t+50ms   deliverOtp() → Meta otp_login template sent
 t+~500ms otp_login message arrives on user's WhatsApp
-t+550ms  shouldSendSecurityCheck() evaluates signals
-t+600ms  IF signal matched: sendOtpSecurityCheckBestEffort() fires
-t+~1.5s  otp_security_check message arrives (only if signal-gated)
+t+550ms  shouldSendSecurityCheck() evaluates optional signals
+t+600ms  sendOtpSecurityCheckBestEffort() fires with signal trigger or `always_on`
+t+~1.5s  otp_security_check message arrives (always while the flag is on)
 ```
 
 Order matters: OTP first, then the security check. Reversing the order would let a user with a quick finger report-and-block BEFORE the OTP arrives, which is confusing UX.
@@ -62,7 +63,7 @@ Order matters: OTP first, then the security check. Reversing the order would let
 
 - `__tests__/lib/otp-security-signals.test.ts` (8 tests) — each signal matches/doesn't-match, short-circuit behavior, time-window predicates, fail-closed-on-error.
 - `__tests__/lib/otp-security-report-prompt.test.ts` (4 tests) — template payload shape, inbound-handler-compatible button format, structured failure logging on template-not-approved, raw-token redaction in error messages.
-- `__tests__/api/auth/hooks/send-sms-security-check.test.ts` (7 tests) — full hook wiring: flag-off skips, flag-on evaluates, signal-match fires, no-signal skips, OTP-failure skips signal eval, signal-eval-throw isolated, send-throw isolated.
+- `__tests__/api/auth/hooks/send-sms-security-check.test.ts` (8 tests) — full hook wiring: flag-off skips, flag-on evaluates, signal-match fires, no-signal sends `always_on`, OTP-failure skips signal eval, signal-eval-throw falls back to `always_on`, send-throw isolated, after() detachment.
 
 ## Pre-flight before flipping the flag
 
@@ -70,9 +71,9 @@ Order matters: OTP first, then the security check. Reversing the order would let
 
 2. **Verify Meta approval** — once approved, the template appears in WABA → Message Templates with status `APPROVED`. Until then, `sendTemplate` throws `[TEMPLATE_NOT_APPROVED]`, which the best-effort sender logs and swallows. Code path is safe to deploy before approval.
 
-3. **Stage roll-out** — flip `security.otp.report` flag ON for one test user first via `FeatureFlag.enabledForUsers`. Trigger a signal manually (easiest: 3 OTP sends to your own phone in quick succession) and verify the security-check arrives. Confirm tapping the button locks the account and the inbound handler replies with the existing confirmation text.
+3. **Stage roll-out** — flip `security.otp.report` flag ON for one test user first via `FeatureFlag.enabledForUsers`. Send one OTP and verify the security-check arrives with `trigger=always_on`. Then trigger a signal manually (easiest: 3 OTP sends to your own phone in quick succession) and verify the metadata trigger changes to the matching signal. Confirm tapping the button locks the account and the inbound handler replies with the existing confirmation text.
 
-4. **Global flip** — set `feature_flags.enabled = true` for `security.otp.report`. From this point all phones get signal-gated security-check prompts.
+4. **Global flip** — set `feature_flags.enabled = true` for `security.otp.report`. From this point all phones get the security-check prompt after each successful WhatsApp OTP.
 
 ## Submitting the Meta template
 
@@ -100,14 +101,14 @@ What it does:
 4. Prints the curl one-liner you can use to poll for approval.
 5. On scope/permission failure, surfaces an actionable hint about the access token scope.
 
-Script: `field-service/scripts/submit-otp-security-check-template.ts`. Never prints the token. Hardcodes the WABA id from the 2026-05-17 migration (`995389326374131`) but accepts `WHATSAPP_BUSINESS_ACCOUNT_ID` override.
+Script: `field-service/scripts/submit-otp-security-check-template.ts`. Never prints the token. Defaults to the WABA id that approved `otp_security_check` on 2026-06-02 (`104200042667877`) and accepts `WHATSAPP_BUSINESS_ACCOUNT_ID` override.
 
 ### Option 2 — Direct curl
 
 If you don't have the repo locally but do have the token:
 
 ```bash
-WABA_ID=995389326374131
+WABA_ID=104200042667877
 ACCESS_TOKEN=EAAB...   # whatsapp_business_management scope
 
 curl -s "https://graph.facebook.com/v18.0/${WABA_ID}/message_templates" \

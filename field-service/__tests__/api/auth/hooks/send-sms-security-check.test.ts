@@ -166,14 +166,20 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     expect(sendOtpSecurityCheckBestEffort).not.toHaveBeenCalled()
   })
 
-  it('evaluates signals after a successful OTP delivery when security.otp.report is ON', async () => {
+  it('sends the security-check prompt with always_on when no fraud signal matches', async () => {
     await POST(signed())
     await flushPhaseTwoWork()
 
     expect(deliverOtp).toHaveBeenCalledTimes(1)
     expect(shouldSendSecurityCheck).toHaveBeenCalledWith({ phoneE164: TEST_PHONE })
-    // No signal matched → no send.
-    expect(sendOtpSecurityCheckBestEffort).not.toHaveBeenCalled()
+    expect(sendOtpSecurityCheckBestEffort).toHaveBeenCalledTimes(1)
+    expect(sendOtpSecurityCheckBestEffort).toHaveBeenCalledWith({
+      phone: TEST_PHONE,
+      reportToken: TEST_REPORT_TOKEN,
+      trigger: 'always_on',
+      hookRequestId: expect.any(String),
+      userId: TEST_USER_ID,
+    })
   })
 
   it('fires the security-check prompt when a signal matches', async () => {
@@ -196,13 +202,19 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     })
   })
 
-  it('does NOT send the prompt when no signal matches (default path)', async () => {
+  it('uses always_on when no signal matches (default path)', async () => {
     vi.mocked(shouldSendSecurityCheck).mockResolvedValueOnce({ trigger: null })
 
     await POST(signed())
     await flushPhaseTwoWork()
 
-    expect(sendOtpSecurityCheckBestEffort).not.toHaveBeenCalled()
+    expect(sendOtpSecurityCheckBestEffort).toHaveBeenCalledWith({
+      phone: TEST_PHONE,
+      reportToken: TEST_REPORT_TOKEN,
+      trigger: 'always_on',
+      hookRequestId: expect.any(String),
+      userId: TEST_USER_ID,
+    })
   })
 
   it('does NOT send the prompt or evaluate signals when OTP delivery fails', async () => {
@@ -219,7 +231,7 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
     expect(sendOtpSecurityCheckBestEffort).not.toHaveBeenCalled()
   })
 
-  it('returns 200 even if shouldSendSecurityCheck throws (best-effort isolation)', async () => {
+  it('falls back to always_on if shouldSendSecurityCheck throws', async () => {
     vi.mocked(shouldSendSecurityCheck).mockRejectedValueOnce(new Error('signal eval broke'))
 
     const res = await POST(signed())
@@ -227,7 +239,13 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({})
-    expect(sendOtpSecurityCheckBestEffort).not.toHaveBeenCalled()
+    expect(sendOtpSecurityCheckBestEffort).toHaveBeenCalledWith({
+      phone: TEST_PHONE,
+      reportToken: TEST_REPORT_TOKEN,
+      trigger: 'always_on',
+      hookRequestId: expect.any(String),
+      userId: TEST_USER_ID,
+    })
   })
 
   it('returns 200 even if sendOtpSecurityCheckBestEffort throws (defence in depth)', async () => {
@@ -251,8 +269,8 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
   // That added up to ~4.5s of signal-eval latency + ~10s of Meta-API
   // latency BEFORE the response, easily exceeding Supabase's ~5s
   // auth-hook timeout (which would trigger retries and duplicate OTP
-  // sends). The fix is to schedule the phase-2 work via Next.js after()
-  // so the response returns immediately.
+  // sends). The fix is to schedule the always-on phase-2 work via Next.js
+  // after() so the response returns immediately.
   it('returns the response BEFORE the signal evaluation runs (after() detachment)', async () => {
     // Make shouldSendSecurityCheck take a measurable amount of time so we
     // can prove it didn't block the response. 200ms is generous enough that

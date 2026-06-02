@@ -1,4 +1,4 @@
-import { sendTemplate } from './whatsapp'
+import { sendTemplate, type WhatsAppComponent } from './whatsapp'
 import type { SecurityCheckTrigger } from './otp-security-signals'
 
 const TEMPLATE_NAME = 'otp_security_check' as const
@@ -27,18 +27,20 @@ export async function sendOtpSecurityCheckBestEffort(
   params: SendOtpSecurityCheckParams,
 ): Promise<{ sent: boolean; messageId?: string; reason?: string }> {
   const buttonPayload = `otp_report_${params.reportToken}`
+  const components: WhatsAppComponent[] = [
+    {
+      type: 'button',
+      sub_type: 'quick_reply',
+      index: 0,
+      parameters: [{ type: 'payload', payload: buttonPayload }],
+    },
+  ]
+
   try {
     const messageId = await sendTemplate({
       to: params.phone,
       template: TEMPLATE_NAME,
-      components: [
-        {
-          type: 'button',
-          sub_type: 'quick_reply',
-          index: 0,
-          parameters: [{ type: 'payload', payload: buttonPayload }],
-        },
-      ] as any,
+      components,
       metadata: {
         purpose: 'otp_security_check',
         trigger: params.trigger,

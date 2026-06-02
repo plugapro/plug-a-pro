@@ -174,4 +174,8 @@ test.describe('Pay@ sprint — unauthenticated route checks', () => {
   test('CLIENT_PUBLIC_SMOKE_ROUTES contains /for-providers', () => {
     expect(CLIENT_PUBLIC_SMOKE_ROUTES).toContain('/for-providers')
   })
+
+  test('CLIENT_PUBLIC_SMOKE_ROUTES contains the OTP report page', () => {
+    expect(CLIENT_PUBLIC_SMOKE_ROUTES).toContain('/security/otp/report?token=smoke-invalid')
+  })
 })

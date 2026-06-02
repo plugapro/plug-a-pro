@@ -13,7 +13,7 @@ import {
   recordDeliveryRefusedDuringLock,
   recordOtpChallenge,
 } from '@/lib/otp-security'
-import { shouldSendSecurityCheck } from '@/lib/otp-security-signals'
+import { shouldSendSecurityCheck, type SecurityCheckTrigger } from '@/lib/otp-security-signals'
 import { sendOtpSecurityCheckBestEffort } from '@/lib/otp-security-report-prompt'
 
 export const runtime = 'nodejs'
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
   }
 
   // reportToken is delivered via the SEPARATE `otp_security_check` UTILITY
-  // template after the OTP send succeeds - see the signal-gated block below.
+  // template after the OTP send succeeds - see the always-on block below.
   // Do not inject the token into otp_login; that AUTHENTICATION template's
   // URL button parameter MUST equal the OTP code (Meta error #131008).
 
@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Phase-2: signal-gated security check prompt. Detached via Next.js after()
+  // Phase-2: always-on security check prompt. Detached via Next.js after()
   // so the response returns to Supabase IMMEDIATELY - the signal evaluation
   // and template send happen post-response. Without this, the phase-2 block
   // could add up to ~4.5s of signal-eval latency + ~10s of Meta-API latency
@@ -244,25 +244,41 @@ export async function POST(request: NextRequest) {
   // check is a best-effort follow-up that MUST NOT block the response.
   if (securityOn && reportToken) {
     const phaseTwoWork = async () => {
+      let trigger: SecurityCheckTrigger = 'always_on'
+
       try {
         const signal = await shouldSendSecurityCheck({ phoneE164: phone })
-        if (signal.trigger) {
-          await sendOtpSecurityCheckBestEffort({
-            phone,
-            reportToken: reportToken!,
-            trigger: signal.trigger,
-            hookRequestId,
-            userId,
-          })
-        }
+        trigger = signal.trigger ?? 'always_on'
       } catch (err) {
-        // shouldSendSecurityCheck and sendOtpSecurityCheckBestEffort both fail
-        // closed already, but defence in depth: never propagate.
+        // Signal evaluation is best-effort telemetry. Always-on delivery means a
+        // signal failure must not suppress the user's report affordance.
         console.warn(
           JSON.stringify({
             event: 'otp.security_check.evaluation_failed',
             hookRequestId,
             phoneMasked,
+            reason: err instanceof Error ? err.name : 'unknown',
+          }),
+        )
+      }
+
+      try {
+        await sendOtpSecurityCheckBestEffort({
+          phone,
+          reportToken: reportToken!,
+          trigger,
+          hookRequestId,
+          userId,
+        })
+      } catch (err) {
+        // sendOtpSecurityCheckBestEffort already catches normal failures, but
+        // mocked or unexpected throws must still never propagate to the hook.
+        console.warn(
+          JSON.stringify({
+            event: 'otp.security_check.send_unhandled',
+            hookRequestId,
+            phoneMasked,
+            trigger,
             reason: err instanceof Error ? err.name : 'unknown',
           }),
         )

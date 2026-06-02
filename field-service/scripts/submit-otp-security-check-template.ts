@@ -12,7 +12,7 @@
  *
  * Optional env:
  *   WHATSAPP_BUSINESS_ACCOUNT_ID   — WABA id. Defaults to the value recorded
- *                                    after the 2026-05-17 cross-BM migration.
+ *                                    approved for Plug A Pro on 2026-06-02.
  *                                    Override here if your project's WABA
  *                                    has changed since.
  *
@@ -25,7 +25,7 @@
  * Output: a JSON line on stdout with { id, status, category } on success.
  */
 
-const DEFAULT_WABA_ID = '995389326374131' // Migrated 2026-05-17 (CLAUDE.md memory)
+const DEFAULT_WABA_ID = '104200042667877' // Approved otp_security_check WABA, 2026-06-02.
 const GRAPH_API_VERSION = 'v18.0'
 
 const TEMPLATE_DEFINITION = {
