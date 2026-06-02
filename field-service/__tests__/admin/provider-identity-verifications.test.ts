@@ -164,6 +164,23 @@ describe('admin identity verification actions', () => {
     })
   })
 
+  it('treats duplicate approval of an already-passed verification as a no-op', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      id: 'ver-1',
+      status: 'PASSED',
+      decision: 'PASS',
+    })
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await expect(
+      approveIdentityVerificationAction({ verificationId: 'ver-1', notes: 'Double submit.' }),
+    ).resolves.toEqual({ ok: true, notification: 'skipped' })
+
+    expect(mockTransition).not.toHaveBeenCalled()
+    expect(mockDb.providerVerificationReview.create).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalled()
+  })
+
   it('requests retry instead of approving when evidence is incomplete', async () => {
     const { requestIdentityVerificationRetryAction } = await import('../../app/(admin)/admin/verifications/actions')
 
@@ -362,6 +379,36 @@ describe('admin identity verification actions', () => {
 
     expect(html).toContain('Didit session')
     expect(html).toContain('Refresh from Didit')
+  })
+
+  it('hides manual review mutation controls once the verification is terminal', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValueOnce({
+      ...(await baseVerification()),
+      status: 'PASSED',
+      decision: 'PASS',
+      sourceCheckProvider: 'didit',
+      vendorReference: 'sess-terminal',
+      documents: [
+        { id: 'doc-front', documentKind: 'ID_FRONT', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+        { id: 'doc-back', documentKind: 'ID_BACK', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+        { id: 'doc-selfie', documentKind: 'SELFIE', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+        { id: 'doc-live', documentKind: 'LIVENESS_FRAME', mimeType: 'image/jpeg', sizeBytes: 1000, status: 'UPLOADED', createdAt: new Date() },
+      ],
+    })
+    const Page = (await import('../../app/(admin)/admin/verifications/[id]/page')).default
+
+    const html = renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ id: 'ver-1' }),
+        searchParams: Promise.resolve({}),
+      }),
+    )
+
+    expect(html).not.toContain('Approve note')
+    expect(html).not.toContain('Request retry note')
+    expect(html).not.toContain('Retry with vendor note')
+    expect(html).not.toContain('Reject note')
+    expect(html).toContain('Manual review complete')
   })
 
   it('hides private previews and Didit refresh controls from OPS admins', async () => {

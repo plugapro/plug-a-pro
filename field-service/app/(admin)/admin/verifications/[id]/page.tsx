@@ -30,6 +30,7 @@ const NON_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'RETRY_REQUIRED',
 ])
 const DIDIT_DOCUMENT_KINDS = ['ID_FRONT', 'ID_BACK', 'SELFIE', 'LIVENESS_FRAME'] as const
+const MANUAL_REVIEW_ACTION_STATUSES: ReadonlySet<string> = new Set(['NEEDS_MANUAL_REVIEW'])
 
 export const metadata = buildMetadata({ title: 'Identity Verification Review', noIndex: true })
 
@@ -64,6 +65,8 @@ export default async function AdminIdentityVerificationDetailPage({
   const canRefreshDidit = verification.sourceCheckProvider === 'didit' &&
     roleAtLeast(admin.adminRole, 'TRUST') &&
     (NON_TERMINAL_STATUSES.has(verification.status) || diditNeedsBackfill(verification))
+  const canTakeManualReviewAction = roleAtLeast(admin.adminRole, 'TRUST') &&
+    MANUAL_REVIEW_ACTION_STATUSES.has(verification.status)
 
   return (
     <div className="space-y-6">
@@ -225,30 +228,38 @@ export default async function AdminIdentityVerificationDetailPage({
           {roleAtLeast(admin.adminRole, 'TRUST') ? (
             <div className="rounded-xl border bg-card p-4">
               <h2 className="font-semibold">Manual review</h2>
-              <ReviewForm
-                verificationId={verification.id}
-                assuranceLevel={approveAssurance}
-                action={approveIdentityVerificationFormAction}
-                buttonLabel="Approve"
-              />
-              <ReviewForm
-                verificationId={verification.id}
-                action={requestIdentityVerificationRetryFormAction}
-                buttonLabel="Request retry"
-                variant="secondary"
-              />
-              <ReviewForm
-                verificationId={verification.id}
-                action={retryIdentityVerificationWithVendorFormAction}
-                buttonLabel="Retry with vendor"
-                variant="secondary"
-              />
-              <ReviewForm
-                verificationId={verification.id}
-                action={rejectIdentityVerificationFormAction}
-                buttonLabel="Reject"
-                variant="danger"
-              />
+              {canTakeManualReviewAction ? (
+                <>
+                  <ReviewForm
+                    verificationId={verification.id}
+                    assuranceLevel={approveAssurance}
+                    action={approveIdentityVerificationFormAction}
+                    buttonLabel="Approve"
+                  />
+                  <ReviewForm
+                    verificationId={verification.id}
+                    action={requestIdentityVerificationRetryFormAction}
+                    buttonLabel="Request retry"
+                    variant="secondary"
+                  />
+                  <ReviewForm
+                    verificationId={verification.id}
+                    action={retryIdentityVerificationWithVendorFormAction}
+                    buttonLabel="Retry with vendor"
+                    variant="secondary"
+                  />
+                  <ReviewForm
+                    verificationId={verification.id}
+                    action={rejectIdentityVerificationFormAction}
+                    buttonLabel="Reject"
+                    variant="danger"
+                  />
+                </>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Manual review complete. This verification is {label(verification.status)}.
+                </p>
+              )}
             </div>
           ) : (
             <div className="rounded-xl border bg-muted/40 p-4 text-sm text-muted-foreground">

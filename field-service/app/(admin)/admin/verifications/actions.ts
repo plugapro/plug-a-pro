@@ -55,10 +55,15 @@ type RefreshDiditFailure =
   | 'not_didit'
   | 'no_didit_session'
   | 'refresh_failed'
+type ApproveIdentityVerificationResult = {
+  id: string
+  status: string
+  alreadyApproved?: boolean
+}
 
 export async function approveIdentityVerificationAction(input: ReviewInput) {
   const admin = await requireAdmin()
-  const result = await crudAction<ReviewInput, { id: string; status: string }>({
+  const result = await crudAction<ReviewInput, ApproveIdentityVerificationResult>({
     entity: 'ProviderIdentityVerification',
     entityId: input.verificationId,
     action: 'provider_identity_verification.approve',
@@ -68,6 +73,14 @@ export async function approveIdentityVerificationAction(input: ReviewInput) {
     input,
     reason: input.notes,
     run: async (data, tx) => {
+      const current = await tx.providerIdentityVerification.findUnique({
+        where: { id: data.verificationId },
+        select: { id: true, status: true, decision: true },
+      })
+      if (current?.status === 'PASSED' && current.decision === 'PASS') {
+        return { id: data.verificationId, status: 'PASSED', alreadyApproved: true }
+      }
+
       const updated = await transitionIdentityVerification({
         verificationId: data.verificationId,
         toStatus: 'PASSED',
@@ -95,7 +108,7 @@ export async function approveIdentityVerificationAction(input: ReviewInput) {
 
   revalidateVerificationPaths(input.verificationId)
   let notification: IdentityApprovalNotificationResult = 'skipped'
-  if (result.ok) {
+  if (result.ok && !result.data.alreadyApproved) {
     notification = await notifyProviderIdentityApproval(input.verificationId)
   }
   return { ok: result.ok, notification }
