@@ -91,6 +91,7 @@ const CUSTOMER_PHOTO_BATCH_WINDOW_MS =
 const PROVIDER_EVIDENCE_BATCH_WINDOW_MS =
   Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || MEDIA_UPLOAD_BATCH_WINDOW_MS
 const CITY_TEXT_SUPERSEDE_WINDOW_MS = Number(process.env.WHATSAPP_CITY_TEXT_SUPERSEDE_WINDOW_MS) || 800
+const META_DID_NOT_REQUEST_CODE_PAYLOAD = 'DID_NOT_REQUEST_CODE'
 const OTP_REPORT_BUTTON_PREFIX = 'otp_report_'
 const OTP_REPORT_CONFIRMATION_TEXT =
   "We've blocked that verification attempt. Your Plug A Pro account is protected. If you are trying to sign in, please start again from the app."
@@ -1015,6 +1016,23 @@ async function processInboundMessageUnlocked(
   let recoveryRole: JourneyUserRole = 'unknown'
 
   try {
+    if (reply.type === 'button_reply' && reply.id === META_DID_NOT_REQUEST_CODE_PAYLOAD) {
+      const providerMessageId = message.context?.id ?? null
+      try {
+        const { reportUnrequestedOtpByWhatsAppMessageId } = await import('./otp-security')
+        await reportUnrequestedOtpByWhatsAppMessageId({ providerMessageId, fromPhoneE164: phone })
+      } catch (error) {
+        console.error('[whatsapp-bot] otp_native_report: handler failed', {
+          messageId: message.id,
+          hasContextMessageId: Boolean(providerMessageId),
+          phone: maskedPhone(phone),
+          errorName: error instanceof Error ? error.name : typeof error,
+        })
+      }
+      await sendText(phone, OTP_REPORT_CONFIRMATION_TEXT)
+      return
+    }
+
     if (
       reply.type === 'button_reply' &&
       reply.id?.startsWith(OTP_REPORT_BUTTON_PREFIX)

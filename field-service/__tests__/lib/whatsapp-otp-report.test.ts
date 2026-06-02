@@ -6,6 +6,7 @@ const GENERIC_CONFIRMATION =
 const {
   mockDb,
   mockReportUnrequestedOtpFromWhatsApp,
+  mockReportUnrequestedOtpByWhatsAppMessageId,
   mockSendText,
   mockSendButtons,
   mockSendCtaUrl,
@@ -34,6 +35,7 @@ const {
     attachment: { updateMany: vi.fn() },
   },
   mockReportUnrequestedOtpFromWhatsApp: vi.fn(),
+  mockReportUnrequestedOtpByWhatsAppMessageId: vi.fn(),
   mockSendText: vi.fn(),
   mockSendButtons: vi.fn(),
   mockSendCtaUrl: vi.fn(),
@@ -49,6 +51,7 @@ const {
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/otp-security', () => ({
   reportUnrequestedOtpFromWhatsApp: mockReportUnrequestedOtpFromWhatsApp,
+  reportUnrequestedOtpByWhatsAppMessageId: mockReportUnrequestedOtpByWhatsAppMessageId,
 }))
 vi.mock('@/lib/whatsapp-interactive', async () => {
   const actual = await vi.importActual<typeof import('@/lib/whatsapp-interactive')>('@/lib/whatsapp-interactive')
@@ -167,10 +170,22 @@ function rawButtonPayloadMessage(payload: string, from = RAW_WHATSAPP_PHONE) {
   }
 }
 
+function nativeDidNotRequestMessage(contextId = 'wamid.otp.1', from = RAW_WHATSAPP_PHONE) {
+  return {
+    from,
+    id: 'wamid.native.report.1',
+    context: { id: contextId, from },
+    type: 'button',
+    button: { payload: 'DID_NOT_REQUEST_CODE', text: "I didn't request a code" },
+    timestamp: String(Date.now()),
+  }
+}
+
 describe('WhatsApp OTP report button replies', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockReportUnrequestedOtpFromWhatsApp.mockResolvedValue({ ok: true })
+    mockReportUnrequestedOtpByWhatsAppMessageId.mockResolvedValue({ ok: true })
     mockSendText.mockResolvedValue('wamid.confirmation')
     mockSendButtons.mockResolvedValue('wamid.buttons')
     mockSendCtaUrl.mockResolvedValue('wamid.cta')
@@ -226,6 +241,18 @@ describe('WhatsApp OTP report button replies', () => {
       token,
       fromPhoneE164: PHONE_E164,
     })
+    expect(mockSendText).toHaveBeenCalledWith(PHONE_E164, GENERIC_CONFIRMATION)
+    expect(mockDb.conversation.upsert).not.toHaveBeenCalled()
+  })
+
+  it('handles Meta native DID_NOT_REQUEST_CODE button replies by OTP message context id', async () => {
+    await processInboundMessage(nativeDidNotRequestMessage('wamid.otp.1'))
+
+    expect(mockReportUnrequestedOtpByWhatsAppMessageId).toHaveBeenCalledWith({
+      providerMessageId: 'wamid.otp.1',
+      fromPhoneE164: PHONE_E164,
+    })
+    expect(mockReportUnrequestedOtpFromWhatsApp).not.toHaveBeenCalled()
     expect(mockSendText).toHaveBeenCalledWith(PHONE_E164, GENERIC_CONFIRMATION)
     expect(mockDb.conversation.upsert).not.toHaveBeenCalled()
   })

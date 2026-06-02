@@ -15,6 +15,7 @@ import {
 } from '@/lib/otp-security'
 import { shouldSendSecurityCheck, type SecurityCheckTrigger } from '@/lib/otp-security-signals'
 import { sendOtpSecurityCheckBestEffort } from '@/lib/otp-security-report-prompt'
+import { getOtpSecurityConfig } from '@/lib/otp-security-config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -171,6 +172,7 @@ export async function POST(request: NextRequest) {
   const securityOn = await isEnabled('security.otp.report', {
     userId: userId ?? undefined,
   })
+  const reportDeliveryMode = getOtpSecurityConfig().reportDeliveryMode
   const ua = request.headers.get('user-agent')
   let challengeId: string | null = null
   let reportToken: string | null = null
@@ -242,7 +244,7 @@ export async function POST(request: NextRequest) {
   // would double-record challenges and deliver two otp_login messages to
   // the user. The OTP delivery above is already complete; the security
   // check is a best-effort follow-up that MUST NOT block the response.
-  if (securityOn && reportToken) {
+  if (securityOn && reportToken && reportDeliveryMode === 'utility_followup') {
     const phaseTwoWork = async () => {
       let trigger: SecurityCheckTrigger = 'always_on'
 

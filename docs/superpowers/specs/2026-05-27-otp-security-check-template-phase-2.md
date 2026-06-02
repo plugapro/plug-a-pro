@@ -1,6 +1,6 @@
-# Phase-2: OTP security-check delivery template + always-on trigger
+# Phase-2: OTP security-check delivery template + native auth-button support
 
-**Status:** Implemented behind existing `security.otp.report` feature flag (default-off). Activates only after Meta template approval lands AND the flag flips.
+**Status:** Implemented behind existing `security.otp.report` feature flag (default-off). Default mode remains the approved two-message `otp_security_check` utility follow-up. `OTP_SECURITY_REPORT_DELIVERY_MODE=native_auth_button` enables Meta's native authentication-template "I didn't request a code" path only after WABA beta access and auth-template approval are confirmed.
 
 **Closes:** F-5 (Medium) from the 2026-05-27 OTP fraud-response threat model — "Phase-2 report-token delivery template not yet wired".
 
@@ -10,9 +10,18 @@ The OTP fraud-response feature (PR #6) shipped with full response machinery — 
 
 ## Design
 
+### Delivery mode
+
+`OTP_SECURITY_REPORT_DELIVERY_MODE` controls how the report affordance is delivered:
+
+| Mode | Behavior | Use when |
+|---|---|---|
+| `utility_followup` | Send `otp_login`, then send the approved `otp_security_check` UTILITY template with an `otp_report_<reportToken>` quick-reply payload. | Default safe fallback; works with current approved templates. |
+| `native_auth_button` | Send only the authentication OTP message and expect Meta's native `DID_NOT_REQUEST_CODE` button webhook. The app correlates webhook `context.id` to `otp_challenges.providerMessageId`. | Only after Meta confirms WABA `104200042667877` has beta access and the auth template is approved. |
+
 ### Trigger model: always-on, with signal metadata
 
-The security-check prompt fires after every successful WhatsApp OTP while `security.otp.report` is enabled. Fraud signals are still evaluated for metadata and logging, but absence of a signal falls back to the explicit `always_on` trigger. This gives every OTP a one-tap report affordance while preserving signal context for suspicious sends. Three optional signals are OR-combined, first-match-wins:
+In `utility_followup` mode, the security-check prompt fires after every successful WhatsApp OTP while `security.otp.report` is enabled. Fraud signals are still evaluated for metadata and logging, but absence of a signal falls back to the explicit `always_on` trigger. This gives every OTP a one-tap report affordance while preserving signal context for suspicious sends. Three optional signals are OR-combined, first-match-wins:
 
 | Signal | Window | Threshold | Captures |
 |---|---|---|---|
@@ -22,6 +31,8 @@ The security-check prompt fires after every successful WhatsApp OTP while `secur
 | `always_on` | current send | No signal matched, or signal evaluation failed | Baseline Strava-style report affordance |
 
 Evaluation is best-effort. Any DB error returns "no signal" and the prompt still sends with `trigger=always_on`. The OTP delivery is already complete by the time we evaluate; the prompt is purely a follow-up.
+
+In `native_auth_button` mode, the separate signal-evaluation/send block is skipped. Meta owns the inline report action and sends the fixed `DID_NOT_REQUEST_CODE` webhook if the user taps it.
 
 ### Template: `otp_security_check`
 
@@ -33,7 +44,9 @@ Evaluation is best-effort. Any DB error returns "no signal" and the prompt still
   > We just sent you a sign-in code. If you didn't request this, tap below to block it — your account stays safe.
 - **Button:** ONE quick-reply, label "I didn't request this", payload variable `{{1}}` — at send time the payload is `otp_report_<reportToken>`.
 
-The button payload format matches the existing inbound handler at `field-service/lib/whatsapp-bot.ts:1019` (`OTP_REPORT_BUTTON_PREFIX = 'otp_report_'`) exactly. The handler strips the prefix, treats the remainder as the report token, calls `reportUnrequestedOtpFromWhatsApp({ token, fromPhoneE164 })`, and replies with the existing confirmation text. **No changes to the inbound side were needed.**
+The utility button payload format matches the existing inbound handler at `field-service/lib/whatsapp-bot.ts` (`OTP_REPORT_BUTTON_PREFIX = 'otp_report_'`) exactly. The handler strips the prefix, treats the remainder as the report token, calls `reportUnrequestedOtpFromWhatsApp({ token, fromPhoneE164 })`, and replies with the existing confirmation text.
+
+The native Meta auth button uses fixed payload `DID_NOT_REQUEST_CODE`. The handler calls `reportUnrequestedOtpByWhatsAppMessageId({ providerMessageId: message.context?.id, fromPhoneE164 })`; the service finds the active challenge by `providerMessageId` and matching sender phone before applying the same report/lock flow.
 
 ### Sequencing
 
@@ -43,12 +56,14 @@ t+10ms   Record OTP challenge (codeHash + reportToken + reportTokenHash)
 t+20ms   isDeliveryAllowed check (refuse if locked)
 t+50ms   deliverOtp() → Meta otp_login template sent
 t+~500ms otp_login message arrives on user's WhatsApp
-t+550ms  shouldSendSecurityCheck() evaluates optional signals
-t+600ms  sendOtpSecurityCheckBestEffort() fires with signal trigger or `always_on`
-t+~1.5s  otp_security_check message arrives (always while the flag is on)
+t+550ms  utility_followup only: shouldSendSecurityCheck() evaluates optional signals
+t+600ms  utility_followup only: sendOtpSecurityCheckBestEffort() fires with signal trigger or `always_on`
+t+~1.5s  utility_followup only: otp_security_check message arrives
 ```
 
 Order matters: OTP first, then the security check. Reversing the order would let a user with a quick finger report-and-block BEFORE the OTP arrives, which is confusing UX.
+
+In native mode there is no second message; the report affordance is part of the Meta auth template and inbound `DID_NOT_REQUEST_CODE` carries the OTP message id in webhook context.
 
 ### Files added
 
@@ -63,17 +78,21 @@ Order matters: OTP first, then the security check. Reversing the order would let
 
 - `__tests__/lib/otp-security-signals.test.ts` (8 tests) — each signal matches/doesn't-match, short-circuit behavior, time-window predicates, fail-closed-on-error.
 - `__tests__/lib/otp-security-report-prompt.test.ts` (4 tests) — template payload shape, inbound-handler-compatible button format, structured failure logging on template-not-approved, raw-token redaction in error messages.
-- `__tests__/api/auth/hooks/send-sms-security-check.test.ts` (8 tests) — full hook wiring: flag-off skips, flag-on evaluates, signal-match fires, no-signal sends `always_on`, OTP-failure skips signal eval, signal-eval-throw falls back to `always_on`, send-throw isolated, after() detachment.
+- `__tests__/api/auth/hooks/send-sms-security-check.test.ts` (9 tests) — full hook wiring: flag-off skips, flag-on evaluates, native mode skips utility follow-up, signal-match fires, no-signal sends `always_on`, OTP-failure skips signal eval, signal-eval-throw falls back to `always_on`, send-throw isolated, after() detachment.
+- `__tests__/lib/whatsapp-otp-report.test.ts` — inbound utility `otp_report_<token>` and native `DID_NOT_REQUEST_CODE` routing.
+- `__tests__/lib/otp-security-config.test.ts` — report delivery mode default/fallback parsing.
 
 ## Pre-flight before flipping the flag
 
-1. **Submit `otp_security_check` template to Meta WhatsApp Business Manager** — see template definition below. Approval is typically minutes to a few hours.
+1. **Default fallback path:** keep `OTP_SECURITY_REPORT_DELIVERY_MODE=utility_followup`. Submit/verify the `otp_security_check` template to Meta WhatsApp Business Manager — see template definition below. Approval is typically minutes to a few hours.
 
 2. **Verify Meta approval** — once approved, the template appears in WABA → Message Templates with status `APPROVED`. Until then, `sendTemplate` throws `[TEMPLATE_NOT_APPROVED]`, which the best-effort sender logs and swallows. Code path is safe to deploy before approval.
 
-3. **Stage roll-out** — flip `security.otp.report` flag ON for one test user first via `FeatureFlag.enabledForUsers`. Send one OTP and verify the security-check arrives with `trigger=always_on`. Then trigger a signal manually (easiest: 3 OTP sends to your own phone in quick succession) and verify the metadata trigger changes to the matching signal. Confirm tapping the button locks the account and the inbound handler replies with the existing confirmation text.
+3. **Native path:** only set `OTP_SECURITY_REPORT_DELIVERY_MODE=native_auth_button` after Meta confirms WABA `104200042667877` can use the native authentication-template "I didn't request a code" beta and the corresponding auth template is approved. If this is enabled without WABA/template support, users will receive only the OTP message and no visible report affordance.
 
-4. **Global flip** — set `feature_flags.enabled = true` for `security.otp.report`. From this point all phones get the security-check prompt after each successful WhatsApp OTP.
+4. **Stage roll-out** — flip `security.otp.report` flag ON for one test user first via `FeatureFlag.enabledForUsers`. In utility mode, send one OTP and verify the security-check arrives with `trigger=always_on`. In native mode, send one OTP and verify the single OTP message shows Meta's inline "I didn't request a code" action. Confirm tapping the button locks the account and the inbound handler replies with the existing confirmation text.
+
+5. **Global flip** — set `feature_flags.enabled = true` for `security.otp.report`. From this point all phones get either the utility follow-up or native inline report affordance, depending on `OTP_SECURITY_REPORT_DELIVERY_MODE`.
 
 ## Submitting the Meta template
 

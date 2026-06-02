@@ -211,6 +211,7 @@ import {
   recordOtpChallenge,
   recordVerificationResult,
   reportUnrequestedOtp,
+  reportUnrequestedOtpByWhatsAppMessageId,
   reportUnrequestedOtpFromWhatsApp,
 } from '@/lib/otp-security'
 
@@ -438,6 +439,65 @@ describe('otp security service', () => {
       }),
       expect.anything(),
     )
+  })
+
+  it('reports a Meta native did-not-request button by WhatsApp OTP message id', async () => {
+    const challenge = await recordOtpChallenge({
+      phoneE164: PHONE,
+      userId: USER_ID,
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+    await markChallengeSent(challenge.challengeId, 'wamid.native.otp.1')
+
+    await expect(
+      reportUnrequestedOtpByWhatsAppMessageId({
+        providerMessageId: 'wamid.native.otp.1',
+        fromPhoneE164: PHONE,
+      }),
+    ).resolves.toEqual({ ok: true })
+
+    expect(mocks.state.otpChallenges.find((row) => row.id === challenge.challengeId)).toMatchObject({
+      status: 'REPORTED_UNREQUESTED',
+      reportedAt: NOW,
+    })
+    expect(securityEvents('OTP_REPORTED_UNREQUESTED')).toHaveLength(1)
+    expect(securityEvents('OTP_REPORTED_UNREQUESTED')[0]).toMatchObject({
+      phoneE164: PHONE,
+      userId: USER_ID,
+      severity: 'HIGH',
+      sourceChannel: 'WHATSAPP_BUTTON',
+      relatedOtpChallengeId: challenge.challengeId,
+    })
+    await expect(getAccountSecurityState(PHONE)).resolves.toMatchObject({
+      phoneE164: PHONE,
+      lockedUntil: new Date('2026-05-26T11:00:00.000Z'),
+      stepUpRequired: true,
+    })
+  })
+
+  it('ignores a native did-not-request report when the sender does not match the OTP recipient', async () => {
+    const challenge = await recordOtpChallenge({
+      phoneE164: PHONE,
+      userId: USER_ID,
+      purpose: 'LOGIN',
+      code: TEST_OTP,
+    })
+    await markChallengeSent(challenge.challengeId, 'wamid.native.otp.2')
+
+    await expect(
+      reportUnrequestedOtpByWhatsAppMessageId({
+        providerMessageId: 'wamid.native.otp.2',
+        fromPhoneE164: OTHER_PHONE,
+      }),
+    ).resolves.toEqual({ ok: true })
+
+    const unchangedChallenge = mocks.state.otpChallenges.find((row) => row.id === challenge.challengeId)!
+    expect(unchangedChallenge).toMatchObject({ status: 'SENT' })
+    expect(unchangedChallenge.reportedAt).toBeUndefined()
+    expect(securityEvents('OTP_REPORTED_UNREQUESTED')).toHaveLength(0)
+    await expect(getAccountSecurityState(PHONE)).resolves.toBeNull()
+    await expect(getAccountSecurityState(OTHER_PHONE)).resolves.toBeNull()
   })
 
   it('does not fail generic report success for expired, reused, tampered or unsigned report tokens', async () => {

@@ -1,3 +1,5 @@
+export type OtpSecurityReportDeliveryMode = 'utility_followup' | 'native_auth_button'
+
 export type OtpSecurityConfig = {
   otpExpiryMinutes: number
   maxVerifyAttempts: number
@@ -13,6 +15,7 @@ export type OtpSecurityConfig = {
   adminAlertThreshold: number
   otpHashPepper: string
   stepUpCookieKey: string | null
+  reportDeliveryMode: OtpSecurityReportDeliveryMode
 }
 
 function envInt(name: string, fallback: number): number {
@@ -29,6 +32,12 @@ function isTestRuntime(): boolean {
   // 'staging', 'preview' or unset) is treated as a non-test runtime and
   // requires a real pepper.
   return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true'
+}
+
+function envReportDeliveryMode(): OtpSecurityReportDeliveryMode {
+  return process.env.OTP_SECURITY_REPORT_DELIVERY_MODE === 'native_auth_button'
+    ? 'native_auth_button'
+    : 'utility_followup'
 }
 
 export function getOtpSecurityConfig(): OtpSecurityConfig {
@@ -51,5 +60,6 @@ export function getOtpSecurityConfig(): OtpSecurityConfig {
     adminAlertThreshold: envInt('SECURITY_EVENTS_ADMIN_ALERT_THRESHOLD', 3),
     otpHashPepper: pepper || 'test-only-otp-security-pepper',
     stepUpCookieKey: process.env.STEP_UP_COOKIE_KEY?.trim() || null,
+    reportDeliveryMode: envReportDeliveryMode(),
   }
 }

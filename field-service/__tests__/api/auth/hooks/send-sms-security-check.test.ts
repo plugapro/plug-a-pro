@@ -127,6 +127,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.clearAllMocks()
   delete process.env.SUPABASE_AUTH_HOOK_SECRET
+  delete process.env.OTP_SECURITY_REPORT_DELIVERY_MODE
   vi.restoreAllMocks()
 })
 
@@ -180,6 +181,18 @@ describe('POST /api/auth/hooks/send-sms security-check phase-2 wiring', () => {
       hookRequestId: expect.any(String),
       userId: TEST_USER_ID,
     })
+  })
+
+  it('does not send the separate utility prompt when native auth report mode is active', async () => {
+    process.env.OTP_SECURITY_REPORT_DELIVERY_MODE = 'native_auth_button'
+
+    const res = await POST(signed())
+    await flushPhaseTwoWork()
+
+    expect(res.status).toBe(200)
+    expect(deliverOtp).toHaveBeenCalledTimes(1)
+    expect(shouldSendSecurityCheck).not.toHaveBeenCalled()
+    expect(sendOtpSecurityCheckBestEffort).not.toHaveBeenCalled()
   })
 
   it('fires the security-check prompt when a signal matches', async () => {

@@ -58,6 +58,7 @@ type OtpChallengeRow = {
   expiresAt: Date
   createdAt: Date
   requestContext?: unknown
+  providerMessageId?: string | null
   reportTokenHash?: string | null
   reportTokenUsedAt?: Date | null
   attemptCount?: number
@@ -218,7 +219,7 @@ async function findLatestActiveChallenge(
 }
 
 async function applyLockAndStepUpWithClient(
-  client: OtpSecurityClient,
+  client: OtpSecurityTransactionClient,
   phoneE164: string,
   userId: string | null | undefined,
   now: Date,
@@ -403,6 +404,84 @@ function logRejectedReportToken(reason: string): void {
   console.warn('[otp-security] report token rejected', { reason })
 }
 
+async function applyUnrequestedOtpReportForChallenge(
+  client: OtpSecurityTransactionClient,
+  params: {
+    challenge: OtpChallengeRow
+    now: Date
+    sourceChannel: SecuritySourceChannel
+    transitionWhere?: Record<string, unknown>
+    transitionData?: Record<string, unknown>
+  },
+): Promise<Record<string, unknown> | null> {
+  const { challenge, now, sourceChannel } = params
+
+  if (challenge.status === 'REPORTED_UNREQUESTED') return null
+  if (!isActiveChallenge(challenge, now)) return null
+
+  const transition = await client.otpChallenge.updateMany({
+    where: {
+      id: challenge.id,
+      status: { in: ACTIVE_CHALLENGE_STATUSES },
+      expiresAt: { gt: now },
+      ...(params.transitionWhere ?? {}),
+    },
+    data: {
+      status: 'REPORTED_UNREQUESTED',
+      reportedAt: now,
+      ...(params.transitionData ?? {}),
+    },
+  })
+  if (transition.count !== 1) return null
+
+  await client.otpChallenge.updateMany({
+    where: {
+      phoneE164: challenge.phoneE164,
+      id: { not: challenge.id },
+      status: { in: ACTIVE_CHALLENGE_STATUSES },
+      expiresAt: { gt: now },
+    },
+    data: { status: 'CANCELLED' },
+  })
+
+  await createSecurityEvent(client, {
+    phoneE164: challenge.phoneE164,
+    userId: challenge.userId,
+    eventType: 'OTP_REPORTED_UNREQUESTED',
+    severity: 'HIGH',
+    sourceChannel,
+    relatedOtpChallengeId: challenge.id,
+    metadata: {
+      reason: 'unrequested_otp_report',
+      source: sourceChannel,
+      userIdPresent: Boolean(challenge.userId),
+    },
+  })
+
+  await applyLockAndStepUpWithClient(client, challenge.phoneE164, challenge.userId, now)
+
+  await safeAudit(
+    {
+      actorId: actorUserId(challenge.userId),
+      actorRole: challenge.userId ? 'user' : 'anonymous',
+      action: 'security.otp.reported',
+      entityType: 'OtpChallenge',
+      entityId: challenge.id,
+      after: {
+        sourceChannel,
+        userIdPresent: Boolean(challenge.userId),
+      },
+    },
+    client,
+  )
+
+  return {
+    sourceChannel,
+    phoneMasked: maskedPhoneEntity(challenge.phoneE164),
+    userIdPresent: Boolean(challenge.userId),
+  }
+}
+
 export async function reportUnrequestedOtp(params: {
   token?: string
   sourceChannel: SecuritySourceChannel
@@ -433,72 +512,17 @@ export async function reportUnrequestedOtp(params: {
 
       if (!challenge) return
       if (challenge.reportTokenHash !== tokenHash) return
-      if (challenge.status === 'REPORTED_UNREQUESTED') return
       if (challenge.reportTokenUsedAt) return
-      if (!isActiveChallenge(challenge, now)) return
-
-      const transition = await client.otpChallenge.updateMany({
-        where: {
-          id: challenge.id,
+      acceptedLogFields = await applyUnrequestedOtpReportForChallenge(client, {
+        challenge,
+        now,
+        sourceChannel: params.sourceChannel,
+        transitionWhere: {
           reportTokenHash: tokenHash,
           reportTokenUsedAt: null,
-          status: { in: ACTIVE_CHALLENGE_STATUSES },
-          expiresAt: { gt: now },
         },
-        data: {
-          status: 'REPORTED_UNREQUESTED',
-          reportedAt: now,
-          reportTokenUsedAt: now,
-        },
+        transitionData: { reportTokenUsedAt: now },
       })
-      if (transition.count !== 1) return
-
-      await client.otpChallenge.updateMany({
-        where: {
-          phoneE164: challenge.phoneE164,
-          id: { not: challenge.id },
-          status: { in: ACTIVE_CHALLENGE_STATUSES },
-          expiresAt: { gt: now },
-        },
-        data: { status: 'CANCELLED' },
-      })
-
-      await createSecurityEvent(client, {
-        phoneE164: challenge.phoneE164,
-        userId: challenge.userId,
-        eventType: 'OTP_REPORTED_UNREQUESTED',
-        severity: 'HIGH',
-        sourceChannel: params.sourceChannel,
-        relatedOtpChallengeId: challenge.id,
-        metadata: {
-          reason: 'unrequested_otp_report',
-          source: params.sourceChannel,
-          userIdPresent: Boolean(challenge.userId),
-        },
-      })
-
-      await applyLockAndStepUpWithClient(client, challenge.phoneE164, challenge.userId, now)
-
-      await safeAudit(
-        {
-          actorId: actorUserId(challenge.userId),
-          actorRole: challenge.userId ? 'user' : 'anonymous',
-          action: 'security.otp.reported',
-          entityType: 'OtpChallenge',
-          entityId: challenge.id,
-          after: {
-            sourceChannel: params.sourceChannel,
-            userIdPresent: Boolean(challenge.userId),
-          },
-        },
-        client,
-      )
-
-      acceptedLogFields = {
-        sourceChannel: params.sourceChannel,
-        phoneMasked: maskedPhoneEntity(challenge.phoneE164),
-        userIdPresent: Boolean(challenge.userId),
-      }
     })
 
     if (acceptedLogFields) {
@@ -506,6 +530,50 @@ export async function reportUnrequestedOtp(params: {
     }
   } catch {
     console.warn('[otp-security] report handling failed', { reason: 'service_error' })
+  }
+
+  return { ok: true }
+}
+
+export async function reportUnrequestedOtpByWhatsAppMessageId(params: {
+  providerMessageId?: string | null
+  fromPhoneE164: string
+}): Promise<{ ok: true }> {
+  const providerMessageId = params.providerMessageId?.trim()
+  if (!providerMessageId) return { ok: true }
+
+  try {
+    const now = new Date()
+    let acceptedLogFields: Record<string, unknown> | null = null
+
+    await serviceDb().$transaction(async (client) => {
+      const challenge = await client.otpChallenge.findFirst({
+        where: {
+          providerMessageId,
+          phoneE164: params.fromPhoneE164,
+          status: { in: ACTIVE_CHALLENGE_STATUSES },
+          expiresAt: { gt: now },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (!challenge) return
+
+      acceptedLogFields = await applyUnrequestedOtpReportForChallenge(client, {
+        challenge,
+        now,
+        sourceChannel: 'WHATSAPP_BUTTON',
+        transitionWhere: {
+          providerMessageId,
+          phoneE164: params.fromPhoneE164,
+        },
+      })
+    })
+
+    if (acceptedLogFields) {
+      logOtpOperationalEvent('otp.report.accepted', acceptedLogFields)
+    }
+  } catch {
+    console.warn('[otp-security] native whatsapp report handling failed', { reason: 'service_error' })
   }
 
   return { ok: true }
