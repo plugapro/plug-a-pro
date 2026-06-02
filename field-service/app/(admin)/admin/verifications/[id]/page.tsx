@@ -493,7 +493,7 @@ function formatDateOnly(value: Date) {
 }
 
 function formatScore(value: number | null) {
-  if (value == null) return 'Not captured'
+  if (value == null || Number.isNaN(value)) return 'Not captured'
   // Didit returns scores in 0–1 (fraction) for some workflows and 0–100 (percent) for others.
   const pct = value > 1 ? value : value * 100
   return `${pct.toFixed(2)}%`

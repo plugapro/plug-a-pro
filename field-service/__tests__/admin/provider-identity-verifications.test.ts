@@ -283,11 +283,11 @@ describe('admin identity verification actions', () => {
     expect(html).toContain('Document number')
     expect(html).toContain('****6789')
     expect(html).toContain('Document confidence')
-    expect(html).toContain('96%')
+    expect(html).toContain('96.00%')
     expect(html).toContain('Liveness score')
-    expect(html).toContain('92%')
+    expect(html).toContain('92.00%')
     expect(html).toContain('Selfie match')
-    expect(html).toContain('89%')
+    expect(html).toContain('89.00%')
   })
 
   it('renders Didit risk flag arrays on the admin verification detail page', async () => {
