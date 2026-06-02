@@ -270,6 +270,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.identity.verification.pilot_allowlist_required': {
+    description: 'When ON (default), only providers in provider_identity_verification_pilot_allowlist get the active identity-verification vendor; others fall through to manual review. Flip to OFF to remove the pilot gate and route every provider that matches the automation + vendor gates to the active vendor (general availability).',
+    owner: 'eng',
+    defaultValue: true,
+  },
   'provider.identity.verification.liveness.degraded_kill_switch': {
     description: 'Fail closed when liveness provider sessions are degraded; affected cases route to manual review.',
     owner: 'eng',

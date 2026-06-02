@@ -55,7 +55,8 @@ describe('provider identity verification orchestrator', () => {
     mocks.issueProviderVerificationToken.mockResolvedValue({ token: 'signed-token' })
     mocks.getPublicAppUrl.mockImplementation((path: string) => `https://plug.test${path}`)
     mocks.isEnabled.mockImplementation(async (key: string) => (
-      key === 'provider.identity.verification.automation'
+      key === 'provider.identity.verification.automation' ||
+      key === 'provider.identity.verification.pilot_allowlist_required'
     ))
   })
 
@@ -74,6 +75,88 @@ describe('provider identity verification orchestrator', () => {
       sourceCheckProvider: 'manual',
       vendorReference: 'manual:ver_1',
     })
+  })
+
+  it('falls back to manual when pilot gate is required and provider is not in the allowlist', async () => {
+    const client = makeClient()
+    client.providerIdentityVerificationPilotAllowlist.findFirst = vi.fn(async () => null) as unknown as typeof client.providerIdentityVerificationPilotAllowlist.findFirst
+    mocks.getAdapter.mockReturnValue(manualAdapter())
+
+    const result = await submitVerificationForAutomation('ver_1', client)
+
+    expect(result.status).toBe('NEEDS_MANUAL_REVIEW')
+    expect(client.state.verification).toMatchObject({
+      sourceCheckProvider: 'manual',
+      vendorReference: 'manual:ver_1',
+    })
+    expect(client.providerIdentityVerificationPilotAllowlist.findFirst).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips the allowlist check and routes to the active vendor when the pilot gate is disabled (GA mode)', async () => {
+    mocks.isEnabled.mockImplementation(async (key: string) => (
+      // pilot_allowlist_required intentionally NOT in this set — GA mode.
+      key === 'provider.identity.verification.automation'
+    ))
+    const client = makeClient()
+    client.providerIdentityVerificationPilotAllowlist.findFirst = vi.fn(async () => null) as unknown as typeof client.providerIdentityVerificationPilotAllowlist.findFirst
+    mocks.getAdapter.mockReturnValue(vendorAdapter({
+      vendorReference: 'mock:job_ga',
+      immediateResult: vendorResult({ livenessVerified: true, confidence: 0.97 }),
+      expectsWebhook: false,
+    }))
+
+    const result = await submitVerificationForAutomation('ver_1', client)
+
+    expect(result.status).toBe('PASSED')
+    expect(client.state.verification.sourceCheckProvider).toBe('mock')
+    expect(client.providerIdentityVerificationPilotAllowlist.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('routes to the active vendor in GA mode even when the provider happens to be allowlisted', async () => {
+    mocks.isEnabled.mockImplementation(async (key: string) => (
+      key === 'provider.identity.verification.automation'
+    ))
+    const client = makeClient() // default mock: allowlist findFirst returns a match
+    mocks.getAdapter.mockReturnValue(vendorAdapter({
+      vendorReference: 'mock:job_ga_allowlisted',
+      immediateResult: vendorResult({ livenessVerified: true, confidence: 0.96 }),
+      expectsWebhook: false,
+    }))
+
+    const result = await submitVerificationForAutomation('ver_1', client)
+
+    expect(result.status).toBe('PASSED')
+    expect(client.state.verification.sourceCheckProvider).toBe('mock')
+    // Even though the allowlist would return a match, the GA-mode flag should
+    // skip the query entirely — verifies we don't waste a DB roundtrip when the
+    // gate is bypassed.
+    expect(client.providerIdentityVerificationPilotAllowlist.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('exposes the active vendor in the consent-vendor display path when pilot gate is disabled', async () => {
+    mocks.isEnabled.mockImplementation(async (key: string) => (
+      key === 'provider.identity.verification.automation' ||
+      key === 'provider.identity.vendor.didit'
+    ))
+    const client = makeClient()
+    client.providerIdentityVerificationPilotAllowlist.findFirst = vi.fn(async () => null) as unknown as typeof client.providerIdentityVerificationPilotAllowlist.findFirst
+    client.verificationVendorConfig.findMany = vi.fn(async () => [{
+      vendorKey: 'didit',
+      active: true,
+      confidenceThreshold: 0.85,
+      livenessRequired: true,
+      configJson: { displayName: 'Didit' },
+    }]) as unknown as typeof client.verificationVendorConfig.findMany
+    client.verificationVendorConfig.findUnique = vi.fn(async () => ({
+      vendorKey: 'didit',
+      configJson: { displayName: 'Didit' },
+    })) as unknown as typeof client.verificationVendorConfig.findUnique
+
+    const consent = await resolveIdentityVerificationConsentVendorForSubject({ providerId: 'prov_ga' }, client)
+
+    expect(consent.vendorKey).toBe('didit')
+    expect(consent.vendorDisplayName).toBe('Didit')
+    expect(client.providerIdentityVerificationPilotAllowlist.findFirst).not.toHaveBeenCalled()
   })
 
   it('passes a high-confidence vendor result when liveness is already verified', async () => {
@@ -158,6 +241,7 @@ describe('provider identity verification orchestrator', () => {
   it('uses Didit as the consent vendor display fallback when configJson has no displayName', async () => {
     mocks.isEnabled.mockImplementation(async (key: string) => (
       key === 'provider.identity.verification.automation' ||
+      key === 'provider.identity.verification.pilot_allowlist_required' ||
       key === 'provider.identity.vendor.didit'
     ))
     const client = makeClient()
@@ -317,6 +401,7 @@ describe('provider identity verification orchestrator', () => {
     const client = makeClient({ livenessRequired: true })
     mocks.isEnabled.mockImplementation(async (key: string) => (
       key === 'provider.identity.verification.automation' ||
+      key === 'provider.identity.verification.pilot_allowlist_required' ||
       key === 'provider.identity.verification.liveness.degraded_kill_switch'
     ))
     mocks.getAdapter.mockReturnValue(vendorAdapter({

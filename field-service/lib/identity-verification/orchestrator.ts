@@ -582,16 +582,25 @@ async function resolveActiveVendorConfig(
   const automationEnabled = await isEnabled('provider.identity.verification.automation', { userId: snapshot.providerId ?? undefined })
   if (!automationEnabled) return manualConfig()
 
-  const allowlisted = await client.providerIdentityVerificationPilotAllowlist.findFirst({
-    where: {
-      OR: [
-        snapshot.providerId ? { providerId: snapshot.providerId } : undefined,
-        snapshot.providerApplicationId ? { providerApplicationId: snapshot.providerApplicationId } : undefined,
-      ].filter(Boolean) as Prisma.ProviderIdentityVerificationPilotAllowlistWhereInput[],
-    },
-    select: { id: true },
-  })
-  if (!allowlisted) return manualConfig()
+  // Pilot gate: when ON (default), only allowlisted providers get the active
+  // vendor; when OFF (GA), the allowlist check is skipped and every provider
+  // matching the automation + vendor gates routes through.
+  const pilotGateRequired = await isEnabled(
+    'provider.identity.verification.pilot_allowlist_required',
+    { userId: snapshot.providerId ?? undefined },
+  )
+  if (pilotGateRequired) {
+    const allowlisted = await client.providerIdentityVerificationPilotAllowlist.findFirst({
+      where: {
+        OR: [
+          snapshot.providerId ? { providerId: snapshot.providerId } : undefined,
+          snapshot.providerApplicationId ? { providerApplicationId: snapshot.providerApplicationId } : undefined,
+        ].filter(Boolean) as Prisma.ProviderIdentityVerificationPilotAllowlistWhereInput[],
+      },
+      select: { id: true },
+    })
+    if (!allowlisted) return manualConfig()
+  }
 
   const active = await client.verificationVendorConfig.findMany({
     where: { active: true },
