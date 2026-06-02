@@ -25,12 +25,12 @@ export default function ForProvidersPage() {
           {providerPageContent.intro}
         </p>
         <p className="mb-8 text-sm font-medium">
-          Start on WhatsApp at {whatsappNumberDisplay}
+          {providerPageContent.whatsappStartPrefix} {whatsappNumberDisplay}
         </p>
         <div className="flex flex-wrap justify-center gap-4">
           <WhatsAppCtaButton
             audience="provider"
-            label="Start provider onboarding"
+            label={providerPageContent.primaryCtaLabel}
             source="for_providers_header"
             size="lg"
           />
@@ -40,7 +40,7 @@ export default function ForProvidersPage() {
             variant="outline"
             size="lg"
           >
-            See MVP service scope
+            {providerPageContent.secondaryCtaLabel}
           </Button>
         </div>
       </div>
@@ -48,7 +48,7 @@ export default function ForProvidersPage() {
       <section className="px-4 py-16">
         <div className="mx-auto max-w-5xl">
           <h2 className="mb-10 text-center text-3xl font-bold">
-            What the provider journey gives you
+            {providerPageContent.benefitsHeading}
           </h2>
           <div className="grid gap-5 md:grid-cols-2">
             {providerPageContent.benefits.map((benefit) => {
@@ -79,7 +79,9 @@ export default function ForProvidersPage() {
 
       <section className="border-t border-border/40 px-4 py-16">
         <div className="mx-auto max-w-3xl">
-          <h2 className="mb-12 text-center text-3xl font-bold">How to join</h2>
+          <h2 className="mb-12 text-center text-3xl font-bold">
+            {providerPageContent.joinHeading}
+          </h2>
           <div>
             {providerPageContent.joinSteps.map((step, index) => (
               <div key={step.step} className="flex gap-5">
@@ -139,9 +141,9 @@ export default function ForProvidersPage() {
 
       <section className="border-t border-border/40 px-4 py-16">
         <div className="mx-auto max-w-3xl rounded-2xl border border-border/40 bg-muted/30 p-8">
-          <h2 className="mb-4 text-xl font-bold">Who can apply</h2>
+          <h2 className="mb-4 text-xl font-bold">{providerPageContent.eligibility.title}</h2>
           <p className="mb-4 text-sm text-muted-foreground">
-            You do not need a registered company to apply. The launch focus is practical service providers who handle small, everyday home jobs.
+            {providerPageContent.eligibility.body}
           </p>
           <ul className="grid gap-2 sm:grid-cols-2">
             {providerPageContent.serviceTypes.map((type) => (
@@ -158,7 +160,7 @@ export default function ForProvidersPage() {
           <div className="mt-6">
             <WhatsAppCtaButton
               audience="provider"
-              label="Join on WhatsApp"
+              label={providerPageContent.eligibility.ctaLabel}
               source="for_providers_join"
               size="sm"
             />

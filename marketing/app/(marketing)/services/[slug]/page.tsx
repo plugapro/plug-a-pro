@@ -7,6 +7,7 @@ import { ServiceScopeCard } from "@/components/services/ServiceScopeCard";
 import {
   serviceScopeMatrix,
   getServiceScopeBySlug,
+  serviceScopePageContent,
 } from "@/content/services/service-scope";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { buildWhatsAppServiceMessage } from "@/lib/services/scopeRules";
@@ -25,8 +26,8 @@ export async function generateMetadata({ params }: ServicePageProps): Promise<Me
 
   if (!service) {
     return buildMetadata({
-      title: "Service Scope",
-      description: "Plug A Pro MVP service scope.",
+      title: serviceScopePageContent.detail.fallbackTitle,
+      description: serviceScopePageContent.detail.fallbackDescription,
       noIndex: true,
     });
   }
@@ -49,20 +50,22 @@ export default async function ServiceDetailPage({ params }: ServicePageProps) {
     <main className="px-4 py-12">
       <div className="mx-auto max-w-5xl">
         <Button nativeButton={false} render={<Link href="/services" />} variant="outline" size="sm">
-          Back to services
+          {serviceScopePageContent.detail.backLabel}
         </Button>
         <div className="mt-6">
           <ServiceScopeCard service={resolvedService} />
         </div>
 
         <section className="mt-8 rounded-2xl border border-border/40 bg-muted/30 p-8">
-          <h2 className="mb-3 text-2xl font-bold">How this job starts</h2>
+          <h2 className="mb-3 text-2xl font-bold">
+            {serviceScopePageContent.detail.startTitle}
+          </h2>
           <p className="mb-5 text-sm leading-6 text-muted-foreground">
-            Send a short description, area, preferred timing and photos if useful. Plug A Pro helps turn that into a written quote flow before work starts.
+            {serviceScopePageContent.detail.startBody}
           </p>
           {resolvedService.ctaMode === "NOT_SUPPORTED" ? (
             <Button nativeButton={false} render={<Link href="/services" />} variant="outline" size="sm">
-              View supported jobs
+              {serviceScopePageContent.detail.unsupportedCtaLabel}
             </Button>
           ) : (
             <Button
@@ -76,7 +79,7 @@ export default async function ServiceDetailPage({ params }: ServicePageProps) {
               }
               size="sm"
             >
-              Start this request
+              {serviceScopePageContent.detail.supportedCtaLabel}
             </Button>
           )}
         </section>

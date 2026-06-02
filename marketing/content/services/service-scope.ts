@@ -26,6 +26,73 @@ export type ServiceScopeItem = {
   icon: LucideIcon;
 };
 
+export type ServiceScopePageContent = {
+  metadata: {
+    title: string;
+    description: string;
+  };
+  eyebrow: string;
+  title: string;
+  intro: string;
+  primaryCtaLabel: string;
+  secondaryCtaLabel: string;
+  uncertainty: {
+    title: string;
+    body: string;
+    ctaLabel: string;
+  };
+  detail: {
+    fallbackTitle: string;
+    fallbackDescription: string;
+    backLabel: string;
+    startTitle: string;
+    startBody: string;
+    unsupportedCtaLabel: string;
+    supportedCtaLabel: string;
+  };
+};
+
+export const serviceScopePageContent: ServiceScopePageContent = {
+  // This page-level copy is centralized because it defines the public MVP scope promise.
+  metadata: {
+    title: "MVP Service Scope",
+    description:
+      "See which small everyday jobs Plug A Pro supports during the WhatsApp-first MVP launch.",
+  },
+  eyebrow: "MVP service scope",
+  title: "Small everyday jobs only.",
+  intro:
+    "Plug A Pro launches with simple, defined home jobs that can be described on WhatsApp, quoted in writing and documented in the job record.",
+  primaryCtaLabel: "Start on WhatsApp",
+  secondaryCtaLabel: "View trust process",
+  uncertainty: {
+    title: "Not sure where your job fits?",
+    body:
+      "Send the job on WhatsApp and support will help classify the scope before any provider is matched.",
+    ctaLabel: "Ask on WhatsApp",
+  },
+  detail: {
+    fallbackTitle: "Service Scope",
+    fallbackDescription: "Plug A Pro MVP service scope.",
+    backLabel: "Back to services",
+    startTitle: "How this job starts",
+    startBody:
+      "Send a short description, area, preferred timing and photos if useful. Plug A Pro helps turn that into a written quote flow before work starts.",
+    unsupportedCtaLabel: "View supported jobs",
+    supportedCtaLabel: "Start this request",
+  },
+};
+
+export const serviceScopeCtaLabels: Record<
+  ServiceScopeItem["ctaMode"] | "VIEW_SCOPE",
+  string
+> = {
+  REQUEST: "Request on WhatsApp",
+  ASK_FIRST: "Ask if this fits",
+  NOT_SUPPORTED: "View details",
+  VIEW_SCOPE: "View scope",
+};
+
 export const serviceScopeLabels: Record<
   ServiceScopeStatus,
   { label: string; summary: string; toneClass: string }

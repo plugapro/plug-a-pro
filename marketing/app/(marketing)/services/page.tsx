@@ -3,6 +3,7 @@ import Link from "next/link";
 import { buildMetadata } from "@/lib/metadata";
 import {
   getServicesByStatus,
+  serviceScopePageContent,
   serviceScopeLabels,
   serviceScopeMatrix,
   type ServiceScopeStatus,
@@ -12,11 +13,7 @@ import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 
-export const metadata: Metadata = buildMetadata({
-  title: "MVP Service Scope",
-  description:
-    "See which small everyday jobs Plug A Pro supports during the WhatsApp-first MVP launch.",
-});
+export const metadata: Metadata = buildMetadata(serviceScopePageContent.metadata);
 
 const statuses: ServiceScopeStatus[] = ["GREEN", "AMBER", "RED"];
 
@@ -25,23 +22,23 @@ export default function ServicesPage() {
     <>
       <div className="border-b border-border/40 px-4 py-16 text-center md:py-20">
         <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          MVP service scope
+          {serviceScopePageContent.eyebrow}
         </p>
         <h1 className="mx-auto mb-4 max-w-3xl text-4xl font-bold md:text-5xl">
-          Small everyday jobs only.
+          {serviceScopePageContent.title}
         </h1>
         <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-          Plug A Pro launches with simple, defined home jobs that can be described on WhatsApp, quoted in writing and documented in the job record.
+          {serviceScopePageContent.intro}
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-4">
           <WhatsAppCtaButton
             audience="customer"
-            label="Start on WhatsApp"
+            label={serviceScopePageContent.primaryCtaLabel}
             source="services_header"
             size="lg"
           />
           <Button nativeButton={false} render={<Link href="/trust" />} variant="outline" size="lg">
-            View trust process
+            {serviceScopePageContent.secondaryCtaLabel}
           </Button>
         </div>
       </div>
@@ -72,13 +69,15 @@ export default function ServicesPage() {
 
       <section className="border-t border-border/40 px-4 py-12">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="mb-3 text-2xl font-bold">Not sure where your job fits?</h2>
+          <h2 className="mb-3 text-2xl font-bold">
+            {serviceScopePageContent.uncertainty.title}
+          </h2>
           <p className="mb-5 text-sm leading-6 text-muted-foreground">
-            Send the job on WhatsApp and support will help classify the scope before any provider is matched.
+            {serviceScopePageContent.uncertainty.body}
           </p>
           <WhatsAppCtaButton
             audience="customer"
-            label="Ask on WhatsApp"
+            label={serviceScopePageContent.uncertainty.ctaLabel}
             source="services_uncertain"
             size="sm"
           />

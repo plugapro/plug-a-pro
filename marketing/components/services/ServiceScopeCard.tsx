@@ -1,19 +1,14 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { ServiceScopeItem } from "@/content/services/service-scope";
-import { serviceScopeLabels } from "@/content/services/service-scope";
+import { serviceScopeCtaLabels, serviceScopeLabels } from "@/content/services/service-scope";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { buildWhatsAppServiceMessage } from "@/lib/services/scopeRules";
 
 export function ServiceScopeCard({ service }: { service: ServiceScopeItem }) {
   const Icon = service.icon;
   const scope = serviceScopeLabels[service.status];
-  const primaryLabel =
-    service.ctaMode === "REQUEST"
-      ? "Request on WhatsApp"
-      : service.ctaMode === "ASK_FIRST"
-        ? "Ask if this fits"
-        : "View details";
+  const primaryLabel = serviceScopeCtaLabels[service.ctaMode];
 
   return (
     <article className={`rounded-2xl border p-6 ${scope.toneClass}`}>
@@ -88,7 +83,7 @@ export function ServiceScopeCard({ service }: { service: ServiceScopeItem }) {
           variant="outline"
           size="sm"
         >
-          View scope
+          {serviceScopeCtaLabels.VIEW_SCOPE}
         </Button>
       </div>
     </article>

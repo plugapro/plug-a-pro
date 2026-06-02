@@ -49,6 +49,7 @@ export const publicMarketingContentFiles = [
   // Scan reusable public content modules so future copy changes are guarded
   // before they are imported into pages.
   "content/marketing/homepage.ts",
+  "content/marketing/how-it-works.ts",
   "content/marketing/provider.ts",
   "content/marketing/trust.ts",
   "content/marketing/provider-economics.ts",

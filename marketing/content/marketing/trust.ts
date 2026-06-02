@@ -66,12 +66,19 @@ export const trustPackItems: TrustPackItem[] = [
 ];
 
 export const trustPageContent = {
+  // Trust copy is claim-sensitive, so page metadata and section text live here.
+  metadata: {
+    title: "Trust & Safety",
+    description:
+      "How Plug A Pro uses reviewed profiles, written quotes, job records, photos, reviews and support escalation for a WhatsApp-first small-job flow.",
+  },
   eyebrow: "Trust & Safety",
   title: "Trust is built from records, not broad promises",
   intro:
     "Plug A Pro helps customers make a better-informed choice with reviewed profiles, written quotes, job records, photos and support escalation.",
   accountabilityNote:
     "Providers are independent service providers responsible for their own tools, conduct, credentials and work quality. Plug A Pro provides the platform record and support process.",
+  trustPackHeading: "Trust pack",
   process: [
     {
       icon: ClipboardCheck,
@@ -91,4 +98,13 @@ export const trustPageContent = {
   ],
   providerEconomics: providerEconomicsContent,
   reviewModel: reviewModelContent,
+  positioningBoundary: {
+    title: "What Plug A Pro is not",
+    items: [
+      "Plug A Pro does not supply employees or place people into jobs.",
+      "Plug A Pro does not promise pre-set prices or automatic bookings.",
+      "Plug A Pro is not for major builds, remodels or high-risk regulated jobs in the MVP launch.",
+    ],
+    ctaLabel: "View MVP service scope",
+  },
 } as const;

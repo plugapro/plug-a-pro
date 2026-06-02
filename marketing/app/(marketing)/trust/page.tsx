@@ -5,11 +5,7 @@ import { trustPackItems, trustPageContent } from "@/content/marketing/trust";
 import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 
-export const metadata: Metadata = buildMetadata({
-  title: "Trust & Safety",
-  description:
-    "How Plug A Pro uses reviewed profiles, written quotes, job records, photos, reviews and support escalation for a WhatsApp-first small-job flow.",
-});
+export const metadata: Metadata = buildMetadata(trustPageContent.metadata);
 
 export default function TrustPage() {
   return (
@@ -28,7 +24,7 @@ export default function TrustPage() {
 
       <section className="border-b border-border/40 px-4 py-16">
         <div className="mx-auto max-w-5xl">
-          <h2 className="mb-10 text-3xl font-bold">Trust pack</h2>
+          <h2 className="mb-10 text-3xl font-bold">{trustPageContent.trustPackHeading}</h2>
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {trustPackItems.map((item) => {
               const Icon = item.icon;
@@ -113,16 +109,18 @@ export default function TrustPage() {
 
       <section className="px-4 py-16">
         <div className="mx-auto max-w-3xl rounded-2xl border border-border/40 bg-muted/30 p-8">
-          <h2 className="mb-4 text-xl font-bold">What Plug A Pro is not</h2>
+          <h2 className="mb-4 text-xl font-bold">
+            {trustPageContent.positioningBoundary.title}
+          </h2>
           <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
-            <li>Plug A Pro does not supply employees or place people into jobs.</li>
-            <li>Plug A Pro does not promise pre-set prices or automatic bookings.</li>
-            <li>Plug A Pro is not for major builds, remodels or high-risk regulated jobs in the MVP launch.</li>
+            {trustPageContent.positioningBoundary.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
             <li>{trustPageContent.accountabilityNote}</li>
           </ul>
           <div className="mt-6 border-t border-border/40 pt-6">
             <Button nativeButton={false} render={<Link href="/services" />} variant="outline" size="sm">
-              View MVP service scope
+              {trustPageContent.positioningBoundary.ctaLabel}
             </Button>
           </div>
         </div>

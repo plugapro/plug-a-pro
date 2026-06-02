@@ -11,6 +11,11 @@ export const providerPageContent = {
   title: "Nearby jobs. Clear lead costs. Written records.",
   intro:
     "Apply once, set the areas you cover and receive suitable small-job previews on WhatsApp. You stay in control of which leads you unlock and accept.",
+  // Keep provider-facing launch CTAs here so route files do not own public claims.
+  whatsappStartPrefix: "Start on WhatsApp at",
+  primaryCtaLabel: "Start provider onboarding",
+  secondaryCtaLabel: "See MVP service scope",
+  benefitsHeading: "What the provider journey gives you",
   benefits: [
     {
       icon: MapPin,
@@ -38,6 +43,7 @@ export const providerPageContent = {
       body: "Quotes, updates, photos and real reviews help build a stronger profile over time.",
     },
   ] satisfies Array<{ icon: LucideIcon; title: string; body: string }>,
+  joinHeading: "How to join",
   joinSteps: [
     {
       step: "1",
@@ -65,6 +71,12 @@ export const providerPageContent = {
       detail: "After acceptance, send the written quote, agree timing and keep the job record updated.",
     },
   ],
+  eligibility: {
+    title: "Who can apply",
+    body:
+      "You do not need a registered company to apply. The launch focus is practical service providers who handle small, everyday home jobs.",
+    ctaLabel: "Join on WhatsApp",
+  },
   serviceTypes: [
     "General home repairs",
     "Garden and lawn care",
