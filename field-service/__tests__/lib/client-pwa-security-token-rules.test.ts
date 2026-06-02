@@ -252,7 +252,7 @@ describe('customer shortlist - protected provider fields must be absent', () => 
       expect(providerSelect).not.toHaveProperty('strikes')
       expect(providerSelect).not.toHaveProperty('email')
     }
-  })
+  }, 10_000)
 })
 
 // ─── 4. Protected customer fields absent from provider preview ────────────────

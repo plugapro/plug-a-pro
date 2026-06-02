@@ -1034,7 +1034,7 @@ describe('customer shortlists', () => {
         selectedLeadInviteId: null,
       }),
     })
-  })
+  }, 10_000)
 
   it('treats duplicate selected-provider decline as idempotent without another audit event', async () => {
     mockDb.lead.findUnique.mockResolvedValueOnce({

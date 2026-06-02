@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { ChevronDown } from 'lucide-react'
 import { db } from '@/lib/db'
 import { requireAdmin, createServiceClient } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
@@ -610,6 +611,13 @@ function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 
   return 'secondary'
 }
 
+function getCategoryStatusVariant(status: string): 'success' | 'danger' | 'warning' | 'outline' {
+  if (status === 'APPROVED') return 'success'
+  if (status === 'REJECTED') return 'danger'
+  if (status === 'PENDING_REVIEW') return 'warning'
+  return 'outline'
+}
+
 export default async function ApplicationsPage({
   searchParams,
 }: {
@@ -831,104 +839,159 @@ export default async function ApplicationsPage({
             Approved ({approved.length})
           </h2>
 
-          {approved.map((app) => {
-            const requestedCategories = Array.from(new Set(app.skills.map(resolveCategorySlug)))
-              .filter(Boolean)
-              .filter((slug) => slug.length > 0)
-            const providerCategoryStatusBySlug = new Map(
-              (app.provider?.providerCategories ?? []).map((row) => [row.categorySlug, row.approvalStatus]),
-            )
+          <div className="space-y-2">
+            {approved.map((app) => {
+              const requestedCategories = Array.from(new Set(app.skills.map(resolveCategorySlug)))
+                .filter(Boolean)
+                .filter((slug) => slug.length > 0)
+              const providerCategoryStatusBySlug = new Map(
+                (app.provider?.providerCategories ?? []).map((row) => [row.categorySlug, row.approvalStatus]),
+              )
+              const categoryStatuses = requestedCategories.map((categorySlug) =>
+                providerCategoryStatusBySlug.get(categorySlug) ?? 'PENDING_REVIEW',
+              )
+              const approvedCategoryCount = categoryStatuses.filter((status) => status === 'APPROVED').length
+              const rejectedCategoryCount = categoryStatuses.filter((status) => status === 'REJECTED').length
+              const pendingCategoryCount = Math.max(
+                requestedCategories.length - approvedCategoryCount - rejectedCategoryCount,
+                0,
+              )
+              const categorySummary = requestedCategories.length === 0
+                ? 'No categories captured'
+                : [
+                    `${requestedCategories.length} ${requestedCategories.length === 1 ? 'category' : 'categories'}`,
+                    `${pendingCategoryCount} pending`,
+                    `${approvedCategoryCount} approved`,
+                    `${rejectedCategoryCount} rejected`,
+                  ].join(' / ')
+              const kycLabel = app.provider?.kycStatus?.replace(/_/g, ' ') ?? 'not started'
 
-            return (
-              <Card key={app.id}>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-0.5">
-                      <p className="font-medium">{app.name}</p>
-                      <p className="text-sm text-muted-foreground">{app.phone}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Provider profile: {app.provider?.id ?? 'not created'} ·
-                        {' '}
-                        KYC: {app.provider?.kycStatus?.replace(/_/g, ' ') ?? 'not started'} ·
-                        {' '}
-                        Verified: {app.provider?.verified ? 'Yes' : 'No'}
-                        {' '}
-                        ·
-                        {' '}
-                        {app.provider?.id ? (
-                          <Link href={`/admin/technicians/${app.provider.id}`}>Open provider profile</Link>
-                        ) : (
-                          <span>Profile not linked yet</span>
-                        )}
-                      </p>
-                    </div>
+              return (
+                <details
+                  key={app.id}
+                  data-admin-application-row="approved-provider"
+                  className="group overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+                >
+                  {/* Approved rows stay collapsed by default so ops can scan many providers before opening category controls. */}
+                  <summary className="grid cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm hover:bg-muted/40 md:grid-cols-[minmax(180px,1.1fr)_minmax(220px,1.3fr)_minmax(220px,1fr)_auto_auto] [&::-webkit-details-marker]:hidden">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{app.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{app.phone}</span>
+                    </span>
+                    <span className="min-w-0 text-xs text-muted-foreground">
+                      <span className="block font-medium text-foreground">Provider profile</span>
+                      <span className="block truncate">KYC: {kycLabel} / Verified: {app.provider?.verified ? 'Yes' : 'No'}</span>
+                    </span>
+                    <span className="min-w-0 text-xs text-muted-foreground">
+                      <span className="block font-medium text-foreground">Categories</span>
+                      <span className="block truncate">{categorySummary}</span>
+                    </span>
                     <Badge variant={getStatusVariant(app.status)} className="rounded-full">
                       {app.status}
                     </Badge>
-                  </div>
+                    <span className="inline-flex items-center justify-end gap-2 text-xs font-medium text-muted-foreground">
+                      <span>View categories</span>
+                      <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true" />
+                    </span>
+                  </summary>
 
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Category-level approval</p>
-                    {requestedCategories.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No categories captured on this application.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {requestedCategories.map((categorySlug) => {
-                          const currentStatus = providerCategoryStatusBySlug.get(categorySlug) ?? 'not-set'
-                          return (
-                            <div key={categorySlug} className="space-y-1 rounded-md border border-border p-2">
-                              <div className="flex items-center justify-between gap-2 text-sm">
-                                <span className="font-medium">{categorySlug}</span>
-                                <span className="text-xs text-muted-foreground">{currentStatus}</span>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                <form action={updateCategoryApproval}>
-                                  <input type="hidden" name="id" value={app.id} />
-                                  <input type="hidden" name="categorySlug" value={categorySlug} />
-                                  <input type="hidden" name="approvalStatus" value="APPROVED" />
-                                  <SubmitButton
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={!crudEnabled}
-                                  >
-                                    Approve
-                                  </SubmitButton>
-                                </form>
-                                <form action={updateCategoryApproval}>
-                                  <input type="hidden" name="id" value={app.id} />
-                                  <input type="hidden" name="categorySlug" value={categorySlug} />
-                                  <input type="hidden" name="approvalStatus" value="REJECTED" />
-                                  <SubmitButton
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={!crudEnabled}
-                                  >
-                                    Reject
-                                  </SubmitButton>
-                                </form>
-                                <form action={updateCategoryApproval}>
-                                  <input type="hidden" name="id" value={app.id} />
-                                  <input type="hidden" name="categorySlug" value={categorySlug} />
-                                  <input type="hidden" name="approvalStatus" value="PENDING_REVIEW" />
-                                  <SubmitButton
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={!crudEnabled}
-                                  >
-                                    Hold
-                                  </SubmitButton>
-                                </form>
-                              </div>
-                            </div>
-                          )
-                        })}
+                  <div
+                    data-admin-application-details="approved-provider"
+                    className="border-t border-border bg-muted/10 px-4 py-3"
+                  >
+                    <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_1fr]">
+                      <div className="space-y-2 text-xs text-muted-foreground">
+                        <p className="text-xs font-medium uppercase tracking-wide text-foreground">Profile context</p>
+                        <p>Provider profile: {app.provider?.id ?? 'not created'}</p>
+                        <p>KYC: {kycLabel}</p>
+                        <p>Verified: {app.provider?.verified ? 'Yes' : 'No'}</p>
+                        {app.provider?.id ? (
+                          <Link href={`/admin/technicians/${app.provider.id}`} className="inline-flex text-foreground underline-offset-4 hover:underline">
+                            Open provider profile
+                          </Link>
+                        ) : (
+                          <p>Profile not linked yet</p>
+                        )}
                       </div>
-                    )}
+
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Category-level approval
+                          </p>
+                          <span className="text-xs text-muted-foreground">
+                            {requestedCategories.length} requested
+                          </span>
+                        </div>
+                        {requestedCategories.length === 0 ? (
+                          <p className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+                            No categories captured on this application.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {requestedCategories.map((categorySlug) => {
+                              const currentStatus = providerCategoryStatusBySlug.get(categorySlug) ?? 'PENDING_REVIEW'
+                              return (
+                                <div
+                                  key={categorySlug}
+                                  className="grid gap-3 rounded-lg border border-border bg-background/80 p-3 lg:grid-cols-[1fr_auto] lg:items-center"
+                                >
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <span className="truncate text-sm font-medium">{categorySlug}</span>
+                                    <Badge variant={getCategoryStatusVariant(currentStatus)} className="rounded-full">
+                                      {currentStatus}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                                    <form action={updateCategoryApproval}>
+                                      <input type="hidden" name="id" value={app.id} />
+                                      <input type="hidden" name="categorySlug" value={categorySlug} />
+                                      <input type="hidden" name="approvalStatus" value="APPROVED" />
+                                      <SubmitButton
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={!crudEnabled}
+                                      >
+                                        Approve
+                                      </SubmitButton>
+                                    </form>
+                                    <form action={updateCategoryApproval}>
+                                      <input type="hidden" name="id" value={app.id} />
+                                      <input type="hidden" name="categorySlug" value={categorySlug} />
+                                      <input type="hidden" name="approvalStatus" value="REJECTED" />
+                                      <SubmitButton
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={!crudEnabled}
+                                      >
+                                        Reject
+                                      </SubmitButton>
+                                    </form>
+                                    <form action={updateCategoryApproval}>
+                                      <input type="hidden" name="id" value={app.id} />
+                                      <input type="hidden" name="categorySlug" value={categorySlug} />
+                                      <input type="hidden" name="approvalStatus" value="PENDING_REVIEW" />
+                                      <SubmitButton
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={!crudEnabled}
+                                      >
+                                        Hold
+                                      </SubmitButton>
+                                    </form>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+                </details>
+              )
+            })}
+          </div>
         </section>
       )}
 
