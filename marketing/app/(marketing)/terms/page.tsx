@@ -48,7 +48,7 @@ export default function TermsPage() {
         <p>
           Plug A Pro is a <strong>technology marketplace and booking facilitation platform</strong>. We connect
           Customers with independent Providers. We are <strong>not</strong> the supplier of any field service.
-          We do not employ Providers. Providers are independent contractors who supply services directly to
+          We do not employ Providers. Providers are independent service providers who supply services directly to
           Customers under the terms of the relevant Quote and Booking.
         </p>
         <p>
@@ -58,7 +58,7 @@ export default function TermsPage() {
           itself.
         </p>
         <p>
-          Plug A Pro does not guarantee the identity, qualifications, licensing, legality, safety or quality
+          Plug A Pro does not promise the identity, qualifications, licensing, legality, safety or quality
           of any Provider&apos;s work except where Plug A Pro has <strong>expressly stated in writing on
           the Platform</strong> that a specific check has been completed.
         </p>
@@ -111,13 +111,13 @@ export default function TermsPage() {
         <h2>7. Quotes, Pricing and Extra Work</h2>
         <p>
           All Quotes are provided by Providers and represent their estimate for the described job.
-          Quotes are not guaranteed fixed prices unless expressly labelled as fixed in the Platform record.
+          Quotes are written estimates unless the Platform record expressly states that a final amount has been approved.
           Call-out fees, if applicable, are disclosed in the Quote.
         </p>
         <p>
           If a Provider identifies scope changes, additional work or unexpected conditions on-site, they
           must request approval through the Platform before proceeding. Any unapproved extras are between
-          the Provider and the Customer. Plug A Pro facilitates but does not guarantee the outcome of
+          the Provider and the Customer. Plug A Pro facilitates the record but does not promise the outcome of
           unapproved scope changes.
         </p>
 
@@ -473,10 +473,10 @@ export default function TermsPage() {
           register or use the Platform as a Provider.
         </p>
 
-        <h3>28.1 Your status as independent contractor</h3>
+        <h3>28.1 Your status as independent service provider</h3>
         <p>
-          You are an <strong>independent contractor</strong>, not an employee, agent, partner,
-          subcontractor or joint venture party of Plug A Pro. Plug A Pro does not control how you
+          You are an <strong>independent service provider</strong>, not an employee, agent, partner,
+          delegated supplier or joint venture party of Plug A Pro. Plug A Pro does not control how you
           perform your work, your working hours, your equipment or your methods - we facilitate the
           introduction of customers to you and provide Platform tools to manage the booking and job
           record. You are responsible for your own tax affairs, SARS compliance, UIF and any other
