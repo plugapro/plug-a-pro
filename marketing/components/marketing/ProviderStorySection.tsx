@@ -17,21 +17,6 @@ const providerStoryImages = [
     alt: "Handmade roadside sign advertising handyman, painter and tiler services near a building material shop",
     label: "Handyman, painting and tiling",
   },
-  {
-    src: "/images/provider-story/roofing-waterproofing-gutters.jpg",
-    alt: "Handmade roadside sign advertising roofing, waterproofing and gutter services near a building material shop",
-    label: "Roofing, waterproofing and gutters",
-  },
-  {
-    src: "/images/provider-story/welding-gates-burglar-bars.jpg",
-    alt: "Handmade roadside sign advertising welding, gate motor and burglar bar services near a building material shop",
-    label: "Welding, gates and burglar bars",
-  },
-  {
-    src: "/images/provider-story/paving-tiling-renovations.jpg",
-    alt: "Handmade roadside sign advertising paving, tiling and renovation services near a building material shop",
-    label: "Paving, tiling and renovations",
-  },
 ];
 
 const journeySteps = [
@@ -57,15 +42,15 @@ export function ProviderStorySection() {
             </h2>
             <div className="space-y-3 text-muted-foreground leading-relaxed text-sm">
               <p>
-                Across our communities, skilled plumbers, carpenters,
-                painters, tilers, welders, roofers and handymen are already putting
+                Across our communities, skilled local plumbers, carpenters,
+                painters, tilers and home-repair providers are already putting
                 themselves out there. Many still rely on handmade roadside signs,
                 referrals and passing traffic to find work.
               </p>
               <p>
                 Plug A Pro brings that local skill into a digital marketplace where
-                customers can find help faster and service providers become easier
-                to discover.
+                customers can find small-job help faster and service providers become easier
+                to discover within the launch scope.
               </p>
             </div>
 
@@ -129,7 +114,7 @@ export function ProviderStorySection() {
           {/* Mobile: horizontal scroll; desktop: clean 2×2 grid */}
           <div className="-mx-4 overflow-x-auto px-4 pb-2 md:mx-0 md:overflow-visible md:px-0 md:pb-0">
             <div className="flex min-w-max gap-3 snap-x md:grid md:min-w-0 md:grid-cols-2 md:gap-3">
-              {providerStoryImages.slice(0, 4).map((image) => (
+              {providerStoryImages.map((image) => (
                 <figure
                   key={image.src}
                   className="group relative w-[72vw] max-w-[300px] shrink-0 snap-center overflow-hidden rounded-xl border border-border/50 bg-background shadow-sm transition-shadow hover:shadow-md md:w-auto md:max-w-none"

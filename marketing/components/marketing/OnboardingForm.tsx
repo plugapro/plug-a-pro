@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { FormFeedback } from "@/components/shared/FormFeedback";
+import { marketingConsentText } from "@/content/marketing/consent";
 
 type Journey = "customer" | "provider" | "both";
 
@@ -35,6 +36,7 @@ export function OnboardingForm() {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [whatsappUrl, setWhatsappUrl] = useState<string | null>(null);
+  const [whatsappConsentAccepted, setWhatsappConsentAccepted] = useState(false);
 
   useEffect(() => {
     if (status !== "success" || !whatsappUrl) return;
@@ -58,6 +60,7 @@ export function OnboardingForm() {
           phone,
           journey,
           source: "/onboarding",
+          whatsappConsentAccepted,
         }),
       });
 
@@ -105,6 +108,7 @@ export function OnboardingForm() {
             setStatus("idle");
             setWhatsappUrl(null);
             setPhone("");
+            setWhatsappConsentAccepted(false);
           }}
         >
           Register a different number
@@ -162,6 +166,20 @@ export function OnboardingForm() {
         errorMessage={errorMessage}
       />
 
+      <label className="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left">
+        <input
+          type="checkbox"
+          checked={whatsappConsentAccepted}
+          onChange={(e) => setWhatsappConsentAccepted(e.target.checked)}
+          required
+          disabled={status === "loading"}
+          className="mt-1 size-4"
+        />
+        <span className="text-xs leading-5 text-muted-foreground">
+          {marketingConsentText.whatsappTransactional.body}
+        </span>
+      </label>
+
       <button
         type="submit"
         disabled={status === "loading"}
@@ -181,7 +199,7 @@ export function OnboardingForm() {
       </button>
 
       <p className="text-xs leading-5 text-muted-foreground">
-        By continuing you agree to receive WhatsApp messages from Plug A Pro related to your registration and service activity.
+        This consent is recorded with the WhatsApp handoff so support can audit how the conversation started.
       </p>
     </form>
   );

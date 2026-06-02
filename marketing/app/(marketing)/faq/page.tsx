@@ -48,7 +48,7 @@ const CUSTOMER_FAQS = [
   },
 ];
 
-const WORKER_FAQS = [
+const PROVIDER_FAQS = [
   {
     q: "Who can register as a service provider?",
     a: "Anyone with practical home-job skills: handymen, plumbers, gardeners, cleaners, carpenters, tilers, painters and DIY or assembly specialists. You don't need a registered company to join. For trade work where South African law requires a licence - such as plumbing - you are responsible for holding the right credentials for the work you offer.",
@@ -70,8 +70,8 @@ const WORKER_FAQS = [
     a: "After accepting a job, send a written quote with the description, price and timeline. The customer approves before any work starts. If the scope changes, send an extra work request and wait for approval before proceeding.",
   },
   {
-    q: "How do I get more customers?",
-    a: "Every completed job adds a rating and optional comment from the customer. These show on your profile. The stronger your reputation, the more likely customers are to pick you again.",
+    q: "How does my reputation grow?",
+    a: "Completed jobs can add a rating and optional comment from the customer. These show on your profile so reputation is built from real job history.",
   },
   {
     q: "Is there a cost to join?",
@@ -113,7 +113,7 @@ export default function FAQPage() {
         For customers looking for home-job help and service providers building reliable work.
       </p>
       <FaqGroup label="For customers" items={CUSTOMER_FAQS} />
-      <FaqGroup label="For service providers" items={WORKER_FAQS} />
+      <FaqGroup label="For service providers" items={PROVIDER_FAQS} />
     </div>
   );
 }

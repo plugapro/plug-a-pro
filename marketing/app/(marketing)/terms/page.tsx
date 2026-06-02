@@ -592,7 +592,7 @@ export default function TermsPage() {
           customer-selected opportunities. They are not customer credits, payment for your work, cash,
           legal tender, a loan, a bank deposit or financial credit. A provider credit is deducted only
           when a Customer selects you and you complete final acceptance of that customer-selected
-          opportunity through the Platform, WhatsApp or Worker Portal. Previewing a lead, showing
+          opportunity through the Platform, WhatsApp or Provider Portal. Previewing a lead, showing
           interest, being shortlisted, Customer selection before your final acceptance, declining or
           expiry does not use credits. Purchased credits are generally non-refundable once bought,
           except where required by law or under the exceptions listed in § 27.9 above. Full provider

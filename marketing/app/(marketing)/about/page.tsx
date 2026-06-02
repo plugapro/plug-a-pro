@@ -37,7 +37,7 @@ export default function AboutPage() {
 
           <h2>How it works</h2>
           <p>
-            Customers message us on WhatsApp to describe a job. We match them to nearby local pros. The service provider reviews the lead, accepts it, does an inspection if needed and submits a written quote. The customer approves. The job happens. Both sides leave a review.
+            Customers message us on WhatsApp to describe a job. We help match them to nearby local pros. The service provider reviews the lead, accepts it, does an inspection if needed and submits a written quote. The customer approves. The job happens. Reviews can then be tied back to the completed job.
           </p>
           <p>
             Neither side shares their personal number until both parties have confirmed. We handle all communication until the job is underway.

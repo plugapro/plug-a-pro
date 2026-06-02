@@ -13,7 +13,7 @@ function track(event: string, params?: Record<string, unknown>) {
 
 export const analytics = {
   /** CTA button clicked - primary conversion intent signal */
-  ctaClick(label: string, location: string, audience: "customer" | "worker" | "provider") {
+  ctaClick(label: string, location: string, audience: "customer" | "provider") {
     track("cta_click", { label, location, audience });
   },
 

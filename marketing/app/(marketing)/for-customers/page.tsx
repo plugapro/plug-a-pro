@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { buildMetadata, getAppUrl } from "@/lib/metadata";
+import { buildMetadata } from "@/lib/metadata";
 import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
 import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
-import { WebCtaButton } from "@/components/marketing/WebCtaButton";
 import {
   MessageCircle,
   MapPin,
@@ -77,7 +76,7 @@ const PROTECTIONS = [
   {
     icon: UserCheck,
     title: "Applications reviewed before activation",
-    body: "Applications are manually reviewed before activation - an eligibility check for marketplace participation, not a guarantee of licensing, safety or workmanship. Provider profiles show what each service provider has submitted and recorded on Plug A Pro.",
+    body: "Applications are reviewed before activation - an eligibility check for marketplace participation, not a warranty of credentials, safety or workmanship. Provider profiles show what each service provider has submitted and recorded on Plug A Pro.",
   },
   {
     icon: FileText,
@@ -97,7 +96,7 @@ const PROTECTIONS = [
   {
     icon: Star,
     title: "Public reviews build accountability",
-    body: "Every completed job generates a review. Providers who are unreliable tend not to get repeated leads. Providers who do great work build a reputation that earns them more work.",
+    body: "Reviews are tied to completed jobs. Strong service providers build reputation through real job history over time.",
   },
 ];
 
@@ -125,16 +124,9 @@ export default function ForCustomersPage() {
             source="for_customers_header"
             size="lg"
           />
-          <WebCtaButton
-            href={`${getAppUrl()}/sign-up`}
-            label="Book on the web →"
-            source="for_customers_header"
-            variant="outline"
-            size="lg"
-          />
           <Button
             nativeButton={false}
-            render={<Link href="/solutions" />}
+            render={<Link href="/services" />}
             variant="outline"
             size="lg"
           >
@@ -235,7 +227,7 @@ export default function ForCustomersPage() {
           </p>
           <Button
             nativeButton={false}
-            render={<Link href="/solutions" />}
+            render={<Link href="/services" />}
             variant="outline"
             size="sm"
           >

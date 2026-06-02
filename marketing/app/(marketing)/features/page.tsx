@@ -15,7 +15,7 @@ export default function FeaturesPage() {
       <div className="py-24 text-center px-4">
         <h1 className="text-5xl font-bold mb-4">How Plug A Pro keeps the job on track</h1>
         <p className="text-muted-foreground text-xl max-w-xl mx-auto">
-          From the first message to the final photo, Plug A Pro keeps the quote, job status and communication in one place - for customers and service providers both.
+          From the first message to the final job record, Plug A Pro keeps the quote, job status and communication in one place - for customers and service providers both.
         </p>
       </div>
       <Features />

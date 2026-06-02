@@ -51,7 +51,7 @@ export function OperatingModel() {
             </ul>
           </div>
 
-          {/* Workers */}
+          {/* Service providers */}
           <div className="rounded-2xl border border-border/40 p-8 space-y-5">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center size-10 rounded-lg bg-muted text-foreground">
@@ -66,7 +66,7 @@ export function OperatingModel() {
               {[
                 "Complete provider onboarding on WhatsApp",
                 "Submit skills, service areas, availability and evidence",
-                "Get approved before entering live marketplace matching",
+                "Get approved for marketplace access before live matching",
                 "Check wallet credits and top up when needed",
                 "Open a secure lead preview, unlock with credits, then accept or decline",
                 "Quote, contact the customer and update job status from your phone",

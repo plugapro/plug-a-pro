@@ -81,6 +81,7 @@ describe("POST /api/leads", () => {
       type: "onboarding",
       phone: "+27821234567",
       journey: "customer",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -96,6 +97,7 @@ describe("POST /api/leads", () => {
       type: "onboarding",
       phone: "+27821234567",
       journey: "provider",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     const json = await res.json();
@@ -107,6 +109,7 @@ describe("POST /api/leads", () => {
       type: "onboarding",
       phone: "0821234567",
       journey: "customer",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -116,6 +119,7 @@ describe("POST /api/leads", () => {
     const req = makeRequest({
       type: "onboarding",
       journey: "customer",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -125,6 +129,7 @@ describe("POST /api/leads", () => {
     const req = makeRequest({
       type: "onboarding",
       phone: "+27821234567",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);

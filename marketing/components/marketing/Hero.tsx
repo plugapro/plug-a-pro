@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
 import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
-import { getAppUrl } from "@/lib/metadata";
+import { homepageHero } from "@/content/marketing/homepage";
 
 export function Hero() {
   return (
@@ -37,15 +37,13 @@ export function Hero() {
       />
       <div className="relative max-w-4xl mx-auto" style={{ color: "oklch(0.985 0 0)" }}>
         <p className="text-xs font-medium uppercase tracking-widest mb-4 brand-gradient-text">
-          Local help. Real quotes. On WhatsApp.
+          {homepageHero.eyebrow}
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-          Skilled local help for small jobs. Written quotes. WhatsApp updates.
+          {homepageHero.headline}
         </h1>
         <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-          Tell us what you need and we&apos;ll match you to a nearby service provider.
-          Keep your request moving with written quotes, WhatsApp updates
-          and clear handover steps for both sides.
+          {homepageHero.subheadline}
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button
@@ -60,20 +58,10 @@ export function Hero() {
             size="lg"
             onClick={() => {
               analytics.whatsappClick("hero_primary");
-              analytics.ctaClick("Start on WhatsApp", "hero", "customer");
+              analytics.ctaClick(homepageHero.primaryCtaLabel, "hero", "customer");
             }}
           >
-            Start on WhatsApp
-          </Button>
-          <Button
-            nativeButton={false}
-            render={<Link href={`${getAppUrl()}/sign-up`} />}
-            variant="outline"
-            size="lg"
-            style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
-            onClick={() => analytics.ctaClick("Book on the web", "hero", "customer")}
-          >
-            Book on the web →
+            {homepageHero.primaryCtaLabel}
           </Button>
           <Button
             nativeButton={false}
@@ -83,14 +71,24 @@ export function Hero() {
             style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
             onClick={() => analytics.howItWorksClick("hero_secondary_cta")}
           >
-            Learn how it works
+            {homepageHero.secondaryCtaLabel}
+          </Button>
+          <Button
+            nativeButton={false}
+            render={<Link href="/services" />}
+            variant="outline"
+            size="lg"
+            style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
+            onClick={() => analytics.ctaClick("View service scope", "hero", "customer")}
+          >
+            View service scope
           </Button>
         </div>
         {/* Trust bullets */}
         <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm" style={{ color: "oklch(0.985 0 0 / 0.7)" }}>
-          <span>✓ Free for customers</span>
-          <span>✓ No app download needed</span>
-          <span>✓ Launching in Johannesburg &amp; Pretoria</span>
+          {homepageHero.trustBullets.map((bullet) => (
+            <span key={bullet}>✓ {bullet}</span>
+          ))}
         </div>
       </div>
     </section>

@@ -1,9 +1,12 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
 // Add X-Robots-Tag: noindex on all preview and development deployments so
 // search engines never index non-production URLs (*.vercel.app, preview branches, localhost).
 // Production (VERCEL_ENV === 'production') is exempt — robots.txt and sitemap handle that.
-export function proxy() {
+export function proxy(request: NextRequest) {
+  // Keep the request argument in place because Next calls proxy with the current
+  // request, even though this marketing middleware only needs to set response headers.
+  void request
   const response = NextResponse.next()
   if (process.env.VERCEL_ENV !== 'production') {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow')

@@ -9,7 +9,6 @@ import {
   whatsappMessages,
   whatsappNumberDisplay,
 } from "@/lib/whatsapp";
-import { getAppUrl } from "@/lib/metadata";
 
 export function CTAStrip() {
   return (
@@ -52,12 +51,12 @@ export function CTAStrip() {
           </Button>
           <Button
             nativeButton={false}
-            render={<Link href={`${getAppUrl()}/sign-up`} />}
+            render={<Link href="/services" />}
             variant="outline"
             size="lg"
-            onClick={() => analytics.ctaClick("Book on the web", "cta_strip", "customer")}
+            onClick={() => analytics.ctaClick("View service scope", "cta_strip", "customer")}
           >
-            Book on the web →
+            View service scope
           </Button>
           <Button
             nativeButton={false}
@@ -70,9 +69,7 @@ export function CTAStrip() {
           </Button>
         </div>
         <div className="flex flex-wrap justify-center gap-3">
-          {whatsappAudienceOptions
-            .filter((o) => o.audience === "customer" || o.audience === "worker")
-            .map((option) => (
+          {whatsappAudienceOptions.map((option) => (
             <Link
               key={option.audience}
               href={buildWhatsAppLink(option.message)}

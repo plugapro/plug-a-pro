@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { siteConfig } from "@/lib/metadata";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { checkMarketingLeadRateLimit } from "@/lib/rate-limit";
+import { buildMarketingConsentRecord } from "@/content/marketing/consent";
 
 const phoneRegex = /^\+?[1-9]\d{7,14}$/;
 
@@ -30,6 +31,9 @@ const onboardingSchema = baseSchema.extend({
       message: "Enter a valid mobile number.",
     }),
   journey: z.enum(["customer", "provider", "both"]),
+  whatsappConsentAccepted: z.boolean().refine((value) => value === true, {
+    message: "WhatsApp consent is required.",
+  }),
 });
 
 const leadMagnetSchema = baseSchema.extend({
@@ -43,6 +47,9 @@ const leadMagnetSchema = baseSchema.extend({
       message: "Enter a valid mobile number.",
     }),
   magnet: z.enum(["template-pack", "dispatch-checklist", "cashflow-tracker"]),
+  whatsappConsentAccepted: z.boolean().refine((value) => value === true, {
+    message: "WhatsApp consent is required.",
+  }),
 });
 
 const schema = z.discriminatedUnion("type", [contactSchema, onboardingSchema, leadMagnetSchema]);
@@ -57,6 +64,10 @@ type MarketingLeadInsert = {
   source?: string;
   venture: typeof siteConfig.venture;
   whatsapp_opt_in?: boolean;
+  consent_text?: string;
+  consent_text_version?: string;
+  consent_source?: string;
+  consent_accepted_at?: string;
 };
 
 function normalizePhone(value: string) {
@@ -118,6 +129,12 @@ export async function POST(request: Request) {
     result.data.type === "onboarding"
       ? normalizePhone(result.data.phone)
       : undefined;
+  const consentRecord =
+    result.data.type === "onboarding"
+      ? buildMarketingConsentRecord("marketing:onboarding")
+      : result.data.type === "lead_magnet"
+        ? buildMarketingConsentRecord("marketing:lead_magnet")
+        : undefined;
 
   const insertPayload: MarketingLeadInsert =
     result.data.type === "onboarding"
@@ -129,6 +146,7 @@ export async function POST(request: Request) {
           source: result.data.source,
           venture: siteConfig.venture,
           whatsapp_opt_in: true,
+          ...consentRecord,
         }
       : result.data.type === "lead_magnet"
       ? {
@@ -139,6 +157,7 @@ export async function POST(request: Request) {
           message: result.data.magnet,
           venture: siteConfig.venture,
           whatsapp_opt_in: true,
+          ...consentRecord,
         }
       : { ...result.data, venture: siteConfig.venture };
 
@@ -169,6 +188,8 @@ export async function POST(request: Request) {
         metadata: {
           venture: siteConfig.venture,
           source: result.data.source ?? null,
+          consentTextVersion: consentRecord?.consent_text_version ?? null,
+          consentSource: "marketing:onboarding",
         },
       });
 

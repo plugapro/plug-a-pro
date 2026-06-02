@@ -5,7 +5,7 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "How It Works",
   description:
-    "See how Plug A Pro moves a request from WhatsApp intake through operations review, approved provider matching, credit unlock, acceptance, quote approval and job updates.",
+    "See how Plug A Pro moves a request from WhatsApp intake through operations review, provider matching, credit unlock, acceptance, quote approval and job updates.",
 });
 
 const CUSTOMER_STEPS = [
@@ -23,9 +23,9 @@ const CUSTOMER_STEPS = [
   },
   {
     step: "3",
-    title: "An approved provider accepts",
+    title: "A provider accepts",
     detail:
-      "Only providers who have been approved and activated can receive live leads. They see a limited preview first, then unlock and accept before full contact details are released.",
+      "Only providers approved for marketplace access can receive live leads. They see a limited preview first, then unlock and accept before full contact details are released.",
   },
   {
     step: "4",
@@ -53,7 +53,7 @@ const CUSTOMER_STEPS = [
   },
 ];
 
-const WORKER_STEPS = [
+const PROVIDER_STEPS = [
   {
     step: "1",
     title: "Start provider onboarding on WhatsApp",
@@ -68,9 +68,9 @@ const WORKER_STEPS = [
   },
   {
     step: "3",
-    title: "Approved providers activate their profile",
+    title: "Providers activate their profile",
     detail:
-      "If approved, the provider record is activated. The provider can open the Provider PWA, sign in with phone OTP, review their profile, set availability and check wallet credits.",
+      "After marketplace access is approved, the provider record is activated. The provider can open the Provider PWA, sign in with phone OTP, review their profile, set availability and check wallet credits.",
   },
   {
     step: "4",
@@ -232,7 +232,7 @@ export default function HowItWorksPage() {
           <FlowSection
             label="Provider journey"
             title="From WhatsApp onboarding to credit-unlocked leads"
-            steps={WORKER_STEPS}
+            steps={PROVIDER_STEPS}
           />
           <FlowSection
             label="Operations journey"

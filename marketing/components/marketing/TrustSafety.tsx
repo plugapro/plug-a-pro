@@ -1,49 +1,4 @@
-import {
-  Phone,
-  UserCheck,
-  FileText,
-  Camera,
-  MessageCircle,
-  Star,
-} from "lucide-react";
-import React from "react";
-
-const TRUST_POINTS: {
-  icon: React.ElementType;
-  title: string;
-  body: string;
-}[] = [
-  {
-    icon: Phone,
-    title: "Your number stays private",
-    body: "Plug A Pro handles the intake, quote approval and status updates from the platform number, so direct contact is not required to get the job moving.",
-  },
-  {
-    icon: UserCheck,
-    title: "Applications are reviewed before activation",
-    body: "A provider must complete an application review before receiving leads. This is an eligibility check for marketplace participation, not a promise of licensing, safety or workmanship.",
-  },
-  {
-    icon: FileText,
-    title: "All quotes are documented",
-    body: "Quotes are submitted through the platform, not verbally. You see the price before agreeing and so does your provider.",
-  },
-  {
-    icon: Camera,
-    title: "Before and after photos on every job",
-    body: "Service providers upload photos at the start and end of every job. They stay on record to help with job history and dispute review.",
-  },
-  {
-    icon: MessageCircle,
-    title: "Disputes handled on the platform",
-    body: "If something goes wrong, contact Plug A Pro support. We review the written quote, status history and photos already on the job record.",
-  },
-  {
-    icon: Star,
-    title: "Ratings build over time",
-    body: "Every completed job adds a review to the provider profile. You can see their track record before accepting a quote.",
-  },
-];
+import { trustPackItems } from "@/content/marketing/trust";
 
 export function TrustSafety() {
   return (
@@ -61,7 +16,7 @@ export function TrustSafety() {
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {TRUST_POINTS.map((point) => {
+          {trustPackItems.map((point) => {
             const Icon = point.icon;
             return (
               <div

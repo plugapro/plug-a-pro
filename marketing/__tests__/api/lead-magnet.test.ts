@@ -39,6 +39,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       type: "lead_magnet",
       phone: "+27821234567",
       magnet: "template-pack",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -53,6 +54,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       type: "lead_magnet",
       phone: "+27821234567",
       magnet: "dispatch-checklist",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -65,6 +67,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       type: "lead_magnet",
       phone: "+27821234567",
       magnet: "cashflow-tracker",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -77,6 +80,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       type: "lead_magnet",
       phone: "+27821234567",
       magnet: "template-pack",
+      whatsappConsentAccepted: true,
     });
     await POST(req);
     expect(fromMock).toHaveBeenCalledWith("marketing_leads");
@@ -93,6 +97,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       type: "lead_magnet",
       phone: "0821234567",
       magnet: "template-pack",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -106,6 +111,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       phone: "+27821234567",
       magnet: "template-pack",
       name: "Thabo",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -130,6 +136,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       type: "lead_magnet",
       phone: "+27821234567",
       magnet: "nonexistent-thing",
+      whatsappConsentAccepted: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -140,6 +147,7 @@ describe("POST /api/leads - lead_magnet type", () => {
       type: "lead_magnet",
       phone: "+27821234567",
       magnet: "template-pack",
+      whatsappConsentAccepted: true,
     });
     await POST(req);
     const tablesCalled = fromMock.mock.calls.map((c: unknown[]) => c[0]);

@@ -5,6 +5,7 @@ import { Loader2, MessageCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { FormFeedback } from "@/components/shared/FormFeedback";
 import { analytics } from "@/lib/analytics";
+import { marketingConsentText } from "@/content/marketing/consent";
 
 type Magnet = "template-pack" | "dispatch-checklist" | "cashflow-tracker";
 
@@ -24,6 +25,7 @@ export function LeadMagnetForm({
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [whatsappUrl, setWhatsappUrl] = useState<string | null>(null);
+  const [whatsappConsentAccepted, setWhatsappConsentAccepted] = useState(false);
 
   useEffect(() => {
     if (status !== "success" || !whatsappUrl) return;
@@ -42,7 +44,14 @@ export function LeadMagnetForm({
       const res = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "lead_magnet", phone, name: name || undefined, magnet, source }),
+        body: JSON.stringify({
+          type: "lead_magnet",
+          phone,
+          name: name || undefined,
+          magnet,
+          source,
+          whatsappConsentAccepted,
+        }),
       });
 
       const payload = (await res.json().catch(() => null)) as
@@ -91,6 +100,7 @@ export function LeadMagnetForm({
             setWhatsappUrl(null);
             setPhone("");
             setName("");
+            setWhatsappConsentAccepted(false);
           }}
         >
           Use a different number
@@ -138,6 +148,20 @@ export function LeadMagnetForm({
         successMessage="Saved."
         errorMessage={errorMessage}
       />
+
+      <label className="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left">
+        <input
+          type="checkbox"
+          checked={whatsappConsentAccepted}
+          onChange={(e) => setWhatsappConsentAccepted(e.target.checked)}
+          required
+          disabled={status === "loading"}
+          className="mt-1 size-4"
+        />
+        <span className="text-xs leading-5 text-muted-foreground">
+          {marketingConsentText.whatsappTransactional.body}
+        </span>
+      </label>
 
       <button
         type="submit"

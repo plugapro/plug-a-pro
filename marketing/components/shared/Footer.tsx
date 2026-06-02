@@ -19,8 +19,8 @@ export function Footer() {
             <span className="font-medium text-foreground text-xs uppercase tracking-wider">Platform</span>
             <Link href="/how-it-works" className="hover:text-foreground transition-colors">How it works</Link>
             <Link href="/for-customers" className="hover:text-foreground transition-colors">For customers</Link>
-            <Link href="/for-workers" className="hover:text-foreground transition-colors">For service providers</Link>
-            <Link href="/solutions" className="hover:text-foreground transition-colors">Service categories</Link>
+            <Link href="/for-providers" className="hover:text-foreground transition-colors">For service providers</Link>
+            <Link href="/services" className="hover:text-foreground transition-colors">Service categories</Link>
           </div>
           <div className="flex flex-col gap-2">
             <span className="font-medium text-foreground text-xs uppercase tracking-wider">Help</span>

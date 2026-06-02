@@ -24,7 +24,7 @@ export default function CreditsPolicyPage() {
         <h2>1. What provider credits are</h2>
         <p>
           <strong>1 provider credit currently equals R50.</strong> Provider credits are shown in the
-          provider wallet and credits history inside the Worker Portal. They are not cash, legal
+          provider wallet and credits history inside the Provider Portal. They are not cash, legal
           tender, financial credit, a loan, a bank deposit, interest-bearing value or a stored-value
           bank account.
         </p>
@@ -47,7 +47,7 @@ export default function CreditsPolicyPage() {
         <p>
           A provider credit is deducted only when a customer selects a provider and that provider
           completes final acceptance of the customer-selected opportunity through the Platform,
-          WhatsApp or the Worker Portal. Each accepted customer-selected opportunity currently uses
+          WhatsApp or the Provider Portal. Each accepted customer-selected opportunity currently uses
           1 provider credit unless the Platform expressly states a different rule before acceptance.
         </p>
 
@@ -66,7 +66,7 @@ export default function CreditsPolicyPage() {
         <p>
           Purchased credits are added only after payment is confirmed by Plug A Pro, the relevant
           payment processor (currently <strong>PayFast</strong> and <strong>Pay@ / PayAt</strong> or
-          another processor shown in the Worker Portal at the time of purchase) or manual finance
+          another processor shown in the Provider Portal at the time of purchase) or manual finance
           reconciliation. Promotional, starter, onboarding and voucher credits are non-purchased
           credits. They cannot be withdrawn or refunded as cash.
         </p>
@@ -117,7 +117,7 @@ export default function CreditsPolicyPage() {
         <h2>10. Changes</h2>
         <p>
           Plug A Pro may update provider credits terms with notice, subject to applicable law.
-          Continued use of the Worker Portal, WhatsApp provider actions or provider tools after
+          Continued use of the Provider Portal, WhatsApp provider actions or provider tools after
           notice means the updated rules apply.
         </p>
       </div>

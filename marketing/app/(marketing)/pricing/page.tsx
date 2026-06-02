@@ -33,9 +33,9 @@ export default function PricingPage() {
           size="lg"
         />
         <WhatsAppCtaButton
-          audience="worker"
-          label="I want more local jobs"
-          source="pricing_worker"
+          audience="provider"
+          label="Join as a service provider"
+          source="pricing_provider"
           variant="outline"
           size="lg"
         />
