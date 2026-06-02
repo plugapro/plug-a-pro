@@ -29,4 +29,15 @@ describe("marketing claim guard", () => {
 
     expect(findings).toEqual([]);
   });
+
+  it("scans public route and component copy, not only content modules", () => {
+    expect(publicMarketingContentFiles).toEqual(
+      expect.arrayContaining([
+        "app/(marketing)/terms/page.tsx",
+        "app/(marketing)/trust/page.tsx",
+        "components/marketing/CTAStrip.tsx",
+        "components/services/ServiceScopeCard.tsx",
+      ]),
+    );
+  });
 });

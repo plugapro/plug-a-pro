@@ -14,6 +14,40 @@ export type ClaimFinding = {
 };
 
 export const publicMarketingContentFiles = [
+  // Scan rendered route files because legacy public copy often lives directly
+  // in pages while we migrate the site toward reusable content modules.
+  "app/(marketing)/page.tsx",
+  "app/(marketing)/about/page.tsx",
+  "app/(marketing)/credits-policy/page.tsx",
+  "app/(marketing)/faq/page.tsx",
+  "app/(marketing)/features/page.tsx",
+  "app/(marketing)/for-customers/page.tsx",
+  "app/(marketing)/for-providers/page.tsx",
+  "app/(marketing)/for-workers/page.tsx",
+  "app/(marketing)/how-it-works/page.tsx",
+  "app/(marketing)/pricing/page.tsx",
+  "app/(marketing)/privacy/page.tsx",
+  "app/(marketing)/services/page.tsx",
+  "app/(marketing)/services/[slug]/page.tsx",
+  "app/(marketing)/solutions/page.tsx",
+  "app/(marketing)/terms/page.tsx",
+  "app/(marketing)/trust/page.tsx",
+  // Scan the visible marketing components that compose the public launch pages.
+  "components/marketing/CTAStrip.tsx",
+  "components/marketing/Features.tsx",
+  "components/marketing/Hero.tsx",
+  "components/marketing/HowItWorksSteps.tsx",
+  "components/marketing/LeadMagnetForm.tsx",
+  "components/marketing/OnboardingForm.tsx",
+  "components/marketing/OperatingModel.tsx",
+  "components/marketing/PricingCards.tsx",
+  "components/marketing/ProviderStorySection.tsx",
+  "components/marketing/SocialProof.tsx",
+  "components/marketing/TrustSafety.tsx",
+  "components/marketing/WhoItsFor.tsx",
+  "components/services/ServiceScopeCard.tsx",
+  // Scan reusable public content modules so future copy changes are guarded
+  // before they are imported into pages.
   "content/marketing/homepage.ts",
   "content/marketing/provider.ts",
   "content/marketing/trust.ts",
