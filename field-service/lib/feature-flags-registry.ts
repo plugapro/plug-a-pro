@@ -338,6 +338,26 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'whatsapp.registration.deeplink': {
+    description: 'Detect ad-driven prefilled-message tokens and jump straight into reg_start, bypassing the welcome menu.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+  'whatsapp.registration.evidence_skip_primary': {
+    description: 'Show "Skip for now" as the primary (first) button on the evidence step for non-high-risk skills; send a 24h upload-later follow-up.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+  'whatsapp.flow_switch_data_clear': {
+    description: 'On Conversation.flow change, strip data keys not whitelisted for the target flow. Prevents customer-flow keys polluting registration sessions.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'whatsapp.session_prewarning': {
+    description: 'Send a pre-expiry "continue where you left off" message ~5 min before Conversation.expiresAt for mid-flow sessions.',
+    owner: 'prod',
+    defaultValue: false,
+  },
 
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
