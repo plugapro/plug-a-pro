@@ -1,4 +1,4 @@
-import { normalizePhone } from './utils'
+import { normalizePhone, phoneLookupVariants } from './utils'
 
 export const ACTIVE_PROVIDER_APPLICATION_STATUSES = ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] as const
 
@@ -54,7 +54,7 @@ export async function findLatestActiveProviderApplicationByPhone(
 ) {
   return client.providerApplication.findFirst({
     where: {
-      phone: normalizeProviderApplicationPhone(phone),
+      phone: { in: phoneLookupVariants(phone) },
       status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
       ...(options?.excludeId ? { id: { not: options.excludeId } } : {}),
     },
@@ -79,7 +79,7 @@ export async function findConflictingActiveProviderApplications(
 
   return client.providerApplication.findMany({
     where: {
-      phone: normalizeProviderApplicationPhone(phone),
+      phone: { in: phoneLookupVariants(phone) },
       status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
       ...(options?.excludeId ? { id: { not: options.excludeId } } : {}),
     },

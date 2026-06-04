@@ -266,6 +266,15 @@ export interface ConversationData {
   // Shared
   customerId?: string
   photoMediaIds?: string[]          // WhatsApp media IDs already processed for customer photo dedupe
+  intendedFlow?: 'registration' | 'job_request'
+  intent?: 'provider' | 'customer'
+  providerIntent?: boolean
+  previousFlow?: FlowName
+  previousStep?: FlowStep
+  helpRequested?: boolean
+  helpRequestedAt?: string
+  lastAutomatedRecoveryNudgeStage?: string
+  lastAutomatedRecoveryNudgeAt?: string
 }
 
 // The full conversation context passed to each flow handler

@@ -72,6 +72,7 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: vi.fn().mockResolvedValue(undefined),
   sendButtons: vi.fn().mockResolvedValue(undefined),
   sendList: vi.fn().mockResolvedValue(undefined),
+  sendCtaUrl: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/whatsapp', () => ({
@@ -202,7 +203,22 @@ describe('registration flow - duplicate prevention', () => {
         expect.stringContaining('provider credits terms and rules'),
         expect.any(Array),
       )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('To register as a provider, tap Register or reply REGISTER.'),
+        expect.any(Array),
+      )
       expect(result.nextStep).toBe('reg_collect_name')
+    })
+
+    it('shows an explicit name prompt with an example after Register is tapped', async () => {
+      const result = await handleRegistrationFlow(makeCtx('reg_collect_name', 'reg_start'))
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('Please type your full name.\nExample: Thabo Mokoena'),
+      )
+      expect(result.nextStep).toBe('reg_collect_skills')
     })
 
     it('allows re-application after a REJECTED application', async () => {
@@ -559,18 +575,21 @@ describe('registration flow - numbered bulk skill selection', () => {
     resetDbMocks()
   })
 
-  it('shows optional verification prompt after name - email and mandatory ID steps no longer prompted', async () => {
+  it('shows deferrable verification prompt after name - email and mandatory ID steps no longer prompted', async () => {
     const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
 
     expect(wa.sendButtons).toHaveBeenCalledWith(
       phone,
-      expect.stringContaining('Verify your identity'),
+      expect.stringContaining('Verify later'),
       expect.arrayContaining([
         expect.objectContaining({ id: 'verify_enter_id' }),
         expect.objectContaining({ id: 'verify_upload_doc' }),
         expect.objectContaining({ id: 'verify_skip' }),
       ]),
     )
+    const body = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as string
+    expect(body).not.toContain('optional')
+    expect(body).not.toContain('skip and apply without it')
     expect(wa.sendText).not.toHaveBeenCalledWith(phone, expect.stringContaining('email address'))
     expect(result.nextStep).toBe('reg_collect_id')
     expect(result.nextData).toMatchObject({ name: 'Thabo Nkosi' })

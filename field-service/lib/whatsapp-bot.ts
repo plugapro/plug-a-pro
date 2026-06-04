@@ -72,6 +72,11 @@ import {
   parseProviderJobCommand,
 } from './provider-whatsapp-job-commands'
 import { parseProviderInterestRateText } from './provider-whatsapp-interest-capture'
+import {
+  ONBOARDING_RECOVERY_STAGES,
+  recordOnboardingRecoveryAudit,
+  type OnboardingRecoveryStage,
+} from './provider-onboarding-recovery'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const DEFAULT_CONVERSATION_TTL_MS = 30 * 60 * 1000
@@ -207,6 +212,14 @@ const CANCEL_KEYWORDS = ['cancel', 'cancellation', 'kanselleer', 'stop booking']
 
 // Keywords that show a provider's active jobs list
 const PROVIDER_KEYWORDS = ['myjobs', 'my jobs', 'my work', 'jobs']
+const CUSTOMER_INTENT_KEYWORDS = [
+  'customer',
+  'request service',
+  'book service',
+  'need service',
+  'home service',
+  'business service',
+]
 
 // Keywords that trigger marketing opt-out
 const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no marketing', 'opt out', 'optout']
@@ -236,6 +249,13 @@ type ActiveIdentityVerificationContext = {
   providerId: string | null
   providerApplicationId: string | null
   updatedAt: Date
+}
+
+function onboardingRecoveryStageFrom(value: unknown): OnboardingRecoveryStage | null {
+  if (typeof value !== 'string') return null
+  return Object.prototype.hasOwnProperty.call(ONBOARDING_RECOVERY_STAGES, value)
+    ? value as OnboardingRecoveryStage
+    : null
 }
 const ACTIVE_FLOW_NAMES: FlowName[] = [
   'job_request',
@@ -1166,6 +1186,52 @@ async function processInboundMessageUnlocked(
     const isCancel = CANCEL_KEYWORDS.some((k) => rawText.includes(k))
     const isRebook = REBOOK_KEYWORDS.some((k) => rawText === k || rawText.includes(k))
     const providerCommand = resolveProviderWhatsappCommand(rawText)
+    const recoveryPromptStage = onboardingRecoveryStageFrom(data.lastAutomatedRecoveryNudgeStage)
+    const isProviderIntentChoice = Boolean(
+      reply.id === 'intent_provider_register' ||
+      (!reply.id && flow === 'idle' && (rawText === '1' || REGISTRATION_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))))
+    )
+    const isIdleWelcomeHelpChoice = Boolean(
+      !reply.id &&
+      flow === 'idle' &&
+      recoveryPromptStage === 'idle_welcome' &&
+      rawText === '2'
+    )
+    const isCustomerIntentChoice = Boolean(
+      reply.id === 'intent_customer_request' ||
+      (!reply.id && flow === 'idle' && rawText === '2' && recoveryPromptStage !== 'idle_welcome') ||
+      (!reply.id && flow === 'idle' && CUSTOMER_INTENT_KEYWORDS.some((k) => rawText === k || rawText.startsWith(k)))
+    )
+    const isHelpIntentChoice = Boolean(isHelp || reply.id === 'help' || isIdleWelcomeHelpChoice)
+    const isIdleWelcomeJustChecking = Boolean(
+      !reply.id &&
+      flow === 'idle' &&
+      recoveryPromptStage === 'idle_welcome' &&
+      rawText === '3'
+    )
+
+    if (recoveryPromptStage) {
+      await recordOnboardingRecoveryAudit(db, {
+        actionType: 'user_replied_after_nudge',
+        stage: recoveryPromptStage,
+        result: 'received',
+        phone,
+        entityId: conversation.id,
+        messageTemplateKey: recoveryPromptStage,
+        isTestEvent: Boolean(conversation.isTestSession),
+        cohortName: conversation.cohortName ?? null,
+        metadata: {
+          flow,
+          step,
+          replyType: reply.type,
+          usedButton: Boolean(reply.id),
+        },
+      })
+      const nextData = { ...data }
+      delete nextData.lastAutomatedRecoveryNudgeStage
+      delete nextData.lastAutomatedRecoveryNudgeAt
+      data = nextData
+    }
 
     const persistedFlow = conversation.flow as FlowName
     const persistedStep = conversation.step as FlowStep
@@ -1248,7 +1314,8 @@ async function processInboundMessageUnlocked(
     }
 
     const isCustomerJourneyAction = Boolean(
-      ['book', 'browse_categories', 'status', 'my_booking', 'start_reschedule', 'start_cancel'].includes(reply.id ?? '') ||
+      ['book', 'browse_categories', 'intent_customer_request', 'status', 'my_booking', 'start_reschedule', 'start_cancel'].includes(reply.id ?? '') ||
+      isCustomerIntentChoice ||
       flow === 'job_request' ||
       flow === 'status' ||
       flow === 'reschedule' ||
@@ -1256,6 +1323,8 @@ async function processInboundMessageUnlocked(
     )
     const isProviderJourneyAction = Boolean(
       reply.id === 'find_work' ||
+      reply.id === 'intent_provider_register' ||
+      isProviderIntentChoice ||
       isRegistration ||
       isProviderMenuReply ||
       (isProviderRole && Boolean(providerCommand)) ||
@@ -1418,6 +1487,38 @@ async function processInboundMessageUnlocked(
 
     if (reply.id === 'back_home' || reply.id === 'session_restart' || reply.id === 'cancel_flow') {
       await showMainMenu(phone)
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (
+      isHelpIntentChoice &&
+      flow !== 'idle' &&
+      flow !== 'help' &&
+      !isStatelessReply &&
+      !isProviderMenuReply &&
+      !hasRecoverableIdentityContext
+    ) {
+      await sendText(
+        phone,
+        'Thanks, an operator can help you from here. We saved where you were so the team can follow up with the right next step.',
+      )
+      await saveConversation({
+        phone,
+        flow: 'help',
+        step: 'help_menu',
+        data: {
+          previousFlow: flow,
+          previousStep: step,
+          helpRequested: true,
+          helpRequestedAt: new Date().toISOString(),
+        },
+      })
+      return
+    }
+
+    if (isIdleWelcomeJustChecking) {
+      await sendText(phone, 'No problem. Reply *REGISTER* if you want to apply as a service provider later.')
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
     }
@@ -2138,9 +2239,10 @@ async function processInboundMessageUnlocked(
       step = IDENTITY_VERIFY_TEXT_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))
         ? 'pj_verify_identity'
         : 'pj_menu'
-    } else if ((isRegistration || reply.id === 'find_work') && flow === 'idle') {
+    } else if ((isRegistration || reply.id === 'find_work' || isProviderIntentChoice) && flow === 'idle') {
       flow = 'registration'
       step = 'reg_start'
+      data = { ...data, intendedFlow: 'registration', intent: 'provider', providerIntent: true }
     } else if ((isReschedule || reply.id === 'start_reschedule') && flow === 'idle') {
       flow = 'reschedule'
       step = 'reschedule_reason'
@@ -2150,12 +2252,13 @@ async function processInboundMessageUnlocked(
     } else if (isStatus && flow === 'idle') {
       flow = 'status'
       step = 'status_show'
-    } else if ((isHelp || reply.id === 'help') && flow === 'idle') {
+    } else if (isHelpIntentChoice && flow === 'idle') {
       flow = 'help'
       step = 'help_menu'
-    } else if (reply.id === 'book' || reply.id === 'browse_categories') {
+    } else if (reply.id === 'book' || reply.id === 'browse_categories' || isCustomerIntentChoice) {
       flow = 'job_request'
       step = 'browse_categories'
+      data = { ...data, intendedFlow: 'job_request', intent: 'customer' }
     } else if (reply.id === 'status' || reply.id === 'my_booking') {
       flow = 'status'
       step = 'status_show'
@@ -2373,6 +2476,7 @@ async function saveConversation(params: {
       step: params.step,
       data: params.data as Prisma.InputJsonValue,
       ...(cohort.isTestUser ? { isTestSession: true, cohortName: cohort.cohortName } : {}),
+      timeoutNotifiedAt: null,
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
     },
   })

@@ -13,6 +13,7 @@ import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
 import { handleReviewFirstProviderNotificationStatus } from '@/lib/review-first'
 import { getCorrelationId } from '@/lib/correlation'
+import { normalizePhone } from '@/lib/utils'
 
 // GET - Meta webhook verification challenge
 export function GET(request: NextRequest) {
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
                 await db.inboundWhatsAppMessage.create({
                   data: {
                     externalId: message.id,
-                    phone:       message.from,
+                    phone:       normalizePhone(message.from),
                     messageType: message.type,
                     body:        message.text?.body
                       ?? (message.image?.caption ?? message.video?.caption ?? message.document?.caption ?? null)

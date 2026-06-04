@@ -24,6 +24,7 @@ vi.mock('@/lib/db', () => ({
     },
     customer: {
       findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(null),
     },
     address: {
       findFirst: vi.fn().mockResolvedValue(null),
@@ -128,6 +129,10 @@ function listRows() {
   return vi.mocked(wa.sendList).mock.calls[0]?.[2]?.flatMap((section: any) => section.rows) ?? []
 }
 
+function buttonIds() {
+  return vi.mocked(wa.sendButtons).mock.calls[0]?.[2]?.map((button: any) => button.id) ?? []
+}
+
 // Helper: mirror the same row onto BOTH findFirst AND findMany so existing
 // tests written before the Phase 4 follow-up duplicate-trap fix keep working.
 // The whatsapp-identity resolver now reads via findMany; some other helpers
@@ -155,14 +160,24 @@ describe('role-aware WhatsApp main menu routing', () => {
     } as any)
   })
 
-  it('keeps Find Work for unknown users', async () => {
+  it('asks unknown users to choose provider or customer intent before starting either journey', async () => {
     await showMainMenu(PHONE)
 
-    const rows = listRows()
-    expect(rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'book' }),
-      expect.objectContaining({ id: 'find_work' }),
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Are you here to'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'intent_provider_register' }),
+        expect.objectContaining({ id: 'intent_customer_request' }),
+        expect.objectContaining({ id: 'help' }),
+      ]),
+    )
+    expect(buttonIds()).toEqual(expect.arrayContaining([
+      'intent_provider_register',
+      'intent_customer_request',
+      'help',
     ]))
+    expect(wa.sendList).not.toHaveBeenCalled()
   })
 
   it('shows application status actions for pending provider applicants', async () => {
@@ -389,6 +404,90 @@ describe('role-aware WhatsApp main menu routing', () => {
         where: {
           phone: { in: expect.arrayContaining(['+27821234567', '27821234567', '0821234567']) },
         },
+      }),
+    )
+  })
+
+  it('starts provider registration when an unknown user types REGISTER', async () => {
+    await processInboundMessage({
+      id: 'wamid-register',
+      from: PHONE,
+      type: 'text',
+      timestamp: '1',
+      text: { body: 'REGISTER' },
+    } as any)
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('provider credits terms and rules'),
+      expect.any(Array),
+    )
+    expect(db.conversation.upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { phone: PHONE },
+        update: expect.objectContaining({
+          flow: 'registration',
+          step: 'reg_collect_name',
+        }),
+      }),
+    )
+  })
+
+  it('starts the customer request path when an unknown user types CUSTOMER', async () => {
+    await processInboundMessage({
+      id: 'wamid-customer',
+      from: PHONE,
+      type: 'text',
+      timestamp: '1',
+      text: { body: 'CUSTOMER' },
+    } as any)
+
+    expect(wa.sendList).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('What type of service do you need'),
+      expect.any(Array),
+      expect.any(Object),
+    )
+    expect(db.conversation.upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { phone: PHONE },
+        update: expect.objectContaining({
+          flow: 'job_request',
+          step: 'browse_categories',
+        }),
+      }),
+    )
+  })
+
+  it('routes HELP during provider onboarding to the help state and preserves previous onboarding state', async () => {
+    vi.mocked(db.conversation.upsert).mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'registration',
+      step: 'reg_collect_skills',
+      data: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    } as any)
+
+    await processInboundMessage({
+      id: 'wamid-help',
+      from: PHONE,
+      type: 'text',
+      timestamp: '1',
+      text: { body: 'HELP' },
+    } as any)
+
+    expect(db.conversation.upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { phone: PHONE },
+        update: expect.objectContaining({
+          flow: 'help',
+          step: 'help_menu',
+          data: expect.objectContaining({
+            previousFlow: 'registration',
+            previousStep: 'reg_collect_skills',
+            helpRequested: true,
+          }),
+        }),
       }),
     )
   })

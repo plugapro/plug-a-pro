@@ -7,7 +7,7 @@ import {
 } from '@/lib/provider-applications'
 
 describe('provider application identity helpers', () => {
-  it('finds the latest active application by normalized phone', async () => {
+  it('finds the latest active application by all canonical phone variants', async () => {
     const client = {
       providerApplication: {
         findFirst: vi.fn().mockResolvedValue({
@@ -23,7 +23,7 @@ describe('provider application identity helpers', () => {
     expect(result).toMatchObject({ id: 'app_latest', status: 'PENDING' })
     expect(client.providerApplication.findFirst).toHaveBeenCalledWith({
       where: {
-        phone: '+27821234567',
+        phone: { in: ['+27821234567', '27821234567', '0821234567'] },
         status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] },
       },
       orderBy: { submittedAt: 'desc' },
@@ -38,7 +38,7 @@ describe('provider application identity helpers', () => {
     })
   })
 
-  it('can exclude the current application id when checking conflicts', async () => {
+  it('can exclude the current application id when checking conflicts across phone variants', async () => {
     const client = {
       providerApplication: {
         findMany: vi.fn().mockResolvedValue([
@@ -48,14 +48,14 @@ describe('provider application identity helpers', () => {
       },
     }
 
-    const result = await findConflictingActiveProviderApplications(client as never, '+27821234567', {
+    const result = await findConflictingActiveProviderApplications(client as never, '0027821234567', {
       excludeId: 'app_current',
     })
 
     expect(result).toHaveLength(1)
     expect(client.providerApplication.findMany).toHaveBeenCalledWith({
       where: {
-        phone: '+27821234567',
+        phone: { in: ['+27821234567', '27821234567', '0821234567'] },
         status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] },
         id: { not: 'app_current' },
       },

@@ -9,6 +9,16 @@ vi.mock('@/lib/db', () => ({
     customer: {
       findUnique: vi.fn(),
     },
+    providerApplication: {
+      findFirst: vi.fn(),
+    },
+    provider: {
+      findFirst: vi.fn(),
+    },
+    auditLog: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+    },
   },
 }))
 
@@ -47,6 +57,10 @@ beforeEach(() => {
   vi.mocked(db.conversation.updateMany).mockResolvedValue({ count: 1 })
   // Default: no customer record (relies on session data name)
   vi.mocked(db.customer.findUnique).mockResolvedValue(null)
+  vi.mocked(db.providerApplication.findFirst).mockResolvedValue(null)
+  vi.mocked(db.provider.findFirst).mockResolvedValue(null)
+  vi.mocked(db.auditLog.findMany).mockResolvedValue([])
+  vi.mocked(db.auditLog.create).mockResolvedValue({ id: 'audit-1' } as never)
 })
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -268,5 +282,45 @@ describe('GET /api/cron/session-timeout - registration flow', () => {
 
     const [, message] = vi.mocked(wa.sendText).mock.calls[0]
     expect(message).toContain('Hi Sipho,')
+  })
+
+  it('sends a stage-specific provider onboarding recovery nudge and logs it safely', async () => {
+    vi.mocked(db.conversation.findMany).mockResolvedValue([
+      makeConversation({
+        id: 'conv_provider_name',
+        phone: '+27821234567',
+        flow: 'registration',
+        step: 'reg_collect_skills',
+        data: {},
+      }),
+    ] as never)
+
+    const res = await GET(makeRequest())
+    const body = await res.json()
+
+    expect(body).toMatchObject({ found: 1, sent: 1, skipped: 0, errors: 0 })
+    expect(wa.sendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining('started registering on Plug A Pro but did not complete the first step'),
+    )
+    expect(db.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actorId: 'system',
+          actorRole: 'system',
+          action: 'provider_onboarding_recovery.automated_nudge_sent',
+          entityType: 'Conversation',
+          entityId: 'conv_provider_name',
+          after: expect.objectContaining({
+            stage: 'register_no_name',
+            phoneMasked: '+2782***4567',
+            phoneTail: '4567',
+            messageTemplateKey: 'register_no_name',
+            result: 'sent',
+          }),
+        }),
+      }),
+    )
+    expect(JSON.stringify(vi.mocked(db.auditLog.create).mock.calls[0])).not.toContain('+27821234567')
   })
 })

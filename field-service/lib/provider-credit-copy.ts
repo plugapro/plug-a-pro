@@ -2,7 +2,7 @@ import { preferenceLabel } from './client-request-data'
 import { PROVIDER_CREDIT_PRICE_ZAR } from './provider-wallet'
 
 export const PROVIDER_TERMS_PATH = '/provider/terms/credits'
-export const PROVIDER_APPLY_BUTTON_TITLE = 'Yes, Apply Now'
+export const PROVIDER_APPLY_BUTTON_TITLE = 'Register'
 export const PROVIDER_NOT_NOW_BUTTON_TITLE = 'Not Now'
 export const PROVIDER_ACCEPTED_LEAD_CREDIT_COST = 1
 export const PROVIDER_CREDITS_PRICE_LINE = `1 credit = R${PROVIDER_CREDIT_PRICE_ZAR}.`
@@ -267,6 +267,8 @@ export function buildProviderOnboardingIntroMessage() {
     '• You can top up credits when your balance runs low.',
     '',
     'Before applying, please review our provider credits terms and rules. Tap *View credits rules* below to read them.',
+    '',
+    'To register as a provider, tap Register or reply REGISTER.',
     '',
     'Ready to apply?',
   ].join('\n')

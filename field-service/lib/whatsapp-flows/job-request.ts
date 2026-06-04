@@ -1991,26 +1991,21 @@ export async function showMainMenu(phone: string): Promise<void> {
     return
   }
 
-  await sendList(
+  await sendButtons(
     phone,
-    '👋🏽 Welcome to Plug A Pro!\n\nHow can I help you today?',
     [
-      {
-        title: 'Services',
-        rows: [
-          { id: 'book',      title: '🔧 Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
-          { id: 'status',    title: '📋 My Request',        description: 'Track or manage an existing booking' },
-          { id: 'help',      title: '❓ Get Help',          description: 'FAQs, pricing, support' },
-        ],
-      },
-      {
-        title: 'For Service Providers',
-        rows: [
-          { id: 'find_work', title: '👷🏽 Find Work',         description: 'Apply, get reviewed, then accept leads with credits' },
-        ],
-      },
+      '👋🏽 Welcome to Plug A Pro!',
+      '',
+      'Are you here to:',
+      '',
+      '1 - Register as a service provider',
+      '2 - Request a service for your home or business',
+    ].join('\n'),
+    [
+      { id: 'intent_provider_register', title: 'Register' },
+      { id: 'intent_customer_request', title: 'Request service' },
+      { id: 'help', title: 'Get help' },
     ],
-    { buttonLabel: 'Choose Option' }
   )
 }
 

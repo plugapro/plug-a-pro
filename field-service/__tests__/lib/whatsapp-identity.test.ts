@@ -13,7 +13,7 @@ vi.mock('@/lib/db', () => ({
 
 import { db } from '@/lib/db'
 import { normalizePhone } from '@/lib/utils'
-import { resolveWhatsAppIdentity } from '@/lib/whatsapp-identity'
+import { phoneLookupVariants, resolveWhatsAppIdentity } from '@/lib/whatsapp-identity'
 
 describe('WhatsApp identity resolution', () => {
   beforeEach(() => {
@@ -27,12 +27,42 @@ describe('WhatsApp identity resolution', () => {
 
   it.each([
     ['0821234567', '+27821234567'],
+    ['0027821234567', '+27821234567'],
     ['823035070', '+27823035070'],
     ['27821234567', '+27821234567'],
     ['+27821234567', '+27821234567'],
+    ['071 234 5678', '+27712345678'],
+    ['071-234-5678', '+27712345678'],
     ['whatsapp:+27821234567', '+27821234567'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizePhone(input)).toBe(expected)
+  })
+
+  it.each([
+    '0821234567',
+    '+27821234567',
+    '27821234567',
+    '0027821234567',
+    '071 234 5678',
+    '071-234-5678',
+  ])('builds canonical lookup variants for %s before session/profile lookup', async (input) => {
+    await resolveWhatsAppIdentity(input)
+
+    const expectedCanonical = input.includes('71') ? '+27712345678' : '+27821234567'
+    const expectedDigits = expectedCanonical.replace('+', '')
+    const expectedLocal = `0${expectedDigits.slice(2)}`
+    expect(db.customer.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          phone: {
+            in: expect.arrayContaining([expectedCanonical, expectedDigits, expectedLocal]),
+          },
+        },
+      }),
+    )
+    expect(phoneLookupVariants(input)).toEqual(
+      expect.arrayContaining([expectedCanonical, expectedDigits, expectedLocal]),
+    )
   })
 
   it('returns customer for an existing customer number', async () => {
