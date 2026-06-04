@@ -506,6 +506,28 @@ export const TEMPLATES = {
       'Job accepted. Your credit has been applied and the customer details are now available in your job view.',
   },
 
+  // ─── Provider registration friction-fix templates (2026-06-04) ─────────────
+
+  provider_registration_continue: {
+    name: 'provider_registration_continue',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent ~5 min before Conversation.expiresAt to rescue mid-flow registration sessions. The quick-reply button payload "reg_start" triggers the existing registration resume path.',
+    // {{1}} provider first name (fall back to "there" if unknown)
+    example:
+      "Hi {{1}}, you're almost done with your Plug A Pro provider application. Your progress is saved — tap below to pick up where you left off before the session times out.",
+  },
+
+  provider_evidence_followup: {
+    name: 'provider_evidence_followup',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent 24h after PENDING ProviderApplication submission, inviting the provider to add a work photo. UTILITY because it relates to the in-progress application.',
+    // {{1}} provider first name
+    example:
+      'Hi {{1}}, want to strengthen your Plug A Pro profile? Tap below to add one work photo. Skip is fine — we already have your application.',
+  },
+
 } as const
 
 export type TemplateName = keyof typeof TEMPLATES

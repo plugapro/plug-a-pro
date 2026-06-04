@@ -53,7 +53,7 @@ import {
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
 import { isEnabled } from '../flags'
-import type { FlowContext, FlowResult } from './types'
+import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
 export const REGISTRATION_TRIGGERS = [
