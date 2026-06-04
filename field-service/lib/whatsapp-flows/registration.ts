@@ -127,6 +127,21 @@ function firstName(name: string | null | undefined) {
   return name?.trim().split(/\s+/)[0] || 'there'
 }
 
+function isValidProviderFullName(value: string | null | undefined) {
+  const parts = value?.trim().split(/\s+/).filter(Boolean) ?? []
+  return parts.length >= 2 && parts.every((part) => part.length >= 2)
+}
+
+function providerFullNamePrompt(prefix = '👤 Please type your full name.') {
+  return [
+    prefix,
+    '',
+    'Example: Thabo Nkosi',
+    '',
+    'Type your full name and send it as a WhatsApp message.',
+  ].join('\n')
+}
+
 function errorCodeFromUnknown(error: unknown): ProviderApplicationSubmitErrorCode {
   if (error instanceof ProviderApplicationSubmitError) return error.code
   if (
@@ -298,8 +313,8 @@ function validateSubmitData(ctx: FlowContext) {
 function verificationStatusLabel(data: Partial<{ providerIdNumber?: string; verificationMethod?: string; verificationDocAttachmentId?: string }>): string {
   if (data.providerIdNumber) return 'ID/passport provided'
   if (data.verificationDocAttachmentId) return 'Document uploaded'
-  if (data.verificationMethod === 'skipped') return 'Skipped (optional)'
-  return 'Not provided (optional)'
+  if (data.verificationMethod === 'skipped') return 'Deferred - required before credit top-up'
+  return 'Required before credit top-up'
 }
 
 function formatAvailabilityLabel(availability: string[] | undefined) {
@@ -546,7 +561,7 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'reg_start' || ctx.step === 'reg_collect_name') {
-    await sendText(ctx.phone, '👤 What is your *full name*?\n\n_(Type and send your name)_')
+    await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
     return { nextStep: 'reg_collect_skills' }
   }
 
@@ -555,8 +570,8 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
   const name = ctx.reply.text
-  if (!name || name.length < 2) {
-    await sendText(ctx.phone, 'Please type your full name (at least 2 characters).')
+  if (!isValidProviderFullName(name)) {
+    await sendText(ctx.phone, providerFullNamePrompt('Please type your full name so we can review your provider application.'))
     return { nextStep: 'reg_collect_skills' }
   }
 
@@ -572,7 +587,7 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 
 // Handles providers whose conversation is still on 'reg_collect_email' from before
 // the email step was removed from the onboarding flow. Whatever they reply, we
-// accept it and advance to the optional verification prompt. A well-formed email
+// accept it and advance to the deferred verification prompt. A well-formed email
 // is saved as optional profile enrichment; any other reply continues without it.
 async function handleMigratedEmailStep(ctx: FlowContext): Promise<FlowResult> {
   const raw = ctx.reply.text?.trim() ?? ''
@@ -588,18 +603,31 @@ async function sendVerificationChoicePrompt(phone: string) {
   await sendButtons(
     phone,
     [
-      '🪪 *Verify your identity (optional)*',
+      '🪪 *Verify your identity*',
       '',
-      'Providing ID helps us review your application faster. Your details are never shared with customers.',
+      'Identity verification is required for providers. Your details are never shared with customers.',
       '',
-      'Choose how to verify or skip and apply without it:',
+      'You can do it now during WhatsApp onboarding, or verify later before you top up credits.',
+      '',
+      'Credit top-ups stay locked until your identity is verified.',
+      '',
+      'Choose how to verify now, or choose Verify later:',
     ].join('\n'),
     [
       { id: 'verify_enter_id', title: 'Enter ID/passport' },
       { id: 'verify_upload_doc', title: 'Upload document' },
-      { id: 'verify_skip', title: 'Skip for now' },
+      { id: 'verify_skip', title: 'Verify later' },
     ],
   )
+}
+
+function isVerifyLaterReply(ctx: FlowContext): boolean {
+  const text = ctx.reply.text?.trim().toLowerCase()
+  return ctx.reply.id === 'verify_skip' || text === 'skip' || text === 'later' || text === 'verify later'
+}
+
+async function sendVerificationDeferredMessage(phone: string) {
+  await sendText(phone, 'Identity verification deferred. Credit top-ups will stay locked until your identity is verified.')
 }
 
 // Standard Luhn check (rightmost digit = position 1, not doubled).
@@ -641,11 +669,11 @@ function validatePassportNumber(raw: string): string | null {
 
 // Migration handler for in-progress users still on the old mandatory ID step.
 // Accepts a typed ID/passport number for backward compatibility; shows the
-// optional verification prompt for any other reply.
+// deferred verification prompt for any other reply.
 async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
-  // Handle button replies from the optional verification prompt or from error re-prompts.
+  // Handle button replies from the deferred verification prompt or from error re-prompts.
   if (ctx.reply.id === 'verify_enter_id') {
-    await sendText(ctx.phone, '🪪 Please send your *SA ID number* (13 digits) or *passport number*.\n\nType *skip* at any time to continue without verifying.')
+    await sendText(ctx.phone, '🪪 Please send your *SA ID number* (13 digits) or *passport number*.\n\nType *later* at any time to verify later. Credit top-ups stay locked until verification is complete.')
     return { nextStep: 'reg_verify_enter_id' }
   }
 
@@ -654,8 +682,8 @@ async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_verify_upload_doc' }
   }
 
-  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
-    await sendText(ctx.phone, 'No problem. You can verify your identity later from the Worker Portal.')
+  if (isVerifyLaterReply(ctx)) {
+    await sendVerificationDeferredMessage(ctx.phone)
     await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
   }
@@ -679,9 +707,9 @@ async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
-  // Button or text "skip" - escape hatch so users with unusual IDs are never trapped.
-  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
-    await sendText(ctx.phone, 'No problem. You can verify your identity later from the Worker Portal.')
+  // Defer escape hatch so users with unusual IDs are never trapped.
+  if (isVerifyLaterReply(ctx)) {
+    await sendVerificationDeferredMessage(ctx.phone)
     await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
   }
@@ -696,7 +724,7 @@ async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
       await sendButtons(
         ctx.phone,
         "❌ That SA ID number didn't pass the checksum check. Please check and try again or send your passport number instead.",
-        [{ id: 'verify_skip', title: 'Skip verification' }],
+        [{ id: 'verify_skip', title: 'Verify later' }],
       )
       return { nextStep: 'reg_verify_enter_id' }
     }
@@ -713,15 +741,15 @@ async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    '❌ Please send a valid *SA ID number* (13 digits) or *passport number* (6–30 alphanumeric characters). Or tap below to skip.',
-    [{ id: 'verify_skip', title: 'Skip verification' }],
+    '❌ Please send a valid *SA ID number* (13 digits) or *passport number* (6–30 alphanumeric characters). Or tap below to verify later.',
+    [{ id: 'verify_skip', title: 'Verify later' }],
   )
   return { nextStep: 'reg_verify_enter_id' }
 }
 
 async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
-  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
-    await sendText(ctx.phone, 'Skipping document upload. You can verify your identity later from the Worker Portal.')
+  if (isVerifyLaterReply(ctx)) {
+    await sendVerificationDeferredMessage(ctx.phone)
     await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
   }
@@ -765,14 +793,14 @@ async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
   await sendButtons(
     ctx.phone,
     '📄 Please send a *photo of your ID document* (SA ID card or passport).',
-    [{ id: 'verify_skip', title: 'Skip for now' }],
+    [{ id: 'verify_skip', title: 'Verify later' }],
   )
   return { nextStep: 'reg_verify_upload_doc' }
 }
 
 async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
-  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
-    await sendText(ctx.phone, 'Skipping selfie. You can complete verification later from the Worker Portal.')
+  if (isVerifyLaterReply(ctx)) {
+    await sendText(ctx.phone, 'Selfie deferred. Credit top-ups will stay locked until identity verification is complete.')
     await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'documents', skills: [] } }
   }
@@ -2532,7 +2560,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         }
       }
 
-      // Link optional verification doc and selfie attachments (non-fatal).
+      // Link deferred verification doc and selfie attachments when provided.
       const verificationAttachmentIds = [
         ctx.data.verificationDocAttachmentId,
         ctx.data.verificationSelfieAttachmentId,

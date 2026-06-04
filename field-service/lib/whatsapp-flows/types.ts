@@ -224,6 +224,9 @@ export interface ConversationData {
   reference1Mobile?: string
   reference2Name?: string
   reference2Mobile?: string
+  flowConflictDetectedAt?: string
+  flowConflictFrom?: FlowName
+  flowConflictTo?: FlowName
 
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider

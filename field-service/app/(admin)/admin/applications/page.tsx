@@ -23,6 +23,10 @@ import {
 import { buildMetadata } from '@/lib/metadata'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import {
+  listProviderOnboardingRecoveryRows,
+  providerOnboardingStageLabel,
+} from '@/lib/provider-onboarding-recovery'
 import { PROVIDER_PROFILE_PHOTO_LABEL } from '@/lib/provider-attachment-labels'
 import {
   OPS_QUEUE_TYPES,
@@ -50,6 +54,18 @@ export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
 
 const FLAG = 'admin.crud.applications'
 const APPLICATION_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
+const RECOVERY_STAGE_KEYS = [
+  'welcome_idle',
+  'register_started_no_name',
+  'id_verification_started',
+  'skills_picker',
+  'city_picker',
+  'evidence_upload',
+  'submitted',
+  'approved',
+  'pending',
+  'flow_conflict',
+] as const
 
 const ApplicationActionSchema = z.object({
   id: z.string().min(1),
@@ -633,6 +649,7 @@ export default async function ApplicationsPage({
     orderBy: { submittedAt: 'desc' },
     take: 100,
   })
+  const onboardingRecoveryRows = await listProviderOnboardingRecoveryRows(db)
   const conflictingApplicationIds = getConflictingActiveProviderApplicationIds(applications)
   const assignments = await listOpsQueueAssignments(
     db,
@@ -664,6 +681,97 @@ export default async function ApplicationsPage({
           Application mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim, approve or reject provider applications.
         </div>
       )}
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+              WhatsApp onboarding recovery
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Recovery queue for recent inbound WhatsApp provider leads. Automatic nudges are audit-limited; phone numbers are masked.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Stages: {RECOVERY_STAGE_KEYS.join(', ')}
+          </p>
+        </div>
+
+        <Card>
+          {onboardingRecoveryRows.length === 0 ? (
+            <CardContent className="p-4 text-sm text-muted-foreground">
+              No active provider onboarding recovery rows.
+            </CardContent>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Last seen</TableHead>
+                  <TableHead>Captured</TableHead>
+                  <TableHead>Outcome</TableHead>
+                  <TableHead>Action / message</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {onboardingRecoveryRows.map((row) => (
+                  <TableRow key={`${row.source}:${row.id}`} data-admin-onboarding-recovery-row={row.stage}>
+                    <TableCell>
+                      <Badge variant={row.priority <= 2 ? 'warning' : 'outline'} className="rounded-full">
+                        P{row.priority}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      <span className="block">{row.phoneMasked}</span>
+                      <span className="block text-xs text-muted-foreground">Tail {row.phoneTail}</span>
+                      <span className="block text-xs text-muted-foreground">{row.safeUserRef}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={row.stage === 'flow_conflict' ? 'warning' : 'outline'} className="rounded-full">
+                        {providerOnboardingStageLabel(row.stage)}
+                      </Badge>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {row.flow && row.step ? `${row.flow} / ${row.step}` : row.source}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.lastInteractionAt.toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {row.followUpDueAt ? (
+                        <span className="block text-xs">
+                          Due {row.followUpDueAt.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <span className="block">{row.providerName ?? '-'}</span>
+                      <span className="block text-xs">{row.serviceCategory ?? 'Service not captured'}</span>
+                      <span className="block text-xs">{row.area ?? 'Area not captured'}</span>
+                      {row.applicationStatus ? (
+                        <span className="block text-xs">Application: {row.applicationStatus}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <span className="block">{row.followUpStatus}</span>
+                      <span className="block text-xs">Last: {row.lastOutcomeStatus}</span>
+                      {row.operatorNotes ? (
+                        <span className="block text-xs">{row.operatorNotes}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="max-w-xl text-xs text-muted-foreground">
+                      <p className="font-medium text-foreground">{row.recommendedAction}</p>
+                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-2 font-sans text-xs leading-relaxed text-muted-foreground">
+                        {row.followUpMessage}
+                      </pre>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Card>
+      </section>
 
       {/* Pending */}
       <section className="space-y-3">
@@ -870,7 +978,7 @@ export default async function ApplicationsPage({
                 <details
                   key={app.id}
                   data-admin-application-row="approved-provider"
-                  className="group overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+                  className="group overflow-hidden rounded-xl border border-border bg-card shadow-sm"
                 >
                   {/* Approved rows stay collapsed by default so ops can scan many providers before opening category controls. */}
                   <summary className="grid cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm hover:bg-muted/40 md:grid-cols-[minmax(180px,1.1fr)_minmax(220px,1.3fr)_minmax(220px,1fr)_auto_auto] [&::-webkit-details-marker]:hidden">

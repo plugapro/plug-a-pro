@@ -13,4 +13,17 @@ describe('provider applications admin layout', () => {
     expect(source).toContain('Category-level approval')
     expect(source).not.toContain('<details open')
   })
+
+  it('surfaces WhatsApp onboarding recovery stages for manual follow-up', () => {
+    const source = readFileSync(join(process.cwd(), 'app/(admin)/admin/applications/page.tsx'), 'utf8')
+
+    expect(source).toContain('listProviderOnboardingRecoveryRows')
+    expect(source).toContain('WhatsApp onboarding recovery')
+    expect(source).toContain('data-admin-onboarding-recovery-row')
+    expect(source).toContain('phoneMasked')
+    expect(source).toContain('followUpMessage')
+    expect(source).toContain('recommendedAction')
+    expect(source).not.toContain('row.phone}</TableCell>')
+    expect(source).toContain('flow_conflict')
+  })
 })

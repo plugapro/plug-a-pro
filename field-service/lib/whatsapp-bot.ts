@@ -61,6 +61,10 @@ import {
 import { preferenceLabel } from './client-request-data'
 import { ctaLabelFor } from './whatsapp-copy'
 import { resolveJourneyRecovery, sendWhatsAppJourneyRecovery, type JourneyUserRole } from './journey-recovery'
+import {
+  buildProviderOnboardingHelpMessage,
+  buildProviderOnboardingUnsupportedInputMessage,
+} from './provider-onboarding-recovery'
 import { cascadeToNextShortlistedProvider } from './review-first'
 import { handleRfpLeadInterest } from './whatsapp-flows/rfp-lead'
 import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
@@ -1136,7 +1140,12 @@ async function processInboundMessageUnlocked(
     // profile-photo step to be silently dropped - the flow went dead, the user
     // typed "Hi" and got the main menu (provider onboarding silent-failure
     // incident, LoveMojo / Lovemore application).
-    if (reply.type === 'other') return
+    if (reply.type === 'other') {
+      if (conversation.flow === 'registration') {
+        await sendText(phone, buildProviderOnboardingUnsupportedInputMessage(conversation.step))
+      }
+      return
+    }
     const isMediaAllowedStep =
       (conversation.flow === 'registration' &&
         (conversation.step === 'reg_collect_evidence' ||
@@ -1282,6 +1291,54 @@ async function processInboundMessageUnlocked(
       flow === 'provider_journey' ||
       flow === 'provider_job'
     )
+
+    if (
+      isHelp &&
+      !isExpired &&
+      persistedFlow === 'registration' &&
+      !isStatelessReply
+    ) {
+      await sendButtons(
+        phone,
+        buildProviderOnboardingHelpMessage(),
+        [
+          { id: 'flow_continue', title: 'Continue application' },
+          { id: 'provider_support', title: 'Support' },
+          { id: 'session_restart', title: 'Main menu' },
+        ],
+      )
+      return
+    }
+
+    if (
+      !isExpired &&
+      persistedFlow === 'registration' &&
+      isCustomerJourneyAction &&
+      !isStatelessReply &&
+      !hasRecoverableIdentityContext
+    ) {
+      const conflictData: ConversationData = {
+        ...(conversation.data as ConversationData),
+        flowConflictDetectedAt: new Date().toISOString(),
+        flowConflictFrom: 'registration',
+        flowConflictTo: 'job_request',
+      }
+      await sendButtons(
+        phone,
+        'Are you registering as a provider or requesting a service?\n\nYour provider application progress is still saved.',
+        [
+          { id: 'flow_continue', title: 'Provider application' },
+          { id: 'session_restart', title: 'Request service' },
+        ],
+      )
+      await saveConversation({
+        phone,
+        flow: 'registration',
+        step: persistedStep,
+        data: conflictData,
+      })
+      return
+    }
 
     if (isProviderRole && isCustomerJourneyAction && !isStatelessReply && !hasRecoverableIdentityContext) {
       console.info('[whatsapp-bot] blocked provider from customer journey', {

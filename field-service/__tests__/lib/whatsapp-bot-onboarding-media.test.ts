@@ -179,4 +179,62 @@ describe('provider onboarding dispatcher - profile photo + active-flow guards', 
     })
     expect(wipedToIdle).toBe(false)
   })
+
+  it('shows provider onboarding HELP without leaving the active registration step', async () => {
+    activeRegistrationConversation('reg_collect_skills_more')
+
+    await processInboundMessage(textMessage('Help'))
+
+    expect(mockHandleRegistrationFlow).not.toHaveBeenCalled()
+    expect(mockShowMainMenu).not.toHaveBeenCalled()
+    expect(mockSendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Provider onboarding help'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'flow_continue', title: expect.stringContaining('Continue') }),
+        expect.objectContaining({ id: 'provider_support', title: expect.stringContaining('Support') }),
+        expect.objectContaining({ id: 'session_restart', title: expect.stringContaining('Main') }),
+      ]),
+    )
+    const resetToHelp = mockDb.conversation.upsert.mock.calls.some((call) => {
+      const update = call[0]?.update ?? call[0]?.create
+      return update?.flow === 'help' || update?.step === 'help_menu'
+    })
+    expect(resetToHelp).toBe(false)
+  })
+
+  it('asks for provider-vs-customer choice when a registration session receives a customer booking action', async () => {
+    activeRegistrationConversation('reg_collect_city')
+
+    await processInboundMessage({
+      from: PHONE,
+      id: 'wamid.book-conflict',
+      type: 'interactive',
+      interactive: {
+        type: 'button_reply',
+        button_reply: { id: 'book', title: 'Book a service' },
+      },
+      timestamp: String(Date.now()),
+    })
+
+    expect(mockHandleRegistrationFlow).not.toHaveBeenCalled()
+    expect(mockShowMainMenu).not.toHaveBeenCalled()
+    expect(mockSendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Are you registering as a provider or requesting a service'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'flow_continue', title: expect.stringContaining('Provider') }),
+        expect.objectContaining({ id: 'session_restart', title: expect.stringContaining('Request') }),
+      ]),
+    )
+    const conflictSave = mockDb.conversation.upsert.mock.calls.find((call) => {
+      const update = call[0]?.update ?? call[0]?.create
+      return update?.flow === 'registration' && update?.step === 'reg_collect_city'
+    })
+    expect(conflictSave?.[0]?.update?.data).toEqual(expect.objectContaining({
+      flowConflictDetectedAt: expect.any(String),
+      flowConflictFrom: 'registration',
+      flowConflictTo: 'job_request',
+    }))
+  })
 })

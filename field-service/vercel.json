@@ -31,6 +31,10 @@
       "schedule": "*/20 5-20 * * *"
     },
     {
+      "path": "/api/cron/provider-onboarding-recovery",
+      "schedule": "*/20 5-20 * * *"
+    },
+    {
       "path": "/api/cron/provider-auto-approve",
       "schedule": "*/25 5-16 * * *"
     },

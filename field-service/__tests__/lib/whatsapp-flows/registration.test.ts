@@ -529,7 +529,7 @@ describe('registration flow - duplicate prevention', () => {
       expect(body).not.toContain('provider_app_submit_')
     })
 
-    it('does not require email or identity verification for MVP submit', async () => {
+    it('allows deferred identity verification at MVP submit while leaving credit top-ups gated later', async () => {
       const result = await handleRegistrationFlow(
         makeCtx('reg_pending', 'submit_yes', undefined, {
           ...dataWithFullProfile,
@@ -559,8 +559,10 @@ describe('registration flow - numbered bulk skill selection', () => {
     resetDbMocks()
   })
 
-  it('shows optional verification prompt after name - email and mandatory ID steps no longer prompted', async () => {
+  it('frames identity verification as required but deferrable after name', async () => {
     const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
+
+    const promptBody = (wa.sendButtons as any).mock.calls.at(-1)[1] as string
 
     expect(wa.sendButtons).toHaveBeenCalledWith(
       phone,
@@ -568,12 +570,44 @@ describe('registration flow - numbered bulk skill selection', () => {
       expect.arrayContaining([
         expect.objectContaining({ id: 'verify_enter_id' }),
         expect.objectContaining({ id: 'verify_upload_doc' }),
-        expect.objectContaining({ id: 'verify_skip' }),
+        expect.objectContaining({ id: 'verify_skip', title: 'Verify later' }),
       ]),
     )
+    expect(promptBody).toContain('Identity verification is required for providers.')
+    expect(promptBody).toContain('You can do it now during WhatsApp onboarding, or verify later before you top up credits.')
+    expect(promptBody).toContain('Credit top-ups stay locked until your identity is verified.')
+    expect(promptBody).not.toContain('(optional)')
+    expect(promptBody).not.toContain('apply without it')
     expect(wa.sendText).not.toHaveBeenCalledWith(phone, expect.stringContaining('email address'))
     expect(result.nextStep).toBe('reg_collect_id')
     expect(result.nextData).toMatchObject({ name: 'Thabo Nkosi' })
+  })
+
+  it('reg_collect_name tells the provider to type a full name with an example', async () => {
+    const result = await handleRegistrationFlow(makeCtx('reg_collect_name', 'reg_start'))
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('type your full name'),
+    )
+    const body = (wa.sendText as any).mock.calls.at(-1)[1] as string
+    expect(body).toContain('Example')
+    expect(body).toContain('Thabo Nkosi')
+    expect(result.nextStep).toBe('reg_collect_skills')
+  })
+
+  it('reg_collect_skills rejects missing surname-style name input with a simple retry prompt', async () => {
+    const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo'))
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('Please type your full name'),
+    )
+    const body = (wa.sendText as any).mock.calls.at(-1)[1] as string
+    expect(body).toContain('Example')
+    expect(body).toContain('Thabo Nkosi')
+    expect(result.nextStep).toBe('reg_collect_skills')
+    expect(result.nextData?.name).toBeUndefined()
   })
 
   it('reg_collect_email migration: valid email is saved as optional enrichment and flow advances to verification prompt', async () => {
@@ -637,7 +671,7 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect(result.nextData).toMatchObject({ providerIdNumber: '8001015009087', verificationMethod: 'id_number', skills: [] })
   })
 
-  it('reg_collect_id: invalid text re-shows the optional verification choice', async () => {
+  it('reg_collect_id: invalid text re-shows the deferred verification choice', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_id', undefined, 'not a valid id', { name: 'Thabo Nkosi' })
     )
@@ -650,7 +684,7 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect(result.nextStep).toBe('reg_collect_id')
   })
 
-  it('reg_collect_id: verify_skip button skips verification and advances to skills', async () => {
+  it('reg_collect_id: verify_later button defers verification and advances to skills', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_id', 'verify_skip', undefined, { name: 'Thabo Nkosi' })
     )
@@ -664,7 +698,11 @@ describe('registration flow - numbered bulk skill selection', () => {
       makeCtx('reg_collect_id', 'verify_enter_id', undefined, { name: 'Thabo Nkosi' })
     )
 
-    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('SA ID number'))
+    const body = (wa.sendText as any).mock.calls.at(-1)[1] as string
+
+    expect(body).toContain('SA ID number')
+    expect(body).toContain('Type *later* at any time to verify later')
+    expect(body).not.toContain('continue without verifying')
     expect(result.nextStep).toBe('reg_verify_enter_id')
   })
 
@@ -688,7 +726,7 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect(result.nextData).toMatchObject({ providerIdNumber: '8001015009087', verificationMethod: 'id_number', skills: [] })
   })
 
-  it('reg_verify_enter_id: 13-digit number that fails Luhn shows error with skip button and stays on step', async () => {
+  it('reg_verify_enter_id: 13-digit number that fails Luhn shows error with verify later button and stays on step', async () => {
     // 8001015009080 - last digit changed so Luhn fails
     const result = await handleRegistrationFlow(
       makeCtx('reg_verify_enter_id', undefined, '8001015009080', { name: 'Thabo Nkosi' })
@@ -702,7 +740,7 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect(result.nextStep).toBe('reg_verify_enter_id')
   })
 
-  it('reg_verify_enter_id: skip button exits to skills without saving ID', async () => {
+  it('reg_verify_enter_id: verify_later button exits to skills without saving ID', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_verify_enter_id', 'verify_skip', undefined, { name: 'Thabo Nkosi' })
     )
@@ -711,11 +749,15 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect(result.nextData).toMatchObject({ verificationMethod: 'skipped', skills: [] })
   })
 
-  it('reg_verify_enter_id: text "skip" exits to skills without saving ID', async () => {
+  it('reg_verify_enter_id: text "later" defers verification and exits to skills without saving ID', async () => {
     const result = await handleRegistrationFlow(
-      makeCtx('reg_verify_enter_id', undefined, 'skip', { name: 'Thabo Nkosi' })
+      makeCtx('reg_verify_enter_id', undefined, 'later', { name: 'Thabo Nkosi' })
     )
 
+    expect(wa.sendText).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('Identity verification deferred'),
+    )
     expect(result.nextStep).toBe('reg_collect_skills_more')
     expect(result.nextData).toMatchObject({ verificationMethod: 'skipped', skills: [] })
   })
@@ -772,7 +814,7 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect(result.nextData).toMatchObject({ verificationDocAttachmentId: 'att_mock_001', verificationDocMediaId: 'media_id_doc' })
   })
 
-  it('reg_verify_upload_doc: skip button skips verification and advances to skills', async () => {
+  it('reg_verify_upload_doc: verify_later button defers verification and advances to skills', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_verify_upload_doc', 'verify_skip', undefined, { name: 'Thabo Nkosi' })
     )
