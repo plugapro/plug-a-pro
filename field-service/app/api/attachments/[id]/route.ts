@@ -11,7 +11,7 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { head } from '@vercel/blob'
-import { getSession } from '@/lib/auth'
+import { getAdminActor, getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { resolveJobRequestAccessScope } from '@/lib/job-request-access'
@@ -146,7 +146,8 @@ export async function GET(
 
   let sessionAllowsAttachment = false
 
-  if (session?.role === 'admin') {
+  const adminActor = session ? await getAdminActor() : null
+  if (adminActor) {
     sessionAllowsAttachment = true
   } else if (session) {
     // For provider role we need the Provider.id (DB row) to compare against job.providerId.

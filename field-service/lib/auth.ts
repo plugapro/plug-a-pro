@@ -160,7 +160,7 @@ function meetsRoleRequirement(actorRole: Role, required: Role[]): boolean {
   return required.some((role) => level >= ROLE_HIERARCHY[role])
 }
 
-const getAdminActor = cache(async (): Promise<AdminAuthUser | null> => {
+export const getAdminActor = cache(async (): Promise<AdminAuthUser | null> => {
   const session = await getSession()
   if (!session) return null
 

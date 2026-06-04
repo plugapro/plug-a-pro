@@ -7,7 +7,7 @@
 //      - If enabled=false but ctx.userId in enabledForUsers → true for that user
 //      - If enabled=false and no user match → false
 //   2. Env: FEATURE_FLAGS JSON object, e.g. '{"ops.v2.closeOut": true}'
-//   3. Default: false
+//   3. Registry defaultValue, then false for unknown keys
 //
 // DB lookups are cached per process for 60 s to avoid per-request Prisma calls.
 //
@@ -15,7 +15,7 @@
 // isEnabled() / isEnabledSync() accept FeatureFlagKey for compile-time validation.
 
 import { db } from './db'
-import type { FeatureFlagKey } from './feature-flags-registry'
+import { FEATURE_FLAGS_REGISTRY as FLAG_REGISTRY, type FeatureFlagKey } from './feature-flags-registry'
 
 // Re-export so callers can import from one place.
 export type { FeatureFlagKey } from './feature-flags-registry'
@@ -182,14 +182,14 @@ export async function isEnabled(
   const envFlags = getEnvFlags()
   if (key in envFlags) return Boolean(envFlags[key])
 
-  // 3 - default
-  return false
+  // 3 - registry default
+  return FLAG_REGISTRY[key]?.defaultValue ?? false
 }
 
 /** Synchronous check - only reads env (no DB). Use in non-async contexts. */
 export function isEnabledSync(key: FeatureFlagKey): boolean {
   const envFlags = getEnvFlags()
-  return key in envFlags ? Boolean(envFlags[key]) : false
+  return key in envFlags ? Boolean(envFlags[key]) : FLAG_REGISTRY[key]?.defaultValue ?? false
 }
 
 /** Invalidate the in-process cache. Useful in tests. */

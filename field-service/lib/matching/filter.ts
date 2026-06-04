@@ -322,6 +322,7 @@ export async function filterEligibleProviders(
           id: { in: providerIds },
           active: true,
           verified: true,
+          kycStatus: 'VERIFIED',
           status: 'ACTIVE',
           isTestUser: Boolean(jobRequest.isTestRequest),
         },

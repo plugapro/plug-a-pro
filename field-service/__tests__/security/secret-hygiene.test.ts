@@ -57,6 +57,21 @@ describe('secret hygiene guard', () => {
     expect(result.output).not.toContain(serviceRoleSecret)
   })
 
+  it('flags Pay@ credential-shaped values outside env files without printing values', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'pap-secret-hygiene-'))
+    const payatClientSecret = 'PAYAT_CLIENT_SECRET=' + 'a'.repeat(8) + '-' + 'b'.repeat(4) + '-' + 'c'.repeat(4) + '-' + 'd'.repeat(4) + '-' + 'e'.repeat(12)
+    const payatWebhookSecret = 'PAYAT_WEBHOOK_SECRET=' + 'f'.repeat(64)
+    mkdirSync(path.join(root, 'notes'))
+    writeFileSync(path.join(root, 'notes', 'payat.md'), `${payatClientSecret}\n${payatWebhookSecret}\n`)
+
+    const result = runSecretGuard(root)
+
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('notes/payat.md')
+    expect(result.output).not.toContain(payatClientSecret)
+    expect(result.output).not.toContain(payatWebhookSecret)
+  })
+
   it('allows example files with placeholder service role variable names', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'pap-secret-hygiene-'))
     writeFileSync(

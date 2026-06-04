@@ -18,6 +18,9 @@ const blockedEnvFilePattern = /^\.env(?:$|\.(?!.*(?:example|sample|template)$)[a
 const blockedVercelEnvPattern = /(?:^|[/\\])\.vercel[/\\]\.env/
 const jwtPattern = /eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g
 const supabaseSecretKeyPattern = /sb_secret_[a-zA-Z0-9_-]{32,}/
+const payatClientIdPattern = /\bPAYAT_CLIENT_ID\s*=\s*['"]?client-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i
+const payatClientSecretPattern = /\bPAYAT_CLIENT_SECRET\s*=\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i
+const payatWebhookSecretPattern = /\bPAYAT_WEBHOOK_SECRET\s*=\s*['"]?[0-9a-f]{64}\b/i
 const maxScannedBytes = 1024 * 1024
 
 function toRelative(filePath) {
@@ -94,6 +97,14 @@ function containsServiceRoleSecret(content) {
   return false
 }
 
+function containsPayatCredential(content) {
+  return (
+    payatClientIdPattern.test(content) ||
+    payatClientSecretPattern.test(content) ||
+    payatWebhookSecretPattern.test(content)
+  )
+}
+
 if (!existsSync(root)) {
   console.error(`Secret hygiene root does not exist: ${root}`)
   process.exit(1)
@@ -117,6 +128,8 @@ for (const filePath of collectFiles(root)) {
     const content = readSmallTextFile(filePath)
     if (content && containsServiceRoleSecret(content)) {
       findings.push({ file: relative, reason: 'service-role-shaped secret' })
+    } else if (content && containsPayatCredential(content)) {
+      findings.push({ file: relative, reason: 'Pay@ credential-shaped secret' })
     }
   } catch {
     // Binary or unreadable files are ignored; the guard is aimed at text leaks.

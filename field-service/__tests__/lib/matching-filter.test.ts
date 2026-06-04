@@ -174,6 +174,26 @@ describe('filterEligibleProviders - cooldown and daily-load', () => {
     expect(filtered).toBeUndefined()
   })
 
+  it('requires providers to have VERIFIED KYC before matching can surface them', async () => {
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+
+    await filterEligibleProviders(
+      [makeCandidate()],
+      makeJobRequest(),
+    )
+
+    expect(mockDb.provider.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          kycStatus: 'VERIFIED',
+        }),
+      }),
+    )
+  })
+
   it('excludes provider whose only structured service area is coming soon/inactive', async () => {
     mockDb.$queryRaw
       .mockResolvedValueOnce([])   // timedOutRows

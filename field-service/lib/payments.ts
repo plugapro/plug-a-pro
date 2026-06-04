@@ -209,10 +209,13 @@ class PayFastProvider implements PspProvider {
       : 'https://www.payfast.co.za/eng/process'
     this.merchantId = process.env.PAYFAST_MERCHANT_ID ?? ''
     this.merchantKey = process.env.PAYFAST_MERCHANT_KEY ?? ''
-    this.passphrase = process.env.PAYFAST_PASSPHRASE ?? ''
+    this.passphrase = process.env.PAYFAST_PASSPHRASE?.trim() ?? ''
 
     if (!this.merchantId || !this.merchantKey) {
       throw new Error('Missing PayFast credentials (PAYFAST_MERCHANT_ID, PAYFAST_MERCHANT_KEY)')
+    }
+    if (!sandbox && !this.passphrase) {
+      throw new Error('Missing required env var: PAYFAST_PASSPHRASE')
     }
   }
 

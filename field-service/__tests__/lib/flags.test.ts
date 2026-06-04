@@ -63,6 +63,11 @@ describe('isEnabled - default behaviour', () => {
     expect(await isEnabled('ops.v2.closeOut')).toBe(false)
   })
 
+  it('uses the registry default when no DB row and no env var are present', async () => {
+    mockFindMany.mockResolvedValue([])
+    expect(await isEnabled('provider.identity.verification.pilot_allowlist_required')).toBe(true)
+  })
+
   it('returns true when DB row has enabled=true', async () => {
     mockFindMany.mockResolvedValue([
       { key: 'ops.v2.closeOut', enabled: true, enabledForUsers: [] },
@@ -150,6 +155,10 @@ describe('isEnabledSync', () => {
 
   it('returns false when no env var set', () => {
     expect(isEnabledSync('ops.v2.closeOut')).toBe(false)
+  })
+
+  it('uses registry defaults when no env var is set', () => {
+    expect(isEnabledSync('provider.identity.verification.pilot_allowlist_required')).toBe(true)
   })
 
   it('returns true when env var enables key', () => {

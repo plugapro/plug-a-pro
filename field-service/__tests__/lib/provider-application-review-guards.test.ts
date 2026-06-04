@@ -10,22 +10,22 @@ import {
 // ─── isHighRiskCategory ───────────────────────────────────────────────────────
 
 describe('isHighRiskCategory', () => {
-  it.each(['electrical', 'pest_control', 'air_conditioning', 'roofing'])(
+  it.each(['electrical', 'pest_control', 'air_conditioning', 'roofing', 'plumbing'])(
     'returns true for high-risk / regulated category: %s',
     (category) => {
       expect(isHighRiskCategory(category)).toBe(true)
     },
   )
 
-  it.each(['plumbing', 'painting', 'handyman', 'cleaning', 'tiling', 'carpentry'])(
+  it.each(['painting', 'handyman', 'cleaning', 'tiling', 'carpentry'])(
     'returns false for standard category: %s',
     (category) => {
       expect(isHighRiskCategory(category)).toBe(false)
     },
   )
 
-  it('returns false for an unknown / unrecognised category', () => {
-    expect(isHighRiskCategory('widget_polishing')).toBe(false)
+  it('default-blocks an unknown / unrecognised category', () => {
+    expect(isHighRiskCategory('widget_polishing')).toBe(true)
   })
 
   it('is case-insensitive for known categories', () => {
@@ -55,7 +55,7 @@ describe('requiresManualReview', () => {
   it('does not require review for an all-standard-category application', () => {
     const result = requiresManualReview({
       ...baseApp,
-      skills: ['Plumbing', 'Painting', 'Handyman'],
+      skills: ['Painting', 'Handyman', 'Cleaning'],
     })
     expect(result.required).toBe(false)
     expect(result.requirements).toHaveLength(0)
@@ -69,14 +69,17 @@ describe('requiresManualReview', () => {
     })
     expect(result.required).toBe(true)
     expect(result.reasonCodes).toContain('HIGH_RISK_CATEGORY')
-    expect(result.requirements).toHaveLength(1)
-    expect(result.requirements[0].categorySlug).toBe('electrical')
+    expect(result.requirements).toHaveLength(2)
+    expect(result.requirements.map((requirement) => requirement.categorySlug)).toEqual([
+      'plumbing',
+      'electrical',
+    ])
   })
 
   it('deduplicates requirements when the same high-risk skill appears twice', () => {
     const result = requiresManualReview({
       ...baseApp,
-      skills: ['Electrical', 'Electrical', 'Plumbing'],
+      skills: ['Electrical', 'Electrical', 'Painting'],
     })
     expect(result.required).toBe(true)
     expect(result.requirements).toHaveLength(1)
@@ -116,7 +119,7 @@ describe('requiresManualReview', () => {
 
 describe('applicationBlocksAutoApproval', () => {
   it('returns false for an application with only standard categories', () => {
-    expect(applicationBlocksAutoApproval({ skills: ['Plumbing', 'Painting'] })).toBe(false)
+    expect(applicationBlocksAutoApproval({ skills: ['Painting', 'Handyman'] })).toBe(false)
   })
 
   it('returns true for an application with at least one high-risk category', () => {
@@ -162,7 +165,7 @@ describe('buildManualReviewSummary', () => {
   it('returns null for a standard application', () => {
     const result = buildManualReviewSummary({
       id: 'app-1',
-      skills: ['Plumbing', 'Painting'],
+      skills: ['Painting', 'Handyman'],
       status: 'PENDING',
     })
     expect(result).toBeNull()
