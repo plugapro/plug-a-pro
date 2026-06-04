@@ -12,6 +12,10 @@ import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getProviderWalletLedgerEntries } from '@/lib/provider-wallet'
 import {
+  summarizeWalletLedgerEntry,
+  walletLedgerSignedAmount,
+} from '@/lib/wallet-ledger-display'
+import {
   addTopUpIntentNoteFormAction,
   creditTopUpIntentFormAction,
   failTopUpIntentFormAction,
@@ -78,6 +82,11 @@ function messageText(message?: string) {
     default:
       return null
   }
+}
+
+function ledgerAmount(entry: { entryType: string; amountCredits: number }) {
+  const signed = walletLedgerSignedAmount(entry)
+  return `${signed > 0 ? '+' : ''}${signed}`
 }
 
 export default async function ProviderCreditPaymentDetailPage({
@@ -296,14 +305,23 @@ export default async function ProviderCreditPaymentDetailPage({
               <p className="mt-3 text-sm text-muted-foreground">No wallet credit has been issued for this intent.</p>
             ) : (
               <ul className="mt-3 divide-y text-sm">
-                {ledgerEntries.map((entry) => (
-                  <li key={entry.id} className="flex justify-between gap-4 py-3">
-                    <span>
-                      {entry.entryType} · {entry.creditType}
-                    </span>
-                    <span className="font-medium">+{entry.amountCredits} credits</span>
-                  </li>
-                ))}
+                {ledgerEntries.map((entry) => {
+                  const summary = summarizeWalletLedgerEntry(entry)
+                  return (
+                    <li key={entry.id} className="space-y-1 py-3">
+                      <div className="flex justify-between gap-4">
+                        <span className="text-sm">{summary.title}</span>
+                        <span className="font-medium">{ledgerAmount(entry)} credits</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {summary.referenceTypeLabel} · {summary.referenceHint}
+                      </p>
+                      {summary.details.length > 0 ? (
+                        <p className="text-xs text-muted-foreground">{summary.details.join(' · ')}</p>
+                      ) : null}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
