@@ -332,6 +332,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
+  // ─── WhatsApp registration friction fixes (2026-06-04) ──────────────────────
+  'whatsapp.registration.name_profile_shortcut': {
+    description: 'Offer the WhatsApp profile name as a one-tap default at the reg_collect_name step, plus a short privacy framing line.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',
