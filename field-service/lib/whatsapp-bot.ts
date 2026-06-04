@@ -32,6 +32,7 @@ import {
   REGISTRATION_TRIGGERS,
 } from './whatsapp-flows/registration'
 import { matchDeeplink } from './whatsapp-deeplinks'
+import { clearIncompatibleFlowData } from './whatsapp-conversation-state'
 import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
 import {
@@ -2470,13 +2471,29 @@ async function saveConversation(params: {
   data: ConversationData
 }): Promise<void> {
   const cohort = createTestCohortContext(params.phone)
+  const stripEnabled = await isEnabled('whatsapp.flow_switch_data_clear')
+
+  // When the flow changes, optionally strip data keys that don't belong to the
+  // target flow. Prevents customer-flow keys polluting registration sessions.
+  let dataToWrite: ConversationData = params.data
+  if (stripEnabled) {
+    const existing = await db.conversation.findUnique({
+      where: { phone: params.phone },
+      select: { flow: true },
+    })
+    const existingFlow = (existing?.flow as FlowName | undefined) ?? null
+    if (existingFlow && existingFlow !== params.flow) {
+      dataToWrite = clearIncompatibleFlowData(existingFlow, params.flow, params.data)
+    }
+  }
+
   await db.conversation.upsert({
     where: { phone: params.phone },
     create: {
       phone: params.phone,
       flow: params.flow,
       step: params.step,
-      data: params.data as Prisma.InputJsonValue,
+      data: dataToWrite as Prisma.InputJsonValue,
       isTestSession: cohort.isTestUser,
       cohortName: cohort.cohortName,
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
@@ -2484,7 +2501,7 @@ async function saveConversation(params: {
     update: {
       flow: params.flow,
       step: params.step,
-      data: params.data as Prisma.InputJsonValue,
+      data: dataToWrite as Prisma.InputJsonValue,
       ...(cohort.isTestUser ? { isTestSession: true, cohortName: cohort.cohortName } : {}),
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
     },
