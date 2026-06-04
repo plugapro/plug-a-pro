@@ -52,6 +52,7 @@ import {
 } from '../service-area-guard'
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
+import { isEnabled } from '../flags'
 import type { FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -561,6 +562,27 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'reg_start' || ctx.step === 'reg_collect_name') {
+    const profileNameEnabled = await isEnabled('whatsapp.registration.name_profile_shortcut')
+    const profileName = ctx.senderProfileName?.trim()
+
+    if (profileNameEnabled && profileName && profileName.length >= 2) {
+      await sendButtons(
+        ctx.phone,
+        [
+          "👤 Let's start with your name.",
+          '',
+          'We only use this to set up your provider profile — customers see your name once you accept a job.',
+          '',
+          `WhatsApp shows your name as *${profileName}*. Use that, or type a different one?`,
+        ].join('\n'),
+        [
+          { id: 'name_use_wa',          title: `✅ Use "${profileName.split(' ')[0].slice(0, 18)}"` },
+          { id: 'name_enter_different', title: '✏️ Enter a different name' },
+        ],
+      )
+      return { nextStep: 'reg_collect_skills' }
+    }
+
     await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
     return { nextStep: 'reg_collect_skills' }
   }
@@ -569,6 +591,28 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
+  // Profile-name shortcut: user tapped "Use <WA name>" on the name prompt
+  if (ctx.reply.id === 'name_use_wa') {
+    const name = ctx.senderProfileName?.trim()
+    if (!name || name.length < 2) {
+      await sendText(ctx.phone, 'Please type your full name (at least 2 characters).')
+      return { nextStep: 'reg_collect_skills' }
+    }
+    if (ctx.data.verificationMethod || ctx.data.providerIdNumber || ctx.data.verificationDocAttachmentId) {
+      await sendText(ctx.phone, buildSkillPromptText(`👤 Name updated to *${name}*.\n\n🔧 *What type of work do you do?*`))
+      return { nextStep: 'reg_collect_skills_more', nextData: { name } }
+    }
+    await sendVerificationChoicePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_id', nextData: { name } }
+  }
+
+  // Profile-name shortcut: user tapped "Enter a different name" — re-prompt with bare text question
+  if (ctx.reply.id === 'name_enter_different') {
+    await sendText(ctx.phone, '👤 Type your name and send it as a message.')
+    return { nextStep: 'reg_collect_skills' }
+  }
+
+  // Legacy text path
   const name = ctx.reply.text
   if (!isValidProviderFullName(name)) {
     await sendText(ctx.phone, providerFullNamePrompt('Please type your full name so we can review your provider application.'))
