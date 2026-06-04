@@ -1,7 +1,7 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { getSession } from '@/lib/auth'
+import { getSession, providerAuthWhere } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
 import { AUDIT_ENTITY } from '@/lib/audit-entities'
 
@@ -41,12 +41,7 @@ export async function saveProviderAvailabilityFromFormAction(formData: FormData)
   }
 
   const provider = await db.provider.findFirst({
-    where: {
-      OR: [
-        { userId: session.id },
-        ...(session.providerId ? [{ id: session.providerId }] : []),
-      ],
-    },
+    where: providerAuthWhere(session),
     include: { technicianAvailability: true },
   })
 

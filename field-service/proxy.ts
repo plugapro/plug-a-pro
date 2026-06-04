@@ -148,6 +148,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(target, { status: 308 })
   }
 
+  if (isProductionDebugPath(pathname)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   // Allow public paths (checked against the internal path)
   if (isPublicPath(pathname)) {
     return buildResponse()
@@ -271,6 +275,13 @@ function isPublicPath(pathname: string): boolean {
     if (path === '/') return pathname === '/'
     return pathname === path || pathname.startsWith(`${path}/`)
   })
+}
+
+function isProductionDebugPath(pathname: string): boolean {
+  return process.env.VERCEL_ENV === 'production' && (
+    pathname === '/api/debug' ||
+    pathname.startsWith('/api/debug/')
+  )
 }
 
 function redirectToSignIn(

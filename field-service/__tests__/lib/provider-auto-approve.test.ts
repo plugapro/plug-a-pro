@@ -36,7 +36,6 @@ const standardApplication = {
   phone: '+27820000001',
   name: 'Lovemore Sibanda',
   skills: [
-    'Plumbing',
     'Painting',
     'Garden & Landscaping',
     'Handyman',
@@ -165,8 +164,8 @@ describe('provider auto-approval', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       providerCategory: {
-        createMany: vi.fn().mockResolvedValue({ count: 9 }),
-        updateMany: vi.fn().mockResolvedValue({ count: 9 }),
+        createMany: vi.fn().mockResolvedValue({ count: 8 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 8 }),
       },
     }
 

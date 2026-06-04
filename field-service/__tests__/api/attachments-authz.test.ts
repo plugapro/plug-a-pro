@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server'
 
 const {
   mockGetSession,
+  mockGetAdminActor,
   mockDb,
   mockFetch,
   mockHead,
@@ -15,6 +16,7 @@ const {
   mockResolveProviderLeadAttachmentScope,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
+  mockGetAdminActor: vi.fn(),
   mockDb: {
     attachment: { findUnique: vi.fn() },
     provider: { findUnique: vi.fn() },
@@ -27,7 +29,10 @@ const {
   mockResolveProviderLeadAttachmentScope: vi.fn(),
 }))
 
-vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
+vi.mock('@/lib/auth', () => ({
+  getSession: mockGetSession,
+  getAdminActor: mockGetAdminActor,
+}))
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@vercel/blob', () => ({ head: mockHead }))
 vi.mock('@/lib/job-request-access', () => ({
@@ -90,6 +95,7 @@ describe('GET /api/attachments/[id] - provider job ownership check', () => {
       jobRequestId: null,
     })
     mockDb.lead.findUnique.mockResolvedValue(null)
+    mockGetAdminActor.mockResolvedValue(null)
   })
 
   it('allows a provider whose Provider.id matches job.providerId', async () => {
@@ -187,6 +193,31 @@ describe('GET /api/attachments/[id] - provider job ownership check', () => {
     const res = await GET(makeRequest(), { params: makeParams() })
 
     expect(res.status).toBe(403)
+  })
+
+  it('denies a forged metadata-admin session when there is no active AdminUser row', async () => {
+    mockGetSession.mockResolvedValue({ id: 'customer-uid', role: 'admin' })
+    mockGetAdminActor.mockResolvedValue(null)
+    mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(403)
+    expect(mockGetAdminActor).toHaveBeenCalled()
+    expect(mockHead).not.toHaveBeenCalled()
+  })
+
+  it('allows an active DB-backed admin actor to access an attachment', async () => {
+    mockGetSession.mockResolvedValue({ id: 'admin-uid', role: 'admin' })
+    mockGetAdminActor.mockResolvedValue({ id: 'admin-1', adminRole: 'ADMIN' })
+    mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    expect(mockHead).toHaveBeenCalledWith('https://store.public.blob.vercel-storage.com/att-1')
   })
 
   it('allows a customer whose userId matches via the job booking chain', async () => {

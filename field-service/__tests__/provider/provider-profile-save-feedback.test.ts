@@ -13,6 +13,12 @@ const tx = {
 
 vi.mock('../../lib/auth', () => ({
   getSession: vi.fn(),
+  providerAuthWhere: (session: { id: string; phone: string | null }) => ({
+    OR: [
+      { userId: session.id },
+      ...(session.phone ? [{ phone: session.phone, userId: null }] : []),
+    ],
+  }),
 }))
 
 vi.mock('../../lib/db', () => ({
@@ -67,6 +73,38 @@ describe('provider profile save feedback action', () => {
     expect(result).toEqual({
       ok: false,
       error: 'Select at least one skill before saving your profile.',
+    })
+  })
+
+  it('resolves the provider by authenticated user or phone, never metadata providerId', async () => {
+    const { getSession } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    ;(getSession as any).mockResolvedValue({
+      id: 'auth-user-1',
+      role: 'provider',
+      phone: '+27820000000',
+      providerId: 'forged-provider-id',
+    })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'own-provider-id', active: true, status: 'ACTIVE' })
+
+    const formData = new FormData()
+    formData.set('name', 'Lovemore')
+
+    const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
+    const result = await updateProviderProfileFromFormAction(formData)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Select at least one skill before saving your profile.',
+    })
+    expect(db.provider.findFirst).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { userId: 'auth-user-1' },
+          { phone: '+27820000000', userId: null },
+        ],
+      },
+      select: { id: true, active: true, status: true },
     })
   })
 

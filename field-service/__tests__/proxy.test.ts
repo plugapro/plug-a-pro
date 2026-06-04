@@ -180,6 +180,22 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('blocks debug API routes in production before route handlers can run', async () => {
+    const previousEnv = process.env.VERCEL_ENV
+    process.env.VERCEL_ENV = 'production'
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/debug/payat-ping'))
+
+    expect(res.status).toBe(403)
+    expect(mockGetUser).not.toHaveBeenCalled()
+    if (previousEnv === undefined) {
+      delete process.env.VERCEL_ENV
+    } else {
+      process.env.VERCEL_ENV = previousEnv
+    }
+  })
+
   it('does not expose the customer phone existence oracle as a public route', async () => {
     const { proxy } = await import('../proxy')
 

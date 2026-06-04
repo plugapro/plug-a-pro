@@ -114,8 +114,8 @@ pnpm brain -- knowledge add \\
 - Owner: \`TBD\`
 - Evidence:
   - \`pnpm db:migrate:prod\`:
-  - \`pnpm db:seed\`:
   - \`pnpm db:backfill\`:
+  - Production seed policy: Do not run broad database seed scripts in production.
   - Idempotency re-run:
 - Decision:
 - Notes:
@@ -194,7 +194,6 @@ pnpm brain -- knowledge add \\
 
 \`\`\`bash
 pnpm db:migrate:prod
-pnpm db:seed
 pnpm db:backfill
 \`\`\`
 

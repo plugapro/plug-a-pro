@@ -21,6 +21,7 @@ import {
   ReviewerType,
   ApplicationStatus,
 } from '@prisma/client'
+import { randomBytes } from 'crypto'
 import { seedLocationNodes } from '../lib/location-seed'
 
 const prisma = new PrismaClient()
@@ -302,6 +303,8 @@ async function main() {
   })
 
   if (!existingCompleted) {
+    const quoteApprovalToken = randomBytes(24).toString('hex')
+
     const jr1 = await prisma.jobRequest.create({
       data: {
         customerId:  zanele.id,
@@ -330,7 +333,7 @@ async function main() {
         materialsCost: 150,
         description:   'Replace kitchen tap washers and re-seal. Includes call-out fee.',
         status:        QuoteStatus.APPROVED,
-        approvalToken: 'seed-quote-token-001',
+        approvalToken: quoteApprovalToken,
       },
     })
 

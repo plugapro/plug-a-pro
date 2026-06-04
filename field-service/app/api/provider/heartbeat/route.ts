@@ -6,7 +6,7 @@
 // A provider is considered OFFLINE if last_heartbeat_at < now() - 10 minutes.
 
 import { NextResponse } from 'next/server'
-import { requireProviderApi } from '@/lib/auth'
+import { providerAuthWhere, requireProviderApi } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { MATCHING_CONFIG } from '@/lib/matching/config'
 import { promptCustomersForNewProviderAvailability } from '@/lib/matching/customer-recontact'
@@ -15,9 +15,14 @@ export async function POST(request: Request) {
   const sessionOrError = await requireProviderApi()
   if (sessionOrError instanceof Response) return sessionOrError
   const session = sessionOrError
-  if (!session?.providerId) {
+  const provider = await db.provider.findFirst({
+    where: providerAuthWhere(session),
+    select: { id: true },
+  })
+  if (!provider) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  const providerId = provider.id
 
   const body = await request.json().catch(() => ({}))
   const {
@@ -33,14 +38,14 @@ export async function POST(request: Request) {
   const isOnline = availabilityMode !== 'OFFLINE' && availabilityMode !== 'BREAK'
   const now = new Date()
   const previousLiveStatus = await (db as any).providerLiveStatus.findUnique({
-    where: { providerId: session.providerId },
+    where: { providerId },
     select: { isOnline: true, lastHeartbeatAt: true },
   }).catch(() => null)
 
   await (db as any).providerLiveStatus.upsert({
-    where: { providerId: session.providerId },
+    where: { providerId },
     create: {
-      providerId: session.providerId,
+      providerId,
       isOnline,
       availabilityMode,
       activeJobCount: 0,
@@ -62,7 +67,7 @@ export async function POST(request: Request) {
   // Mirror live location back to provider.lastKnownLat/Lng for matching fallback
   if (lat != null && lng != null) {
     await db.provider.update({
-      where: { id: session.providerId },
+      where: { id: providerId },
       data: { lastKnownLat: lat, lastKnownLng: lng, lastKnownLocationAt: now },
     })
   }
@@ -78,7 +83,7 @@ export async function POST(request: Request) {
     )
 
   if (becameReachable) {
-    await promptCustomersForNewProviderAvailability(session.providerId).catch((error) => {
+    await promptCustomersForNewProviderAvailability(providerId).catch((error) => {
       console.error('[provider/heartbeat] customer recontact failed:', error)
     })
   }

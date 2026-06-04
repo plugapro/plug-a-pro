@@ -13,7 +13,7 @@
  * Environment variables required:
  *   PAYFAST_MERCHANT_ID   - from Payfast merchant account dashboard
  *   PAYFAST_MERCHANT_KEY  - from Payfast merchant account dashboard
- *   PAYFAST_PASSPHRASE    - set in Payfast dashboard; empty string if not set
+ *   PAYFAST_PASSPHRASE    - required in live mode; optional only in sandbox
  *   PAYFAST_SANDBOX       - "true" for sandbox, omit or "false" for live
  *   PAYFAST_NOTIFY_URL    - absolute URL of the ITN handler endpoint
  *   PAYFAST_RETURN_URL    - redirect URL shown to provider after checkout
@@ -129,6 +129,7 @@ export function getPayfastConfig(): PayfastConfig {
   if (!notifyUrl) throw new Error('Missing required env var: PAYFAST_NOTIFY_URL')
   if (!returnUrl) throw new Error('Missing required env var: PAYFAST_RETURN_URL')
   if (!cancelUrl) throw new Error('Missing required env var: PAYFAST_CANCEL_URL')
+  if (!sandbox && !passphrase) throw new Error('Missing required env var: PAYFAST_PASSPHRASE')
 
   return { merchantId, merchantKey, passphrase, sandbox, notifyUrl, returnUrl, cancelUrl }
 }
@@ -264,6 +265,10 @@ export function verifyItn(
   remoteIp: string | null | undefined,
   config: PayfastConfig,
 ): PayfastVerificationResult {
+  if (!config.sandbox && !config.passphrase.trim()) {
+    return { valid: false, reason: 'PAYFAST_PASSPHRASE is required for live ITN verification' }
+  }
+
   // 1. IP validation - fail closed if IP cannot be determined.
   if (!config.sandbox) {
     if (!remoteIp?.trim()) {

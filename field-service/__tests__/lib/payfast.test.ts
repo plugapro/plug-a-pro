@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   generateSignature,
   buildCheckoutPayload,
+  getPayfastConfig,
   verifyItn,
   parseItnAmountCents,
   type PayfastConfig,
@@ -204,6 +205,41 @@ describe('buildCheckoutPayload', () => {
   })
 })
 
+// ─── getPayfastConfig ─────────────────────────────────────────────────────────
+
+describe('getPayfastConfig', () => {
+  const ORIGINAL_ENV = process.env
+
+  beforeEach(() => {
+    process.env = {
+      ...ORIGINAL_ENV,
+      PAYFAST_MERCHANT_ID: 'merchant-id',
+      PAYFAST_MERCHANT_KEY: 'merchant-key',
+      PAYFAST_NOTIFY_URL: 'https://app.example.com/api/webhooks/payfast',
+      PAYFAST_RETURN_URL: 'https://app.example.com/provider/credits?topup=success',
+      PAYFAST_CANCEL_URL: 'https://app.example.com/provider/credits?topup=cancelled',
+    }
+    delete process.env.PAYFAST_SANDBOX
+    delete process.env.PAYFAST_PASSPHRASE
+  })
+
+  afterEach(() => {
+    process.env = ORIGINAL_ENV
+  })
+
+  it('fails closed in live mode when PAYFAST_PASSPHRASE is missing', () => {
+    expect(() => getPayfastConfig()).toThrow(/PAYFAST_PASSPHRASE/)
+  })
+
+  it('allows sandbox mode without a passphrase for local PSP testing', () => {
+    process.env.PAYFAST_SANDBOX = 'true'
+    expect(getPayfastConfig()).toMatchObject({
+      passphrase: '',
+      sandbox: true,
+    })
+  })
+})
+
 // ─── verifyItn ────────────────────────────────────────────────────────────────
 
 describe('verifyItn', () => {
@@ -234,6 +270,27 @@ describe('verifyItn', () => {
     const itn = buildValidItn()
     const result = verifyItn(itn, PAYFAST_LIVE_IP, config)
     expect(result).toEqual({ valid: true })
+  })
+
+  it('rejects a live ITN signed with an empty passphrase', () => {
+    const config = makeConfig({ sandbox: false, passphrase: '' })
+    const base: Omit<PayfastItnPayload, 'signature'> = {
+      m_payment_id: 'clxintent0001',
+      pf_payment_id: 'pf-empty-passphrase',
+      payment_status: 'COMPLETE',
+      item_name: 'Plug A Pro provider credits',
+      amount_gross: '100.00',
+      amount_fee: '5.00',
+      amount_net: '95.00',
+    }
+    const itn = {
+      ...base,
+      signature: generateSignature(base as Record<string, string>, ''),
+    } as PayfastItnPayload
+
+    const result = verifyItn(itn, PAYFAST_LIVE_IP, config)
+
+    expect(result).toMatchObject({ valid: false, reason: expect.stringContaining('PAYFAST_PASSPHRASE') })
   })
 
   it('returns invalid for a mismatched signature', () => {

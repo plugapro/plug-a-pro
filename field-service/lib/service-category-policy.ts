@@ -28,7 +28,74 @@ export type ServiceComplianceRequirement = {
   evidencePrompt: string
 }
 
+function standardRequirement(serviceKey: string, label: string): ServiceComplianceRequirement {
+  return {
+    serviceKey,
+    label,
+    riskLevel: 'standard',
+    certificationRecommended: false,
+    certificationRequiredForApproval: false,
+    blocksAutoApproval: false,
+    evidencePrompt: '',
+  }
+}
+
+function highRiskRequirement(
+  serviceKey: string,
+  label: string,
+  evidencePrompt: string,
+  certificationRequiredForApproval = false,
+): ServiceComplianceRequirement {
+  return {
+    serviceKey,
+    label,
+    riskLevel: 'high_risk',
+    certificationRecommended: true,
+    certificationRequiredForApproval,
+    blocksAutoApproval: true,
+    evidencePrompt,
+  }
+}
+
 export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRequirement> = {
+  plumbing: highRiskRequirement(
+    'plumbing',
+    'Plumbing',
+    'Plumbing work can affect water, drainage and geyser-adjacent systems. Please add any plumbing qualification, trade proof, references or insurance proof you have.',
+  ),
+  gas: highRiskRequirement(
+    'gas',
+    'Gas',
+    'Gas work is safety-sensitive. Please add any gas installer registration, licence, qualification or trade proof you have.',
+    true,
+  ),
+  geyser: highRiskRequirement(
+    'geyser',
+    'Geyser',
+    'Geyser work is safety-sensitive and may involve plumbing and electrical risk. Please add relevant certification, trade proof, references or insurance proof.',
+  ),
+  locksmith: highRiskRequirement(
+    'locksmith',
+    'Locksmith',
+    'Locksmith work affects property access and security. Please add trade proof, references, registration or identity-backed business proof.',
+  ),
+  appliance_repair: highRiskRequirement(
+    'appliance_repair',
+    'Appliance Repair',
+    'Appliance repair can involve electrical and product-safety risk. Please add relevant qualification, manufacturer training, references or trade proof.',
+  ),
+  painting: standardRequirement('painting', 'painting'),
+  garden: standardRequirement('garden', 'garden'),
+  handyman: standardRequirement('handyman', 'handyman'),
+  appliances: standardRequirement('appliances', 'appliances'),
+  diy: standardRequirement('diy', 'diy'),
+  cleaning: standardRequirement('cleaning', 'cleaning'),
+  tiling: standardRequirement('tiling', 'tiling'),
+  carpentry: standardRequirement('carpentry', 'carpentry'),
+  waterproofing: standardRequirement('waterproofing', 'waterproofing'),
+  plastering: standardRequirement('plastering', 'plastering'),
+  rhinoliting: standardRequirement('rhinoliting', 'rhinoliting'),
+  other: standardRequirement('other', 'other'),
   electrical: {
     serviceKey: 'electrical',
     label: 'Electrical',
@@ -49,26 +116,18 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     evidencePrompt:
       'Pest Control work may require certification. Please add any certificate, licence, qualification or reference proof you have.',
   },
-  air_conditioning: {
-    serviceKey: 'air_conditioning',
-    label: 'Air Conditioning',
-    riskLevel: 'high_risk',
-    certificationRecommended: true,
-    certificationRequiredForApproval: true,
-    blocksAutoApproval: true,
-    evidencePrompt:
-      'Air Conditioning and refrigeration work can require specialist proof. Please add any relevant certificate, licence or qualification you have.',
-  },
-  roofing: {
-    serviceKey: 'roofing',
-    label: 'Roofing',
-    riskLevel: 'high_risk',
-    certificationRecommended: true,
-    certificationRequiredForApproval: true,
-    blocksAutoApproval: true,
-    evidencePrompt:
-      'Roofing and working-at-heights jobs are higher risk. Please add proof of relevant experience, references or safety training if you have it.',
-  },
+  air_conditioning: highRiskRequirement(
+    'air_conditioning',
+    'Air Conditioning',
+    'Air Conditioning and refrigeration work can require specialist proof. Please add any relevant certificate, licence or qualification you have.',
+    true,
+  ),
+  roofing: highRiskRequirement(
+    'roofing',
+    'Roofing',
+    'Roofing and working-at-heights jobs are higher risk. Please add proof of relevant experience, references or safety training if you have it.',
+    true,
+  ),
 }
 
 export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
@@ -216,6 +275,9 @@ const COMPLIANCE_LABEL_TO_KEY: Record<string, string> = {
   'diy and assembly': 'diy',
   'pest control': 'pest_control',
   'air conditioning': 'air_conditioning',
+  'gas installation': 'gas',
+  'gas installations': 'gas',
+  'gas_installation': 'gas',
 }
 
 function normalizeCategory(input: string) {
@@ -286,11 +348,12 @@ export function getServiceComplianceRequirement(category: string): ServiceCompli
     SERVICE_COMPLIANCE_REQUIREMENTS[key] ?? {
       serviceKey: key,
       label: category.trim() || key,
-      riskLevel: 'standard',
-      certificationRecommended: false,
+      riskLevel: 'high_risk',
+      certificationRecommended: true,
       certificationRequiredForApproval: false,
-      blocksAutoApproval: false,
-      evidencePrompt: '',
+      blocksAutoApproval: true,
+      evidencePrompt:
+        'This service has not been classified yet. Please add trade proof, references or certification so our review team can assess it before approval.',
     }
   )
 }

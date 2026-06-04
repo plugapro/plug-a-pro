@@ -135,7 +135,7 @@ describe('getCategoryPolicy - tag alias resolution', () => {
 describe('service compliance requirements', () => {
   it('matches the approved provider-risk classification table', () => {
     const expected = [
-      ['Plumbing', 'plumbing', 'standard', false, false],
+      ['Plumbing', 'plumbing', 'high_risk', true, true],
       ['Painting', 'painting', 'standard', false, false],
       ['Garden & Landscaping', 'garden', 'standard', false, false],
       ['Handyman', 'handyman', 'standard', false, false],
@@ -177,12 +177,38 @@ describe('service compliance requirements', () => {
     expect(hasHighRiskServiceSelection(['Painting'])).toBe(false)
   })
 
-  it('leaves Plumbing standard so Lovemore-style applications can auto-approve', () => {
+  it('blocks Plumbing from auto-approval pending manual review', () => {
     const requirement = getServiceComplianceRequirement('Plumbing')
-    expect(requirement.riskLevel).toBe('standard')
-    expect(requirement.certificationRecommended).toBe(false)
-    expect(hasHighRiskServiceSelection(['Plumbing'])).toBe(false)
-    expect(hasAutoApprovalBlockingServiceSelection(['Plumbing'])).toBe(false)
+    expect(requirement.riskLevel).toBe('high_risk')
+    expect(requirement.certificationRecommended).toBe(true)
+    expect(hasHighRiskServiceSelection(['Plumbing'])).toBe(true)
+    expect(hasAutoApprovalBlockingServiceSelection(['Plumbing'])).toBe(true)
+  })
+
+  it('resolves Gas Installation to the explicit gas compliance rule', () => {
+    const requirement = getServiceComplianceRequirement('Gas Installation')
+    expect(requirement.serviceKey).toBe('gas')
+    expect(requirement.riskLevel).toBe('high_risk')
+    expect(requirement.certificationRequiredForApproval).toBe(true)
+    expect(hasAutoApprovalBlockingServiceSelection(['Gas Installation'])).toBe(true)
+  })
+
+  it.each(['gas', 'geyser', 'locksmith', 'appliance_repair'])(
+    'default-blocks specialist service %s from auto-approval',
+    (serviceKey) => {
+      const requirement = getServiceComplianceRequirement(serviceKey)
+      expect(requirement.riskLevel).toBe('high_risk')
+      expect(requirement.certificationRecommended).toBe(true)
+      expect(requirement.blocksAutoApproval).toBe(true)
+      expect(hasAutoApprovalBlockingServiceSelection([serviceKey])).toBe(true)
+    },
+  )
+
+  it('default-blocks unknown service tags from auto-approval until classified', () => {
+    const requirement = getServiceComplianceRequirement('new_specialist_trade')
+    expect(requirement.riskLevel).toBe('high_risk')
+    expect(requirement.blocksAutoApproval).toBe(true)
+    expect(hasAutoApprovalBlockingServiceSelection(['new_specialist_trade'])).toBe(true)
   })
 
   it('deduplicates multiple high-risk service selections', () => {

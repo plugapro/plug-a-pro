@@ -8,6 +8,12 @@ const tx = {
 
 vi.mock('../../lib/auth', () => ({
   getSession: vi.fn(),
+  providerAuthWhere: (session: { id: string; phone: string | null }) => ({
+    OR: [
+      { userId: session.id },
+      ...(session.phone ? [{ phone: session.phone, userId: null }] : []),
+    ],
+  }),
 }))
 
 vi.mock('../../lib/db', () => ({
@@ -66,6 +72,45 @@ describe('provider availability save feedback action', () => {
     expect(result).toEqual({
       ok: false,
       error: 'Enter a valid pause-until date and time.',
+    })
+  })
+
+  it('resolves the provider by authenticated user or phone, never metadata providerId', async () => {
+    const { getSession } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    ;(getSession as any).mockResolvedValue({
+      id: 'auth-user-1',
+      role: 'provider',
+      phone: '+27820000000',
+      providerId: 'forged-provider-id',
+    })
+    ;(db.provider.findFirst as any).mockResolvedValue({
+      id: 'own-provider-id',
+      active: true,
+      status: 'ACTIVE',
+      availableNow: true,
+      technicianAvailability: null,
+    })
+
+    const formData = new FormData()
+    formData.set('availabilityMode', 'PAUSED')
+    formData.set('pausedUntil', 'not-a-date')
+
+    const { saveProviderAvailabilityFromFormAction } = await import('../../app/(provider)/provider/availability/actions')
+    const result = await saveProviderAvailabilityFromFormAction(formData)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Enter a valid pause-until date and time.',
+    })
+    expect(db.provider.findFirst).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { userId: 'auth-user-1' },
+          { phone: '+27820000000', userId: null },
+        ],
+      },
+      include: { technicianAvailability: true },
     })
   })
 

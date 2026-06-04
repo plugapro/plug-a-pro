@@ -19,13 +19,13 @@ Three files need to be copied into the Next.js app source directory and deployed
 All of these should already be set. Double-check before deploying.
 
 ```
-PAYAT_CLIENT_ID=client-419d4859-fa0c-4e62-b7d5-6ff8916e707d
-PAYAT_CLIENT_SECRET=b2d8b4f8-c27a-4103-b30c-030b9ae46a4f
+PAYAT_CLIENT_ID=<set in Vercel>
+PAYAT_CLIENT_SECRET=<set in Vercel>
 PAYAT_TOKEN_URL=https://go.payat.co.za/yapi/oauth/token
 PAYAT_API_BASE=https://go.payat.co.za/yapi/v1
-PAYAT_MERCHANT_ID=418856
-PAYAT_MERCHANT_IDENTIFIER=plug-a-pro   ← confirm this with Pay@ support
-PAYAT_WEBHOOK_SECRET=bffebe00d0c1f4be102fe6d024388e0182fc3a1457962813313c12638008e25b
+PAYAT_MERCHANT_ID=<set in Vercel>
+PAYAT_MERCHANT_IDENTIFIER=<confirm with Pay@ support>
+PAYAT_WEBHOOK_SECRET=<set in Vercel>
 ```
 
 ---
