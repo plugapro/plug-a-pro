@@ -16,6 +16,10 @@ import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { getProviderWalletLedgerEntries } from '@/lib/provider-wallet'
 import {
+  summarizeWalletLedgerEntry,
+  walletLedgerSignedAmount,
+} from '@/lib/wallet-ledger-display'
+import {
   adjustProviderCreditsFormAction,
   reactivateProviderWalletFormAction,
   suspendProviderWalletFormAction,
@@ -79,12 +83,7 @@ function formatCurrency(amountCents: number) {
 }
 
 function ledgerAmount(entry: { entryType: string; amountCredits: number }) {
-  const signed = entry.entryType === 'LEAD_UNLOCK_DEBIT' ||
-    // Forward-compatible debit types; backing jobs are not implemented yet.
-    entry.entryType === 'PROMO_EXPIRY' ||
-    entry.entryType === 'PAYMENT_REVERSAL'
-    ? -Math.abs(entry.amountCredits)
-    : entry.amountCredits
+  const signed = walletLedgerSignedAmount(entry)
   return `${signed > 0 ? '+' : ''}${signed}`
 }
 
@@ -246,33 +245,48 @@ export default async function ProviderWalletDetailPage({
                       <th className="px-3 py-2 text-left font-medium">Type</th>
                       <th className="px-3 py-2 text-left font-medium">Credits</th>
                       <th className="px-3 py-2 text-left font-medium">Balance after</th>
-                      <th className="px-3 py-2 text-left font-medium">Reference</th>
+                      <th className="px-3 py-2 text-left font-medium">How applied</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {ledgerEntries.map((entry) => (
-                      <tr key={entry.id}>
-                        <td className="px-3 py-2 text-muted-foreground">{formatDate(entry.createdAt)}</td>
-                        <td className="px-3 py-2">
-                          <p className="font-medium">{cleanStatus(entry.entryType)}</p>
-                          <p className="text-xs text-muted-foreground">{ledgerCreditTypeLabel(entry)}</p>
-                        </td>
-                        <td className="px-3 py-2 font-medium">{ledgerAmount(entry)}</td>
-                        <td className="px-3 py-2">
-                          {entry.balanceAfterPaidCredits + entry.balanceAfterPromoCredits}
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            ({entry.balanceAfterPaidCredits} purchased, {entry.balanceAfterPromoCredits} promo)
-                          </span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <p className="font-mono text-xs">{entry.referenceType}</p>
-                          <p className="font-mono text-xs text-muted-foreground">{entry.referenceId}</p>
-                          {entry.description ? (
-                            <p className="mt-1 text-xs text-muted-foreground">{entry.description}</p>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))}
+                    {ledgerEntries.map((entry) => {
+                      const summary = summarizeWalletLedgerEntry(entry)
+                      return (
+                        <tr key={entry.id}>
+                          <td className="px-3 py-2 text-muted-foreground">{formatDate(entry.createdAt)}</td>
+                          <td className="px-3 py-2">
+                            <p className="font-medium">{cleanStatus(entry.entryType)}</p>
+                            <p className="text-xs text-muted-foreground">{ledgerCreditTypeLabel(entry)}</p>
+                          </td>
+                          <td className="px-3 py-2 font-medium">{ledgerAmount(entry)}</td>
+                          <td className="px-3 py-2">
+                            {entry.balanceAfterPaidCredits + entry.balanceAfterPromoCredits}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              ({entry.balanceAfterPaidCredits} purchased, {entry.balanceAfterPromoCredits} promo)
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <p className="font-medium">{summary.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {summary.referenceTypeLabel} · {summary.referenceHint}
+                            </p>
+                            {summary.details.length > 0 ? (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {summary.details.join(' · ')}
+                              </p>
+                            ) : null}
+                            {summary.paymentIntentHref ? (
+                              <Link
+                                href={summary.paymentIntentHref}
+                                className="text-xs text-primary underline-offset-4 hover:underline"
+                              >
+                                View payment intent
+                              </Link>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
