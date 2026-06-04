@@ -677,7 +677,8 @@ function logIdentityVerificationRoute(params: {
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
-  message: InboundMessage
+  message: InboundMessage,
+  options?: { senderProfileName?: string },
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = normalizePhone(message.from)
@@ -704,7 +705,7 @@ export async function processInboundMessage(
     return enqueuePendingCityTextMessage(phone, message)
   }
 
-  return enqueuePhoneMessage(phone, message)
+  return enqueuePhoneMessage(phone, message, options)
 }
 
 async function shouldBatchCustomerPhotoMessage(phone: string, message: InboundMessage): Promise<boolean> {
@@ -904,6 +905,7 @@ type MediaBatchOptions = {
   customerPhotoBatchSize?: number
   suppressEvidenceFileProgress?: boolean
   evidenceFileBatchSize?: number
+  senderProfileName?: string
 }
 
 type MessageBatchMode = 'customer_photo' | 'provider_evidence'
@@ -1018,6 +1020,9 @@ async function processInboundMessageUnlocked(
   let step: FlowStep = 'welcome'
   let data: ConversationData = {}
   let recoveryRole: JourneyUserRole = 'unknown'
+  // Surfaced from the webhook contacts payload; consumed in the reg_collect_name step (A.3/A.4).
+  const senderProfileName = options?.senderProfileName
+  void senderProfileName // suppress unused-variable until A.3 wires it into FlowContext
 
   try {
     if (reply.type === 'button_reply' && reply.id === META_DID_NOT_REQUEST_CODE_PAYLOAD) {

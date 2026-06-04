@@ -61,6 +61,15 @@ export async function POST(request: NextRequest) {
       for (const change of entry.changes ?? []) {
         const value = change.value
 
+        // WhatsApp Cloud API delivers per-batch contacts alongside messages.
+        // Build a lookup so the registration name step can offer a one-tap default.
+        const contactsByPhone = new Map<string, string | undefined>()
+        for (const contact of (value as { contacts?: Array<{ wa_id?: string; profile?: { name?: string } }> }).contacts ?? []) {
+          if (contact.wa_id) {
+            contactsByPhone.set(contact.wa_id, contact.profile?.name?.trim() || undefined)
+          }
+        }
+
         // Route inbound messages to conversation bot
         // Conversation is now unique on phone only - no businessId
         for (const message of value.messages ?? []) {
@@ -108,7 +117,9 @@ export async function POST(request: NextRequest) {
                 console.error(`[webhook/whatsapp:${reqId}] WAMID log error (will still process):`, createErr)
               }
 
-              await processInboundMessage(message)
+              await processInboundMessage(message, {
+                senderProfileName: contactsByPhone.get(message.from),
+              })
 
               // Mark as successfully processed for audit trail
               await db.inboundWhatsAppMessage
