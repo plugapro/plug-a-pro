@@ -31,6 +31,7 @@ import {
   handleRegistrationFlow,
   REGISTRATION_TRIGGERS,
 } from './whatsapp-flows/registration'
+import { matchDeeplink } from './whatsapp-deeplinks'
 import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
 import {
@@ -1186,6 +1187,37 @@ async function processInboundMessageUnlocked(
         messageId: message.id,
       })
       return
+    }
+
+    // Deep-link from a Meta ad CTA → jump straight into reg_start
+    // (skips the welcome menu). Flag-gated, so this is a no-op until flipped.
+    if (
+      conversation.flow === 'idle' &&
+      await isEnabled('whatsapp.registration.deeplink')
+    ) {
+      const deeplink = matchDeeplink(rawText)
+      if (deeplink === 'register_provider') {
+        console.info('[whatsapp-bot] deeplink matched', {
+          phone: maskedPhone(phone),
+          token: deeplink,
+          messageId: message.id,
+        })
+        const result = await handleRegistrationFlow({
+          phone,
+          flow: 'registration',
+          step: 'reg_collect_name',
+          reply: { type: 'button_reply', text: '', id: 'reg_start' },
+          data: {},
+          senderProfileName,
+        })
+        await saveConversation({
+          phone,
+          flow: 'registration',
+          step: result.nextStep,
+          data: result.nextData ?? {},
+        })
+        return
+      }
     }
 
     const isReset = RESET_KEYWORDS.some((k) => rawText === k || rawText.startsWith(k + ' '))
