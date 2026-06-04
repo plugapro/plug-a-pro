@@ -52,7 +52,8 @@ import {
 } from '../service-area-guard'
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
-import type { FlowContext, FlowResult } from './types'
+import { isEnabled } from '../flags'
+import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
 export const REGISTRATION_TRIGGERS = [
@@ -561,6 +562,33 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'reg_start' || ctx.step === 'reg_collect_name') {
+    const profileNameEnabled = await isEnabled('whatsapp.registration.name_profile_shortcut')
+    const profileName = ctx.senderProfileName?.trim()
+
+    if (profileNameEnabled && profileName && profileName.length >= 2) {
+      // Slice the first word to 10 chars so the button title `✅ Use "<name>"`
+      // (8 chars of fixed overhead) never exceeds WhatsApp's 20-char limit.
+      const firstWord = profileName.split(' ')[0].slice(0, 10)
+      await sendButtons(
+        ctx.phone,
+        [
+          "👤 Let's start with your name.",
+          '',
+          'We only use this to set up your provider profile — customers see your name once you accept a job.',
+          '',
+          `WhatsApp shows your name as *${profileName}*. Use that, or type a different one?`,
+        ].join('\n'),
+        [
+          { id: 'name_use_wa',          title: `✅ Use "${firstWord}"` },
+          { id: 'name_enter_different', title: '✏️ Enter a different name' },
+        ],
+      )
+      // Persist the offered name into conversation data so the next webhook
+      // (the button tap, which Meta does not re-deliver with contacts[]) can
+      // recover it via ctx.data.proposedName.
+      return { nextStep: 'reg_collect_skills', nextData: { proposedName: profileName } }
+    }
+
     await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
     return { nextStep: 'reg_collect_skills' }
   }
@@ -569,6 +597,35 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
+  // Profile-name shortcut: user tapped "Use <WA name>" on the name prompt.
+  // Source the name from ctx.data.proposedName (persisted when we showed the
+  // button) — ctx.senderProfileName is only present on the original text
+  // message, NOT on the button-reply webhook delivery.
+  if (ctx.reply.id === 'name_use_wa') {
+    const name = (ctx.data.proposedName ?? ctx.senderProfileName)?.trim()
+    if (!name || name.length < 2) {
+      // No persisted proposal — fall back to the standard text prompt rather
+      // than looping silently.
+      await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
+      return { nextStep: 'reg_collect_skills' }
+    }
+    if (ctx.data.verificationMethod || ctx.data.providerIdNumber || ctx.data.verificationDocAttachmentId) {
+      await sendText(ctx.phone, buildSkillPromptText(`👤 Name updated to *${name}*.\n\n🔧 *What type of work do you do?*`))
+      return { nextStep: 'reg_collect_skills_more', nextData: { name } }
+    }
+    await sendVerificationChoicePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_id', nextData: { name } }
+  }
+
+  // Profile-name shortcut: user tapped "Enter a different name" — re-prompt
+  // with the same full-name prompt the legacy path uses, so the user knows
+  // the platform expects two words (first + surname) up front.
+  if (ctx.reply.id === 'name_enter_different') {
+    await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
+    return { nextStep: 'reg_collect_skills' }
+  }
+
+  // Legacy text path
   const name = ctx.reply.text
   if (!isValidProviderFullName(name)) {
     await sendText(ctx.phone, providerFullNamePrompt('Please type your full name so we can review your provider application.'))
@@ -2193,19 +2250,46 @@ async function promptEvidenceAfterBio(
     return { nextStep: 'reg_collect_evidence', nextData: { ...nextData, highRiskServiceLabels: labels } }
   }
 
-  await sendButtons(
-    ctx.phone,
-    [
-      '🧾 Would you like to add an optional work note?',
-      '',
-      'Examples: past jobs, references or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
-    ].join('\n'),
-    [
-      { id: 'evidence_add', title: '✍🏽 Add proof note' },
-      { id: 'evidence_skip', title: '⏭️ Skip for now' },
-    ],
-  )
+  await sendEvidencePrompt(ctx.phone, ctx.data, nextData)
   return { nextStep: 'reg_collect_evidence', nextData }
+}
+
+/**
+ * Sends the evidence-step prompt for non-high-risk skill sets. When the
+ * whatsapp.registration.evidence_skip_primary flag is enabled, "Skip for now"
+ * is the primary (first) button so providers don't get stuck at the file-upload
+ * step. Falls back to the legacy ordering when the flag is off.
+ */
+export async function sendEvidencePrompt(
+  phone: string,
+  _data: ConversationData,
+  _nextData: Partial<ConversationData>,
+): Promise<void> {
+  const skipPrimary = await isEnabled('whatsapp.registration.evidence_skip_primary')
+
+  const buttons = skipPrimary
+    ? [
+        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+        { id: 'evidence_add',  title: '✍🏽 Add a work note' },
+      ]
+    : [
+        { id: 'evidence_add',  title: '✍🏽 Add proof note' },
+        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+      ]
+
+  const body = skipPrimary
+    ? [
+        '🧾 Optional: add a short work note or skip and continue.',
+        '',
+        'Most providers skip this step and add photos later. Notes here help our review team but are not required.',
+      ].join('\n')
+    : [
+        '🧾 Would you like to add an optional work note?',
+        '',
+        'Examples: past jobs, references or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
+      ].join('\n')
+
+  await sendButtons(phone, body, buttons)
 }
 
 async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {

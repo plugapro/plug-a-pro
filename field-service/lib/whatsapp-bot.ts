@@ -31,6 +31,8 @@ import {
   handleRegistrationFlow,
   REGISTRATION_TRIGGERS,
 } from './whatsapp-flows/registration'
+import { matchDeeplink } from './whatsapp-deeplinks'
+import { clearIncompatibleFlowData } from './whatsapp-conversation-state'
 import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
 import {
@@ -677,7 +679,8 @@ function logIdentityVerificationRoute(params: {
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
-  message: InboundMessage
+  message: InboundMessage,
+  options?: { senderProfileName?: string },
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = normalizePhone(message.from)
@@ -704,7 +707,7 @@ export async function processInboundMessage(
     return enqueuePendingCityTextMessage(phone, message)
   }
 
-  return enqueuePhoneMessage(phone, message)
+  return enqueuePhoneMessage(phone, message, options)
 }
 
 async function shouldBatchCustomerPhotoMessage(phone: string, message: InboundMessage): Promise<boolean> {
@@ -904,6 +907,7 @@ type MediaBatchOptions = {
   customerPhotoBatchSize?: number
   suppressEvidenceFileProgress?: boolean
   evidenceFileBatchSize?: number
+  senderProfileName?: string
 }
 
 type MessageBatchMode = 'customer_photo' | 'provider_evidence'
@@ -1018,6 +1022,9 @@ async function processInboundMessageUnlocked(
   let step: FlowStep = 'welcome'
   let data: ConversationData = {}
   let recoveryRole: JourneyUserRole = 'unknown'
+  // Surfaced from the webhook contacts payload and threaded into FlowContext
+  // so the registration name step can offer it as a one-tap default.
+  const senderProfileName = options?.senderProfileName
 
   try {
     if (reply.type === 'button_reply' && reply.id === META_DID_NOT_REQUEST_CODE_PAYLOAD) {
@@ -1181,6 +1188,30 @@ async function processInboundMessageUnlocked(
         messageId: message.id,
       })
       return
+    }
+
+    // Deep-link from a Meta ad CTA → set flow=registration, step=reg_start,
+    // then let the normal dispatcher run. This way the existing role-conflict
+    // guards (lines below) and startRegistration's duplicate-account check
+    // both still fire — we only override the routing decision, not the
+    // safety pipeline. Flag-gated, so this is a no-op until flipped.
+    let deeplinkMatched = false
+    if (
+      conversation.flow === 'idle' &&
+      await isEnabled('whatsapp.registration.deeplink')
+    ) {
+      const deeplink = matchDeeplink(rawText)
+      if (deeplink === 'register_provider') {
+        console.info('[whatsapp-bot] deeplink matched', {
+          phone: maskedPhone(phone),
+          token: deeplink,
+          messageId: message.id,
+        })
+        flow = 'registration'
+        step = 'reg_start'
+        data = {}
+        deeplinkMatched = true
+      }
     }
 
     const isReset = RESET_KEYWORDS.some((k) => rawText === k || rawText.startsWith(k + ' '))
@@ -2263,6 +2294,7 @@ async function processInboundMessageUnlocked(
       customerPhotoBatchSize: options?.customerPhotoBatchSize,
       suppressEvidenceFileProgress: options?.suppressEvidenceFileProgress,
       evidenceFileBatchSize: options?.evidenceFileBatchSize,
+      senderProfileName,
     }
     let result: { nextStep: FlowStep; nextData?: Partial<ConversationData> } = { nextStep: step, nextData: data }
 
@@ -2432,13 +2464,29 @@ async function saveConversation(params: {
   data: ConversationData
 }): Promise<void> {
   const cohort = createTestCohortContext(params.phone)
+  const stripEnabled = await isEnabled('whatsapp.flow_switch_data_clear')
+
+  // When the flow changes, optionally strip data keys that don't belong to the
+  // target flow. Prevents customer-flow keys polluting registration sessions.
+  let dataToWrite: ConversationData = params.data
+  if (stripEnabled) {
+    const existing = await db.conversation.findUnique({
+      where: { phone: params.phone },
+      select: { flow: true },
+    })
+    const existingFlow = (existing?.flow as FlowName | undefined) ?? null
+    if (existingFlow && existingFlow !== params.flow) {
+      dataToWrite = clearIncompatibleFlowData(existingFlow, params.flow, params.data)
+    }
+  }
+
   await db.conversation.upsert({
     where: { phone: params.phone },
     create: {
       phone: params.phone,
       flow: params.flow,
       step: params.step,
-      data: params.data as Prisma.InputJsonValue,
+      data: dataToWrite as Prisma.InputJsonValue,
       isTestSession: cohort.isTestUser,
       cohortName: cohort.cohortName,
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
@@ -2446,7 +2494,7 @@ async function saveConversation(params: {
     update: {
       flow: params.flow,
       step: params.step,
-      data: params.data as Prisma.InputJsonValue,
+      data: dataToWrite as Prisma.InputJsonValue,
       ...(cohort.isTestUser ? { isTestSession: true, cohortName: cohort.cohortName } : {}),
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
     },

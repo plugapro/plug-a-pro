@@ -35,6 +35,10 @@
       "schedule": "*/20 5-20 * * *"
     },
     {
+      "path": "/api/cron/session-warning",
+      "schedule": "*/5 5-20 * * *"
+    },
+    {
       "path": "/api/cron/provider-auto-approve",
       "schedule": "*/25 5-16 * * *"
     },

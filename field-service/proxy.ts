@@ -30,6 +30,7 @@ const PUBLIC_PATHS = [
   '/verify',               // customer OTP verification + identity link
   '/sign-up',              // customer sign-up route
   '/signup',               // customer sign-up alias → server-redirects to /sign-up
+  '/join',                 // flyer-friendly provider short URL → server-redirects to /provider-sign-in
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
   '/provider/terms',       // provider credit rules are linked before login/application
