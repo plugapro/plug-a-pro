@@ -1020,9 +1020,9 @@ async function processInboundMessageUnlocked(
   let step: FlowStep = 'welcome'
   let data: ConversationData = {}
   let recoveryRole: JourneyUserRole = 'unknown'
-  // Surfaced from the webhook contacts payload; consumed in the reg_collect_name step (A.3/A.4).
+  // Surfaced from the webhook contacts payload and threaded into FlowContext
+  // so the registration name step can offer it as a one-tap default.
   const senderProfileName = options?.senderProfileName
-  void senderProfileName // suppress unused-variable until A.3 wires it into FlowContext
 
   try {
     if (reply.type === 'button_reply' && reply.id === META_DID_NOT_REQUEST_CODE_PAYLOAD) {
@@ -2268,6 +2268,7 @@ async function processInboundMessageUnlocked(
       customerPhotoBatchSize: options?.customerPhotoBatchSize,
       suppressEvidenceFileProgress: options?.suppressEvidenceFileProgress,
       evidenceFileBatchSize: options?.evidenceFileBatchSize,
+      senderProfileName,
     }
     let result: { nextStep: FlowStep; nextData?: Partial<ConversationData> } = { nextStep: step, nextData: data }
 

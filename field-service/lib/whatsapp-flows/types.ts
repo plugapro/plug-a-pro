@@ -282,6 +282,12 @@ export interface FlowContext {
   customerPhotoBatchSize?: number
   suppressEvidenceFileProgress?: boolean  // true while processing earlier files in a provider evidence batch
   evidenceFileBatchSize?: number
+  /**
+   * The sender's WhatsApp profile name, lifted from `value.contacts[0].profile.name`
+   * on the inbound webhook payload. Used by the registration name step to offer
+   * a one-tap default. May be undefined if WhatsApp did not include it.
+   */
+  senderProfileName?: string
 }
 
 // What a flow handler returns
