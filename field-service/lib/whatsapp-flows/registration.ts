@@ -2237,19 +2237,46 @@ async function promptEvidenceAfterBio(
     return { nextStep: 'reg_collect_evidence', nextData: { ...nextData, highRiskServiceLabels: labels } }
   }
 
-  await sendButtons(
-    ctx.phone,
-    [
-      '🧾 Would you like to add an optional work note?',
-      '',
-      'Examples: past jobs, references or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
-    ].join('\n'),
-    [
-      { id: 'evidence_add', title: '✍🏽 Add proof note' },
-      { id: 'evidence_skip', title: '⏭️ Skip for now' },
-    ],
-  )
+  await sendEvidencePrompt(ctx.phone, ctx.data, nextData)
   return { nextStep: 'reg_collect_evidence', nextData }
+}
+
+/**
+ * Sends the evidence-step prompt for non-high-risk skill sets. When the
+ * whatsapp.registration.evidence_skip_primary flag is enabled, "Skip for now"
+ * is the primary (first) button so providers don't get stuck at the file-upload
+ * step. Falls back to the legacy ordering when the flag is off.
+ */
+export async function sendEvidencePrompt(
+  phone: string,
+  _data: ConversationData,
+  _nextData: Partial<ConversationData>,
+): Promise<void> {
+  const skipPrimary = await isEnabled('whatsapp.registration.evidence_skip_primary')
+
+  const buttons = skipPrimary
+    ? [
+        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+        { id: 'evidence_add',  title: '✍🏽 Add a work note' },
+      ]
+    : [
+        { id: 'evidence_add',  title: '✍🏽 Add proof note' },
+        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+      ]
+
+  const body = skipPrimary
+    ? [
+        '🧾 Optional: add a short work note or skip and continue.',
+        '',
+        'Most providers skip this step and add photos later. Notes here help our review team but are not required.',
+      ].join('\n')
+    : [
+        '🧾 Would you like to add an optional work note?',
+        '',
+        'Examples: past jobs, references or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
+      ].join('\n')
+
+  await sendButtons(phone, body, buttons)
 }
 
 async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
