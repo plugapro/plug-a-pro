@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockSendFollowUps, mockSummarizeRows } = vi.hoisted(() => ({
-  mockSendFollowUps: vi.fn(),
+const { mockListRows, mockSummarizeRows } = vi.hoisted(() => ({
+  mockListRows: vi.fn(),
   mockSummarizeRows: vi.fn(),
 }))
 
 vi.mock('@/lib/provider-onboarding-recovery', () => ({
-  sendProviderOnboardingRecoveryFollowUps: mockSendFollowUps,
+  listProviderOnboardingRecoveryRows: mockListRows,
   summarizeProviderOnboardingRecoveryRows: mockSummarizeRows,
 }))
 
@@ -22,14 +22,7 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
       { stage: 'evidence_upload', followUpStatus: 'due' },
       { stage: 'approved', followUpStatus: 'submitted_excluded' },
     ]
-    mockSendFollowUps.mockResolvedValue({
-      total: rows.length,
-      due: 1,
-      sent: 1,
-      skipped: 0,
-      errors: 0,
-      rows,
-    })
+    mockListRows.mockResolvedValue(rows)
     mockSummarizeRows.mockReturnValue({
       total: rows.length,
       byStage: { evidence_upload: 1, approved: 1 },
@@ -46,10 +39,10 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
     }))
 
     expect(res.status).toBe(401)
-    expect(mockSendFollowUps).not.toHaveBeenCalled()
+    expect(mockListRows).not.toHaveBeenCalled()
   })
 
-  it('sends due onboarding recovery nudges and reports the queue summary', async () => {
+  it('reports due onboarding recovery rows without sending WhatsApp messages', async () => {
     const res = await GET(new Request('http://localhost/api/cron/provider-onboarding-recovery', {
       headers: { authorization: `Bearer ${CRON_SECRET}` },
     }))
@@ -59,14 +52,12 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
     expect(res.status).toBe(200)
     expect(body).toMatchObject({
       ok: true,
-      mode: 'auto_nudge',
+      mode: 'manual_queue_only',
       total: 2,
       dueFollowUps: 1,
-      sent: 1,
-      skipped: 0,
-      errors: 0,
     })
-    expect(mockSendFollowUps).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+    expect(body).not.toHaveProperty('sent')
+    expect(mockListRows).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       now: expect.any(Date),
     }))
     expect(mockSummarizeRows).toHaveBeenCalledWith([

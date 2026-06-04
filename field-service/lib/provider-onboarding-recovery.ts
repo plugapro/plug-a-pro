@@ -381,6 +381,21 @@ export function buildProviderOnboardingRecoveryMessage(stage: ProviderOnboarding
   }
 }
 
+function safeProviderFirstName(providerName: string | null) {
+  const firstToken = providerName?.trim().split(/\s+/)[0] ?? ''
+  const firstName = firstToken.replace(/[^A-Za-z'-]/g, '')
+  return firstName.length >= 2 && firstName.length <= 40 ? firstName : null
+}
+
+export function personalizeProviderOnboardingRecoveryMessage(
+  message: string,
+  providerName: string | null,
+) {
+  const firstName = safeProviderFirstName(providerName)
+  if (!firstName) return message
+  return message.replace(/^Hi, this is Plug A Pro\./, `Hi ${firstName}, this is Plug A Pro.`)
+}
+
 // Kept for existing WhatsApp bot imports while recovery sending lives in this module.
 export const buildProviderOnboardingNudgeMessage = buildProviderOnboardingRecoveryMessage
 
@@ -538,6 +553,7 @@ export function buildProviderOnboardingRecoveryRowsFromSnapshots(input: BuildRow
       : null
     const templateKey = messageTemplateKeyForStage(stage)
     const skills = application?.skills?.length ? application.skills : stringArray(data.skills)
+    const providerName = application?.name ?? stringValue(data.name)
     const areas = application?.serviceAreas?.length
       ? application.serviceAreas
       : [
@@ -554,7 +570,7 @@ export function buildProviderOnboardingRecoveryRowsFromSnapshots(input: BuildRow
       safeUserRef,
       phoneMasked: maskPhone(stats.phone) ?? 'masked',
       phoneTail: phoneTail(stats.phone),
-      providerName: application?.name ?? stringValue(data.name),
+      providerName,
       serviceCategory: skills[0] ?? null,
       area: areas[0] ?? null,
       applicationStatus: application?.status ?? null,
@@ -569,7 +585,10 @@ export function buildProviderOnboardingRecoveryRowsFromSnapshots(input: BuildRow
       messageTypes: [...stats.messageTypes].sort(),
       recommendedAction: recommendedActionForStage(stage),
       messageTemplateKey: templateKey,
-      followUpMessage: buildProviderOnboardingRecoveryMessage(stage),
+      followUpMessage: personalizeProviderOnboardingRecoveryMessage(
+        buildProviderOnboardingRecoveryMessage(stage),
+        providerName,
+      ),
       followUpDueAt,
       followUpStatus: followUpStatusForRow({ now, stage, dueAt: followUpDueAt, outcomeEvents }),
       lastOutcomeStatus: outcomeStatus(lastOutcomeAfter.outcomeStatus) ?? 'not_contacted',

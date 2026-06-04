@@ -689,7 +689,7 @@ export default async function ApplicationsPage({
               WhatsApp onboarding recovery
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Recovery queue for recent inbound WhatsApp provider leads. Automatic nudges are audit-limited; phone numbers are masked.
+              Recovery queue for recent inbound WhatsApp provider leads. Operator follow-ups are audit-limited; phone numbers are masked.
             </p>
           </div>
           <p className="text-xs text-muted-foreground">

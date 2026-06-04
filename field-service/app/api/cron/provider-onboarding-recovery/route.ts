@@ -1,11 +1,12 @@
-// ─── Cron: Provider WhatsApp onboarding recovery nudges ─────────────────────
-// Sends audit-limited WhatsApp follow-ups for stalled provider onboarding rows
-// that are still inside the WhatsApp customer-care session window.
+// ─── Cron: Provider WhatsApp onboarding recovery queue ──────────────────────
+// Reports stalled provider onboarding rows for operator follow-up. This route
+// intentionally does not send WhatsApp messages; recovery sends must be run by
+// an operator through the audited ops script after reviewing the queue.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
-  sendProviderOnboardingRecoveryFollowUps,
+  listProviderOnboardingRecoveryRows,
   summarizeProviderOnboardingRecoveryRows,
 } from '@/lib/provider-onboarding-recovery'
 
@@ -21,27 +22,21 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date()
-    const recovery = await sendProviderOnboardingRecoveryFollowUps(db, { now })
-    const summary = summarizeProviderOnboardingRecoveryRows(recovery.rows)
+    const rows = await listProviderOnboardingRecoveryRows(db, { now })
+    const summary = summarizeProviderOnboardingRecoveryRows(rows)
     const durationMs = Date.now() - cronStart
     console.log(JSON.stringify({
       event: 'cron_complete',
       cron: cronName,
-      mode: 'auto_nudge',
+      mode: 'manual_queue_only',
       durationMs,
-      sent: recovery.sent,
-      skipped: recovery.skipped,
-      errors: recovery.errors,
       ...summary,
       timestamp: new Date().toISOString(),
     }))
     return NextResponse.json({
       ok: true,
-      mode: 'auto_nudge',
+      mode: 'manual_queue_only',
       durationMs,
-      sent: recovery.sent,
-      skipped: recovery.skipped,
-      errors: recovery.errors,
       ...summary,
     })
   } catch (error) {

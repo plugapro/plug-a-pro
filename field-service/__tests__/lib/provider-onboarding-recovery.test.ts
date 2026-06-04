@@ -4,6 +4,7 @@ import {
   buildProviderOnboardingRecoveryRowsFromSnapshots,
   classifyProviderOnboardingStage,
   listProviderOnboardingRecoveryRows,
+  personalizeProviderOnboardingRecoveryMessage,
   recordProviderOnboardingRecoveryOutcome,
   sendProviderOnboardingRecoveryFollowUps,
 } from '@/lib/provider-onboarding-recovery'
@@ -67,6 +68,15 @@ describe('provider onboarding recovery', () => {
     expect(message).toContain('I noticed you tapped register')
     expect(message).toContain('Example:\nThabo Mokoena')
     expect(message).not.toContain('ID')
+  })
+
+  it('personalizes recovery messages from already captured provider names only', () => {
+    const message = buildProviderOnboardingRecoveryMessage('evidence_upload')
+
+    expect(personalizeProviderOnboardingRecoveryMessage(message, 'Victor Panavanhu'))
+      .toContain('Hi Victor, this is Plug A Pro.')
+    expect(personalizeProviderOnboardingRecoveryMessage(message, null))
+      .toContain('Hi, this is Plug A Pro.')
   })
 
   it('builds masked, priority-ordered rows from current inbound WhatsApp users', () => {
