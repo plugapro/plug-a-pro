@@ -34,8 +34,17 @@ export const OPS_CRUD_FEATURE_FLAGS = [
   'ops.v2.closeOut',
 ] as const satisfies readonly FeatureFlagKey[]
 
+export const WHATSAPP_REGISTRATION_FRICTION_FLAGS = [
+  'whatsapp.registration.name_profile_shortcut',
+  'whatsapp.registration.deeplink',
+  'whatsapp.registration.evidence_skip_primary',
+  'whatsapp.flow_switch_data_clear',
+  'whatsapp.session_prewarning',
+] as const satisfies readonly FeatureFlagKey[]
+
 export const FEATURE_FLAG_GROUPS = {
   'ops-crud': OPS_CRUD_FEATURE_FLAGS,
+  'whatsapp-registration-friction': WHATSAPP_REGISTRATION_FRICTION_FLAGS,
 } as const satisfies Record<string, readonly FeatureFlagKey[]>
 
 export type FeatureFlagGroup = keyof typeof FEATURE_FLAG_GROUPS
