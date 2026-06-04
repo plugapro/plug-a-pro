@@ -41,6 +41,7 @@ function assertOutcomeStatus(raw: string | null): ProviderOnboardingRecoveryOutc
     'technical_issue',
     'no_response',
     'duplicate_or_invalid',
+    'skipped',
   ] as const
   if (allowed.includes(raw as ProviderOnboardingRecoveryOutcomeStatus)) {
     return raw as ProviderOnboardingRecoveryOutcomeStatus

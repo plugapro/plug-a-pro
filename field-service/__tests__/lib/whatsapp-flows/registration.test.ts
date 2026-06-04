@@ -1551,6 +1551,9 @@ describe('syncProviderRecord - phone normalization', () => {
   it('normalizePhone: converts South African local format 0xx to E.164 +27xx', () => {
     expect(normalizePhone('0821234567')).toBe('+27821234567')
     expect(normalizePhone('+27821234567')).toBe('+27821234567')
+    expect(normalizePhone('0027821234567')).toBe('+27821234567')
+    expect(normalizePhone('071 234 5678')).toBe('+27712345678')
+    expect(normalizePhone('071-234-5678')).toBe('+27712345678')
     expect(normalizePhone('+27 82 123 4567')).toBe('+27821234567')
     expect(normalizePhone('+27-82-123-4567')).toBe('+27821234567')
   })

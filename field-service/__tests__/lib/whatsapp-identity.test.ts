@@ -12,7 +12,7 @@ vi.mock('@/lib/db', () => ({
 }))
 
 import { db } from '@/lib/db'
-import { normalizePhone } from '@/lib/utils'
+import { normalizePhone, phoneLookupVariants } from '@/lib/utils'
 import { resolveWhatsAppIdentity } from '@/lib/whatsapp-identity'
 
 describe('WhatsApp identity resolution', () => {
@@ -29,10 +29,22 @@ describe('WhatsApp identity resolution', () => {
     ['0821234567', '+27821234567'],
     ['823035070', '+27823035070'],
     ['27821234567', '+27821234567'],
+    ['0027821234567', '+27821234567'],
+    ['071 234 5678', '+27712345678'],
+    ['071-234-5678', '+27712345678'],
     ['+27821234567', '+27821234567'],
     ['whatsapp:+27821234567', '+27821234567'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizePhone(input)).toBe(expected)
+  })
+
+  it('builds lookup variants for canonical and legacy stored phone formats', () => {
+    expect(phoneLookupVariants('0027821234567')).toEqual(expect.arrayContaining([
+      '+27821234567',
+      '27821234567',
+      '0821234567',
+      '0027821234567',
+    ]))
   })
 
   it('returns customer for an existing customer number', async () => {

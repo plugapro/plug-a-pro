@@ -1,5 +1,5 @@
 import { db } from './db'
-import { normalizePhone } from './utils'
+import { normalizePhone, phoneLookupVariants as buildPhoneLookupVariants } from './utils'
 import { maskPhone } from './support-diagnostics'
 
 export type WhatsAppIdentityRole =
@@ -59,12 +59,7 @@ export type WhatsAppIdentity = {
 }
 
 export function phoneLookupVariants(phone: string) {
-  const normalized = normalizePhone(phone)
-  const digits = normalized.replace(/\D/g, '')
-  const local = digits.startsWith('27') ? `0${digits.slice(2)}` : null
-  return Array.from(
-    new Set([normalized, digits ? `+${digits}` : null, digits || null, local].filter(Boolean) as string[]),
-  )
+  return buildPhoneLookupVariants(phone)
 }
 
 function displayFirstName(name: string | null | undefined) {

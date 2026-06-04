@@ -1,12 +1,12 @@
 // ─── Cron: Provider WhatsApp onboarding recovery queue ──────────────────────
-// Reports stalled provider onboarding rows for operator follow-up. This route
-// intentionally does not send WhatsApp messages; recovery sends must be run by
-// an operator through the audited ops script after reviewing the queue.
+// Sends audited, stage-specific recovery nudges for stalled provider onboarding
+// rows. Add ?dryRun=1 to inspect the current queue without sending messages.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
   listProviderOnboardingRecoveryRows,
+  sendProviderOnboardingRecoveryFollowUps,
   summarizeProviderOnboardingRecoveryRows,
 } from '@/lib/provider-onboarding-recovery'
 
@@ -22,21 +22,35 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date()
-    const rows = await listProviderOnboardingRecoveryRows(db, { now })
+    const url = new URL(request.url)
+    const dryRun = url.searchParams.get('dryRun') === '1' || url.searchParams.get('dryRun') === 'true'
+    const result = dryRun
+      ? null
+      : await sendProviderOnboardingRecoveryFollowUps(db, { now })
+    const rows = result?.rows ?? await listProviderOnboardingRecoveryRows(db, { now })
     const summary = summarizeProviderOnboardingRecoveryRows(rows)
     const durationMs = Date.now() - cronStart
     console.log(JSON.stringify({
       event: 'cron_complete',
       cron: cronName,
-      mode: 'manual_queue_only',
+      mode: dryRun ? 'dry_run' : 'automated_nudges',
       durationMs,
+      sent: result?.sent ?? 0,
+      skipped: result?.skipped ?? 0,
+      errors: result?.errors ?? 0,
       ...summary,
       timestamp: new Date().toISOString(),
     }))
     return NextResponse.json({
       ok: true,
-      mode: 'manual_queue_only',
+      mode: dryRun ? 'dry_run' : 'automated_nudges',
       durationMs,
+      sent: result?.sent ?? 0,
+      skipped: result?.skipped ?? 0,
+      errors: result?.errors ?? 0,
+      sentRefs: result?.sentRefs ?? [],
+      skippedRefs: result?.skippedRefs ?? [],
+      errorRefs: result?.errorRefs ?? [],
       ...summary,
     })
   } catch (error) {
