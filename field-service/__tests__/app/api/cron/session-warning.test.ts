@@ -4,7 +4,7 @@ vi.mock('@/lib/db', () => ({
   db: {
     conversation: {
       findMany: vi.fn(),
-      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      update: vi.fn().mockResolvedValue({}),
     },
     customer: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -29,15 +29,15 @@ import { sendTemplate } from '@/lib/whatsapp'
 import { isEnabled } from '@/lib/flags'
 
 const findManyMock = vi.mocked(db.conversation.findMany)
-const updateManyMock = vi.mocked(db.conversation.updateMany)
+const updateMock = vi.mocked(db.conversation.update)
 const sendTemplateMock = vi.mocked(sendTemplate)
 const isEnabledMock = vi.mocked(isEnabled)
 
 describe('GET /api/cron/session-warning', () => {
   beforeEach(() => {
     findManyMock.mockReset()
-    updateManyMock.mockReset()
-    updateManyMock.mockResolvedValue({ count: 1 })
+    updateMock.mockReset()
+    updateMock.mockResolvedValue({} as unknown as Awaited<ReturnType<typeof db.conversation.update>>)
     sendTemplateMock.mockClear()
     sendTemplateMock.mockResolvedValue(undefined as unknown as string)
     isEnabledMock.mockResolvedValue(true)
@@ -74,15 +74,39 @@ describe('GET /api/cron/session-warning', () => {
     )
   })
 
-  it('skips sessions where the atomic claim race is lost', async () => {
-    updateManyMock.mockResolvedValueOnce({ count: 0 })
+  it('marks the session as warned via data.prewarningSentAt (does NOT touch timeoutNotifiedAt)', async () => {
+    findManyMock.mockResolvedValueOnce([
+      {
+        id: 'c1',
+        phone: '+27820000003',
+        flow: 'registration',
+        step: 'reg_collect_skills',
+        data: { name: 'Lebo' },
+      } as unknown as Awaited<ReturnType<typeof db.conversation.findMany>>[number],
+    ])
+
+    const req = new Request('http://x/api/cron/session-warning', {
+      headers: { authorization: 'Bearer test-secret' },
+    })
+    await GET(req)
+    expect(updateMock).toHaveBeenCalledTimes(1)
+    const [call] = updateMock.mock.calls
+    const args = call[0] as { where: { id: string }; data: { data: Record<string, unknown> } }
+    expect(args.where.id).toBe('c1')
+    expect(args.data.data.prewarningSentAt).toEqual(expect.any(String))
+    expect(args.data.data.name).toBe('Lebo')
+    // critical: does NOT set timeoutNotifiedAt — that field belongs to session-timeout cron
+    expect(args.data).not.toHaveProperty('timeoutNotifiedAt')
+  })
+
+  it('skips sessions already marked with data.prewarningSentAt', async () => {
     findManyMock.mockResolvedValueOnce([
       {
         id: 'c2',
         phone: '+27820000004',
         flow: 'registration',
         step: 'reg_collect_name',
-        data: {},
+        data: { prewarningSentAt: new Date().toISOString() },
       } as unknown as Awaited<ReturnType<typeof db.conversation.findMany>>[number],
     ])
     const req = new Request('http://x/api/cron/session-warning', {
@@ -90,6 +114,7 @@ describe('GET /api/cron/session-warning', () => {
     })
     await GET(req)
     expect(sendTemplateMock).not.toHaveBeenCalled()
+    expect(updateMock).not.toHaveBeenCalled()
   })
 
   it('does nothing when the flag is disabled', async () => {

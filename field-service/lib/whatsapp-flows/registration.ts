@@ -566,6 +566,9 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
     const profileName = ctx.senderProfileName?.trim()
 
     if (profileNameEnabled && profileName && profileName.length >= 2) {
+      // Slice the first word to 10 chars so the button title `✅ Use "<name>"`
+      // (8 chars of fixed overhead) never exceeds WhatsApp's 20-char limit.
+      const firstWord = profileName.split(' ')[0].slice(0, 10)
       await sendButtons(
         ctx.phone,
         [
@@ -576,11 +579,14 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
           `WhatsApp shows your name as *${profileName}*. Use that, or type a different one?`,
         ].join('\n'),
         [
-          { id: 'name_use_wa',          title: `✅ Use "${profileName.split(' ')[0].slice(0, 18)}"` },
+          { id: 'name_use_wa',          title: `✅ Use "${firstWord}"` },
           { id: 'name_enter_different', title: '✏️ Enter a different name' },
         ],
       )
-      return { nextStep: 'reg_collect_skills' }
+      // Persist the offered name into conversation data so the next webhook
+      // (the button tap, which Meta does not re-deliver with contacts[]) can
+      // recover it via ctx.data.proposedName.
+      return { nextStep: 'reg_collect_skills', nextData: { proposedName: profileName } }
     }
 
     await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
@@ -591,11 +597,16 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
-  // Profile-name shortcut: user tapped "Use <WA name>" on the name prompt
+  // Profile-name shortcut: user tapped "Use <WA name>" on the name prompt.
+  // Source the name from ctx.data.proposedName (persisted when we showed the
+  // button) — ctx.senderProfileName is only present on the original text
+  // message, NOT on the button-reply webhook delivery.
   if (ctx.reply.id === 'name_use_wa') {
-    const name = ctx.senderProfileName?.trim()
+    const name = (ctx.data.proposedName ?? ctx.senderProfileName)?.trim()
     if (!name || name.length < 2) {
-      await sendText(ctx.phone, 'Please type your full name (at least 2 characters).')
+      // No persisted proposal — fall back to the standard text prompt rather
+      // than looping silently.
+      await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
       return { nextStep: 'reg_collect_skills' }
     }
     if (ctx.data.verificationMethod || ctx.data.providerIdNumber || ctx.data.verificationDocAttachmentId) {
@@ -606,9 +617,11 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_id', nextData: { name } }
   }
 
-  // Profile-name shortcut: user tapped "Enter a different name" — re-prompt with bare text question
+  // Profile-name shortcut: user tapped "Enter a different name" — re-prompt
+  // with the same full-name prompt the legacy path uses, so the user knows
+  // the platform expects two words (first + surname) up front.
   if (ctx.reply.id === 'name_enter_different') {
-    await sendText(ctx.phone, '👤 Type your name and send it as a message.')
+    await sendText(ctx.phone, providerFullNamePrompt('👤 Please type your full name.'))
     return { nextStep: 'reg_collect_skills' }
   }
 

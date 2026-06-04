@@ -182,6 +182,18 @@ export interface ConversationData {
 
   // Registration
   name?: string
+  /**
+   * The WhatsApp profile name we offered via the name_profile_shortcut button.
+   * Persisted across the webhook boundary so the subsequent name_use_wa tap
+   * can save it (Meta does not re-deliver the contacts payload on interactive
+   * replies).
+   */
+  proposedName?: string
+  /**
+   * Timestamp set by the session-warning cron when it sends the pre-expiry
+   * "continue where you left off" template. Used for cron dedupe.
+   */
+  prewarningSentAt?: string
   providerEmail?: string
   providerIdNumber?: string
   verificationMethod?: 'id_number' | 'documents' | 'skipped'

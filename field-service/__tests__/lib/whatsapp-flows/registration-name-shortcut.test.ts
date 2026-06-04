@@ -2,6 +2,10 @@
 // When the whatsapp.registration.name_profile_shortcut flag is enabled and
 // the WhatsApp profile name is available on the inbound payload, the bot
 // offers a one-tap "Use <WA name>" button instead of asking for free text.
+//
+// Critical contract: the offered name is persisted into ctx.data.proposedName
+// when the buttons are shown, so the subsequent button-tap webhook (which
+// Meta delivers WITHOUT the contacts payload) can recover it.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -60,13 +64,40 @@ describe('reg_collect_name profile-name shortcut', () => {
     )
   })
 
+  it('persists the offered name into ctx.data.proposedName so the button tap can recover it', async () => {
+    const result = await handleRegistrationFlow(ctx())
+    expect(result.nextStep).toBe('reg_collect_skills')
+    expect(result.nextData?.proposedName).toBe('Lebogang Mafoko')
+  })
+
+  it('caps the button title at WhatsApp\'s 20-char interactive button limit', async () => {
+    await handleRegistrationFlow(ctx({ senderProfileName: 'Thandolwethu Mokoena' }))
+    const [, , buttons] = sendButtonsMock.mock.calls[0]
+    const useButton = buttons.find((b: { id: string }) => b.id === 'name_use_wa')
+    expect(useButton).toBeDefined()
+    expect(useButton!.title.length).toBeLessThanOrEqual(20)
+  })
+
   it('falls back to the legacy text prompt when no profile name is available', async () => {
     await handleRegistrationFlow(ctx({ senderProfileName: undefined }))
     expect(sendTextMock).toHaveBeenCalledWith('+27820000001', expect.stringMatching(/name/i))
     expect(sendButtonsMock).not.toHaveBeenCalled()
   })
 
-  it('saves the chosen profile name and advances to verification when name_use_wa is tapped', async () => {
+  it('recovers the proposed name from ctx.data when name_use_wa is tapped (button-reply has no senderProfileName)', async () => {
+    const result = await handleRegistrationFlow(
+      ctx({
+        step: 'reg_collect_skills',
+        reply: { type: 'button_reply', text: '', id: 'name_use_wa' },
+        data: { proposedName: 'Lebogang Mafoko' },
+        senderProfileName: undefined, // simulates Meta omitting contacts on button-reply delivery
+      }),
+    )
+    expect(result.nextStep).toBe('reg_collect_id')
+    expect(result.nextData?.name).toBe('Lebogang Mafoko')
+  })
+
+  it('also accepts senderProfileName as a fallback when proposedName is somehow absent', async () => {
     const result = await handleRegistrationFlow(
       ctx({
         step: 'reg_collect_skills',
@@ -78,7 +109,20 @@ describe('reg_collect_name profile-name shortcut', () => {
     expect(result.nextData?.name).toBe('Lebogang Mafoko')
   })
 
-  it('re-prompts as a text question when name_enter_different is tapped', async () => {
+  it('falls back to the full-name prompt when name_use_wa is tapped but no name source is available', async () => {
+    const result = await handleRegistrationFlow(
+      ctx({
+        step: 'reg_collect_skills',
+        reply: { type: 'button_reply', text: '', id: 'name_use_wa' },
+        data: {},
+        senderProfileName: undefined,
+      }),
+    )
+    expect(result.nextStep).toBe('reg_collect_skills')
+    expect(sendTextMock).toHaveBeenCalledWith('+27820000001', expect.stringMatching(/full name/i))
+  })
+
+  it('re-prompts with the full-name format when name_enter_different is tapped (so the user knows the constraint)', async () => {
     const result = await handleRegistrationFlow(
       ctx({
         step: 'reg_collect_skills',
@@ -86,6 +130,6 @@ describe('reg_collect_name profile-name shortcut', () => {
       }),
     )
     expect(result.nextStep).toBe('reg_collect_skills')
-    expect(sendTextMock).toHaveBeenCalledWith('+27820000001', expect.stringMatching(/type your name/i))
+    expect(sendTextMock).toHaveBeenCalledWith('+27820000001', expect.stringMatching(/full name/i))
   })
 })

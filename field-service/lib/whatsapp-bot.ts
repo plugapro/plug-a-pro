@@ -1190,8 +1190,12 @@ async function processInboundMessageUnlocked(
       return
     }
 
-    // Deep-link from a Meta ad CTA → jump straight into reg_start
-    // (skips the welcome menu). Flag-gated, so this is a no-op until flipped.
+    // Deep-link from a Meta ad CTA → set flow=registration, step=reg_start,
+    // then let the normal dispatcher run. This way the existing role-conflict
+    // guards (lines below) and startRegistration's duplicate-account check
+    // both still fire — we only override the routing decision, not the
+    // safety pipeline. Flag-gated, so this is a no-op until flipped.
+    let deeplinkMatched = false
     if (
       conversation.flow === 'idle' &&
       await isEnabled('whatsapp.registration.deeplink')
@@ -1203,21 +1207,10 @@ async function processInboundMessageUnlocked(
           token: deeplink,
           messageId: message.id,
         })
-        const result = await handleRegistrationFlow({
-          phone,
-          flow: 'registration',
-          step: 'reg_collect_name',
-          reply: { type: 'button_reply', text: '', id: 'reg_start' },
-          data: {},
-          senderProfileName,
-        })
-        await saveConversation({
-          phone,
-          flow: 'registration',
-          step: result.nextStep,
-          data: result.nextData ?? {},
-        })
-        return
+        flow = 'registration'
+        step = 'reg_start'
+        data = {}
+        deeplinkMatched = true
       }
     }
 

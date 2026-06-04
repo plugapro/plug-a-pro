@@ -6,15 +6,27 @@ import type { FlowName, ConversationData } from './whatsapp-flows/types'
  * whitelist rather than relying on the strip.
  *
  * Keep this in sync with what each flow handler actually reads from ctx.data.
+ *
+ * The SHARED set is included in every flow because these keys are cross-flow
+ * by design (recovery markers, customer identity, cron dedupe state).
  */
+const SHARED_KEYS = [
+  // Cross-flow conflict markers used by provider-onboarding-recovery
+  'flowConflictDetectedAt', 'flowConflictFrom', 'flowConflictTo',
+  // Cron dedupe state — session-warning writes this on the data JSON
+  'prewarningSentAt',
+  // Customer identity is needed across flows for greeting + recovery copy
+  'customerName', 'customerId',
+] as const
+
 const FLOW_DATA_WHITELIST: Record<FlowName, ReadonlyArray<string>> = {
   idle: [
-    // Continuation hints used by the welcome handler to recognise a returning user
-    // mid-task. Keep small.
-    'customerName',
+    ...SHARED_KEYS,
   ],
   registration: [
-    'name', 'skills', 'serviceAreas', 'province', 'provinceKey', 'regionId', 'regionLabel',
+    ...SHARED_KEYS,
+    'name', 'proposedName',
+    'skills', 'serviceAreas', 'province', 'provinceKey', 'regionId', 'regionLabel',
     'selectedRegionLabels', 'selectedRegionStatus', 'selectedSuburbLabels', 'locationNodeIds',
     'city', 'cityId', 'suburbPage', 'suburbPageTotal', 'suburbOptions',
     'verificationMethod', 'providerIdNumber',
@@ -33,6 +45,7 @@ const FLOW_DATA_WHITELIST: Record<FlowName, ReadonlyArray<string>> = {
     'applicationId',
   ],
   job_request: [
+    ...SHARED_KEYS,
     'category', 'selectedCategory',
     'addressLine1', 'addressStreet', 'addressSuburb', 'addressCity', 'addressRawSuburb',
     'addressLocationNodeId',
@@ -47,13 +60,22 @@ const FLOW_DATA_WHITELIST: Record<FlowName, ReadonlyArray<string>> = {
     'providerPreference', 'budgetPreference', 'verifiedOnly',
     'photoAttachmentIds', 'photoMediaIds',
     'jobRequestId', 'matchId',
-    'customerName', 'customerId',
   ],
-  status: ['customerName', 'customerId'],
-  help: [],
-  reschedule: ['rescheduleBookingId', 'rescheduleReason', 'customerName', 'customerId'],
-  cancel: ['customerName', 'customerId'],
+  status: [
+    ...SHARED_KEYS,
+  ],
+  help: [
+    ...SHARED_KEYS,
+  ],
+  reschedule: [
+    ...SHARED_KEYS,
+    'rescheduleBookingId', 'rescheduleReason',
+  ],
+  cancel: [
+    ...SHARED_KEYS,
+  ],
   provider_journey: [
+    ...SHARED_KEYS,
     'availableNow', 'activeJobId', 'statusUpdate',
     'identityVerificationId', 'identityVerificationBasis',
     'identityVerificationDocumentKinds', 'identityVerificationDocumentIds',
@@ -64,8 +86,14 @@ const FLOW_DATA_WHITELIST: Record<FlowName, ReadonlyArray<string>> = {
     'providerOpportunityNegotiable',
     'pendingCompletionJobId', 'providerCompletionStep', 'providerCompletionNote',
   ],
-  provider_job: ['pendingJobId', 'declineReason', 'activeJobId'],
-  alt_slot: ['altSlotJobRequestId', 'altSlotPendingProviderId'],
+  provider_job: [
+    ...SHARED_KEYS,
+    'pendingJobId', 'declineReason', 'activeJobId',
+  ],
+  alt_slot: [
+    ...SHARED_KEYS,
+    'altSlotJobRequestId', 'altSlotPendingProviderId',
+  ],
 }
 
 export function clearIncompatibleFlowData(

@@ -22,7 +22,9 @@ describe('clearIncompatibleFlowData', () => {
       customerName: 'Lebo',
       name: 'Lebo',
     })
-    expect(out).toEqual({ name: 'Lebo' })
+    // customerName is shared (kept), name is in registration whitelist (kept).
+    // Everything else is job_request-only and stripped.
+    expect(out).toEqual({ name: 'Lebo', customerName: 'Lebo' })
   })
 
   it('strips registration-flow keys when switching to job_request', () => {
@@ -36,11 +38,33 @@ describe('clearIncompatibleFlowData', () => {
     expect(out).toEqual({ category: 'plumbing' })
   })
 
-  it('returns an empty object when target flow has no whitelist intersection', () => {
+  it('preserves shared keys (flowConflict markers, customerName, prewarningSentAt) across all flow transitions', () => {
+    const shared = {
+      flowConflictDetectedAt: '2026-06-04T00:00:00Z',
+      flowConflictFrom: 'registration' as FlowName,
+      flowConflictTo: 'job_request' as FlowName,
+      customerName: 'Lebo',
+      customerId: 'cust_1',
+      prewarningSentAt: '2026-06-04T00:01:00Z',
+    }
+    const out = clearIncompatibleFlowData('registration', 'job_request', {
+      ...shared,
+      name: 'Lebo',          // registration-only, gets stripped
+      category: 'plumbing',  // job_request-only, kept
+    })
+    expect(out).toMatchObject(shared)
+    expect(out).toMatchObject({ category: 'plumbing' })
+    expect((out as Record<string, unknown>).name).toBeUndefined()
+  })
+
+  it('keeps only shared keys when transitioning to a flow with no flow-specific overlap', () => {
     const out = clearIncompatibleFlowData('registration', 'idle' as FlowName, {
       name: 'Lebo', skills: ['plumbing'],
+      customerName: 'Lebo',
+      flowConflictDetectedAt: '2026-06-04T00:00:00Z',
     })
-    expect(out).toEqual({})
+    // name + skills are registration-only; customerName + flowConflictDetectedAt are shared.
+    expect(out).toEqual({ customerName: 'Lebo', flowConflictDetectedAt: '2026-06-04T00:00:00Z' })
   })
 
   it('is a no-op when input is empty', () => {
