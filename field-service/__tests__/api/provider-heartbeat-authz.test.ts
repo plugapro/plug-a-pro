@@ -5,6 +5,7 @@ const { mockRequireProviderApi, mockPromptCustomersForNewProviderAvailability, m
   mockPromptCustomersForNewProviderAvailability: vi.fn(),
   mockDb: {
     provider: {
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
     },
@@ -16,6 +17,12 @@ const { mockRequireProviderApi, mockPromptCustomersForNewProviderAvailability, m
 }))
 
 vi.mock('@/lib/auth', () => ({
+  providerAuthWhere: (session: { id: string; phone: string | null }) => ({
+    OR: [
+      { userId: session.id },
+      ...(session.phone ? [{ phone: session.phone, userId: null }] : []),
+    ],
+  }),
   requireProviderApi: mockRequireProviderApi,
 }))
 
@@ -34,8 +41,9 @@ describe('POST /api/provider/heartbeat authorization', () => {
       id: 'auth-user-1',
       role: 'provider',
       providerId: 'forged-provider-id',
+      phone: '+27820000000',
     })
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'own-provider-id' })
+    mockDb.provider.findFirst.mockResolvedValue({ id: 'own-provider-id' })
     mockDb.providerLiveStatus.findUnique.mockResolvedValue(null)
     mockDb.providerLiveStatus.upsert.mockResolvedValue({})
     mockDb.provider.update.mockResolvedValue({})
@@ -51,10 +59,20 @@ describe('POST /api/provider/heartbeat authorization', () => {
     }))
 
     expect(res.status).toBe(204)
-    expect(mockDb.provider.findUnique).toHaveBeenCalledWith({
-      where: { userId: 'auth-user-1' },
+    expect(mockDb.provider.findFirst).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { userId: 'auth-user-1' },
+          { phone: '+27820000000', userId: null },
+        ],
+      },
       select: { id: true },
     })
+    expect(mockDb.provider.findFirst).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'forged-provider-id' }),
+      }),
+    )
     expect(mockDb.providerLiveStatus.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { providerId: 'own-provider-id' },
@@ -70,7 +88,7 @@ describe('POST /api/provider/heartbeat authorization', () => {
   })
 
   it('rejects the heartbeat when the authenticated user has no provider row', async () => {
-    mockDb.provider.findUnique.mockResolvedValue(null)
+    mockDb.provider.findFirst.mockResolvedValue(null)
 
     const { POST } = await import('@/app/api/provider/heartbeat/route')
     const res = await POST(new Request('http://localhost/api/provider/heartbeat', {

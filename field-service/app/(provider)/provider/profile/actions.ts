@@ -1,13 +1,13 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { getSession } from '@/lib/auth'
+import { getSession, providerAuthWhere } from '@/lib/auth'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { syncProviderSkills } from '@/lib/provider-skills'
 
 type ActionResult = { ok: true; message: string } | { ok: false; error: string }
 
-type ProviderSession = { userId: string; providerId?: string }
+type ProviderSession = { id: string; phone: string | null }
 
 const SCHEDULE_DAYS = [0, 1, 2, 3, 4, 5, 6] as const
 
@@ -37,8 +37,8 @@ async function resolveProviderSession(): Promise<ProviderSession | null> {
   if (!session || session.role !== 'provider') return null
 
   return {
-    userId: session.id,
-    providerId: session.providerId,
+    id: session.id,
+    phone: session.phone,
   }
 }
 
@@ -49,12 +49,7 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
   }
 
   const provider = await db.provider.findFirst({
-    where: {
-      OR: [
-        { userId: session.userId },
-        ...(session.providerId ? [{ id: session.providerId }] : []),
-      ],
-    },
+    where: providerAuthWhere(session),
     select: { id: true, active: true, status: true },
   })
 

@@ -6,7 +6,7 @@
 // A provider is considered OFFLINE if last_heartbeat_at < now() - 10 minutes.
 
 import { NextResponse } from 'next/server'
-import { requireProviderApi } from '@/lib/auth'
+import { providerAuthWhere, requireProviderApi } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { MATCHING_CONFIG } from '@/lib/matching/config'
 import { promptCustomersForNewProviderAvailability } from '@/lib/matching/customer-recontact'
@@ -15,8 +15,8 @@ export async function POST(request: Request) {
   const sessionOrError = await requireProviderApi()
   if (sessionOrError instanceof Response) return sessionOrError
   const session = sessionOrError
-  const provider = await db.provider.findUnique({
-    where: { userId: session.id },
+  const provider = await db.provider.findFirst({
+    where: providerAuthWhere(session),
     select: { id: true },
   })
   if (!provider) {

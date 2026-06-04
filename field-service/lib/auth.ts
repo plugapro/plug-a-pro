@@ -29,6 +29,17 @@ export interface AdminAuthUser extends AuthUser {
   adminUserId: string | null
 }
 
+type ProviderAuthLookupInput = Pick<AuthUser, 'id' | 'phone'>
+
+export function providerAuthWhere(session: ProviderAuthLookupInput) {
+  return {
+    OR: [
+      { userId: session.id },
+      ...(session.phone ? [{ phone: session.phone, userId: null }] : []),
+    ],
+  }
+}
+
 // ─── Supabase client (server-side, per-request) ───────────────────────────────
 
 function createServerClient() {
@@ -97,12 +108,7 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
 
     const { db } = await import('./db')
     const provider = await db.provider.findFirst({
-      where: {
-        OR: [
-          { userId: user.id },
-          ...(phone ? [{ phone, userId: null }] : []),
-        ],
-      },
+      where: providerAuthWhere({ id: user.id, phone }),
       select: {
         id: true,
         userId: true,
@@ -232,12 +238,7 @@ export async function requireProviderApi(): Promise<Response | AuthUser> {
 
   const { db } = await import('./db')
   const provider = await db.provider.findFirst({
-    where: {
-      OR: [
-        { userId: session.id },
-        ...(session.providerId ? [{ id: session.providerId }] : []),
-      ],
-    },
+    where: providerAuthWhere(session),
     select: {
       id: true,
       userId: true,
@@ -261,12 +262,7 @@ export async function requireProvider(): Promise<AuthUser> {
   }
   const { db } = await import('./db')
   const provider = await db.provider.findFirst({
-    where: {
-      OR: [
-        { userId: session.id },
-        ...(session.providerId ? [{ id: session.providerId }] : []),
-      ],
-    },
+    where: providerAuthWhere(session),
     select: {
       id: true,
       userId: true,
