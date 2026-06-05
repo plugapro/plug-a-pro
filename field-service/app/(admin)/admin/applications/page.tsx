@@ -26,6 +26,8 @@ import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-c
 import {
   listProviderOnboardingRecoveryRows,
   providerOnboardingStageLabel,
+  sendProviderOnboardingRecoveryFollowUpForRef,
+  sendProviderOnboardingRecoveryFollowUps,
 } from '@/lib/provider-onboarding-recovery'
 import { PROVIDER_PROFILE_PHOTO_LABEL } from '@/lib/provider-attachment-labels'
 import {
@@ -83,6 +85,10 @@ const CategoryApprovalSchema = z.object({
 
 const MoreInfoApplicationSchema = ApplicationActionSchema.extend({
   reason: z.string().min(5),
+})
+
+const SendRecoveryRowSchema = z.object({
+  safeUserRef: z.string().min(1),
 })
 
 const providerApplicationSelect = {
@@ -618,6 +624,128 @@ async function releaseApplication(formData: FormData) {
   revalidatePath('/admin')
 }
 
+// ─── Recovery follow-up actions ──────────────────────────────────────────────
+// Send the suggested WhatsApp message to a single stalled provider row, or run
+// the batch path the cron uses. External HTTP send is intentionally kept outside
+// any DB transaction; an AdminAuditEvent is written separately for the operator
+// action and recordProviderOnboardingRecoveryOutcome still writes an AuditLog
+// row from inside sendProviderOnboardingRecoveryFollowUp[ForRef].
+
+const RECOVERY_BANNER_BY_SKIP_REASON: Record<
+  'not_found' | 'no_phone' | 'outside_session_window' | 'already_claimed' | 'no_recovery_for_stage',
+  string
+> = {
+  not_found: 'recovery_skipped_not_found',
+  no_phone: 'recovery_skipped_no_phone',
+  outside_session_window: 'recovery_skipped_window',
+  already_claimed: 'recovery_skipped_locked',
+  no_recovery_for_stage: 'recovery_skipped_stage',
+}
+
+async function sendRecoveryNudgeForRow(formData: FormData) {
+  'use server'
+  const parsed = SendRecoveryRowSchema.safeParse({
+    safeUserRef: String(formData.get('safeUserRef') ?? ''),
+  })
+  if (!parsed.success) return
+  const { safeUserRef } = parsed.data
+
+  const admin = await requireAdmin()
+  if (!APPLICATION_ROLES.includes(admin.adminRole as (typeof APPLICATION_ROLES)[number])) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+  const flagOn = await isEnabled(FLAG, { userId: admin.id })
+  if (!flagOn) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  let bannerCode = 'recovery_failed'
+  try {
+    const result = await sendProviderOnboardingRecoveryFollowUpForRef(db, {
+      safeUserRef,
+      actorId: `operator:${admin.id}`,
+    })
+    if (result.outcome === 'sent') {
+      bannerCode = 'recovery_sent'
+    } else if (result.outcome === 'skipped') {
+      bannerCode = RECOVERY_BANNER_BY_SKIP_REASON[result.reason]
+    }
+
+    await db.adminAuditEvent.create({
+      data: {
+        adminId: admin.id,
+        action: 'provider_onboarding_recovery.manual_send',
+        entityType: 'ProviderOnboardingRecovery',
+        entityId: safeUserRef,
+        after: {
+          outcome: result.outcome,
+          ...(result.outcome === 'skipped' ? { reason: result.reason } : {}),
+          ...(result.outcome === 'sent' ? { stage: result.row.stage, messageTemplateKey: result.row.messageTemplateKey } : {}),
+        },
+      },
+    }).catch((error) => {
+      console.error('[admin/applications] manual recovery audit write failed', { safeUserRef, error })
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] sendRecoveryNudgeForRow failed', { safeUserRef, error })
+  }
+
+  revalidatePath('/admin/applications')
+  redirect(`/admin/applications?message=${bannerCode}`)
+}
+
+async function sendAllDueRecoveryNudges() {
+  'use server'
+  const admin = await requireAdmin()
+  if (!APPLICATION_ROLES.includes(admin.adminRole as (typeof APPLICATION_ROLES)[number])) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+  const flagOn = await isEnabled(FLAG, { userId: admin.id })
+  if (!flagOn) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  try {
+    const result = await sendProviderOnboardingRecoveryFollowUps(db, {
+      actorId: `operator:${admin.id}`,
+    })
+    await db.adminAuditEvent.create({
+      data: {
+        adminId: admin.id,
+        action: 'provider_onboarding_recovery.batch_send',
+        entityType: 'ProviderOnboardingRecovery',
+        entityId: `batch:${admin.id}:${Date.now()}`,
+        after: {
+          total: result.total,
+          due: result.due,
+          sent: result.sent,
+          skipped: result.skipped,
+          errors: result.errors,
+        },
+      },
+    }).catch((error) => {
+      console.error('[admin/applications] batch recovery audit write failed', { error })
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] sendAllDueRecoveryNudges failed', { error })
+    revalidatePath('/admin/applications')
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  revalidatePath('/admin/applications')
+  redirect('/admin/applications?message=recovery_batch_dispatched')
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -692,9 +820,16 @@ export default async function ApplicationsPage({
               Recovery queue for recent inbound WhatsApp provider leads. Automatic nudges are audit-limited; phone numbers are masked.
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Stages: {RECOVERY_STAGE_KEYS.join(', ')}
-          </p>
+          <div className="flex flex-col items-end gap-2">
+            <p className="text-xs text-muted-foreground">
+              Stages: {RECOVERY_STAGE_KEYS.join(', ')}
+            </p>
+            <form action={sendAllDueRecoveryNudges}>
+              <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                Send all due now
+              </SubmitButton>
+            </form>
+          </div>
         </div>
 
         <Card>
@@ -764,6 +899,14 @@ export default async function ApplicationsPage({
                       <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-2 font-sans text-xs leading-relaxed text-muted-foreground">
                         {row.followUpMessage}
                       </pre>
+                      {row.messageTemplateKey !== 'submitted_no_recovery' ? (
+                        <form action={sendRecoveryNudgeForRow} className="mt-2">
+                          <input type="hidden" name="safeUserRef" value={row.safeUserRef} />
+                          <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                            Send now
+                          </SubmitButton>
+                        </form>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))}
