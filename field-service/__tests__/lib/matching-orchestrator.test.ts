@@ -6,16 +6,21 @@ const {
   mockDb,
   mockLoadMatchingJobRequest,
   mockLoadCandidatePool,
+  mockCountProvidersInLocation,
   mockFilterEligibleProviders,
   mockScoreAndRankCandidates,
   mockReserveBestProviderAtomically,
   mockDispatchMatchLead,
   mockEmitMatchEvent,
   mockIsEnabled,
+  mockExpireOpenJobRequest,
+  mockNotifyExpiredJobParties,
+  mockFindAlternativeSlots,
+  mockInitiateAlternativeSlotNegotiation,
 } = vi.hoisted(() => ({
   mockDb: {
     assignmentHold: { findFirst: vi.fn() },
-    dispatchDecision: { create: vi.fn(), update: vi.fn() },
+    dispatchDecision: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     matchAttempt: { create: vi.fn(), update: vi.fn() },
     jobRequest: {
       update: vi.fn(),
@@ -26,23 +31,37 @@ const {
   },
   mockLoadMatchingJobRequest: vi.fn(),
   mockLoadCandidatePool: vi.fn(),
+  mockCountProvidersInLocation: vi.fn(),
   mockFilterEligibleProviders: vi.fn(),
   mockScoreAndRankCandidates: vi.fn(),
   mockReserveBestProviderAtomically: vi.fn(),
   mockDispatchMatchLead: vi.fn(),
   mockEmitMatchEvent: vi.fn(),
   mockIsEnabled: vi.fn(),
+  mockExpireOpenJobRequest: vi.fn(),
+  mockNotifyExpiredJobParties: vi.fn(),
+  mockFindAlternativeSlots: vi.fn(),
+  mockInitiateAlternativeSlotNegotiation: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/matching/service', () => ({ loadMatchingJobRequest: mockLoadMatchingJobRequest }))
-vi.mock('../../lib/matching/candidate-pool', () => ({ loadCandidatePool: mockLoadCandidatePool }))
+vi.mock('../../lib/matching/candidate-pool', () => ({
+  loadCandidatePool: mockLoadCandidatePool,
+  countProvidersInLocation: mockCountProvidersInLocation,
+}))
 vi.mock('../../lib/matching/filter', () => ({ filterEligibleProviders: mockFilterEligibleProviders }))
 vi.mock('../../lib/matching/scoring', () => ({ scoreAndRankCandidates: mockScoreAndRankCandidates }))
 vi.mock('../../lib/matching/reservation', () => ({ reserveBestProviderAtomically: mockReserveBestProviderAtomically }))
 vi.mock('../../lib/matching/dispatch', () => ({ dispatchMatchLead: mockDispatchMatchLead }))
 vi.mock('../../lib/matching/events', () => ({ emitMatchEvent: mockEmitMatchEvent }))
 vi.mock('../../lib/flags', () => ({ isEnabled: mockIsEnabled }))
+vi.mock('@/lib/job-requests/expire-job-request', () => ({ expireOpenJobRequest: mockExpireOpenJobRequest }))
+vi.mock('../../lib/matching/customer-recontact', () => ({ notifyExpiredJobParties: mockNotifyExpiredJobParties }))
+vi.mock('../../lib/matching/alternative-slots', () => ({ findAlternativeSlots: mockFindAlternativeSlots }))
+vi.mock('../../lib/whatsapp-flows/alternative-slot', () => ({
+  initiateAlternativeSlotNegotiation: mockInitiateAlternativeSlotNegotiation,
+}))
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -130,6 +149,11 @@ describe('orchestrateMatch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockIsEnabled.mockResolvedValue(false)
+    mockCountProvidersInLocation.mockResolvedValue(0)
+    mockExpireOpenJobRequest.mockResolvedValue({ transitioned: true })
+    mockNotifyExpiredJobParties.mockResolvedValue({ customerNotified: true, providerNotified: false })
+    mockFindAlternativeSlots.mockReturnValue([])
+    mockInitiateAlternativeSlotNegotiation.mockResolvedValue(undefined)
     mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => unknown) => fn(mockDb as any))
     mockDb.assignmentHold.findFirst.mockResolvedValue(null)
     // Default: no declined leads for this job request
@@ -137,6 +161,7 @@ describe('orchestrateMatch', () => {
     // Default: no alt-slot negotiation in flight
     mockDb.jobRequest.findUnique.mockResolvedValue({ altSlotNegotiationSentAt: null, altSlotNegotiationOutcome: null })
     mockDb.dispatchDecision.create.mockResolvedValue({ id: 'decision-1' })
+    mockDb.dispatchDecision.findFirst.mockResolvedValue(null)
     mockDb.dispatchDecision.update.mockResolvedValue({})
     mockDb.matchAttempt.create.mockImplementation(async ({ data }: any) => ({
       id: `attempt-${data.providerId}`,
@@ -187,7 +212,9 @@ describe('orchestrateMatch', () => {
   })
 
   it('returns SKIP when an active hold already exists', async () => {
-    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest({
+      customer: { id: 'customer-1', name: 'Test Customer', phone: '+27820000000' },
+    }))
     mockDb.assignmentHold.findFirst.mockResolvedValue({ id: 'existing-hold' })
 
     const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
@@ -207,25 +234,118 @@ describe('orchestrateMatch', () => {
 
     expect(result.status).toBe('NO_MATCH')
     expect((result as any).consideredCount).toBe(0)
+    expect((result as any).failureClass).toBe('EMPTY_POOL')
+    expect((result as any).primaryReason).toBe('NO_LOCATION_MATCH')
     expect(mockDispatchMatchLead).not.toHaveBeenCalled()
   })
 
-  it('returns NO_MATCH when all candidates are filtered out', async () => {
+  it('first structural NO_MATCH records policy fields, expires the request, and notifies parties', async () => {
     const candidate = makeCandidate()
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue([candidate])
     mockFilterEligibleProviders.mockResolvedValue({
       eligible: [],
-      filteredOut: [{ providerId: 'provider-1', filteredReasonCodes: ['NO_AREA_COVERAGE'] }],
+      filteredOut: [{ providerId: 'provider-1', filteredReasonCodes: ['MISSING_REQUIRED_SKILL'] }],
       nearMiss: [],
     })
 
     const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
 
     expect(result.status).toBe('NO_MATCH')
+    expect((result as any).failureClass).toBe('STRUCTURAL')
+    expect((result as any).primaryReason).toBe('MISSING_REQUIRED_SKILL')
     expect((result as any).filteredOut).toHaveLength(1)
+    expect(mockDb.dispatchDecision.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          failureClass: 'STRUCTURAL',
+          primaryReason: 'MISSING_REQUIRED_SKILL',
+        }),
+      }),
+    )
+    expect(mockExpireOpenJobRequest).toHaveBeenCalledWith('job-1', 'MISSING_REQUIRED_SKILL')
+    expect(mockNotifyExpiredJobParties).toHaveBeenCalledWith({ jobRequestId: 'job-1' })
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'match.no_providers' })
+    )
+  })
+
+  it('does not immediately expire a structural-looking NO_MATCH when a prior decision exists', async () => {
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest({ latestDispatchDecisionId: 'decision-old' }))
+    mockLoadCandidatePool.mockResolvedValue([makeCandidate('p1')])
+    mockFilterEligibleProviders.mockResolvedValue({
+      eligible: [],
+      filteredOut: [{ providerId: 'p1', filteredReasonCodes: ['OUTSIDE_SERVICE_AREA'] }],
+      nearMiss: [],
+    })
+
+    const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
+
+    expect(result.status).toBe('NO_MATCH')
+    expect((result as any).failureClass).toBe('STRUCTURAL')
+    expect(mockExpireOpenJobRequest).not.toHaveBeenCalled()
+    expect(mockNotifyExpiredJobParties).not.toHaveBeenCalled()
+  })
+
+  it('does not immediately expire a structural-looking NO_MATCH when a prior row exists without the latest pointer', async () => {
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest({ latestDispatchDecisionId: null }))
+    mockDb.dispatchDecision.findFirst.mockResolvedValue({ id: 'decision-old' })
+    mockLoadCandidatePool.mockResolvedValue([makeCandidate('p1')])
+    mockFilterEligibleProviders.mockResolvedValue({
+      eligible: [],
+      filteredOut: [{ providerId: 'p1', filteredReasonCodes: ['OUTSIDE_SERVICE_AREA'] }],
+      nearMiss: [],
+    })
+
+    const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
+
+    expect(result.status).toBe('NO_MATCH')
+    expect((result as any).failureClass).toBe('STRUCTURAL')
+    expect(mockDb.dispatchDecision.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { jobRequestId: 'job-1' },
+        select: { id: true },
+      }),
+    )
+    expect(mockExpireOpenJobRequest).not.toHaveBeenCalled()
+    expect(mockNotifyExpiredJobParties).not.toHaveBeenCalled()
+  })
+
+  it('keeps near-miss NO_MATCH retryable and can start alternative-slot negotiation', async () => {
+    const nearMissProvider = makeCandidate('provider-near') as any
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest({
+      customer: { id: 'customer-1', name: 'Test Customer', phone: '+27820000000' },
+    }))
+    mockLoadCandidatePool.mockResolvedValue([nearMissProvider])
+    mockFilterEligibleProviders.mockResolvedValue({
+      eligible: [],
+      filteredOut: [{ providerId: 'provider-near', filteredReasonCodes: ['SCHEDULE_CONFLICT'] }],
+      nearMiss: [nearMissProvider],
+    })
+    mockFindAlternativeSlots.mockReturnValue([
+      {
+        slotKey: '2026-06-07:morning',
+        slotLabel: 'Sun 7 Jun - Morning',
+        band: 'morning',
+        probeStartUtc: '2026-06-07T05:00:00.000Z',
+        probeEndUtc: '2026-06-07T10:00:00.000Z',
+        providers: [{ id: 'provider-near', name: 'Alice', phone: '+27820000000', score: 0.8 }],
+      },
+    ])
+
+    const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
+
+    expect(result.status).toBe('ALT_SLOT_NEGOTIATION_SENT')
+    expect(mockExpireOpenJobRequest).not.toHaveBeenCalled()
+    expect(mockNotifyExpiredJobParties).not.toHaveBeenCalled()
+    expect(mockInitiateAlternativeSlotNegotiation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobRequestId: 'job-1',
+        dispatchDecisionId: 'decision-1',
+        slotOptions: expect.arrayContaining([
+          expect.objectContaining({ slotKey: '2026-06-07:morning' }),
+        ]),
+      }),
     )
   })
 
@@ -242,6 +362,10 @@ describe('orchestrateMatch', () => {
     const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
 
     expect(result.status).toBe('NO_MATCH')
+    expect((result as any).failureClass).toBe('TRANSIENT')
+    expect((result as any).primaryReason).toBe('RESERVATION_FAILED')
+    expect(mockExpireOpenJobRequest).not.toHaveBeenCalled()
+    expect(mockNotifyExpiredJobParties).not.toHaveBeenCalled()
     expect(mockReserveBestProviderAtomically).toHaveBeenCalledTimes(10)
     // Emits reservation.failed for each locked attempt
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(

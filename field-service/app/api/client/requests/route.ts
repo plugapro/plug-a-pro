@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
           : null
 
     const result = await createDraftRequest({
-      category: body.category ?? 'Plumbing',
+      category: body.category ?? 'plumbing',
       subcategory: body.subcategory ?? null,
       title: body.description?.slice(0, 80) ?? body.title ?? 'New request',
       description: body.description ?? '',

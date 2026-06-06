@@ -49,7 +49,9 @@ export function normalizeOtpPhoneNumber(
   const digits = stripped.replace(/\D/g, '')
   let nationalNumber = ''
 
-  if (stripped.startsWith('+')) {
+  if (digits.startsWith('0027')) {
+    nationalNumber = digits.slice(4)
+  } else if (stripped.startsWith('+')) {
     if (!stripped.startsWith('+27')) {
       return {
         ok: false,

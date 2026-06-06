@@ -506,6 +506,80 @@ export const TEMPLATES = {
       'Job accepted. Your credit has been applied and the customer details are now available in your job view.',
   },
 
+  // ─── Provider onboarding recovery templates ───────────────────────────────
+
+  provider_recovery_evidence: {
+    name: 'provider_recovery_evidence',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Outside-session recovery for providers stuck at evidence upload.',
+    // {{1}} provider first name (fall back to "there" if unknown)
+    example:
+      "Hi {{1}}, this is Plug A Pro. You're almost done with your provider registration. We still need your work photo or proof of service so we can finish reviewing your profile. Please reply here when you're ready and we'll help you complete it.",
+  },
+
+  provider_recovery_started_blocked: {
+    name: 'provider_recovery_started_blocked',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Outside-session recovery for providers who started registration and got blocked.',
+    // {{1}} provider first name (fall back to "there" if unknown)
+    example:
+      "Hi {{1}}, this is Plug A Pro. I can see you started your provider registration but didn't finish it. Please reply with your full name, the service you offer, and the area where you work, and we'll help you complete it.",
+  },
+
+  provider_recovery_no_name: {
+    name: 'provider_recovery_no_name',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Outside-session recovery for providers who tapped register without entering a name.',
+    // {{1}} provider first name (fall back to "there" if unknown)
+    example:
+      "Hi {{1}}, this is Plug A Pro. I noticed you tapped register but didn't complete your name. To continue your provider registration, please reply with your full name.",
+  },
+
+  provider_recovery_welcome_idle: {
+    name: 'provider_recovery_welcome_idle',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Outside-session recovery for idle provider prospects at welcome.',
+    // {{1}} provider first name (fall back to "there" if unknown)
+    example:
+      'Hi {{1}}, this is Plug A Pro. We help service providers get matched with job requests. To register as a provider, please reply REGISTER and we will help you complete your profile.',
+  },
+
+  provider_recovery_flow_conflict: {
+    name: 'provider_recovery_flow_conflict',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Outside-session recovery for WhatsApp sessions that entered the wrong flow.',
+    // {{1}} provider first name (fall back to "there" if unknown)
+    example:
+      'Hi {{1}}, this is Plug A Pro. It looks like your WhatsApp session may have gone into the wrong flow. Please reply 1 to register as a provider, or 2 to request a service from a provider.',
+  },
+
+  // ─── Provider registration friction-fix templates (2026-06-04) ─────────────
+
+  provider_registration_continue: {
+    name: 'provider_registration_continue',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent ~5 min before Conversation.expiresAt to rescue mid-flow registration sessions. The quick-reply button payload "reg_start" triggers the existing registration resume path.',
+    // {{1}} provider first name (fall back to "there" if unknown)
+    example:
+      "Hi {{1}}, you're almost done with your Plug A Pro provider application. Your progress is saved — tap below to pick up where you left off before the session times out.",
+  },
+
+  provider_evidence_followup: {
+    name: 'provider_evidence_followup',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent 24h after PENDING ProviderApplication submission, inviting the provider to add a work photo. UTILITY because it relates to the in-progress application.',
+    // {{1}} provider first name
+    example:
+      'Hi {{1}}, want to strengthen your Plug A Pro profile? Tap below to add one work photo. Skip is fine — we already have your application.',
+  },
+
 } as const
 
 export type TemplateName = keyof typeof TEMPLATES

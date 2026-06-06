@@ -141,7 +141,7 @@ describe('Registration cancel - summary step (reg_pending)', () => {
     expect(createCall.data.status).toBe('CANCELLED')
     expect(createCall.data.cancelledAt).toBeInstanceOf(Date)
     expect(createCall.data.name).toBe('Sipho Dlamini')
-    expect(createCall.data.skills).toEqual(['Plumbing'])
+    expect(createCall.data.skills).toEqual(['plumbing'])
     expect(result.nextStep).toBe('done')
   })
 

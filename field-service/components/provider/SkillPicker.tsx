@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { getPilotServiceCategories } from '@/lib/service-categories'
+import { getPilotServiceCategories, resolveServiceCategoryTag } from '@/lib/service-categories'
 
 const PILOT_OPTIONS = getPilotServiceCategories()
 
@@ -12,10 +12,13 @@ type Props = {
 export function SkillPicker({ initialSkillLabels }: Props) {
   const initialSelectedTags = useMemo(() => {
     const selected = new Set<string>()
+    const initialTags = new Set(
+      initialSkillLabels
+        .map((value) => resolveServiceCategoryTag(value))
+        .filter((value): value is string => Boolean(value)),
+    )
     for (const option of PILOT_OPTIONS) {
-      if (initialSkillLabels.includes(option.label)) {
-        selected.add(option.tag)
-      }
+      if (initialTags.has(option.tag)) selected.add(option.tag)
     }
     return selected
   }, [initialSkillLabels])

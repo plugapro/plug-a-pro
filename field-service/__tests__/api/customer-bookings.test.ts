@@ -120,6 +120,85 @@ describe('POST /api/customer/bookings', () => {
     }))
   })
 
+  it('canonicalizes label category input before provider lookup and request creation', async () => {
+    mockProviderFindFirst.mockResolvedValue({ id: 'provider-9' })
+
+    const formData = new FormData()
+    formData.set('category', 'Plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+    formData.set('preferredProviderId', 'provider-9')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockProviderFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({
+                providerCategories: {
+                  some: expect.objectContaining({ categorySlug: 'plumbing' }),
+                },
+              }),
+              expect.objectContaining({
+                AND: expect.arrayContaining([
+                  { providerCategories: { none: {} } },
+                  { skills: { has: 'plumbing' } },
+                ]),
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    }))
+    expect(mockCreateJobRequest).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'plumbing',
+      preferredProviderId: 'provider-9',
+    }))
+  })
+
+  it('returns 400 instead of throwing when category is missing', async () => {
+    const formData = new FormData()
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Missing required fields' })
+    expect(mockCreateJobRequest).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 instead of throwing when JSON category is null', async () => {
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        category: null,
+        title: 'Fix leaking pipe',
+        addressLine1: '12 Main Road',
+        locationNodeId: 'node-1',
+      }),
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Missing required fields' })
+    expect(mockCreateJobRequest).not.toHaveBeenCalled()
+  })
+
   it('respects customer photo safe-for-preview setting via boolean-string', async () => {
     const formData = new FormData()
     formData.set('category', 'plumbing')

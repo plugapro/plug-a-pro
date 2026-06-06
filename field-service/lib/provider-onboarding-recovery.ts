@@ -1,7 +1,13 @@
 import { createHash } from 'crypto'
 import type { Prisma, PrismaClient } from '@prisma/client'
+import type { TemplateName } from './messaging-templates'
+import {
+  buildRecoveryTemplateComponents,
+  recoveryTemplateNameForMessageKey,
+} from './provider-onboarding-recovery-template-config'
 import { maskPhone } from './support-diagnostics'
-import { normalizePhone } from './utils'
+import { normalizePhone, phoneLookupVariants } from './utils'
+import type { WhatsAppComponent } from './whatsapp'
 import { sendText as defaultSendText } from './whatsapp-interactive'
 
 export type ProviderOnboardingRecoveryStage =
@@ -29,14 +35,19 @@ export type ProviderOnboardingRecoveryOutcomeStatus =
   | 'technical_issue'
   | 'no_response'
   | 'duplicate_or_invalid'
+  | 'skipped'
 
 export type ProviderOnboardingRecoveryTemplateKey =
   | 'evidence_upload'
   | 'started_blocked'
+  | 'id_verification_stuck'
+  | 'skills_picker_stuck'
+  | 'location_picker_stuck'
   | 'register_started_no_name'
   | 'welcome_idle'
   | 'flow_conflict'
-  | 'submitted_no_recovery'
+  | 'submitted_pending'
+  | 'submitted_approved'
 
 export type ProviderOnboardingFollowUpStatus =
   | 'due'
@@ -131,6 +142,35 @@ type BuildRowsInput = {
 
 type SendTextFn = typeof defaultSendText
 
+export type SendTemplateFn = (params: {
+  to: string
+  template: TemplateName
+  components?: WhatsAppComponent[]
+  metadata?: Record<string, unknown>
+}) => Promise<string>
+
+export type ProviderOnboardingRecoverySendVia = 'session_text' | 'template'
+
+type RecoverySendSkipReason =
+  | 'no_phone'
+  | 'outside_session_window'
+  | 'already_claimed'
+  | 'no_recovery_for_stage'
+
+type AttemptRecoverySendOutcome =
+  | { outcome: 'sent'; via: ProviderOnboardingRecoverySendVia; row: ProviderOnboardingRecoveryRow }
+  | { outcome: 'skipped'; reason: RecoverySendSkipReason; row: ProviderOnboardingRecoveryRow }
+  | { outcome: 'error'; row: ProviderOnboardingRecoveryRow; error: unknown }
+
+export type ProviderOnboardingRecoverySingleSendResult =
+  | { outcome: 'sent'; via: ProviderOnboardingRecoverySendVia; row: ProviderOnboardingRecoveryRow }
+  | {
+      outcome: 'skipped'
+      reason: 'not_found' | RecoverySendSkipReason
+      row: ProviderOnboardingRecoveryRow | null
+    }
+  | { outcome: 'error'; row: ProviderOnboardingRecoveryRow; error: unknown }
+
 export type ProviderOnboardingRecoverySendResult = {
   total: number
   due: number
@@ -144,16 +184,16 @@ export type ProviderOnboardingRecoverySendResult = {
 }
 
 const STAGE_LABELS: Record<ProviderOnboardingRecoveryStage, string> = {
-  welcome_idle: 'Idle / welcome',
-  register_started_no_name: 'Register tapped, no name',
-  id_verification_started: 'ID verification fork',
-  skills_picker: 'Skills picker',
-  city_picker: 'City / location picker',
-  evidence_upload: 'Evidence upload stuck',
-  submitted: 'Submitted',
-  approved: 'Approved',
-  pending: 'Submitted pending',
-  flow_conflict: 'Flow conflict / job request mixup',
+  welcome_idle: 'Stuck at welcome',
+  register_started_no_name: 'Tapped Register but no name typed',
+  id_verification_started: 'Stuck at ID verification',
+  skills_picker: 'Stuck at skills picker',
+  city_picker: 'Stuck at city/location picker',
+  evidence_upload: 'Near finish: evidence upload',
+  submitted: 'Submitted: pending review',
+  approved: 'Submitted: approved',
+  pending: 'Submitted: pending review',
+  flow_conflict: 'Flow conflict: customer/provider mixup',
 }
 
 const OUTCOME_STATUSES: ReadonlySet<string> = new Set<ProviderOnboardingRecoveryOutcomeStatus>([
@@ -169,9 +209,10 @@ const OUTCOME_STATUSES: ReadonlySet<string> = new Set<ProviderOnboardingRecovery
   'technical_issue',
   'no_response',
   'duplicate_or_invalid',
+  'skipped',
 ])
 
-const WHATSAPP_RECOVERY_SESSION_WINDOW_MS = 23 * 60 * 60_000
+export const WHATSAPP_RECOVERY_SESSION_WINDOW_MS = 23 * 60 * 60_000
 const CONVERSATION_RECOVERY_LOCK = new Date(0)
 
 const CUSTOMER_FLOW_MARKERS = [
@@ -199,7 +240,7 @@ function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
 }
 
-function safeRefForPhone(phone: string) {
+export function safeRefForPhone(phone: string) {
   const normalizedPhone = normalizePhone(phone)
   return `wa_${createHash('sha256').update(normalizedPhone).digest('hex').slice(0, 10)}`
 }
@@ -287,98 +328,134 @@ export function recoveryPriorityLabel(priority: number) {
 
 export function messageTemplateKeyForStage(stage: ProviderOnboardingRecoveryStage): ProviderOnboardingRecoveryTemplateKey {
   if (stage === 'evidence_upload') return 'evidence_upload'
-  if (stage === 'id_verification_started' || stage === 'skills_picker' || stage === 'city_picker') return 'started_blocked'
+  if (stage === 'id_verification_started') return 'id_verification_stuck'
+  if (stage === 'skills_picker') return 'skills_picker_stuck'
+  if (stage === 'city_picker') return 'location_picker_stuck'
   if (stage === 'register_started_no_name') return 'register_started_no_name'
   if (stage === 'flow_conflict') return 'flow_conflict'
-  if (stage === 'pending' || stage === 'approved' || stage === 'submitted') return 'submitted_no_recovery'
+  if (stage === 'approved') return 'submitted_approved'
+  if (stage === 'pending' || stage === 'submitted') return 'submitted_pending'
   return 'welcome_idle'
 }
 
 export function recommendedActionForStage(stage: ProviderOnboardingRecoveryStage) {
-  switch (messageTemplateKeyForStage(stage)) {
-    case 'evidence_upload':
-      return 'Send the evidence upload message first. Ask for work proof only, not ID documents.'
-    case 'started_blocked':
-      return 'Ask for full name, service and work area, then help complete registration manually.'
-    case 'register_started_no_name':
-      return 'Ask for full name only and wait for the provider to reply.'
-    case 'flow_conflict':
-      return 'Clarify whether this person wants provider registration or customer service request.'
-    case 'submitted_no_recovery':
-      return 'Do not send a stall recovery message. Monitor review or approval state.'
-    default:
-      return 'Explain Plug A Pro simply and ask them to reply REGISTER.'
-  }
+  if (stage === 'welcome_idle') return 'Ask if they want to register as a service provider and offer help finishing the flow.'
+  if (stage === 'register_started_no_name') return 'Ask for full name and trade, then resume provider registration.'
+  if (stage === 'id_verification_started') return 'Guide them back to the secure registration or verification link; do not collect ID documents in WhatsApp.'
+  if (stage === 'skills_picker') return 'Ask for their main service category and help them choose it in the flow.'
+  if (stage === 'city_picker') return 'Ask for area/city and help them select the correct service area.'
+  if (stage === 'evidence_upload') return 'Prioritise this user; help them finish the evidence upload from the secure flow.'
+  if (stage === 'flow_conflict') return 'Confirm whether they are registering as a provider or requesting a customer service, then reset the session to the correct flow.'
+  if (stage === 'approved') return 'No recovery needed; confirm they know how to receive and respond to leads.'
+  return 'No sales follow-up needed; check review queue age and keep the provider informed.'
 }
 
 export function buildProviderOnboardingRecoveryMessage(stage: ProviderOnboardingRecoveryStage) {
-  switch (messageTemplateKeyForStage(stage)) {
+  switch (stage) {
     case 'evidence_upload':
       return [
-        'Hi, this is Plug A Pro.',
+        'Hi, you are almost done with your Plug A Pro registration.',
         '',
-        "You're almost done with your registration. We just need your work photo or proof of service so we can finish reviewing your profile.",
+        'The only thing still missing is the evidence upload step.',
         '',
-        'Please send a clear photo of your previous work, tools, business card, flyer, or anything that shows the service you provide.',
+        'Please go back to the secure registration link and upload the required evidence.',
         '',
-        "Once received, we'll complete your review.",
+        "If the upload is not working, send me a screenshot of the error and I'll help.",
       ].join('\n')
-    case 'started_blocked':
+    case 'id_verification_started':
       return [
-        'Hi, this is Plug A Pro.',
+        'Hi, you are already partway through your Plug A Pro registration.',
         '',
-        "I can see you started your registration but didn't finish it.",
+        'It looks like you got stuck at the verification step.',
         '',
-        'No stress. I can help you complete it here.',
+        'Please continue inside the secure registration link rather than sending ID documents here.',
         '',
-        'Please reply with:',
-        '1. Your full name',
-        '2. The service you offer',
-        '3. The area where you work',
+        "If something is not working, send me a screenshot of the error and I'll help.",
+      ].join('\n')
+    case 'skills_picker':
+      return [
+        'Hi, you are almost through the Plug A Pro registration.',
         '',
-        'Example:',
-        'Name: Thabo Mokoena',
-        'Service: Plumbing',
-        'Area: Roodepoort',
+        'It looks like you still need to choose the type of work you do.',
+        '',
+        'Please select your main service category so we can match you to the right job requests.',
+      ].join('\n')
+    case 'city_picker':
+      return [
+        'Hi, you are nearly done with your Plug A Pro registration.',
+        '',
+        'Please choose your area or city so we know where to send suitable job leads.',
+        '',
+        "If you are stuck, reply with your area and I'll help.",
       ].join('\n')
     case 'register_started_no_name':
       return [
-        'Hi, this is Plug A Pro.',
+        'Hi, I saw you started registering on Plug A Pro but did not complete the first step.',
         '',
-        "I noticed you tapped register but didn't complete your name.",
+        'Please reply with your full name and the type of work you do, for example:',
         '',
-        'To continue, please reply with your full name.',
+        '"Thabo Mokoena, plumber"',
         '',
-        'Example:',
-        'Thabo Mokoena',
+        "Then I'll help you continue the registration.",
       ].join('\n')
     case 'flow_conflict':
       return [
-        'Hi, this is Plug A Pro.',
+        'Hi, it looks like your session may have gone into the wrong flow.',
         '',
-        'It looks like the system may have sent you into the wrong flow.',
+        'Just to confirm, are you trying to:',
         '',
-        'Are you trying to:',
-        '1. Register as a service provider',
-        '2. Request a service from a provider',
+        '1 - Register as a service provider',
+        '2 - Request a service for your home or business',
         '',
-        "Please reply with 1 or 2 and I'll assist you.",
+        "Reply with 1 or 2 and I'll help you continue on the right path.",
       ].join('\n')
-    case 'submitted_no_recovery':
-      if (stage === 'approved') return 'No stall recovery message. This provider is already approved.'
-      return 'No stall recovery message. This application is already submitted for review.'
+    case 'approved':
+      return [
+        'Hi, your Plug A Pro provider application has been approved.',
+        '',
+        'Please keep this WhatsApp number active because job lead updates will come through here.',
+      ].join('\n')
+    case 'pending':
+    case 'submitted':
+      return [
+        'Hi, thanks for completing your Plug A Pro application.',
+        '',
+        'Your profile is now in review.',
+        '',
+        "Once approved, you'll be eligible to receive suitable job leads in your area.",
+        '',
+        'Please keep this WhatsApp number active because this is where important updates will come through.',
+      ].join('\n')
     default:
       return [
-        'Hi, this is Plug A Pro.',
+        'Hi, thanks for reaching out to Plug A Pro.',
         '',
-        'We help connect service providers with people looking for help with jobs like plumbing, gardening, painting, handyman work, cleaning, electrical work and more.',
+        'Are you trying to register as a service provider to get more work?',
         '',
-        'To register as a provider, please reply with:',
-        'REGISTER',
+        'Reply with:',
         '',
-        "Then I'll help you complete your profile.",
+        '1 - Yes, I want to register',
+        '2 - I need help',
+        '3 - I was just checking',
+        '',
+        'If you want to register, I can help you finish it quickly here.',
       ].join('\n')
   }
+}
+
+function safeProviderFirstName(providerName: string | null) {
+  const firstToken = providerName?.trim().split(/\s+/)[0] ?? ''
+  const firstName = firstToken.replace(/[^A-Za-z'-]/g, '')
+  return firstName.length >= 2 && firstName.length <= 40 ? firstName : null
+}
+
+export function personalizeProviderOnboardingRecoveryMessage(
+  message: string,
+  providerName: string | null,
+) {
+  const firstName = safeProviderFirstName(providerName)
+  if (!firstName) return message
+  return message.replace(/^Hi,/, `Hi ${firstName},`)
 }
 
 // Kept for existing WhatsApp bot imports while recovery sending lives in this module.
@@ -408,7 +485,8 @@ export function buildProviderOnboardingUnsupportedInputMessage(step: string) {
 }
 
 function followUpThresholdMinutes(stage: ProviderOnboardingRecoveryStage) {
-  if (stage === 'welcome_idle' || stage === 'register_started_no_name' || stage === 'flow_conflict') return 20
+  if (stage === 'welcome_idle' || stage === 'register_started_no_name') return 15
+  if (stage === 'flow_conflict') return 30
   if (stage === 'id_verification_started' || stage === 'skills_picker' || stage === 'city_picker') return 30
   if (stage === 'evidence_upload') return 30
   return null
@@ -538,6 +616,7 @@ export function buildProviderOnboardingRecoveryRowsFromSnapshots(input: BuildRow
       : null
     const templateKey = messageTemplateKeyForStage(stage)
     const skills = application?.skills?.length ? application.skills : stringArray(data.skills)
+    const providerName = application?.name ?? stringValue(data.name)
     const areas = application?.serviceAreas?.length
       ? application.serviceAreas
       : [
@@ -554,7 +633,7 @@ export function buildProviderOnboardingRecoveryRowsFromSnapshots(input: BuildRow
       safeUserRef,
       phoneMasked: maskPhone(stats.phone) ?? 'masked',
       phoneTail: phoneTail(stats.phone),
-      providerName: application?.name ?? stringValue(data.name),
+      providerName,
       serviceCategory: skills[0] ?? null,
       area: areas[0] ?? null,
       applicationStatus: application?.status ?? null,
@@ -569,7 +648,10 @@ export function buildProviderOnboardingRecoveryRowsFromSnapshots(input: BuildRow
       messageTypes: [...stats.messageTypes].sort(),
       recommendedAction: recommendedActionForStage(stage),
       messageTemplateKey: templateKey,
-      followUpMessage: buildProviderOnboardingRecoveryMessage(stage),
+      followUpMessage: personalizeProviderOnboardingRecoveryMessage(
+        buildProviderOnboardingRecoveryMessage(stage),
+        providerName,
+      ),
       followUpDueAt,
       followUpStatus: followUpStatusForRow({ now, stage, dueAt: followUpDueAt, outcomeEvents }),
       lastOutcomeStatus: outcomeStatus(lastOutcomeAfter.outcomeStatus) ?? 'not_contacted',
@@ -605,10 +687,11 @@ export async function listProviderOnboardingRecoveryRows(
   })
   const phones = [...new Set(inbound.map((row) => normalizePhone(row.phone)))]
   if (phones.length === 0) return []
+  const phoneVariants = [...new Set(inbound.flatMap((row) => phoneLookupVariants(row.phone)))]
 
   const [conversations, applications] = await Promise.all([
     client.conversation.findMany({
-      where: { phone: { in: phones } },
+      where: { phone: { in: phoneVariants } },
       select: {
         id: true,
         phone: true,
@@ -621,7 +704,7 @@ export async function listProviderOnboardingRecoveryRows(
       orderBy: { updatedAt: 'desc' },
     }),
     client.providerApplication.findMany({
-      where: { phone: { in: phones }, submittedAt: { gte: since } },
+      where: { phone: { in: phoneVariants }, submittedAt: { gte: since } },
       select: {
         id: true,
         phone: true,
@@ -650,7 +733,6 @@ export async function listProviderOnboardingRecoveryRows(
           action: 'provider_onboarding_recovery.outcome_logged',
           entityType: 'ProviderOnboardingRecovery',
           entityId: { in: safeRefs },
-          timestamp: { gte: new Date(now.getTime() - 24 * 60 * 60_000) },
         },
         select: {
           entityId: true,
@@ -658,7 +740,7 @@ export async function listProviderOnboardingRecoveryRows(
           after: true,
         },
         orderBy: { timestamp: 'desc' },
-        take: 500,
+        take: 2000,
       })
     : []
 
@@ -745,13 +827,162 @@ async function releaseRegistrationConversationRecoveryClaim(
   }).catch(() => {})
 }
 
+function recoverySkipAuditResult(reason: RecoverySendSkipReason) {
+  switch (reason) {
+    case 'no_phone':
+      return 'missing_phone_for_safe_ref'
+    case 'outside_session_window':
+      return 'outside_whatsapp_session_window'
+    case 'already_claimed':
+      return 'already_claimed_or_not_claimable'
+    case 'no_recovery_for_stage':
+      return 'no_recovery_for_stage'
+    default:
+      return 'unknown_skip_reason'
+  }
+}
+
+async function recordRecoverySkip(
+  client: RecoveryClient,
+  row: ProviderOnboardingRecoveryRow,
+  input: {
+    actorId: string
+    actorRole: string
+    actionType: string
+    result: string
+    error?: string
+  },
+) {
+  await recordProviderOnboardingRecoveryOutcome(client, {
+    safeUserRef: row.safeUserRef,
+    phoneMasked: row.phoneMasked,
+    phoneTail: row.phoneTail,
+    recoveryStage: row.stage,
+    messageTemplateKey: row.messageTemplateKey,
+    outcomeStatus: 'skipped',
+    notes: input.result,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    actionType: input.actionType,
+    result: input.result,
+    error: input.error,
+  }).catch((logError) => {
+    console.error('[provider-onboarding-recovery] skipped follow-up audit failed', {
+      safeUserRef: row.safeUserRef,
+      stage: row.stage,
+      result: input.result,
+      error: logError instanceof Error ? logError.message : String(logError),
+    })
+  })
+}
+
+async function attemptSendRecoveryForRow(
+  client: RecoveryClient,
+  row: ProviderOnboardingRecoveryRow,
+  options: {
+    now: Date
+    phone?: string
+    sendText: SendTextFn
+    sendTemplate?: SendTemplateFn
+    templateFlagEnabled: boolean
+    actorId: string
+    actorRole: string
+    actionType: string
+    sentNotes?: Partial<Record<ProviderOnboardingRecoverySendVia, string>>
+  },
+): Promise<AttemptRecoverySendOutcome> {
+  const templateName = recoveryTemplateNameForMessageKey(row.messageTemplateKey)
+  if (!templateName) {
+    return { outcome: 'skipped', reason: 'no_recovery_for_stage', row }
+  }
+
+  if (!options.phone) {
+    return { outcome: 'skipped', reason: 'no_phone', row }
+  }
+
+  const insideWindow = isWithinWhatsAppRecoveryWindow(options.now, row.lastInteractionAt)
+  if (!insideWindow && (!options.templateFlagEnabled || !options.sendTemplate)) {
+    return { outcome: 'skipped', reason: 'outside_session_window', row }
+  }
+
+  const claimed = await claimRegistrationConversationForRecovery(client, row)
+  if (!claimed) {
+    return { outcome: 'skipped', reason: 'already_claimed', row }
+  }
+
+  try {
+    const via: ProviderOnboardingRecoverySendVia = insideWindow ? 'session_text' : 'template'
+    const metadata = {
+      safeUserRef: row.safeUserRef,
+      recoveryStage: row.stage,
+      followUpDueAt: row.followUpDueAt?.toISOString() ?? null,
+      via,
+    }
+
+    if (via === 'session_text') {
+      await options.sendText(options.phone, row.followUpMessage, {
+        templateName: `provider_onboarding_recovery:${row.messageTemplateKey}`,
+        metadata,
+      })
+    } else {
+      await options.sendTemplate!({
+        to: options.phone,
+        template: templateName,
+        components: buildRecoveryTemplateComponents({ providerName: row.providerName }),
+        metadata,
+      })
+    }
+
+    await markRegistrationConversationRecovered(client, row, options.now)
+    await recordProviderOnboardingRecoveryOutcome(client, {
+      safeUserRef: row.safeUserRef,
+      phoneMasked: row.phoneMasked,
+      phoneTail: row.phoneTail,
+      recoveryStage: row.stage,
+      messageTemplateKey: row.messageTemplateKey,
+      outcomeStatus: 'message_sent',
+      notes: options.sentNotes?.[via] ?? 'WhatsApp onboarding recovery sent.',
+      actorId: options.actorId,
+      actorRole: options.actorRole,
+      actionType: options.actionType,
+      result: 'sent',
+      via,
+    }).catch((logError) => {
+      console.error('[provider-onboarding-recovery] sent follow-up audit failed', {
+        safeUserRef: row.safeUserRef,
+        stage: row.stage,
+        via,
+        error: logError instanceof Error ? logError.message : String(logError),
+      })
+    })
+
+    return { outcome: 'sent', via, row }
+  } catch (error) {
+    await releaseRegistrationConversationRecoveryClaim(client, row)
+    return { outcome: 'error', row, error }
+  }
+}
+
 export async function sendProviderOnboardingRecoveryFollowUps(
   client: RecoveryClient,
-  options: { now?: Date; since?: Date; take?: number; sendText?: SendTextFn } = {},
+  options: {
+    now?: Date
+    since?: Date
+    take?: number
+    sendText?: SendTextFn
+    sendTemplate?: SendTemplateFn
+    templateFlagEnabled?: boolean
+    actorId?: string
+    actorRole?: string
+  } = {},
 ): Promise<ProviderOnboardingRecoverySendResult> {
   const now = options.now ?? new Date()
   const since = options.since ?? new Date(now.getTime() - 24 * 60 * 60_000)
   const sendText = options.sendText ?? defaultSendText
+  const actorId = options.actorId ?? 'cron:provider-onboarding-recovery'
+  const actorRole = options.actorRole ?? (actorId.startsWith('operator:') ? 'operator' : 'system')
+  const sentActionType = actorRole === 'system' ? 'automated_nudge_sent' : 'manual_nudge_sent'
+  const skippedActionType = actorRole === 'system' ? 'automated_nudge_skipped' : 'manual_nudge_skipped'
   const rows = await listProviderOnboardingRecoveryRows(client, {
     now,
     since,
@@ -778,55 +1009,125 @@ export async function sendProviderOnboardingRecoveryFollowUps(
   })
 
   for (const row of dueRows) {
-    const phone = phoneBySafeRef.get(row.safeUserRef)
-    if (!phone || !isWithinWhatsAppRecoveryWindow(now, row.lastInteractionAt)) {
-      result.skipped += 1
-      result.skippedRefs.push(row.safeUserRef)
-      continue
-    }
+    const attempt = await attemptSendRecoveryForRow(client, row, {
+      now,
+      phone: phoneBySafeRef.get(row.safeUserRef),
+      sendText,
+      sendTemplate: options.sendTemplate,
+      templateFlagEnabled: options.templateFlagEnabled ?? false,
+      actorId,
+      actorRole,
+      actionType: sentActionType,
+      sentNotes: {
+        session_text: 'Automatic WhatsApp onboarding recovery sent.',
+        template: 'Automatic WhatsApp onboarding recovery template sent.',
+      },
+    })
 
-    const claimed = await claimRegistrationConversationForRecovery(client, row)
-    if (!claimed) {
-      result.skipped += 1
-      result.skippedRefs.push(row.safeUserRef)
-      continue
-    }
-
-    try {
-      await sendText(phone, row.followUpMessage, {
-        templateName: `provider_onboarding_recovery:${row.messageTemplateKey}`,
-        metadata: {
-          safeUserRef: row.safeUserRef,
-          recoveryStage: row.stage,
-          followUpDueAt: row.followUpDueAt?.toISOString() ?? null,
-        },
-      })
-      await markRegistrationConversationRecovered(client, row, now)
-      await recordProviderOnboardingRecoveryOutcome(client, {
-        safeUserRef: row.safeUserRef,
-        phoneMasked: row.phoneMasked,
-        phoneTail: row.phoneTail,
-        recoveryStage: row.stage,
-        messageTemplateKey: row.messageTemplateKey,
-        outcomeStatus: 'message_sent',
-        notes: 'Automatic WhatsApp onboarding recovery sent.',
-        actorId: 'cron:provider-onboarding-recovery',
-      })
+    if (attempt.outcome === 'sent') {
       result.sent += 1
       result.sentRefs.push(row.safeUserRef)
-    } catch (error) {
-      await releaseRegistrationConversationRecoveryClaim(client, row)
-      result.errors += 1
-      result.errorRefs.push(row.safeUserRef)
-      console.error('[provider-onboarding-recovery] follow-up send failed', {
-        safeUserRef: row.safeUserRef,
-        stage: row.stage,
-        error: error instanceof Error ? error.message : String(error),
-      })
+      continue
     }
+
+    if (attempt.outcome === 'skipped') {
+      result.skipped += 1
+      result.skippedRefs.push(row.safeUserRef)
+      await recordRecoverySkip(client, row, {
+        actorId,
+        actorRole,
+        actionType: skippedActionType,
+        result: recoverySkipAuditResult(attempt.reason),
+      })
+      continue
+    }
+
+    result.errors += 1
+    result.errorRefs.push(row.safeUserRef)
+    await recordRecoverySkip(client, row, {
+      actorId,
+      actorRole,
+      actionType: skippedActionType,
+      result: 'send_failed',
+      error: attempt.error instanceof Error ? attempt.error.message : String(attempt.error),
+    })
+    console.error('[provider-onboarding-recovery] follow-up send failed', {
+      safeUserRef: row.safeUserRef,
+      stage: row.stage,
+      error: attempt.error instanceof Error ? attempt.error.message : String(attempt.error),
+    })
   }
 
   return result
+}
+
+export async function sendProviderOnboardingRecoveryFollowUpForRef(
+  client: RecoveryClient,
+  options: {
+    safeUserRef: string
+    now?: Date
+    since?: Date
+    take?: number
+    sendText?: SendTextFn
+    sendTemplate?: SendTemplateFn
+    templateFlagEnabled?: boolean
+    actorId?: string
+    actorRole?: string
+  },
+): Promise<ProviderOnboardingRecoverySingleSendResult> {
+  const now = options.now ?? new Date()
+  const since = options.since ?? new Date(now.getTime() - 24 * 60 * 60_000)
+  const rows = await listProviderOnboardingRecoveryRows(client, {
+    now,
+    since,
+    take: options.take,
+  })
+  const row = rows.find((candidate) => candidate.safeUserRef === options.safeUserRef)
+  if (!row) return { outcome: 'skipped', reason: 'not_found', row: null }
+
+  const phoneBySafeRef = await buildPhoneMapForRecoveryRows(client, {
+    since,
+    take: options.take,
+  })
+  const actorId = options.actorId ?? 'operator:manual'
+  const actorRole = options.actorRole ?? (actorId.startsWith('operator:') ? 'operator' : 'system')
+  const sendText = options.sendText ?? defaultSendText
+  const sentActionType = actorRole === 'system' ? 'automated_nudge_sent' : 'manual_nudge_sent'
+  const skippedActionType = actorRole === 'system' ? 'automated_nudge_skipped' : 'manual_nudge_skipped'
+
+  const attempt = await attemptSendRecoveryForRow(client, row, {
+    now,
+    phone: phoneBySafeRef.get(row.safeUserRef),
+    sendText,
+    sendTemplate: options.sendTemplate,
+    templateFlagEnabled: options.templateFlagEnabled ?? false,
+    actorId,
+    actorRole,
+    actionType: sentActionType,
+    sentNotes: {
+      session_text: 'Operator WhatsApp onboarding recovery sent.',
+      template: 'Operator WhatsApp onboarding recovery template sent.',
+    },
+  })
+
+  if (attempt.outcome === 'skipped') {
+    await recordRecoverySkip(client, row, {
+      actorId,
+      actorRole,
+      actionType: skippedActionType,
+      result: recoverySkipAuditResult(attempt.reason),
+    })
+  } else if (attempt.outcome === 'error') {
+    await recordRecoverySkip(client, row, {
+      actorId,
+      actorRole,
+      actionType: skippedActionType,
+      result: 'send_failed',
+      error: attempt.error instanceof Error ? attempt.error.message : String(attempt.error),
+    })
+  }
+
+  return attempt
 }
 
 export async function recordProviderOnboardingRecoveryOutcome(
@@ -841,12 +1142,17 @@ export async function recordProviderOnboardingRecoveryOutcome(
     notes?: string | null
     nextFollowUpAt?: Date | null
     actorId?: string
+    actorRole?: string
+    actionType?: string
+    result?: string
+    error?: string | null
+    via?: ProviderOnboardingRecoverySendVia
   },
 ) {
   await client.auditLog.create({
     data: {
       actorId: input.actorId ?? 'operator:manual',
-      actorRole: 'operator',
+      actorRole: input.actorRole ?? 'operator',
       action: 'provider_onboarding_recovery.outcome_logged',
       entityType: 'ProviderOnboardingRecovery',
       entityId: input.safeUserRef,
@@ -858,6 +1164,10 @@ export async function recordProviderOnboardingRecoveryOutcome(
         outcomeStatus: input.outcomeStatus,
         notes: input.notes ?? null,
         nextFollowUpAt: input.nextFollowUpAt?.toISOString() ?? null,
+        actionType: input.actionType ?? 'manual_follow_up_logged',
+        result: input.result ?? input.outcomeStatus,
+        error: input.error ?? null,
+        via: input.via ?? null,
       } satisfies Prisma.InputJsonObject,
     },
   })

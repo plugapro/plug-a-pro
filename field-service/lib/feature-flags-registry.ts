@@ -332,6 +332,38 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
+  // ─── WhatsApp registration friction fixes (2026-06-04) ──────────────────────
+  'whatsapp.registration.name_profile_shortcut': {
+    description: 'Offer the WhatsApp profile name as a one-tap default at the reg_collect_name step, plus a short privacy framing line.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+  'whatsapp.registration.deeplink': {
+    description: 'Detect ad-driven prefilled-message tokens and jump straight into reg_start, bypassing the welcome menu.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+  'whatsapp.registration.evidence_skip_primary': {
+    description: 'Show "Skip for now" as the primary (first) button on the evidence step for non-high-risk skills; send a 24h upload-later follow-up.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+  'whatsapp.flow_switch_data_clear': {
+    description: 'On Conversation.flow change, strip data keys not whitelisted for the target flow. Prevents customer-flow keys polluting registration sessions.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'whatsapp.session_prewarning': {
+    description: 'Send a pre-expiry "continue where you left off" message ~5 min before Conversation.expiresAt for mid-flow sessions.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+  'whatsapp.recovery.template_send': {
+    description: 'Allow provider onboarding recovery sends outside the 23h WhatsApp session window by using approved WABA recovery templates.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',

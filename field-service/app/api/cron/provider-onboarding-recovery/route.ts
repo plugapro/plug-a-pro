@@ -1,13 +1,16 @@
-// ─── Cron: Provider WhatsApp onboarding recovery nudges ─────────────────────
-// Sends audit-limited WhatsApp follow-ups for stalled provider onboarding rows
-// that are still inside the WhatsApp customer-care session window.
+// ─── Cron: Provider WhatsApp onboarding recovery queue ──────────────────────
+// Sends audited, stage-specific recovery nudges for stalled provider onboarding
+// rows. Add ?dryRun=1 to inspect the current queue without sending messages.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import {
+  listProviderOnboardingRecoveryRows,
   sendProviderOnboardingRecoveryFollowUps,
   summarizeProviderOnboardingRecoveryRows,
 } from '@/lib/provider-onboarding-recovery'
+import { sendTemplate } from '@/lib/whatsapp'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -21,27 +24,42 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date()
-    const recovery = await sendProviderOnboardingRecoveryFollowUps(db, { now })
-    const summary = summarizeProviderOnboardingRecoveryRows(recovery.rows)
+    const url = new URL(request.url)
+    const dryRun = url.searchParams.get('dryRun') === '1' || url.searchParams.get('dryRun') === 'true'
+    const templateFlagEnabled = dryRun
+      ? false
+      : await isEnabled('whatsapp.recovery.template_send')
+    const result = dryRun
+      ? null
+      : await sendProviderOnboardingRecoveryFollowUps(db, {
+          now,
+          sendTemplate,
+          templateFlagEnabled,
+        })
+    const rows = result?.rows ?? await listProviderOnboardingRecoveryRows(db, { now })
+    const summary = summarizeProviderOnboardingRecoveryRows(rows)
     const durationMs = Date.now() - cronStart
     console.log(JSON.stringify({
       event: 'cron_complete',
       cron: cronName,
-      mode: 'auto_nudge',
+      mode: dryRun ? 'dry_run' : 'automated_nudges',
       durationMs,
-      sent: recovery.sent,
-      skipped: recovery.skipped,
-      errors: recovery.errors,
+      sent: result?.sent ?? 0,
+      skipped: result?.skipped ?? 0,
+      errors: result?.errors ?? 0,
       ...summary,
       timestamp: new Date().toISOString(),
     }))
     return NextResponse.json({
       ok: true,
-      mode: 'auto_nudge',
+      mode: dryRun ? 'dry_run' : 'automated_nudges',
       durationMs,
-      sent: recovery.sent,
-      skipped: recovery.skipped,
-      errors: recovery.errors,
+      sent: result?.sent ?? 0,
+      skipped: result?.skipped ?? 0,
+      errors: result?.errors ?? 0,
+      sentRefs: result?.sentRefs ?? [],
+      skippedRefs: result?.skippedRefs ?? [],
+      errorRefs: result?.errorRefs ?? [],
       ...summary,
     })
   } catch (error) {

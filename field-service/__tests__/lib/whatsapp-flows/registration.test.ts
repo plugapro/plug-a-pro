@@ -348,6 +348,34 @@ describe('registration flow - duplicate prevention', () => {
       )
     })
 
+    it('persists canonical skill tags while keeping WhatsApp session skills as labels', async () => {
+      await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, {
+          ...dataWithFullProfile,
+          skills: ['Plumbing', 'Garden & Landscaping'],
+        })
+      )
+
+      expect(providerRecord.syncProviderRecord).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          skills: ['plumbing', 'garden'],
+        }),
+      )
+      expect(db.providerApplication.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            skills: ['plumbing', 'garden'],
+          }),
+        }),
+      )
+      expect(whatsapp.sendAdminNewApplication).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skills: ['Plumbing', 'Garden & Landscaping'],
+        }),
+      )
+    })
+
     it('creates application with five uploaded files and links every attachment', async () => {
       const evidenceFileUrls = ['att_1', 'att_2', 'att_3', 'att_4', 'att_5']
 
@@ -1556,6 +1584,9 @@ describe('syncProviderRecord - phone normalization', () => {
   it('normalizePhone: converts South African local format 0xx to E.164 +27xx', () => {
     expect(normalizePhone('0821234567')).toBe('+27821234567')
     expect(normalizePhone('+27821234567')).toBe('+27821234567')
+    expect(normalizePhone('0027821234567')).toBe('+27821234567')
+    expect(normalizePhone('071 234 5678')).toBe('+27712345678')
+    expect(normalizePhone('071-234-5678')).toBe('+27712345678')
     expect(normalizePhone('+27 82 123 4567')).toBe('+27821234567')
     expect(normalizePhone('+27-82-123-4567')).toBe('+27821234567')
   })

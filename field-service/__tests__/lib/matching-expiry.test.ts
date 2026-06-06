@@ -5,6 +5,7 @@ import {
   reconcileStaleAssignmentState,
   sendQuickMatchProgressUpdates,
 } from '../../lib/matching/service'
+import { notifyExpiredJobParties } from '../../lib/matching/customer-recontact'
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
@@ -132,6 +133,7 @@ function makeMatchingJobRequest() {
     customerRematchCheckSentAt: null,
     customerRematchCheckRespondedAt: null,
     customerRematchCheckOutcome: null,
+    dispatchDecisions: [],
     status: 'MATCHING',
     customer: { id: 'customer-1', name: 'Bob', phone: '+27831234567' },
     address: {
@@ -375,6 +377,49 @@ describe('expireAssignmentOffer', () => {
     )
   })
 
+  it('uses latest no-match primaryReason to explain area unavailability', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      ...makeMatchingJobRequest(),
+      status: 'EXPIRED',
+      dispatchDecisions: [{ failureClass: 'EMPTY_POOL', primaryReason: 'NO_LOCATION_MATCH' }],
+    })
+
+    await notifyExpiredJobParties({ jobRequestId: 'job-1' })
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27831234567',
+      expect.stringContaining('Plug A Pro is not available in Sandton, Johannesburg yet'),
+      expect.objectContaining({
+        templateName: 'interactive:job_request_no_match',
+        metadata: expect.objectContaining({
+          jobRequestId: 'job-1',
+          primaryReason: 'NO_LOCATION_MATCH',
+        }),
+      }),
+    )
+  })
+
+  it('uses outside-service-area primaryReason to explain area unavailability', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      ...makeMatchingJobRequest(),
+      status: 'EXPIRED',
+      dispatchDecisions: [{ failureClass: 'STRUCTURAL', primaryReason: 'OUTSIDE_SERVICE_AREA' }],
+    })
+
+    await notifyExpiredJobParties({ jobRequestId: 'job-1' })
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27831234567',
+      expect.stringContaining('Plug A Pro is not available in Sandton, Johannesburg yet'),
+      expect.objectContaining({
+        templateName: 'interactive:job_request_no_match',
+        metadata: expect.objectContaining({
+          primaryReason: 'OUTSIDE_SERVICE_AREA',
+        }),
+      }),
+    )
+  })
+
   it('marks lead as EXPIRED in the same transaction as the hold', async () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
     mockDb.matchAttempt.findMany.mockResolvedValue([])
@@ -558,10 +603,12 @@ describe('sendQuickMatchProgressUpdates', () => {
       {
         id: 'job-1',
         category: 'DIY & Assembly',
+        urgency: 'urgent',
         isTestRequest: true,
         cohortName: 'internal_staff_test',
         customer: { phone: '+27773923802', isTestUser: true },
         assignmentHolds: [{ id: 'hold-1' }],
+        dispatchDecisions: [{ failureClass: 'TRANSIENT', primaryReason: 'RESERVATION_FAILED' }],
       },
     ])
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
@@ -583,23 +630,80 @@ describe('sendQuickMatchProgressUpdates', () => {
     )
   })
 
-  it('skips the customer progress update when one was sent in the last 30 minutes', async () => {
+  it('skips the customer progress update when one was sent inside the urgency interval', async () => {
+    const now = new Date('2026-06-06T10:00:00.000Z')
     mockDb.jobRequest.findMany.mockResolvedValue([
       {
         id: 'job-1',
         category: 'DIY & Assembly',
+        urgency: 'within_24h',
         isTestRequest: false,
         cohortName: null,
         customer: { phone: '+27773923802', isTestUser: false },
         assignmentHolds: [{ id: 'hold-1' }],
+        dispatchDecisions: [],
       },
     ])
     mockDb.messageEvent.findFirst.mockResolvedValue({ id: 'message-1' })
 
-    const result = await sendQuickMatchProgressUpdates()
+    const result = await sendQuickMatchProgressUpdates(now)
 
     expect(result.sent).toBe(0)
     expect(result.skippedRecent).toBe(1)
+    expect(mockDb.messageEvent.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdAt: { gte: new Date('2026-06-06T09:00:00.000Z') },
+        }),
+      }),
+    )
+    expect(mockSendText).not.toHaveBeenCalled()
+  })
+
+  it('scans the full flexible give-up window for progress-eligible requests', async () => {
+    const now = new Date('2026-06-06T10:00:00.000Z')
+    mockDb.jobRequest.findMany.mockResolvedValue([])
+
+    await sendQuickMatchProgressUpdates(now)
+
+    expect(mockDb.jobRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdAt: { gte: new Date('2026-05-30T10:00:00.000Z') },
+        }),
+      }),
+    )
+  })
+
+  it('skips progress updates when the latest decision is structural or empty-pool final', async () => {
+    mockDb.jobRequest.findMany.mockResolvedValue([
+      {
+        id: 'job-1',
+        category: 'DIY & Assembly',
+        urgency: 'urgent',
+        isTestRequest: false,
+        cohortName: null,
+        customer: { phone: '+27773923802', isTestUser: false },
+        assignmentHolds: [{ id: 'hold-1' }],
+        dispatchDecisions: [{ failureClass: 'STRUCTURAL', primaryReason: 'MISSING_REQUIRED_SKILL' }],
+      },
+      {
+        id: 'job-2',
+        category: 'Plumbing',
+        urgency: 'asap',
+        isTestRequest: false,
+        cohortName: null,
+        customer: { phone: '+27773923803', isTestUser: false },
+        assignmentHolds: [{ id: 'hold-2' }],
+        dispatchDecisions: [{ failureClass: 'EMPTY_POOL', primaryReason: 'NO_LOCATION_MATCH' }],
+      },
+    ])
+
+    const result = await sendQuickMatchProgressUpdates()
+
+    expect(result.sent).toBe(0)
+    expect(result.skippedFinalNoMatch).toBe(2)
+    expect(mockDb.messageEvent.findFirst).not.toHaveBeenCalled()
     expect(mockSendText).not.toHaveBeenCalled()
   })
 })

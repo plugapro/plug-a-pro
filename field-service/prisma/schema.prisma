@@ -1610,6 +1610,16 @@ model DispatchDecision {
   filterSummary          Json?
   explanation            String?
   alternativeSlotOptions Json? // SlotOption[] — stored for alternative-slot WA negotiation
+  // Aggregated request-level reason when status='NO_MATCH'. NULL on dispatch.
+  // INSUFFICIENT_REQUEST_DATA | NO_LOCATION_MATCH | NO_SKILL_MATCH_IN_LOCATION | NO_APPROVED_PROVIDER | NO_MATCH
+  noMatchReason          String?
+  // Per-stage funnel counts: { locationCandidates, skillCandidates, eligibleCount, rankedCount }
+  stageCounts            Json?
+  // Retry/give-up policy classification for NO_MATCH decisions.
+  // EMPTY_POOL | STRUCTURAL | TRANSIENT
+  failureClass           String?
+  // Request-level normalized policy reason, e.g. NO_LOCATION_MATCH or RESERVATION_FAILED.
+  primaryReason          String?
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
@@ -1621,6 +1631,9 @@ model DispatchDecision {
   leads                Lead[]
 
   @@index([jobRequestId, createdAt])
+  @@index([noMatchReason, createdAt])
+  @@index([failureClass, createdAt])
+  @@index([primaryReason, createdAt])
   @@map("dispatch_decisions")
 }
 

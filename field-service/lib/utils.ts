@@ -17,6 +17,10 @@ export function cn(...inputs: ClassValue[]) {
 export function normalizePhone(raw: string): string {
   const stripped = raw.replace(/^whatsapp:/i, '').replace(/[\s\-()]/g, '')
   if (stripped.startsWith('+')) return stripped
+  // International access prefix format: 0027xxxxxxxxx -> +27xxxxxxxxx.
+  if (stripped.startsWith('00') && stripped.length > 4) {
+    return `+${stripped.slice(2)}`
+  }
   // WhatsApp/SMS integrations sometimes pass SA numbers without the leading
   // country code zero: 823035070 -> +27823035070.
   if (/^[6-8]\d{8}$/.test(stripped)) {
@@ -32,6 +36,16 @@ export function normalizePhone(raw: string): string {
   }
   // Fallback: return stripped (caller should validate E.164 separately)
   return stripped
+}
+
+export function phoneLookupVariants(phone: string) {
+  const normalized = normalizePhone(phone)
+  const digits = normalized.replace(/\D/g, '')
+  const local = digits.startsWith('27') ? `0${digits.slice(2)}` : null
+  const internationalPrefix = digits.startsWith('27') ? `00${digits}` : null
+  return Array.from(
+    new Set([normalized, digits ? `+${digits}` : null, digits || null, local, internationalPrefix].filter(Boolean) as string[]),
+  )
 }
 
 /** Returns a short human-readable age string relative to now ("3m ago", "2h ago", "5d ago"). */

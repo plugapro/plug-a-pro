@@ -41,6 +41,10 @@ type MatchableJobRequestRecord = RequestTiming & {
   customerRematchCheckOutcome: string | null
   altSlotNegotiationSentAt: Date | null
   altSlotNegotiationOutcome: string | null
+  dispatchDecisions?: Array<{
+    failureClass: string | null
+    primaryReason: string | null
+  }>
   customer: {
     id: string
     name: string
@@ -99,7 +103,70 @@ function formatRequestedTimeLabel(jobRequest: RequestTiming) {
   return format(singlePoint, 'EEE d MMM, HH:mm')
 }
 
+function latestPrimaryReason(jobRequest: MatchableJobRequestRecord) {
+  return jobRequest.dispatchDecisions?.[0]?.primaryReason ?? null
+}
+
+const AREA_UNAVAILABLE_REASONS = new Set([
+  'NO_LOCATION_MATCH',
+  'OUTSIDE_SERVICE_AREA',
+])
+
+const SERVICE_UNAVAILABLE_REASONS = new Set([
+  'NO_SKILL_MATCH_IN_LOCATION',
+  'MISSING_REQUIRED_SKILL',
+  'MISSING_REQUIRED_CERTIFICATION',
+  'MISSING_REQUIRED_EQUIPMENT',
+  'MISSING_REQUIRED_VEHICLE',
+])
+
+const PROVIDER_APPROVAL_GAP_REASONS = new Set([
+  'CATEGORY_NOT_APPROVED',
+  'TECHNICIAN_INACTIVE',
+])
+
+function buildReasonedExhaustedMessage(
+  jobRequest: MatchableJobRequestRecord,
+  primaryReason: string,
+) {
+  const name = firstName(jobRequest.customer?.name)
+  const serviceName = jobRequest.title?.trim() || jobRequest.category
+  const area = formatArea(jobRequest)
+
+  if (AREA_UNAVAILABLE_REASONS.has(primaryReason)) {
+    return (
+      `😔 *Sorry, ${name}*.\n\n` +
+      `Plug A Pro is not available in ${area} yet for *${serviceName}*.\n\n` +
+      `Thank you for trying Plug A Pro. As we grow our provider base, we should be in a better position to help you in future.`
+    )
+  }
+
+  if (SERVICE_UNAVAILABLE_REASONS.has(primaryReason)) {
+    return (
+      `😔 *Sorry, ${name}*.\n\n` +
+      `We do not have a matching *${serviceName}* provider available in *${area}* yet.\n\n` +
+      `Thank you for trying Plug A Pro. As we grow our provider base, we should be in a better position to help you in future.`
+    )
+  }
+
+  if (PROVIDER_APPROVAL_GAP_REASONS.has(primaryReason)) {
+    return (
+      `😔 *Sorry, ${name}*.\n\n` +
+      `The providers we found for *${serviceName}* in *${area}* are not approved for that service yet.\n\n` +
+      `Thank you for trying Plug A Pro. As we grow our approved provider base, we should be in a better position to help you in future.`
+    )
+  }
+
+  return null
+}
+
 function buildExhaustedMessage(jobRequest: MatchableJobRequestRecord) {
+  const primaryReason = latestPrimaryReason(jobRequest)
+  const reasoned = primaryReason
+    ? buildReasonedExhaustedMessage(jobRequest, primaryReason)
+    : null
+  if (reasoned) return reasoned
+
   const name = firstName(jobRequest.customer?.name)
   const serviceName = jobRequest.title?.trim() || jobRequest.category
   const area = formatArea(jobRequest)
@@ -267,6 +334,11 @@ async function loadJobRequestForCustomerMessaging(jobRequestId: string) {
         altSlotNegotiationSentAt: true,
         altSlotNegotiationOutcome: true,
         expiresAt: true,
+        dispatchDecisions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { failureClass: true, primaryReason: true },
+        },
         customer: {
           select: {
             id: true,
@@ -357,6 +429,7 @@ async function loadJobRequestForCustomerMessaging(jobRequestId: string) {
       altSlotNegotiationSentAt: null,
       altSlotNegotiationOutcome: null,
       expiresAt: null,
+      dispatchDecisions: [],
     } as MatchableJobRequestRecord
   }
 }
@@ -372,11 +445,13 @@ export async function notifyCustomerNoMatch(jobRequestId: string) {
   if (jobRequest.altSlotNegotiationSentAt && !jobRequest.altSlotNegotiationOutcome) return false
 
   const message = buildExhaustedMessage(jobRequest)
+  const primaryReason = latestPrimaryReason(jobRequest)
   await sendText(jobRequest.customer.phone, message, {
     templateName: 'interactive:job_request_no_match',
     metadata: {
       jobRequestId: jobRequest.id,
       hasFutureWindow: hasFutureExplicitRequestWindow(jobRequest),
+      ...(primaryReason ? { primaryReason } : {}),
     },
   })
 

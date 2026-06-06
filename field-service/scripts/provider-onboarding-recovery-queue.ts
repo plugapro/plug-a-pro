@@ -7,7 +7,7 @@ import {
   type ProviderOnboardingRecoveryOutcomeStatus,
 } from '../lib/provider-onboarding-recovery'
 
-const DEFAULT_CAMPAIGN_START = '2026-06-04T07:51:00.000Z'
+const DEFAULT_LOOKBACK_MS = 24 * 60 * 60_000
 
 function argValue(name: string) {
   const index = process.argv.indexOf(name)
@@ -41,6 +41,7 @@ function assertOutcomeStatus(raw: string | null): ProviderOnboardingRecoveryOutc
     'technical_issue',
     'no_response',
     'duplicate_or_invalid',
+    'skipped',
   ] as const
   if (allowed.includes(raw as ProviderOnboardingRecoveryOutcomeStatus)) {
     return raw as ProviderOnboardingRecoveryOutcomeStatus
@@ -84,8 +85,12 @@ function printQueue(rows: Awaited<ReturnType<typeof listProviderOnboardingRecove
 }
 
 async function main() {
-  const since = parseDateArg('--since') ?? new Date(process.env.PROVIDER_RECOVERY_SINCE ?? DEFAULT_CAMPAIGN_START)
   const now = parseDateArg('--now') ?? new Date()
+  const since = parseDateArg('--since')
+    ?? (process.env.PROVIDER_RECOVERY_SINCE
+      ? new Date(process.env.PROVIDER_RECOVERY_SINCE)
+      : new Date(now.getTime() - DEFAULT_LOOKBACK_MS))
+  if (Number.isNaN(since.getTime())) throw new Error('PROVIDER_RECOVERY_SINCE must be a valid date/time')
   const rows = await listProviderOnboardingRecoveryRows(db, { now, since })
 
   if (hasArg('--log-outcome')) {

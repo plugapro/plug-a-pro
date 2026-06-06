@@ -19,6 +19,7 @@ import { isEnabled } from '@/lib/flags'
 import { isInActiveServiceArea, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 import { uploadJobRequestPhoto } from '@/lib/storage'
 import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-notifications'
+import { canonicalizeServiceCategoryValue } from '@/lib/service-category-canonicalization'
 
 const MAX_REQUEST_PHOTOS = 5
 const MAX_REQUEST_PHOTO_SIZE = 10 * 1024 * 1024
@@ -179,8 +180,10 @@ export async function POST(req: NextRequest) {
     maxCallOutFee,
     verifiedOnly,
   } = body
+  const rawCategory = typeof category === 'string' ? category : ''
+  const canonicalCategory = canonicalizeServiceCategoryValue(rawCategory).canonical ?? rawCategory.trim()
 
-  if (!category || !title || !addressLine1 || !locationNodeId) {
+  if (!canonicalCategory || !title || !addressLine1 || !locationNodeId) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
@@ -217,7 +220,7 @@ export async function POST(req: NextRequest) {
         city: resolvedAddress.city,
         province: resolvedAddress.province,
         suburb: resolvedAddress.suburb,
-        category,
+        category: canonicalCategory,
         source: 'pwa',
       }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
 
@@ -239,7 +242,7 @@ export async function POST(req: NextRequest) {
                 {
                   providerCategories: {
                     some: {
-                      categorySlug: category,
+                      categorySlug: canonicalCategory,
                       approvalStatus: 'APPROVED',
                     },
                   },
@@ -247,7 +250,7 @@ export async function POST(req: NextRequest) {
                 {
                   AND: [
                     { providerCategories: { none: {} } },
-                    { skills: { has: category } },
+                    { skills: { has: canonicalCategory } },
                   ],
                 },
               ],
@@ -266,7 +269,7 @@ export async function POST(req: NextRequest) {
 
       userId: session.id,
       phone: session.phone!,
-      category,
+      category: canonicalCategory,
       subcategory: subcategory ?? null,
       title,
       description: description ?? '',
@@ -318,7 +321,7 @@ export async function POST(req: NextRequest) {
 
     await notifyCustomerPwaRequestSubmitted({
       customerPhone: session.phone,
-      category,
+      category: canonicalCategory,
       suburb: resolvedAddress.suburb,
       city: resolvedAddress.city,
       ticketUrl: result.ticketUrl,
