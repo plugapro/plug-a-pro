@@ -128,18 +128,55 @@ async function loadFromDirectScan(params: {
   limit: number
   isTestRequest: boolean
 }): Promise<CandidatePoolEntry[]> {
-  const { category, limit } = params
-  const categorySlug = category.trim().toLowerCase()
+  const { category, address, limit } = params
 
-  // Load all active providers who list this category in their skills. Marketplace
-  // review is not a hard MVP gate for odd-job lead matching.
+  // Sequential fallback (per scope decision 2026-06-06):
+  //   1. Try suburb-level conditions only (locationNodeId FK + legacy free-text).
+  //   2. ONLY if that returns 0, retry with province-level conditions.
+  //   3. If neither yields a query, return [] — never scan the world.
+  // The previous "OR both at once" shape was effectively province-wide whenever
+  // provinceKey was set, because providers with any service area in the province
+  // would match. The sequential shape mirrors the user's explicit fallback choice.
+  const suburbConditions = buildSuburbLevelConditions(address)
+  if (suburbConditions.length > 0) {
+    const suburbResults = await directScanWithConditions({
+      category,
+      conditions: suburbConditions,
+      limit,
+      isTestRequest: params.isTestRequest,
+    })
+    if (suburbResults.length > 0) return suburbResults
+  }
+
+  const provinceConditions = buildProvinceLevelConditions(address)
+  if (provinceConditions.length === 0) return []
+
+  return directScanWithConditions({
+    category,
+    conditions: provinceConditions,
+    limit,
+    isTestRequest: params.isTestRequest,
+  })
+}
+
+async function directScanWithConditions(params: {
+  category: string
+  conditions: Array<Record<string, unknown>>
+  limit: number
+  isTestRequest: boolean
+}): Promise<CandidatePoolEntry[]> {
+  const { category, conditions, limit, isTestRequest } = params
+
+  // Load active providers who serve the area AND list this category in their
+  // skills. Marketplace review is not a hard MVP gate for odd-job lead matching.
   const providers = await (db as any).provider.findMany({
     where: {
       active: true,
       verified: true,
       status: 'ACTIVE',
-      isTestUser: params.isTestRequest,
+      isTestUser: isTestRequest,
       skills: { has: category },
+      OR: conditions,
     },
     select: {
       id: true, name: true, phone: true, skills: true, serviceAreas: true,
@@ -188,6 +225,85 @@ async function loadFromDirectScan(params: {
     scoreBase: p.reliabilityScore * 0.6 + (p.averageRating / 5) * 0.4,
     fromPool: false,
   }))
+}
+
+// ── Location conditions (shared by direct-scan + diagnostics) ────────────────
+// Split into suburb-level and province-level so callers can choose between a
+// tight scope (suburb only) and a fallback widening (province). Each function
+// returns a list of WHERE conditions to OR together inside its own scope.
+
+// Suburb-level: structured LocationNode FK match + legacy free-text suburb/city
+// matches on the Provider.serviceAreas string[]. These represent providers who
+// have explicitly listed THIS suburb/city in their coverage.
+export function buildSuburbLevelConditions(
+  address: LoadCandidatePoolParams['address']
+): Array<Record<string, unknown>> {
+  const conditions: Array<Record<string, unknown>> = []
+  if (address.locationNodeId) {
+    conditions.push({
+      technicianServiceAreas: {
+        some: { active: true, locationNodeId: address.locationNodeId },
+      },
+    })
+  }
+  if (address.suburb) conditions.push({ serviceAreas: { has: address.suburb } })
+  if (address.city) conditions.push({ serviceAreas: { has: address.city } })
+  return conditions
+}
+
+// Province-level fallback: provincKey FK match. This is the broadest tier we
+// allow — it matches any provider with at least one active service area row
+// anywhere in the province. Only run when suburb-level returned 0 results.
+export function buildProvinceLevelConditions(
+  address: LoadCandidatePoolParams['address']
+): Array<Record<string, unknown>> {
+  if (!address.provinceKey) return []
+  return [
+    {
+      technicianServiceAreas: {
+        some: { active: true, provinceKey: address.provinceKey },
+      },
+    },
+  ]
+}
+
+// Backwards-compat union helper — convenience for diagnostic queries that just
+// want to know "does ANY provider serve this address at any tier."
+export function buildLocationConditions(
+  address: LoadCandidatePoolParams['address']
+): Array<Record<string, unknown>> {
+  return [...buildSuburbLevelConditions(address), ...buildProvinceLevelConditions(address)]
+}
+
+// ── Diagnostic count (used by no-match reason classification) ────────────────
+// Counts providers serving the address, IGNORING skill/category. Used to decide
+// between NO_LOCATION_MATCH (count=0) and NO_SKILL_MATCH_IN_LOCATION (count>0,
+// but candidate pool returned 0).
+//
+// Bounded by `take: COUNT_BOUND` so this never walks the full set on a
+// province-fallback query. The classifier only needs 0 vs >0; ops dashboards
+// see "100+" as a saturated value when the cap is hit.
+const COUNT_BOUND = 101
+
+export async function countProvidersInLocation(params: {
+  address: LoadCandidatePoolParams['address']
+  isTestRequest: boolean
+}): Promise<number> {
+  const conditions = buildLocationConditions(params.address)
+  if (conditions.length === 0) return 0
+
+  const rows = await db.provider.findMany({
+    where: {
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      isTestUser: params.isTestRequest,
+      OR: conditions,
+    },
+    select: { id: true },
+    take: COUNT_BOUND,
+  })
+  return rows.length
 }
 
 // ── Pool rebuild ──────────────────────────────────────────────────────────────

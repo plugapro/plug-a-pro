@@ -36,7 +36,13 @@ const {
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/matching/service', () => ({ loadMatchingJobRequest: mockLoadMatchingJobRequest }))
-vi.mock('../../lib/matching/candidate-pool', () => ({ loadCandidatePool: mockLoadCandidatePool }))
+vi.mock('../../lib/matching/candidate-pool', () => ({
+  loadCandidatePool: mockLoadCandidatePool,
+  // diagnoseNoMatchReason calls this when skill candidates is 0 to distinguish
+  // NO_LOCATION_MATCH from NO_SKILL_MATCH_IN_LOCATION. Default to 0 (no providers
+  // in area); individual tests can override via mockCountProvidersInLocation.
+  countProvidersInLocation: vi.fn().mockResolvedValue(0),
+}))
 vi.mock('../../lib/matching/filter', () => ({ filterEligibleProviders: mockFilterEligibleProviders }))
 vi.mock('../../lib/matching/scoring', () => ({ scoreAndRankCandidates: mockScoreAndRankCandidates }))
 vi.mock('../../lib/matching/reservation', () => ({ reserveBestProviderAtomically: mockReserveBestProviderAtomically }))

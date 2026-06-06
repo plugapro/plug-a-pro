@@ -24,13 +24,21 @@ import { notifyCustomerMatchingInProgress } from '@/lib/client-pwa-submission-no
 import { isEnabled } from '@/lib/flags'
 import { findAlternativeSlots } from './alternative-slots'
 import { MATCHING_CONFIG } from './config'
+import { diagnoseNoMatchReason, type NoMatchReason, type StageCounts } from './diagnostics'
 import type { SlotOption } from './types'
 
 export type MatchOrchestrationResult =
   | { status: 'DISPATCHED'; holdId: string; providerId: string }
-  | { status: 'NO_MATCH'; filteredOut: FilteredProvider[]; consideredCount: number }
+  | {
+      status: 'NO_MATCH'
+      filteredOut: FilteredProvider[]
+      consideredCount: number
+      // Aggregated reason for ops — see lib/matching/diagnostics.ts.
+      noMatchReason: NoMatchReason
+      stageCounts: StageCounts
+    }
   | { status: 'ALT_SLOT_NEGOTIATION_SENT'; slotCount: number; strategy: string }
-  | { status: 'SKIP'; reason: string }
+  | { status: 'SKIP'; reason: string; noMatchReason?: NoMatchReason }
   | { status: 'ERROR'; error: string }
 
 export type MatchOrchestrationInitiator = {
@@ -64,8 +72,16 @@ export async function orchestrateMatch(
   if (!jobRequest) {
     return { status: 'SKIP', reason: 'JOB_NOT_FOUND' }
   }
+  // Stage 1 of the funnel: insufficient request data.
+  // A missing address or empty category means we cannot construct any
+  // narrowing query — never query the full provider table in this state.
   if (!jobRequest.address) {
-    return { status: 'SKIP', reason: 'NO_ADDRESS' }
+    emitSkippedNoMatch(jobRequestId, 'NO_ADDRESS', options.triggeredBy)
+    return { status: 'SKIP', reason: 'NO_ADDRESS', noMatchReason: 'INSUFFICIENT_REQUEST_DATA' }
+  }
+  if (!jobRequest.category || !jobRequest.category.trim()) {
+    emitSkippedNoMatch(jobRequestId, 'NO_CATEGORY', options.triggeredBy)
+    return { status: 'SKIP', reason: 'NO_CATEGORY', noMatchReason: 'INSUFFICIENT_REQUEST_DATA' }
   }
   if (jobRequest.status !== 'OPEN') {
     return { status: 'SKIP', reason: `JOB_STATUS_${jobRequest.status}` }
@@ -177,9 +193,24 @@ export async function orchestrateMatch(
     const filteredOut: FilteredProvider[] = [...declinedFilteredOut, ...eligibilityFilteredOut]
 
     if (eligible.length === 0) {
+      // Stage 6 (funnel): classify the no-match reason so ops sees a single
+      // request-level code rather than a list of per-provider filter codes.
+      // diagnoseNoMatchReason may run ONE bounded COUNT query when the skill-
+      // narrowed pool is 0 to distinguish "no providers in area" (NO_LOCATION_MATCH)
+      // from "providers in area but not in this category" (NO_SKILL_MATCH_IN_LOCATION).
+      const diagnosis = await diagnoseNoMatchReason({
+        hasUsableInputs: true,
+        skillCandidates: rawCandidates.length,
+        eligibleCount: 0,
+        rankedCount: 0,
+        filteredOut,
+        address: matchingAddress,
+        isTestRequest: matchingJobRequest.isTestRequest,
+      })
+
       const noMatchExplanation = nearMiss.length > 0
         ? `No eligible providers for requested window - ${nearMiss.length} near-miss provider(s) found for alternative-slot negotiation`
-        : 'No eligible technicians passed the matching filters'
+        : `No eligible technicians passed the matching filters (${diagnosis.reason})`
 
       const decisionId = await recordDispatchDecision(db, {
         jobRequestId,
@@ -193,6 +224,8 @@ export async function orchestrateMatch(
         triggeredBy: options.triggeredBy,
         initiatedById: initiatedBy.actorId,
         initiatedByRole: initiatedBy.actorRole,
+        noMatchReason: diagnosis.reason,
+        stageCounts: diagnosis.stageCounts,
       })
 
       emitMatchEvent({
@@ -203,6 +236,8 @@ export async function orchestrateMatch(
         consideredCount: rawCandidates.length,
         triggeredBy: options.triggeredBy,
         latencyMs: Date.now() - start,
+        noMatchReason: diagnosis.reason,
+        stageCounts: diagnosis.stageCounts,
       })
 
       // ── Phase 5: alternative-slot negotiation ────────────────────────────
@@ -215,7 +250,13 @@ export async function orchestrateMatch(
         if (altSlotResult) return altSlotResult
       }
 
-      return { status: 'NO_MATCH', filteredOut, consideredCount: rawCandidates.length }
+      return {
+        status: 'NO_MATCH',
+        filteredOut,
+        consideredCount: rawCandidates.length,
+        noMatchReason: diagnosis.reason,
+        stageCounts: diagnosis.stageCounts,
+      }
     }
 
     // 3. Score and rank (pure - no DB calls)
@@ -299,6 +340,16 @@ export async function orchestrateMatch(
           ? `Reservation failed - ${explanationParts.join(', ')}`
           : 'All top candidates were locked or at capacity'
 
+      // All ranked candidates were locked/at capacity — eligible providers
+      // existed, so this is NO_MATCH (generic), not NO_APPROVED_PROVIDER.
+      // locationCandidates is null because we did not run the location-only
+      // count on this path (we already have eligible candidates).
+      const reservationStageCounts: StageCounts = {
+        locationCandidates: null,
+        skillCandidates: rawCandidates.length,
+        eligibleCount: eligible.length,
+        rankedCount: ranked.length,
+      }
       await db.dispatchDecision.update({
         where: { id: queueDecision.id },
         data: {
@@ -306,11 +357,19 @@ export async function orchestrateMatch(
           nextRetryAt: null,
           explanation,
           rankingSummary: annotatedRanked as object[],
+          noMatchReason: 'NO_MATCH',
+          stageCounts: reservationStageCounts as unknown as object,
         },
       }).catch((err) =>
         console.error('[orchestrator] failed to mark queued decision no-match', { jobRequestId, err })
       )
-      return { status: 'NO_MATCH', filteredOut, consideredCount: rawCandidates.length }
+      return {
+        status: 'NO_MATCH',
+        filteredOut,
+        consideredCount: rawCandidates.length,
+        noMatchReason: 'NO_MATCH',
+        stageCounts: reservationStageCounts,
+      }
     }
     // Note: nearMiss is not used here - reservation failures mean eligible providers exist
     // but are transiently locked. Cron will retry before escalating to slot negotiation.
@@ -533,6 +592,18 @@ function resolveCohortMode(requestedMode: MatchCohortMode, requestIsTest: boolea
   return requestIsTest
 }
 
+// Emits a structured match.skipped event so ops sees insufficient-data
+// outcomes alongside actual no-match outcomes. No DispatchDecision row is
+// written: the request itself is malformed, not a failed matching attempt.
+function emitSkippedNoMatch(jobRequestId: string, reason: string, triggeredBy: string): void {
+  emitMatchEvent({ event: 'match.skipped', jobRequestId, reason, triggeredBy })
+  console.warn('[orchestrator] match skipped - insufficient data', {
+    jobRequestId,
+    reason,
+    triggeredBy,
+  })
+}
+
 // ── Internal helper - writes DispatchDecision row ─────────────────────────────
 async function recordDispatchDecision(
   client: typeof db,
@@ -550,6 +621,8 @@ async function recordDispatchDecision(
     initiatedById: string
     initiatedByRole: string
     alternativeSlotOptions?: SlotOption[]
+    noMatchReason?: NoMatchReason
+    stageCounts?: StageCounts
   }
 ): Promise<string | null> {
   // Idempotency key: prevents duplicate DispatchDecisions when orchestrateMatch()
@@ -579,6 +652,8 @@ async function recordDispatchDecision(
         initiatedById: params.initiatedById,
         initiatedByRole: params.initiatedByRole,
         idempotencyKey,
+        noMatchReason: params.noMatchReason ?? null,
+        stageCounts: (params.stageCounts as unknown as object) ?? null,
       },
     })
 

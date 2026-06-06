@@ -22,6 +22,19 @@ export type MatchDomainEvent =
       consideredCount: number
       triggeredBy: string
       latencyMs: number
+      // Aggregated reason and per-stage funnel counts. See diagnostics.ts.
+      noMatchReason?:
+        | 'INSUFFICIENT_REQUEST_DATA'
+        | 'NO_LOCATION_MATCH'
+        | 'NO_SKILL_MATCH_IN_LOCATION'
+        | 'NO_APPROVED_PROVIDER'
+        | 'NO_MATCH'
+      stageCounts?: {
+        locationCandidates: number | null
+        skillCandidates: number
+        eligibleCount: number
+        rankedCount: number
+      }
     }
   | {
       event: 'match.accepted'
@@ -59,6 +72,10 @@ export type MatchDomainEvent =
       event: 'match.skipped'
       jobRequestId: string
       reason: string
+      // Optional — present when emitted from the orchestrator path. Lets log
+      // aggregators partition SKIPs by trigger source (cron / job_creation /
+      // manual / rematch) alongside other match.* events.
+      triggeredBy?: string
     }
   | {
       event: 'pool.hit'
