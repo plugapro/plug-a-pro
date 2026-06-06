@@ -64,7 +64,22 @@ export function getApplicationsAdminMessage(code?: string | null) {
     case 'recovery_failed':
       return {
         tone: 'error' as const,
-        text: 'WhatsApp send failed. Check provider-onboarding-recovery logs and retry.',
+        text: 'WhatsApp send failed. Open the AdminAuditEvent row for this action (after.error) or check provider-onboarding-recovery logs for the Meta error code, then retry.',
+      }
+    case 'recovery_blocked_role':
+      return {
+        tone: 'error' as const,
+        text: 'You do not have permission to send recovery messages. Requires OPS, ADMIN or OWNER role.',
+      }
+    case 'recovery_blocked_flag':
+      return {
+        tone: 'error' as const,
+        text: 'Recovery sends are disabled because the admin.crud.applications flag is off for your account.',
+      }
+    case 'recovery_failed_unavailable':
+      return {
+        tone: 'error' as const,
+        text: 'Could not load the recovery queue (database error). Refresh in a moment, then retry.',
       }
     case 'recovery_template_not_approved':
       return {

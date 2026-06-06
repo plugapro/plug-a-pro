@@ -841,10 +841,26 @@ async function attemptSendRecoveryForRow(params: {
     return { outcome: 'sent', via: 'session_text' }
   } catch (error) {
     await releaseRegistrationConversationRecoveryClaim(client, row)
+    const reason = error instanceof Error ? error.message : String(error)
     console.error('[provider-onboarding-recovery] follow-up send failed', {
       safeUserRef: row.safeUserRef,
       stage: row.stage,
-      error: error instanceof Error ? error.message : String(error),
+      error: reason,
+    })
+    await recordProviderOnboardingRecoveryOutcome(client, {
+      safeUserRef: row.safeUserRef,
+      phoneMasked: row.phoneMasked,
+      phoneTail: row.phoneTail,
+      recoveryStage: row.stage,
+      messageTemplateKey: row.messageTemplateKey,
+      outcomeStatus: 'technical_issue',
+      notes: reason.slice(0, 512),
+      actorId,
+    }).catch((auditError) => {
+      console.error('[provider-onboarding-recovery] failure audit write failed', {
+        safeUserRef: row.safeUserRef,
+        error: auditError instanceof Error ? auditError.message : String(auditError),
+      })
     })
     return { outcome: 'error', error }
   }

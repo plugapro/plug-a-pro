@@ -477,6 +477,41 @@ describe('provider onboarding recovery', () => {
     })
   })
 
+  it('writes a technical_issue audit log with the error message when a send throws', async () => {
+    const now = new Date('2026-06-05T10:00:00.000Z')
+    const lastInteractionAt = new Date('2026-06-05T08:00:00.000Z')
+    const client = buildRecoveryRowsClient({
+      lastInteractionAt,
+      conversationData: {},
+    })
+    const sendText = vi.fn().mockRejectedValue(new Error('WhatsApp send failed: {"error":{"code":131026,"message":"unreachable"}}'))
+    const sendTemplate = vi.fn()
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: new Date(now.getTime() - 24 * 60 * 60_000),
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: false,
+    })
+
+    expect(result.errors).toBe(1)
+    expect(result.sent).toBe(0)
+
+    const failureAudit = client.auditLog.create.mock.calls.find(
+      (call: unknown[]) => {
+        const first = call[0] as { data?: { after?: { outcomeStatus?: string } } }
+        return first?.data?.after?.outcomeStatus === 'technical_issue'
+      },
+    ) as [{ data: { after: { outcomeStatus: string; recoveryStage: string; notes: string } } }] | undefined
+    expect(failureAudit).toBeDefined()
+    expect(failureAudit?.[0].data.after).toMatchObject({
+      outcomeStatus: 'technical_issue',
+      recoveryStage: 'register_started_no_name',
+    })
+    expect(failureAudit?.[0].data.after.notes).toContain('131026')
+  })
+
   it('uses session-text sends when still inside window, even with template flag enabled', async () => {
     const now = new Date('2026-06-04T10:00:00.000Z')
     const lastInteractionAt = new Date('2026-06-04T09:30:00.000Z')

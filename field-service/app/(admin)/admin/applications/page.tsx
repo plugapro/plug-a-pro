@@ -654,11 +654,11 @@ async function sendRecoveryNudgeForRow(formData: FormData) {
 
   const admin = await requireAdmin()
   if (!APPLICATION_ROLES.includes(admin.adminRole as (typeof APPLICATION_ROLES)[number])) {
-    redirect('/admin/applications?message=recovery_failed')
+    redirect('/admin/applications?message=recovery_blocked_role')
   }
   const flagOn = await isEnabled(FLAG, { userId: admin.id })
   if (!flagOn) {
-    redirect('/admin/applications?message=recovery_failed')
+    redirect('/admin/applications?message=recovery_blocked_flag')
   }
   const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send', { userId: admin.id })
 
@@ -680,6 +680,10 @@ async function sendRecoveryNudgeForRow(formData: FormData) {
       bannerCode = 'recovery_template_not_approved'
     }
 
+    const errorMessage = result.outcome === 'error' && result.error instanceof Error
+      ? result.error.message.slice(0, 512)
+      : null
+
     await db.adminAuditEvent.create({
       data: {
         adminId: admin.id,
@@ -696,6 +700,7 @@ async function sendRecoveryNudgeForRow(formData: FormData) {
               via: result.via,
             }
             : {}),
+          ...(errorMessage ? { error: errorMessage } : {}),
         },
       },
     }).catch((error) => {
@@ -708,6 +713,7 @@ async function sendRecoveryNudgeForRow(formData: FormData) {
       (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
     ) throw error
     console.error('[admin/applications] sendRecoveryNudgeForRow failed', { safeUserRef, error })
+    bannerCode = 'recovery_failed_unavailable'
   }
 
   revalidatePath('/admin/applications')
@@ -718,11 +724,11 @@ async function sendAllDueRecoveryNudges() {
   'use server'
   const admin = await requireAdmin()
   if (!APPLICATION_ROLES.includes(admin.adminRole as (typeof APPLICATION_ROLES)[number])) {
-    redirect('/admin/applications?message=recovery_failed')
+    redirect('/admin/applications?message=recovery_blocked_role')
   }
   const flagOn = await isEnabled(FLAG, { userId: admin.id })
   if (!flagOn) {
-    redirect('/admin/applications?message=recovery_failed')
+    redirect('/admin/applications?message=recovery_blocked_flag')
   }
   const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send', { userId: admin.id })
 
@@ -757,7 +763,7 @@ async function sendAllDueRecoveryNudges() {
     ) throw error
     console.error('[admin/applications] sendAllDueRecoveryNudges failed', { error })
     revalidatePath('/admin/applications')
-    redirect('/admin/applications?message=recovery_failed')
+    redirect('/admin/applications?message=recovery_failed_unavailable')
   }
 
   revalidatePath('/admin/applications')
