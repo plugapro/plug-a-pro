@@ -75,7 +75,7 @@ async function resolveAuthenticatedEntryDestination() {
 
 function shouldRedirectForRegistrationEntry(requestedStep: StepKey, destinationRoute: string): boolean {
   if (destinationRoute === '/provider') return true
-  if (destinationRoute === '/provider/register/status') return requestedStep !== 'status'
+  if (destinationRoute === '/provider/register/status') return requestedStep !== 'status' && requestedStep !== 'submitted'
   if (destinationRoute === '/provider/register/draft') return requestedStep !== 'draft'
   if (destinationRoute === '/provider/register/welcome') return false
   return requestedStep === 'welcome'
@@ -94,6 +94,9 @@ export default async function ProviderRegistrationPage({
   }
 
   const destination = await resolveAuthenticatedEntryDestination()
+  if (requestedStep === 'submitted' && destination?.route !== '/provider/register/status') {
+    redirect('/provider/register')
+  }
   if (destination && shouldRedirectForRegistrationEntry(requestedStep as StepKey, destination.route)) {
     redirect(destination.route)
   }

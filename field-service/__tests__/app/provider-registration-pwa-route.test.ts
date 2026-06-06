@@ -90,4 +90,28 @@ describe('provider registration PWA route surface', () => {
     expect(sendSource).toContain('provider_registration_send_code')
     expect(sendSource).not.toContain('findProviderForOtpLogin')
   })
+
+  it('allows the submitted state to render after application submit before status redirect takes over', () => {
+    const routeSource = readFileSync(join(root, 'app/provider/register/[[...step]]/page.tsx'), 'utf8')
+
+    expect(routeSource).toContain(
+      "if (destinationRoute === '/provider/register/status') return requestedStep !== 'status' && requestedStep !== 'submitted'",
+    )
+    expect(routeSource).toContain(
+      "if (requestedStep === 'submitted' && destination?.route !== '/provider/register/status')",
+    )
+  })
+
+  it('requires a verified registration session phone before draft or submit writes', () => {
+    const draftSource = readFileSync(join(root, 'app/api/provider/registration/draft/route.ts'), 'utf8')
+    const submitSource = readFileSync(join(root, 'app/api/provider/registration/submit/route.ts'), 'utf8')
+
+    for (const source of [draftSource, submitSource]) {
+      expect(source).toContain('getSession')
+      expect(source).toContain('REGISTRATION_SESSION_REQUIRED')
+      expect(source).toContain('REGISTRATION_PHONE_MISMATCH')
+      expect(source).toContain('reference_id')
+      expect(source).toContain('suggested_actions')
+    }
+  })
 })
