@@ -82,6 +82,44 @@ describe('runSkillCategoryCanonicalizationBackfill', () => {
     expect(client.auditLog.createMany).not.toHaveBeenCalled()
   })
 
+  it('does not require optional cohort columns while scanning production rows', async () => {
+    const { client } = makeBackfillClient()
+
+    await runSkillCategoryCanonicalizationBackfill(client)
+
+    expect(client.providerApplication.findMany).toHaveBeenCalledWith({
+      select: { id: true, skills: true },
+      orderBy: { id: 'asc' },
+    })
+    expect(client.provider.findMany).toHaveBeenCalledWith({
+      select: { id: true, skills: true },
+      orderBy: { id: 'asc' },
+    })
+    expect(client.jobRequest.findMany).toHaveBeenCalledWith({
+      select: { id: true, category: true },
+      orderBy: { id: 'asc' },
+    })
+  })
+
+  it('skips missing optional target tables with a warning', async () => {
+    const { client } = makeBackfillClient()
+    client.serviceAreaWaitlist.findMany.mockRejectedValueOnce(Object.assign(
+      new Error('missing table'),
+      { code: 'P2021', meta: { table: 'public.service_area_waitlist' } },
+    ))
+
+    const summary = await runSkillCategoryCanonicalizationBackfill(client)
+
+    expect(summary.fields['ServiceAreaWaitlist.category']).toEqual({
+      rowsScanned: 0,
+      rowsChanged: 0,
+      valuesChanged: 0,
+    })
+    expect(summary.warnings).toContain(
+      'ServiceAreaWaitlist.category skipped: missing table public.service_area_waitlist',
+    )
+  })
+
   it('apply mode writes changed rows, creates audit rows, and is idempotent', async () => {
     const { client, rows } = makeBackfillClient()
 

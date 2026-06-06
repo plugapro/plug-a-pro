@@ -58,6 +58,7 @@ export type SkillCategoryCanonicalizationBackfillSummary = {
   totalChangedRows: number
   auditRowsWritten: number
   fields: Record<string, SkillCategoryCanonicalizationFieldSummary>
+  warnings: string[]
   changes: Array<{
     entityType: string
     entityId: string
@@ -88,16 +89,31 @@ function recordChange(
   summary.changes.push(change)
 }
 
+function describeMissingSchemaError(error: unknown): string | null {
+  const maybeError = error as { code?: string; meta?: { table?: string; column?: string } }
+  if (maybeError?.code === 'P2021') return `missing table ${maybeError.meta?.table ?? 'unknown'}`
+  if (maybeError?.code === 'P2022') return `missing column ${maybeError.meta?.column ?? 'unknown'}`
+  return null
+}
+
 async function scanArrayField(params: {
   summary: SkillCategoryCanonicalizationBackfillSummary
   fieldKey: string
   entityType: 'ProviderApplication' | 'Provider'
   delegate: BackfillDelegate<ArrayRow, { skills: string[] }>
 }) {
-  const rows = await params.delegate.findMany({
-    select: { id: true, skills: true, isTestUser: true, cohortName: true },
-    orderBy: { id: 'asc' },
-  })
+  let rows: ArrayRow[]
+  try {
+    rows = await params.delegate.findMany({
+      select: { id: true, skills: true },
+      orderBy: { id: 'asc' },
+    })
+  } catch (error) {
+    const reason = describeMissingSchemaError(error)
+    if (!reason) throw error
+    params.summary.warnings.push(`${params.fieldKey} skipped: ${reason}`)
+    return
+  }
   params.summary.fields[params.fieldKey].rowsScanned = rows.length
 
   for (const row of rows) {
@@ -121,14 +137,18 @@ async function scanCategoryField(params: {
   entityType: 'JobRequest' | 'ServiceAreaWaitlist'
   delegate: BackfillDelegate<CategoryRow, { category: string }>
 }) {
-  const rows = await params.delegate.findMany({
-    select: {
-      id: true,
-      category: true,
-      ...(params.entityType === 'JobRequest' ? { isTestRequest: true, cohortName: true } : {}),
-    },
-    orderBy: { id: 'asc' },
-  })
+  let rows: CategoryRow[]
+  try {
+    rows = await params.delegate.findMany({
+      select: { id: true, category: true },
+      orderBy: { id: 'asc' },
+    })
+  } catch (error) {
+    const reason = describeMissingSchemaError(error)
+    if (!reason) throw error
+    params.summary.warnings.push(`${params.fieldKey} skipped: ${reason}`)
+    return
+  }
   params.summary.fields[params.fieldKey].rowsScanned = rows.length
 
   for (const row of rows) {
@@ -203,6 +223,7 @@ export async function runSkillCategoryCanonicalizationBackfill(
       'JobRequest.category': emptyFieldSummary(),
       'ServiceAreaWaitlist.category': emptyFieldSummary(),
     },
+    warnings: [],
     changes: [],
   }
 

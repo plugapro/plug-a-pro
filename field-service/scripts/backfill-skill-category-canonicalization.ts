@@ -27,6 +27,10 @@ function printSummary(summary: Awaited<ReturnType<typeof runSkillCategoryCanonic
     )
   }
 
+  for (const warning of summary.warnings) {
+    console.warn(`[skill-category-canonicalization] warning=${warning}`)
+  }
+
   if (summary.changes.length > 0) {
     console.log('[skill-category-canonicalization] diffs:')
     for (const change of summary.changes) {

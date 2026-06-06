@@ -78,6 +78,24 @@ function printReport(field: string, report: FieldReport) {
   }
 }
 
+function describeMissingSchemaError(error: unknown): string | null {
+  const maybeError = error as { code?: string; meta?: { table?: string; column?: string } }
+  if (maybeError?.code === 'P2021') return `missing table ${maybeError.meta?.table ?? 'unknown'}`
+  if (maybeError?.code === 'P2022') return `missing column ${maybeError.meta?.column ?? 'unknown'}`
+  return null
+}
+
+async function safeFindMany<T>(field: string, query: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await query()
+  } catch (error) {
+    const reason = describeMissingSchemaError(error)
+    if (!reason) throw error
+    console.warn(`[${field}] skipped=${reason}`)
+    return []
+  }
+}
+
 async function main() {
   console.log('Canonical tags:', [...KNOWN_TAGS].join(', '))
   console.log('Pilot tags:    ', [...PILOT_SKILL_TAGS].join(', '))
@@ -88,10 +106,10 @@ async function main() {
     jobs,
     waitlists,
   ] = await Promise.all([
-    db.providerApplication.findMany({ select: { skills: true } }),
-    db.provider.findMany({ select: { skills: true } }),
-    db.jobRequest.findMany({ select: { category: true } }),
-    db.serviceAreaWaitlist.findMany({ select: { category: true } }),
+    safeFindMany('ProviderApplication.skills', () => db.providerApplication.findMany({ select: { skills: true } })),
+    safeFindMany('Provider.skills', () => db.provider.findMany({ select: { skills: true } })),
+    safeFindMany('JobRequest.category', () => db.jobRequest.findMany({ select: { category: true } })),
+    safeFindMany('ServiceAreaWaitlist.category', () => db.serviceAreaWaitlist.findMany({ select: { category: true } })),
   ])
 
   const reports = {
