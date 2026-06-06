@@ -38,7 +38,7 @@ describe('admin action messages', () => {
   it('maps template-based recovery sends to a distinct success message', () => {
     expect(getApplicationsAdminMessage('recovery_sent_template')).toEqual({
       tone: 'success',
-      text: 'Recovery template message sent.',
+      text: 'Recovery template sent successfully outside the 23h WhatsApp session window.',
     })
   })
 

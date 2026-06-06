@@ -33,7 +33,7 @@ export function getApplicationsAdminMessage(code?: string | null) {
     case 'recovery_sent':
       return { tone: 'success' as const, text: 'WhatsApp recovery message sent.' }
     case 'recovery_sent_template':
-      return { tone: 'success' as const, text: 'Recovery template message sent.' }
+      return { tone: 'success' as const, text: 'Recovery template sent successfully outside the 23h WhatsApp session window.' }
     case 'recovery_batch_dispatched':
       return { tone: 'success' as const, text: 'Recovery batch dispatched. Check the row outcomes for results.' }
     case 'recovery_skipped_window':
