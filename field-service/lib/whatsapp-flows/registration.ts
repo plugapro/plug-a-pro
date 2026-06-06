@@ -32,6 +32,7 @@ import {
   RESTRICTED_SKILL_NOTICE,
   resolveServiceCategoryTag,
 } from '../service-categories'
+import { canonicalizeServiceCategoryValues } from '../service-category-canonicalization'
 import { resolveInitialApprovalStatus } from '../provider-categories'
 import {
   getHighRiskServiceRequirements,
@@ -2308,6 +2309,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     const cohort = createTestCohortContext(normalizedPhone)
     const name = ctx.data.name?.trim() ?? 'unknown'
     const skills = uniqueStrings(ctx.data.skills ?? [])
+    const canonicalSkills = canonicalizeServiceCategoryValues(skills)
     const serviceAreas = uniqueStrings(
       (ctx.data.selectedSuburbLabels?.length ? ctx.data.selectedSuburbLabels :
        ctx.data.selectedRegionLabels?.length ? ctx.data.selectedRegionLabels :
@@ -2323,7 +2325,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
             phone: normalizedPhone,
             email: ctx.data.providerEmail ?? null,
             name,
-            skills,
+            skills: canonicalSkills,
             serviceAreas,
             experience: ctx.data.experience ?? null,
             availability: formatAvailabilityLabel(uniqueStrings(ctx.data.availability ?? [])),
@@ -2356,7 +2358,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
             after: {
               status: 'CANCELLED',
               cancelledAt: now.toISOString(),
-              selectedSkillsCount: skills.length,
+              selectedSkillsCount: canonicalSkills.length,
               selectedAreasCount: serviceAreas.length,
               traceId: cancelTraceId,
             },
@@ -2401,6 +2403,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
   try {
     const submitData = validateSubmitData(ctx)
+    const canonicalSkills = canonicalizeServiceCategoryValues(submitData.skills)
     const cohort = createTestCohortContext(normalizedPhone)
     const sessionUploadedFileCount = submitData.evidenceAttachmentIds.length
 
@@ -2486,7 +2489,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         phone: normalizedPhone,
         name: submitData.name,
         email: ctx.data.providerEmail ?? null,
-        skills: submitData.skills,
+        skills: canonicalSkills,
         serviceAreas: submitData.resolvedAreaLabels,
         active: true,
         availableNow: true,
@@ -2507,7 +2510,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           phone: normalizedPhone,
           email: ctx.data.providerEmail ?? null,
           name: submitData.name,
-          skills: submitData.skills,
+          skills: canonicalSkills,
           serviceAreas: submitData.resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
           availability: formatAvailabilityLabel(submitData.availability),
@@ -2533,7 +2536,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       })
 
       const providerCategoryRows = await Promise.all(
-        submitData.skills.map(async (skill) => {
+        canonicalSkills.map(async (skill) => {
           const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
           const approvalStatus = await resolveInitialApprovalStatus(providerId, categorySlug)
           return {

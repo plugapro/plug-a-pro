@@ -26,7 +26,20 @@ vi.mock('@/lib/ops-queue', () => ({ OPS_QUEUE_TYPES: { PROVIDER_ONBOARDING: 'PRO
 vi.mock('@/lib/provider-application-notifications', () => ({ notifyProviderApplicationApprovedOnce: mockNotifyProviderApplicationApprovedOnce }))
 vi.mock('@/lib/matching/customer-recontact', () => ({ checkJobsForNewProviderAvailability: mockCheckJobsForNewProviderAvailability }))
 vi.mock('@/lib/provider-applications', () => ({ findConflictingActiveProviderApplications: mockFindConflictingActiveProviderApplications }))
-vi.mock('@/lib/service-categories', () => ({ resolveServiceCategoryTag: mockResolveServiceCategoryTag }))
+vi.mock('@/lib/service-categories', () => ({
+  SERVICE_CATEGORY_OPTIONS: [
+    { tag: 'plumbing', label: 'Plumbing' },
+    { tag: 'garden', label: 'Garden & Landscaping' },
+    { tag: 'handyman', label: 'Handyman' },
+    { tag: 'appliances', label: 'Appliances' },
+    { tag: 'diy-assembly', label: 'DIY & Assembly' },
+    { tag: 'cleaning', label: 'Cleaning' },
+    { tag: 'tiling', label: 'Tiling' },
+    { tag: 'carpentry', label: 'Carpentry' },
+    { tag: 'electrical', label: 'Electrical' },
+  ],
+  resolveServiceCategoryTag: mockResolveServiceCategoryTag,
+}))
 vi.mock('@/lib/audit', () => ({ recordAuditLog: mockRecordAuditLog }))
 
 import { autoApproveProviderApplications, reconcileAutoApproveSideEffects } from '@/lib/provider-auto-approve'

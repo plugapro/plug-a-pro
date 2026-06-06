@@ -3,6 +3,7 @@ import { syncProviderSkills } from './provider-skills'
 import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-guard'
 import { INTERNAL_TEST_COHORT_NAME, createTestCohortContext } from './internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
+import { canonicalizeServiceCategoryValues } from './service-category-canonicalization'
 
 type ProviderRecordSyncClient = {
   provider: {
@@ -191,6 +192,7 @@ export async function syncProviderRecord(
   const isTestUser = input.isTestUser ?? phoneCohort.isTestUser
   const cohortName = input.cohortName ?? (isTestUser ? phoneCohort.cohortName ?? INTERNAL_TEST_COHORT_NAME : null)
   const leadEligible = input.active && input.verified
+  const skills = canonicalizeServiceCategoryValues(input.skills)
   const serviceAreas = normaliseLocationDisplayNames(input.serviceAreas)
   const existing = await client.provider.findUnique({
     where: { phone },
@@ -201,7 +203,7 @@ export async function syncProviderRecord(
     const data: Record<string, unknown> = {
       name: input.name,
       email: input.email ?? null,
-      skills: input.skills,
+      skills,
       serviceAreas,
       active: leadEligible,
       isTestUser,
@@ -222,7 +224,7 @@ export async function syncProviderRecord(
 
     if (!input.skipEnrichment) {
       try {
-        await syncProviderSkills(client, existing.id, input.skills)
+        await syncProviderSkills(client, existing.id, skills)
       } catch (err) {
         throwOnEnrichmentFailure('syncProviderSkills', err, existing.id)
       }
@@ -251,7 +253,7 @@ export async function syncProviderRecord(
       name: input.name,
       email: input.email ?? null,
       userId: input.userId ?? null,
-      skills: input.skills,
+      skills,
       serviceAreas,
       active: leadEligible,
       isTestUser,
@@ -264,7 +266,7 @@ export async function syncProviderRecord(
 
   if (!input.skipEnrichment) {
     try {
-      await syncProviderSkills(client, id, input.skills)
+      await syncProviderSkills(client, id, skills)
     } catch (err) {
       throwOnEnrichmentFailure('syncProviderSkills', err, id)
     }

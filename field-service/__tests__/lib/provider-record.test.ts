@@ -337,7 +337,7 @@ describe('syncProviderRecord - phone normalization', () => {
     })
   })
 
-  it('syncs normalized technician skill tags while keeping provider skill labels', async () => {
+  it('syncs normalized technician skill tags and stores provider skills as canonical tags', async () => {
     const client = {
       provider: {
         findUnique: vi.fn().mockResolvedValue({ id: 'prov_exists' }),
@@ -371,7 +371,7 @@ describe('syncProviderRecord - phone normalization', () => {
     expect(client.provider.updateMany).toHaveBeenCalledWith({
       where: { id: 'prov_exists' },
       data: expect.objectContaining({
-        skills: ['Electrical', 'Garden & Landscaping', 'DIY & Assembly'],
+        skills: ['electrical', 'garden', 'diy'],
       }),
     })
   })

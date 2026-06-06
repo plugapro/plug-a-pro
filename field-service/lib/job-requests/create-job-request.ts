@@ -18,6 +18,7 @@ import { phoneLookupVariants } from '../whatsapp-identity'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildRequestRef } from '../client-request-data'
 import { normalizeCustomerName } from '../customer-name'
+import { canonicalizeServiceCategoryValue } from '../service-category-canonicalization'
 import {
   syncReusableCustomerAddressFromSnapshot,
   type ReusableAddressTx,
@@ -136,7 +137,8 @@ export async function createJobRequest(
   // without the + prefix (e.g. 27821234567) while the PWA session always has
   // +27…. A mismatch causes linkCustomerAccount to miss existing records.
   const phone = normalizePhone(params.phone)
-  params = { ...params, phone }
+  const category = canonicalizeServiceCategoryValue(params.category).canonical ?? params.category.trim()
+  params = { ...params, phone, category }
   const cohort = createTestCohortContext(phone)
   const photoAttachmentIds = uniqueAttachmentIds(params.photoAttachmentIds)
   const locality = {

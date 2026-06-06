@@ -48,7 +48,7 @@ export async function syncProviderSkills(
   if (client.provider?.update) {
     await client.provider.update({
       where: { id: providerId },
-      data: { skills: skillLabels },
+      data: { skills: skillTags },
     })
   }
 

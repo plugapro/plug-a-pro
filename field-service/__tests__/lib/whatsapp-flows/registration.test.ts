@@ -346,6 +346,34 @@ describe('registration flow - duplicate prevention', () => {
       )
     })
 
+    it('persists canonical skill tags while keeping WhatsApp session skills as labels', async () => {
+      await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, {
+          ...dataWithFullProfile,
+          skills: ['Plumbing', 'Garden & Landscaping'],
+        })
+      )
+
+      expect(providerRecord.syncProviderRecord).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          skills: ['plumbing', 'garden'],
+        }),
+      )
+      expect(db.providerApplication.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            skills: ['plumbing', 'garden'],
+          }),
+        }),
+      )
+      expect(whatsapp.sendAdminNewApplication).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skills: ['Plumbing', 'Garden & Landscaping'],
+        }),
+      )
+    })
+
     it('creates application with five uploaded files and links every attachment', async () => {
       const evidenceFileUrls = ['att_1', 'att_2', 'att_3', 'att_4', 'att_5']
 

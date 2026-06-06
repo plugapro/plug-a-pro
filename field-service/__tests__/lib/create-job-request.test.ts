@@ -193,6 +193,26 @@ describe('createJobRequest', () => {
     expect(result.requestRef).toMatch(/^PAP-/)
   })
 
+  it('canonicalizes category labels before policy lookup, duplicate guard and JobRequest create', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({ ...BASE_PARAMS, category: 'Plumbing' })
+
+    expect(mockResolveCategoryRequirements).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'plumbing',
+    }))
+    expect(tx.jobRequest.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ category: 'plumbing' }),
+    }))
+    expect(tx.jobRequest.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ category: 'plumbing' }),
+    }))
+  })
+
   it('stores customer address locality fields in display case while preserving matching lookup', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
