@@ -1899,6 +1899,10 @@ model Conversation {
   @@map("conversations")
 }
 
+/// Server-only table accessed exclusively via Prisma's service role.
+/// RLS is enabled at the table level but no policies exist intentionally —
+/// PostgREST anon/authenticated roles have no access. Do not add direct
+/// Supabase JS reads against this table.
 model ProviderResumeToken {
   id                  String    @id @default(cuid())
   tokenHash           String    @unique // sha256(rawToken) hex; raw never stored

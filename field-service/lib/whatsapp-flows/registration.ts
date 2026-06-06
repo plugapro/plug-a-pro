@@ -100,6 +100,7 @@ type ProviderApplicationSubmitResult =
   | { outcome: 'created'; applicationId: string; providerId: string; ref: string }
   | { outcome: 'existing_pending'; applicationId: string; ref: string }
   | { outcome: 'existing_approved'; applicationId: string; ref: string }
+  | { outcome: 'existing_more_info_required'; applicationId: string; ref: string }
 
 function uniqueStrings(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
@@ -2441,6 +2442,13 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           ref: existingApp.id.slice(-8).toUpperCase(),
         }
       }
+      if (existingApp?.status === 'MORE_INFO_REQUIRED') {
+        return {
+          outcome: 'existing_more_info_required',
+          applicationId: existingApp.id,
+          ref: existingApp.id.slice(-8).toUpperCase(),
+        }
+      }
       if (existingApp?.status === 'PENDING') {
         return {
           outcome: 'existing_pending',
@@ -2716,6 +2724,14 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         ],
         undefined,
         { metadata: { traceId, applicationId: submitResult.applicationId } },
+      )
+      return { nextStep: 'done' }
+    }
+
+    if (submitResult.outcome === 'existing_more_info_required') {
+      await sendText(
+        ctx.phone,
+        `⏳ Your application is under review and we've requested more information.\n\nRef: *${submitResult.ref}*\n\nPlease reply with the requested information so we can complete the review.`,
       )
       return { nextStep: 'done' }
     }
