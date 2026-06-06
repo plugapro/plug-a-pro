@@ -60,8 +60,14 @@ describe('provider registration PWA flow', () => {
     const result = await saveProviderRegistrationDraft(client, {
       phone: '082 303 5070',
       name: 'Thabo Nkosi',
+      businessName: 'Nkosi Plumbing',
+      preferredContact: 'WHATSAPP',
+      identityBasis: 'SA_ID',
+      profilePhotoUrl: 'https://blob.example/photo.jpg',
       skills: ['plumbing'],
       serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      travelRadiusKm: 25,
       lastCompletedStep: 2,
     })
 
@@ -70,7 +76,14 @@ describe('provider registration PWA flow', () => {
       data: expect.objectContaining({
         phone: '+27823035070',
         name: 'Thabo Nkosi',
+        businessName: 'Nkosi Plumbing',
+        preferredContact: 'WHATSAPP',
+        identityBasis: 'SA_ID',
+        profilePhotoUrl: 'https://blob.example/photo.jpg',
         skills: ['plumbing'],
+        categorySlugs: ['plumbing'],
+        locationNodeIds: ['sub_maboneng'],
+        travelRadiusKm: 25,
       }),
     }))
     expect(client.registrationResumeToken.create).toHaveBeenCalledWith(expect.objectContaining({

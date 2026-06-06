@@ -20,12 +20,12 @@ describe('provider registration foundation helpers', () => {
     expect(await verifyRegistrationResumeToken('wrong-token', hash)).toBe(false)
   })
 
-  it('routes active drafts to the next incomplete registration step', () => {
+  it('routes active drafts to the dedicated draft return state', () => {
     expect(resolveProviderRegistrationDestination({
       applicationStatus: 'NONE',
       hasActiveDraft: true,
       lastCompletedStep: 4,
-    })).toEqual({ route: '/provider/register/availability' })
+    })).toEqual({ route: '/provider/register/draft', state: 'draft' })
   })
 
   it('prioritises submitted application states over draft progress', () => {
@@ -36,12 +36,12 @@ describe('provider registration foundation helpers', () => {
     })).toEqual({ route: '/provider/register/status', state: 'more_info' })
   })
 
-  it('routes approved providers to the provider portal instead of restarting registration', () => {
+  it('routes approved applications to the approved return state so credit gating is visible', () => {
     expect(resolveProviderRegistrationDestination({
       applicationStatus: 'APPROVED',
       hasActiveDraft: true,
       lastCompletedStep: 4,
-    })).toEqual({ route: '/provider' })
+    })).toEqual({ route: '/provider/register/status', state: 'approved' })
 
     expect(resolveProviderRegistrationDestination({
       applicationStatus: 'NONE',
