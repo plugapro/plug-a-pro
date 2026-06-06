@@ -37,6 +37,7 @@ const PUBLIC_PATHS = [
   '/provider/terms',       // provider credit rules are linked before login/application
   '/provider/verification', // WhatsApp identity step-up CTA must load before provider login
   '/provider/verify',      // token-gated identity verification PWA links are public
+  '/provider/signup',      // anonymous token-gated WhatsApp registration finish page
   '/track',                // public customer tracking landing pages
   '/for-providers',        // public provider acquisition page
   '/credit-terms',         // public provider credit terms page
