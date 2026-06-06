@@ -2,8 +2,10 @@
 
 **Date:** 2026-06-06
 **Owner:** Lebogang (Jacob)
-**Status:** Draft — awaiting user review
-**Trigger:** A prod change wiped Supabase Postgres and Vercel Blob today. Identity-document Supabase Storage objects (10) appear to have survived. A restore clone of an earlier Supabase backup is available.
+**Status:** Draft — gated on Phase 0 root-cause confirmation before any apply step
+**Trigger:** Production writes are failing in a way that presents as missing rows in `Attachment`, `ProviderIdentityVerification`, and `ProviderIdentityDocument`. Identity-document Supabase Storage objects (10) appear to have survived. A restore clone of an earlier Supabase backup is available.
+
+The "DB wipe" framing is **provisional**. The evidence confirms a production write-path read-only failure. It does not yet prove whether the whole Supabase project is read-only, the runtime is pointed at a read-only/replica endpoint, or the Supavisor transaction pooler has a stuck read-only backend. That distinction changes the fix — and may eliminate the need for the recovery workstreams in §4 entirely.
 
 ---
 
@@ -55,9 +57,54 @@ Confirmed conclusions:
 
 ## 4. Workstreams
 
-Four workstreams plus a survival gate. A, B, C are largely independent and can run in parallel; D depends on A and B completing.
+**Phase 0 (root-cause confirmation) must complete before any workstream in this section runs.** Workstreams A–D in this section are conditional: they execute only if Phase 0 confirms a real data-loss event and rules out a read-only/pooler/endpoint failure mode.
 
-### Gate 0 — Survival counts (5 min)
+### Phase 0 — Root-cause confirmation (infra, not application)
+
+The presenting symptom (writes failing, rows appearing missing) is consistent with at least four causes. Diagnose which before treating this as data loss.
+
+**P0.1 — Direct DB state.** Run against both the direct writer connection and the runtime `DATABASE_URL` / pooler connection:
+
+```sql
+select pg_is_in_recovery();
+show transaction_read_only;
+show default_transaction_read_only;
+```
+
+Interpretation:
+
+- Direct writer writable, pooled runtime read-only → **pooler/session state issue**, not project-wide lock. Action: cycle the Supavisor pooler or restart connections; see Supabase troubleshooting doc on "cannot execute UPDATE in a read-only transaction on transaction pooler connections" (https://supabase.com/docs/guides/troubleshooting/resolving-cannot-execute-update-in-a-read-only-transaction-on-transaction-pooler-connections-ef582c).
+- Both read-only → **project-wide lock**. Cause is disk-full or billing per Supabase database-size docs (https://supabase.com/docs/guides/platform/database-size). Action: resolve billing / increase disk before any application action.
+- Both writable → root cause is elsewhere (env target, code path, transient).
+
+**P0.2 — Supabase dashboard.** Inspect for:
+
+- Project banner (read-only / billing / disk warning).
+- Database → Reports for database size.
+- Database → Settings / compute / disk for provisioned disk usage.
+- Billing status.
+
+**P0.3 — Env target.** Confirm:
+
+- Production `DATABASE_URL` is not a replica / read-only endpoint.
+- Migration / direct connection env is not using the transaction pooler on `6543`.
+- Vercel production env points at the expected Supabase project ref (`oghbryokdizklgwaqksp`).
+
+**P0.4 — Decision tree out of Phase 0.**
+
+- Pooler-only read-only → fix pooler, re-test writes, **abandon §4 workstreams**. The "missing rows" are likely still on disk and become visible again once writes resume; verify with a row-count sanity check and skip recovery.
+- Project-wide read-only from disk-full or billing → resolve billing/disk first. If pruning is required, identify largest relations with `pg_total_relation_size`, export/snapshot business-critical data before deleting, and use Supabase's documented read-write session override only for controlled cleanup. After write-path recovery, re-evaluate whether §4 is needed.
+- Env target mis-pointed → repoint env, re-test writes, **abandon §4 workstreams**.
+- All three checks come back clean and writes still fail → return here and proceed with §4 as the data-loss recovery path.
+
+**P0.5 — Recovery proof.** Before declaring Phase 0 complete:
+
+- One direct SQL write succeeds.
+- One production API business write succeeds.
+- Previously failing cron / write paths stop emitting SQLSTATE 25006.
+- Monitor errors for 10–15 minutes.
+
+### Gate 0 — Survival counts (5 min, runs only if Phase 0 outcome is "real data loss")
 
 Compare prod and restore-clone counts for: `inbound_whatsapp_messages`, `attachments`, `provider_identity_verifications`, `provider_identity_documents`, `provider_verification_webhook_events`, and `storage.objects WHERE bucket_id = 'identity-documents'`. The table in §2 is the captured snapshot for today's run. The script must re-run this gate and abort if the live counts have unexpectedly changed since the snapshot.
 
@@ -221,3 +268,17 @@ Supabase Storage interactions (read for B1, no writes — surviving objects stay
 - Manual: spot-check three recovered `Attachment` rows in the admin UI to confirm the image renders via the `/api/attachments/[id]` proxy.
 
 No new Playwright smoke is required — this is a one-time recovery script, not a feature.
+
+---
+
+## 9. Go / No-Go verdict
+
+- **GO** to infra recovery immediately — execute Phase 0 (P0.1–P0.5) now.
+- **NO-GO** on application code changes, including writing the recovery script in §5, until Phase 0 proves direct writer vs pooler vs project-lock and confirms the actual failure mode.
+- **GO** to authenticate Supabase MCP for read-only checks (`pg_is_in_recovery`, `show transaction_read_only`, dashboard reads, disk/usage inspection).
+- **NO-GO** for MCP-driven deletes, pruning, billing changes, secret rotations, or env-variable changes without explicit, separate approval at the moment of action.
+
+### Sources
+
+- Supabase database size / read-only mode: https://supabase.com/docs/guides/platform/database-size
+- Supabase transaction pooler read-only troubleshooting: https://supabase.com/docs/guides/troubleshooting/resolving-cannot-execute-update-in-a-read-only-transaction-on-transaction-pooler-connections-ef582c
