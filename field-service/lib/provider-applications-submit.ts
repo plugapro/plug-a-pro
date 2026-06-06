@@ -1,5 +1,16 @@
 import type { Prisma, ProviderApplication } from '@prisma/client'
 import { db } from './db'
+import { ACTIVE_PROVIDER_APPLICATION_STATUSES } from './provider-applications'
+
+// ─── Errors ──────────────────────────────────────────────────────────────────
+
+export class ProviderApplicationConflictError extends Error {
+  readonly code = 'APPLICATION_CONFLICT'
+  constructor(public readonly existingStatus: string) {
+    super(`Phone already has an active application (status: ${existingStatus}).`)
+    this.name = 'ProviderApplicationConflictError'
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,14 +93,12 @@ export async function submitProviderApplication(
     const conflict = await tx.providerApplication.findFirst({
       where: {
         phone: input.phone,
-        status: { notIn: ['CANCELLED', 'REJECTED'] },
+        status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
       },
       select: { id: true, status: true },
     })
     if (conflict) {
-      throw new Error(
-        `Phone already has an active application (status: ${conflict.status}).`,
-      )
+      throw new ProviderApplicationConflictError(conflict.status)
     }
 
     // Normalise availability: the WhatsApp flow passes a pre-formatted string,
@@ -110,9 +119,9 @@ export async function submitProviderApplication(
         availability: availabilityStr,
         callOutFee: input.callOutFee ?? null,
         hourlyRate: input.hourlyRate ?? null,
-        rateNegotiable: input.rateNegotiable ?? true,
-        weekendJobs: input.weekendJobs ?? false,
-        sameDayJobs: input.sameDayJobs ?? true,
+        ...(input.rateNegotiable !== undefined && { rateNegotiable: input.rateNegotiable }),
+        ...(input.weekendJobs !== undefined && { weekendJobs: input.weekendJobs }),
+        ...(input.sameDayJobs !== undefined && { sameDayJobs: input.sameDayJobs }),
         evidenceNote: input.evidenceNote ?? null,
         evidenceFileUrls: input.evidenceFileUrls ?? [],
         alternateMobileE164: input.alternateMobileE164 ?? null,

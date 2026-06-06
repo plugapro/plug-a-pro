@@ -55,8 +55,9 @@ function makeAppMethods() {
       for (const row of appStore.values()) {
         if (where.phone && row.phone !== where.phone) continue
         if (where.status && typeof where.status === 'object') {
-          const { notIn } = where.status as { notIn?: string[] }
-          if (notIn && notIn.includes(row.status)) continue
+          const statusFilter = where.status as { notIn?: string[]; in?: string[] }
+          if (statusFilter.notIn && statusFilter.notIn.includes(row.status)) continue
+          if (statusFilter.in && !statusFilter.in.includes(row.status)) continue
         }
         return row
       }
@@ -197,6 +198,22 @@ describe('submitProviderApplication', () => {
     await expect(
       submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' }),
     ).rejects.toThrow(/already.*application/i)
+  })
+
+  it('rejects with a typed conflict error', async () => {
+    const { submitProviderApplication, ProviderApplicationConflictError } = await import('@/lib/provider-applications-submit')
+    await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+
+    await expect(
+      submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' }),
+    ).rejects.toThrow(ProviderApplicationConflictError)
+
+    try {
+      await submitProviderApplication(mockDb as never, baseInput, { source: 'web' })
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderApplicationConflictError)
+      expect((err as InstanceType<typeof ProviderApplicationConflictError>).code).toBe('APPLICATION_CONFLICT')
+    }
   })
 
   it('updates the linked Conversation to step reg_pending when conversationId is given', async () => {
