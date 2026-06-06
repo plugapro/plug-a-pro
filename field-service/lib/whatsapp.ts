@@ -13,6 +13,8 @@ import { getPublicAppUrl } from './provider-credit-copy'
 import { maskPhone } from './support-diagnostics'
 import { assertNoRawUrlsInWhatsAppBody, ctaLabelFor } from './whatsapp-copy'
 
+export type { TemplateName } from './messaging-templates'
+
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
 

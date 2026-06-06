@@ -24,6 +24,45 @@ function conversation(overrides: Record<string, unknown>) {
   }
 }
 
+function buildRecoveryRowsClient(overrides: {
+  lastInteractionAt: Date
+  conversationData?: Record<string, unknown>
+  phone?: string
+}) {
+  const phone = overrides.phone ?? '27820000001'
+  return {
+    inboundWhatsAppMessage: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          phone,
+          messageType: 'text',
+          firstSeenAt: overrides.lastInteractionAt,
+          lastSeenAt: overrides.lastInteractionAt,
+        },
+      ]),
+    },
+    conversation: {
+      findMany: vi.fn().mockResolvedValue([
+        conversation({
+          id: `conv-${phone}`,
+          phone: `+${phone}`,
+          step: 'reg_collect_name',
+          data: overrides.conversationData ?? {},
+          updatedAt: overrides.lastInteractionAt,
+        }),
+      ]),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    providerApplication: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    auditLog: {
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+    },
+  }
+}
+
 describe('provider onboarding recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -319,9 +358,159 @@ describe('provider onboarding recovery', () => {
       outcomeStatus: 'message_sent',
       recoveryStage: 'register_started_no_name',
       messageTemplateKey: 'register_started_no_name',
+      via: 'session_text',
     })
     expect(JSON.stringify(call.data)).not.toContain('+27820000001')
     expect(JSON.stringify(call.data)).not.toContain('27820000001')
+  })
+
+  it('skips outside-window sends when template flag is disabled', async () => {
+    const now = new Date('2026-06-05T10:00:00.000Z')
+    const lastInteractionAt = new Date('2026-06-04T10:30:00.000Z')
+    const client = buildRecoveryRowsClient({
+      lastInteractionAt,
+      conversationData: {},
+    })
+    const sendText = vi.fn()
+    const sendTemplate = vi.fn()
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: new Date(now.getTime() - 24 * 60 * 60_000),
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: false,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 0,
+      skipped: 1,
+      errors: 0,
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendTemplate).not.toHaveBeenCalled()
+    expect(client.conversation.updateMany).not.toHaveBeenCalledWith({
+      where: { id: 'conv-27820000001', timeoutNotifiedAt: null },
+      data: { timeoutNotifiedAt: new Date(0) },
+    })
+  })
+
+  it('sends recovery templates outside the window when template flag is enabled', async () => {
+    const now = new Date('2026-06-05T10:00:00.000Z')
+    const lastInteractionAt = new Date('2026-06-04T10:30:00.000Z')
+    const client = buildRecoveryRowsClient({
+      lastInteractionAt,
+      conversationData: {},
+    })
+    const sendText = vi.fn()
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.recovery.template')
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: new Date(now.getTime() - 24 * 60 * 60_000),
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 1,
+      skipped: 0,
+      errors: 0,
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendTemplate).toHaveBeenCalledWith({
+      to: '+27820000001',
+      template: 'provider_recovery_no_name',
+      components: [
+        {
+          type: 'body',
+          parameters: [{ type: 'text', text: 'there' }],
+        },
+      ],
+      metadata: expect.objectContaining({
+        recoveryStage: 'register_started_no_name',
+      }),
+    })
+    const auditCall = client.auditLog.create.mock.calls[0][0]
+    expect(auditCall.data.after).toMatchObject({ via: 'template' })
+  })
+
+  it('releases claim and records error when template send fails with TEMPLATE_NOT_APPROVED', async () => {
+    const now = new Date('2026-06-05T10:00:00.000Z')
+    const lastInteractionAt = new Date('2026-06-04T10:30:00.000Z')
+    const client = buildRecoveryRowsClient({
+      lastInteractionAt,
+      conversationData: {},
+    })
+    const sendText = vi.fn()
+    const sendTemplate = vi.fn().mockRejectedValue(new Error('[TEMPLATE_NOT_APPROVED] blocked'))
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: new Date(now.getTime() - 24 * 60 * 60_000),
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 0,
+      skipped: 0,
+      errors: 1,
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(client.conversation.updateMany).toHaveBeenCalledTimes(2)
+    expect(client.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conv-27820000001', timeoutNotifiedAt: null },
+      data: { timeoutNotifiedAt: new Date(0) },
+    })
+    expect(client.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conv-27820000001', timeoutNotifiedAt: new Date(0) },
+      data: { timeoutNotifiedAt: null },
+    })
+  })
+
+  it('uses session-text sends when still inside window, even with template flag enabled', async () => {
+    const now = new Date('2026-06-04T10:00:00.000Z')
+    const lastInteractionAt = new Date('2026-06-04T09:30:00.000Z')
+    const client = buildRecoveryRowsClient({
+      lastInteractionAt,
+      conversationData: { name: 'Nomsa Dlamini' },
+      phone: '27820000002',
+    })
+    const sendText = vi.fn().mockResolvedValue('wamid.recovery.text')
+    const sendTemplate = vi.fn()
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: new Date(now.getTime() - 24 * 60 * 60_000),
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 1,
+      skipped: 0,
+      errors: 0,
+    })
+    expect(sendText).toHaveBeenCalledWith(
+      '+27820000002',
+      expect.any(String),
+      expect.objectContaining({ templateName: 'provider_onboarding_recovery:register_started_no_name' }),
+    )
+    expect(sendTemplate).not.toHaveBeenCalled()
+    const auditCall = client.auditLog.create.mock.calls[0][0]
+    expect(auditCall.data.after).toMatchObject({ via: 'session_text' })
   })
 
   it('records manual recovery outcomes without writing raw phone numbers', async () => {

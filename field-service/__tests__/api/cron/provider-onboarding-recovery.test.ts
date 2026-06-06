@@ -4,11 +4,21 @@ const { mockSendFollowUps, mockSummarizeRows } = vi.hoisted(() => ({
   mockSendFollowUps: vi.fn(),
   mockSummarizeRows: vi.fn(),
 }))
+const { mockIsEnabled } = vi.hoisted(() => ({
+  mockIsEnabled: vi.fn(),
+}))
 
 vi.mock('@/lib/provider-onboarding-recovery', () => ({
   sendProviderOnboardingRecoveryFollowUps: mockSendFollowUps,
   summarizeProviderOnboardingRecoveryRows: mockSummarizeRows,
 }))
+vi.mock('@/lib/flags', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/flags')>('@/lib/flags')
+  return {
+    ...actual,
+    isEnabled: mockIsEnabled,
+  }
+})
 
 import { GET } from '@/app/api/cron/provider-onboarding-recovery/route'
 
@@ -18,6 +28,7 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.CRON_SECRET = CRON_SECRET
+    mockIsEnabled.mockResolvedValue(false)
     const rows = [
       { stage: 'evidence_upload', followUpStatus: 'due' },
       { stage: 'approved', followUpStatus: 'submitted_excluded' },
@@ -68,6 +79,8 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
     })
     expect(mockSendFollowUps).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       now: expect.any(Date),
+      sendTemplate: expect.any(Function),
+      templateFlagEnabled: false,
     }))
     expect(mockSummarizeRows).toHaveBeenCalledWith([
       { stage: 'evidence_upload', followUpStatus: 'due' },

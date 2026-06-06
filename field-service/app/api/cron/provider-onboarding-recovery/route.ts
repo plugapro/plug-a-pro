@@ -4,6 +4,8 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
+import { sendTemplate } from '@/lib/whatsapp'
 import {
   sendProviderOnboardingRecoveryFollowUps,
   summarizeProviderOnboardingRecoveryRows,
@@ -21,7 +23,12 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date()
-    const recovery = await sendProviderOnboardingRecoveryFollowUps(db, { now })
+    const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send')
+    const recovery = await sendProviderOnboardingRecoveryFollowUps(db, {
+      now,
+      sendTemplate,
+      templateFlagEnabled,
+    })
     const summary = summarizeProviderOnboardingRecoveryRows(recovery.rows)
     const durationMs = Date.now() - cronStart
     console.log(JSON.stringify({
