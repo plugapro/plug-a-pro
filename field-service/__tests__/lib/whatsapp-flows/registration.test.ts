@@ -316,6 +316,26 @@ describe('registration flow - duplicate prevention', () => {
       expect(providerRecord.syncProviderRecord).not.toHaveBeenCalled()
     })
 
+    it('handles MORE_INFO_REQUIRED application with friendly message and returns done without creating a new record', async () => {
+      ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'app_more_info_req1',
+        status: 'MORE_INFO_REQUIRED',
+        name: 'Thabo Nkosi',
+      })
+
+      const result = await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, dataWithFullProfile)
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(wa.sendText).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('more information'),
+      )
+      expect(db.providerApplication.create).not.toHaveBeenCalled()
+      expect(providerRecord.syncProviderRecord).not.toHaveBeenCalled()
+    })
+
     it('creates application when no existing non-rejected application found', async () => {
       ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
       ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockResolvedValue({

@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { selectMissingSections, buildDynamicSchema } from '@/lib/web-signup-sections'
 import { submitProviderApplicationFromWebAction } from './actions'
+import { NameSection } from './sections/name'
 import { IdentitySection } from './sections/identity'
 import { SkillsSection } from './sections/skills'
 import { ServiceAreasSection } from './sections/service-areas'
@@ -19,6 +20,7 @@ import { ReferencesSection } from './sections/references'
 import { EvidenceSection } from './sections/evidence'
 
 const COMPONENTS = {
+  name: NameSection,
   identity: IdentitySection,
   skills: SkillsSection,
   service_areas: ServiceAreasSection,

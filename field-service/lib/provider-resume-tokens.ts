@@ -4,10 +4,14 @@ import { db } from './db'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
+const TOKEN_BYTES = 32
+/** base64url encodes 6 bits per char, no padding. */
+const TOKEN_STRING_LENGTH = Math.ceil((TOKEN_BYTES * 8) / 6) // = 43 for 32 bytes
+
 type Tx = Prisma.TransactionClient | typeof db
 
 export function generateRawToken(): string {
-  return randomBytes(32).toString('base64url')
+  return randomBytes(TOKEN_BYTES).toString('base64url')
 }
 
 export function hashProviderResumeToken(rawToken: string): string {
@@ -63,7 +67,7 @@ export type ValidateResult =
   | { ok: false; reason: 'not_found' | 'expired' | 'used' | 'revoked' }
 
 export async function validateProviderResumeToken(client: Tx, rawToken: string): Promise<ValidateResult> {
-  if (!rawToken || rawToken.length !== 43) return { ok: false, reason: 'not_found' }
+  if (!rawToken || rawToken.length !== TOKEN_STRING_LENGTH) return { ok: false, reason: 'not_found' }
   const tokenHash = hashProviderResumeToken(rawToken)
   const row = await client.providerResumeToken.findUnique({ where: { tokenHash } })
   if (!row) return { ok: false, reason: 'not_found' }

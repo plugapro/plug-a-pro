@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const SECTION_KEYS = [
-  'identity', 'skills', 'service_areas', 'availability', 'rates', 'profile_photo', 'bio', 'references', 'evidence',
+  'name', 'identity', 'skills', 'service_areas', 'availability', 'rates', 'profile_photo', 'bio', 'references', 'evidence',
 ] as const
 export type SectionKey = typeof SECTION_KEYS[number]
 
@@ -12,8 +12,10 @@ export interface SectionDef {
 }
 
 export const SECTION_REGISTRY: readonly SectionDef[] = [
-  { key: 'identity',      fields: ['name', 'idNumber'],
-    schema: { name: z.string().min(2), idNumber: z.string().regex(/^\d{13}$/, '13-digit SA ID required') } },
+  { key: 'name',          fields: ['name'],
+    schema: { name: z.string().min(2, 'Full name required') } },
+  { key: 'identity',      fields: ['idNumber'],
+    schema: { idNumber: z.string().regex(/^\d{13}$/, '13-digit SA ID required') } },
   { key: 'skills',        fields: ['skills'],
     schema: { skills: z.array(z.string()).min(1, 'Pick at least one skill') } },
   { key: 'service_areas', fields: ['regionLabel', 'cityLabel'],
@@ -41,7 +43,16 @@ function isFieldCaptured(data: Record<string, unknown>, field: string): boolean 
 }
 
 export function selectMissingSections(data: Record<string, unknown>): readonly SectionDef[] {
-  return SECTION_REGISTRY.filter((s) => s.fields.some((f) => !isFieldCaptured(data, f)))
+  return SECTION_REGISTRY.filter((s) => {
+    if (s.key === 'identity') {
+      // Don't prompt for SA ID if the provider deferred verification or already
+      // uploaded verification documents during WhatsApp onboarding.
+      if (data.verificationMethod === 'skipped') return false
+      if (typeof data.verificationDocAttachmentId === 'string' && data.verificationDocAttachmentId) return false
+      if (typeof data.verificationSelfieAttachmentId === 'string' && data.verificationSelfieAttachmentId) return false
+    }
+    return s.fields.some((f) => !isFieldCaptured(data, f))
+  })
 }
 
 export function buildDynamicSchema(sections: readonly SectionDef[]): z.ZodObject<z.ZodRawShape> {
