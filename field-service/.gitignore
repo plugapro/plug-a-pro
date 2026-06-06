@@ -32,3 +32,6 @@ supabase/.temp/
 # Voucher export files contain raw single-use codes — never commit
 vouchers*.csv
 vouchers*.xlsx
+
+# whatsapp-blob-audit artefacts (2026-06-06)
+recovery/
