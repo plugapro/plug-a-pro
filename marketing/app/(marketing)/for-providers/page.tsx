@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { buildMetadata } from "@/lib/metadata";
 import { providerPageContent } from "@/content/marketing/provider";
 import { providerEconomicsContent } from "@/content/marketing/provider-economics";
 import { reviewModelContent } from "@/content/marketing/reviews";
-import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
+import { ProviderRegistrationCtaButton } from "@/components/marketing/ProviderRegistrationCta";
 import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
 
@@ -28,20 +27,18 @@ export default function ForProvidersPage() {
           {providerPageContent.whatsappStartPrefix} {whatsappNumberDisplay}
         </p>
         <div className="flex flex-wrap justify-center gap-4">
-          <WhatsAppCtaButton
-            audience="provider"
+          <ProviderRegistrationCtaButton
             label={providerPageContent.primaryCtaLabel}
-            source="for_providers_header"
+            source="for_providers_primary_register"
             size="lg"
           />
-          <Button
-            nativeButton={false}
-            render={<Link href="/services" />}
+          <WhatsAppCtaButton
+            audience="provider"
+            label={providerPageContent.secondaryCtaLabel}
+            source="for_providers_whatsapp_support"
             variant="outline"
             size="lg"
-          >
-            {providerPageContent.secondaryCtaLabel}
-          </Button>
+          />
         </div>
       </div>
 
@@ -158,10 +155,9 @@ export default function ForProvidersPage() {
             ))}
           </ul>
           <div className="mt-6">
-            <WhatsAppCtaButton
-              audience="provider"
+            <ProviderRegistrationCtaButton
               label={providerPageContent.eligibility.ctaLabel}
-              source="for_providers_join"
+              source="for_providers_eligibility_register"
               size="sm"
             />
           </div>

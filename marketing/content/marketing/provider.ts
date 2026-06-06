@@ -12,9 +12,9 @@ export const providerPageContent = {
   intro:
     "Apply once, set the areas you cover and receive suitable small-job previews on WhatsApp. You stay in control of which leads you unlock and accept.",
   // Keep provider-facing launch CTAs here so route files do not own public claims.
-  whatsappStartPrefix: "Start on WhatsApp at",
-  primaryCtaLabel: "Start provider onboarding",
-  secondaryCtaLabel: "See MVP service scope",
+  whatsappStartPrefix: "WhatsApp support remains available at",
+  primaryCtaLabel: "Register as a Service Provider",
+  secondaryCtaLabel: "Ask on WhatsApp",
   benefitsHeading: "What the provider journey gives you",
   benefits: [
     {
@@ -47,8 +47,8 @@ export const providerPageContent = {
   joinSteps: [
     {
       step: "1",
-      title: "Start on WhatsApp",
-      detail: "Share your name, service types, areas, availability and any requested profile evidence.",
+      title: "Register in the app",
+      detail: "Share your name, service types, areas, availability and profile evidence through the provider registration flow.",
     },
     {
       step: "2",
@@ -75,7 +75,7 @@ export const providerPageContent = {
     title: "Who can apply",
     body:
       "You do not need a registered company to apply. The launch focus is practical service providers who handle small, everyday home jobs.",
-    ctaLabel: "Join on WhatsApp",
+    ctaLabel: "Register as a Service Provider",
   },
   serviceTypes: [
     "General home repairs",

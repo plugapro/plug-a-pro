@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ProviderRegistrationCtaButton } from "@/components/marketing/ProviderRegistrationCta";
 import { analytics } from "@/lib/analytics";
 import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
 
@@ -72,23 +73,10 @@ export function ProviderStorySection() {
             </div>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button
-                nativeButton={false}
-                render={
-                  <Link
-                    href={buildWhatsAppLink(whatsappMessages.customer)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  />
-                }
-                size="default"
-                onClick={() => {
-                  analytics.whatsappClick("provider_story_customer");
-                  analytics.ctaClick("Find a Local Pro", "provider_story", "customer");
-                }}
-              >
-                Find a Local Pro
-              </Button>
+              <ProviderRegistrationCtaButton
+                label="Register as a Provider"
+                source="provider_story_register"
+              />
               <Button
                 nativeButton={false}
                 render={
@@ -101,11 +89,11 @@ export function ProviderStorySection() {
                 variant="outline"
                 size="default"
                 onClick={() => {
-                  analytics.whatsappClick("provider_story_provider");
-                  analytics.ctaClick("Register as a Provider", "provider_story", "provider");
+                  analytics.whatsappClick("provider_story_whatsapp_support");
+                  analytics.ctaClick("Ask on WhatsApp", "provider_story_whatsapp_support", "provider");
                 }}
               >
-                Register as a Provider
+                Ask on WhatsApp
               </Button>
             </div>
           </div>

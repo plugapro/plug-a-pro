@@ -23,6 +23,10 @@ vi.mock('@/lib/client-pwa-submission-notifications', () => ({
   notifyCustomerPaymentFailed: vi.fn(),
 }))
 
+vi.mock('@/lib/payat-go', () => ({
+  createPayAtGoBookingPaymentRequest: vi.fn(),
+}))
+
 describe('generic PayFast PSP configuration', () => {
   const ORIGINAL_ENV = process.env
 
@@ -44,7 +48,10 @@ describe('generic PayFast PSP configuration', () => {
   })
 
   it('fails closed before checkout persistence when live PayFast has no passphrase', async () => {
+    expect(process.env.PAYFAST_PASSPHRASE).toBeUndefined()
+
     const { createCheckout } = await import('@/lib/payments')
+    expect(process.env.PAYFAST_PASSPHRASE).toBeUndefined()
 
     await expect(createCheckout({
       bookingId: 'booking-1',

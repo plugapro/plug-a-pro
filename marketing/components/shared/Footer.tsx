@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { ProviderRegistrationCtaLink } from "@/components/marketing/ProviderRegistrationCta";
 import { siteConfig } from "@/lib/metadata";
 import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
@@ -23,6 +24,16 @@ export function Footer() {
             <Link href="/services" className="hover:text-foreground transition-colors">Service categories</Link>
           </div>
           <div className="flex flex-col gap-2">
+            <span className="font-medium text-foreground text-xs uppercase tracking-wider">For Service Providers</span>
+            <ProviderRegistrationCtaLink
+              label="Register as a Service Provider"
+              source="footer_provider_register"
+              className="hover:text-foreground transition-colors"
+            />
+            <Link href="/for-providers" className="hover:text-foreground transition-colors">How provider access works</Link>
+            <Link href="/credits-policy" className="hover:text-foreground transition-colors">Provider Credits Rules</Link>
+          </div>
+          <div className="flex flex-col gap-2">
             <span className="font-medium text-foreground text-xs uppercase tracking-wider">Help</span>
             <Link href="/faq" className="hover:text-foreground transition-colors">FAQ</Link>
             <Link href="/contact" className="hover:text-foreground transition-colors">Contact</Link>
@@ -33,7 +44,6 @@ export function Footer() {
             <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
-            <Link href="/credits-policy" className="hover:text-foreground transition-colors">Provider Credits Rules</Link>
           </div>
         </nav>
       </div>

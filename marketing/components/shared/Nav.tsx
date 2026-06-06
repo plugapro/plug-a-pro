@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
+import { ProviderRegistrationCtaButton, ProviderRegistrationCtaLink } from "@/components/marketing/ProviderRegistrationCta";
 import {
   Sheet,
   SheetContent,
@@ -60,6 +61,13 @@ export function Nav() {
           >
             Get started
           </Button>
+          <ProviderRegistrationCtaButton
+            label="Join as a Provider"
+            source="nav_desktop_provider_register"
+            size="sm"
+            variant="outline"
+            className="hidden md:inline-flex"
+          />
 
           {/* Mobile hamburger */}
           <Sheet>
@@ -90,6 +98,15 @@ export function Nav() {
                 >
                   Get started
                 </SheetClose>
+                <SheetClose
+                  render={
+                    <ProviderRegistrationCtaLink
+                      label="Register as a Service Provider"
+                      source="nav_mobile_provider_register"
+                    />
+                  }
+                  className="mt-3 w-full inline-flex items-center justify-center rounded-md border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                />
               </div>
             </SheetContent>
           </Sheet>

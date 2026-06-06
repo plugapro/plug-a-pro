@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 /**
  * Typed wrapper around gtag so every event call is discoverable and consistent.
  * Safe to call in SSR contexts - guards on typeof window/gtag.
@@ -30,6 +28,14 @@ export const analytics = {
   /** WhatsApp chat link clicked */
   whatsappClick(source: string) {
     track("whatsapp_click", { source });
+  },
+
+  /** Provider registration CTA clicked on a marketing surface */
+  providerRegistrationClick(source: string) {
+    track("provider_registration_cta_click", {
+      source,
+      destination: "/provider/register",
+    });
   },
 
   /** Lead magnet form submitted - phone captured, WhatsApp handoff triggered */

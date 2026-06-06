@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ProviderRegistrationCtaButton } from "@/components/marketing/ProviderRegistrationCta";
 import { analytics } from "@/lib/analytics";
 import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
 import { homepageHero } from "@/content/marketing/homepage";
@@ -73,16 +74,13 @@ export function Hero() {
           >
             {homepageHero.secondaryCtaLabel}
           </Button>
-          <Button
-            nativeButton={false}
-            render={<Link href="/services" />}
+          <ProviderRegistrationCtaButton
+            label="Register as a Service Provider"
+            source="hero_provider_register"
             variant="outline"
             size="lg"
             style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
-            onClick={() => analytics.ctaClick("View service scope", "hero", "customer")}
-          >
-            View service scope
-          </Button>
+          />
         </div>
         {/* Trust bullets */}
         <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm" style={{ color: "oklch(0.985 0 0 / 0.7)" }}>

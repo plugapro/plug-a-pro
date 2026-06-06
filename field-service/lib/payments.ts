@@ -68,6 +68,20 @@ export function getPaymentCollectionMode(): PaymentCollectionMode {
   return process.env.PAYMENT_COLLECTION_MODE === 'checkout' ? 'checkout' : 'bypass'
 }
 
+function readPaymentEnv(name: string): string {
+  return globalThis.process?.env?.[name]?.trim() ?? ''
+}
+
+function assertCheckoutProviderConfigured() {
+  const provider = readPaymentEnv('PSP_PROVIDER') || 'payfast'
+  const payfastSandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
+  const payfastPassphrase = readPaymentEnv('PAYFAST_PASSPHRASE')
+
+  if (provider === 'payfast' && !payfastSandbox && !payfastPassphrase) {
+    throw new Error('Missing required env var: PAYFAST_PASSPHRASE')
+  }
+}
+
 // ─── Provider: Peach Payments (South Africa) ─────────────────────────────────
 // Docs: https://developer.peachpayments.com/
 
@@ -203,13 +217,13 @@ class PayFastProvider implements PspProvider {
   private passphrase: string
 
   constructor() {
-    const sandbox = process.env.PAYFAST_SANDBOX === 'true'
+    const sandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
     this.baseUrl = sandbox
       ? 'https://sandbox.payfast.co.za/eng/process'
       : 'https://www.payfast.co.za/eng/process'
-    this.merchantId = process.env.PAYFAST_MERCHANT_ID ?? ''
-    this.merchantKey = process.env.PAYFAST_MERCHANT_KEY ?? ''
-    this.passphrase = process.env.PAYFAST_PASSPHRASE?.trim() ?? ''
+    this.merchantId = readPaymentEnv('PAYFAST_MERCHANT_ID')
+    this.merchantKey = readPaymentEnv('PAYFAST_MERCHANT_KEY')
+    this.passphrase = readPaymentEnv('PAYFAST_PASSPHRASE')
 
     if (!this.merchantId || !this.merchantKey) {
       throw new Error('Missing PayFast credentials (PAYFAST_MERCHANT_ID, PAYFAST_MERCHANT_KEY)')
@@ -308,7 +322,7 @@ class PayFastProvider implements PspProvider {
     const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0]
     const version = 'v1'
     const merchantId = this.merchantId
-    const isSandbox = process.env.PAYFAST_SANDBOX === 'true'
+    const isSandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
     const apiBase = isSandbox ? 'https://api.sandbox.payfast.co.za' : 'https://api.payfast.co.za'
 
     const headerParams: Record<string, string> = {
@@ -415,7 +429,7 @@ class PayAtGoProvider implements PspProvider {
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
 function getProvider(): PspProvider {
-  const provider = process.env.PSP_PROVIDER ?? 'payfast'
+  const provider = readPaymentEnv('PSP_PROVIDER') || 'payfast'
   switch (provider) {
     case 'payfast':
       return new PayFastProvider()
@@ -431,6 +445,8 @@ function getProvider(): PspProvider {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
+  assertCheckoutProviderConfigured()
+
   const session = await getProvider().createCheckout(params)
 
   // Persist checkout session to DB
@@ -442,7 +458,7 @@ export async function createCheckout(params: CheckoutParams): Promise<CheckoutSe
       collectionMode: 'PLATFORM_CHECKOUT',
       amount: params.amount / 100,
       currency: params.currency,
-      pspProvider: process.env.PSP_PROVIDER ?? 'peach',
+      pspProvider: readPaymentEnv('PSP_PROVIDER') || 'peach',
       pspCheckoutId: session.id,
       checkoutUrl: session.url,
     },
