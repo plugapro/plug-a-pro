@@ -7,24 +7,12 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { validateProviderResumeToken } from '@/lib/provider-resume-tokens'
 import { CapturedPanel } from './captured-panel'
+import { RemainingFieldsForm } from './remaining-fields-form'
 
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   title: 'Finish your signup',
   robots: { index: false, follow: false },
-}
-
-// ─── Inline stubs — replaced by Tasks 10 and 11 ──────────────────────────────
-// RemainingFieldsForm will become a real import once Task 11 creates
-// ./remaining-fields-form.tsx.
-
-function RemainingFieldsForm(_props: {
-  rawToken: string
-  conversationId: string
-  phone: string
-  capturedData: Record<string, unknown>
-}) {
-  return <p className="text-sm text-muted-foreground">Form coming soon.</p>
 }
 
 // ─── Error panel ─────────────────────────────────────────────────────────────
