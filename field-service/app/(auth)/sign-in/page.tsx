@@ -154,6 +154,12 @@ export default function SignInPage() {
             I&apos;m a service provider
           </Link>
         </Button>
+        <p className="text-center text-[13px] leading-relaxed text-[var(--ink-mute)]">
+          Want to offer services?{' '}
+          <Link href="/provider/register" className="text-[var(--brand-purple)] font-semibold">
+            Register as a Service Provider
+          </Link>
+        </p>
       </div>
     </AuthShell>
   )

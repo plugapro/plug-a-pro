@@ -10,7 +10,6 @@ import { AuthShell } from '@/components/shared/auth-shell'
 import { getSafeCustomerNextPath, getSafeProviderNextPath } from '@/lib/safe-redirect'
 import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
 import { PROVIDER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
-import { WA_ENABLED } from '@/lib/whatsapp-client'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 
 type SendCodeError = {
@@ -128,7 +127,7 @@ export default function ProviderSignInPage() {
   const next = getSafeProviderNextPath(requestedNext, '/provider/jobs')
   const customerNext = getSafeCustomerNextPath(requestedNext, '/bookings')
   const customerSignInHref = `/sign-in?next=${encodeURIComponent(customerNext)}`
-  const applyProviderHref = whatsappHref('Hi Plug A Pro, I would like to apply as a provider.')
+  const applyProviderHref = '/provider/register'
   const supportHref = whatsappHref('Hi Plug A Pro, I need help signing in.')
   const showProviderNotFoundRecovery = error?.code === 'WORKER_NOT_FOUND' || error?.code === 'PROVIDER_NOT_FOUND'
   const roleMismatchRecovery = searchParams.get('error') === 'unauthorized'
@@ -263,7 +262,7 @@ export default function ProviderSignInPage() {
               {showProviderNotFoundRecovery && (
                 <div className="flex flex-col gap-2 pt-1">
                   <Button size="sm" fullWidth asChild><Link href={customerSignInHref}>Sign in as customer</Link></Button>
-                  <Button size="sm" fullWidth variant="secondary" asChild><a href={applyProviderHref}>Apply as provider on WhatsApp</a></Button>
+                  <Button size="sm" fullWidth variant="secondary" asChild><Link href={applyProviderHref}>Register as a Service Provider</Link></Button>
                   <Button size="sm" fullWidth variant="ghost" asChild><a href={supportHref}>Contact support</a></Button>
                 </div>
               )}
@@ -293,7 +292,7 @@ export default function ProviderSignInPage() {
         </form>
       )}
 
-      {WA_ENABLED && !roleMismatchRecovery && (
+      {!roleMismatchRecovery && (
         <div className="mt-5 rounded-[16px] bg-[rgba(37,211,102,0.06)] border border-[rgba(37,211,102,0.18)] p-4">
           <div className="flex gap-3">
             <div className="flex items-center justify-center w-9 h-9 rounded-[10px] bg-[#25D366] text-white shrink-0">
@@ -302,15 +301,15 @@ export default function ProviderSignInPage() {
             <div>
               <p className="text-[14px] font-bold text-[var(--ink)] mb-0.5">Not approved yet?</p>
               <p className="text-[12.5px] text-[var(--ink-mute)] leading-relaxed">
-                Send <b>Register</b> on WhatsApp to start your provider application.
+                Start the provider registration flow. We review applications before the provider portal is unlocked.
               </p>
             </div>
           </div>
-          <Button variant="whatsapp" fullWidth size="sm" className="mt-3" asChild>
-            <a href={applyProviderHref} target="_blank" rel="noopener noreferrer">
-              <WhatsAppIcon />
-              Open WhatsApp · Send &quot;Register&quot;
-            </a>
+          <Button fullWidth size="sm" className="mt-3" asChild>
+            <Link href={applyProviderHref}>
+              Register as a Service Provider
+              <ArrowRight size={16} />
+            </Link>
           </Button>
         </div>
       )}

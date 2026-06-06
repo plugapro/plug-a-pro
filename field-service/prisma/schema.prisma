@@ -387,11 +387,73 @@ model ProviderApplication {
   attachments                        Attachment[]
   identityVerifications              ProviderIdentityVerification[]
   identityVerificationPilotAllowlist ProviderIdentityVerificationPilotAllowlist[]
+  registrationDraft                  ProviderApplicationDraft?
+  registrationResumeTokens           RegistrationResumeToken[]
 
   @@index([approvalWhatsappSentAt])
   @@index([isTestUser, status])
   @@index([status, submittedAt])
   @@map("provider_applications")
+}
+
+model ProviderApplicationDraft {
+  id                     String    @id @default(cuid())
+  phone                  String
+  email                  String?
+  name                   String?
+  businessName           String?
+  preferredContact       String?
+  identityBasis          String?
+  profilePhotoUrl        String?
+  skills                 String[]  @default([])
+  categorySlugs          String[]  @default([])
+  serviceAreas           String[]  @default([])
+  locationNodeIds        String[]  @default([])
+  experience             String?
+  bio                    String?
+  availability           String?
+  availabilityDays       String[]  @default([])
+  availabilityHours      String?
+  emergencyAvailable     Boolean   @default(false)
+  callOutFee             Decimal?  @db.Decimal(10, 2)
+  travelRadiusKm         Int?
+  evidenceFileUrls       String[]  @default([])
+  evidenceNote           String?
+  reference1Name         String?
+  reference1Mobile       String?
+  reference2Name         String?
+  reference2Mobile       String?
+  consentAt              DateTime?
+  lastCompletedStep      Int       @default(0)
+  submittedApplicationId String?   @unique
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  submittedApplication    ProviderApplication?      @relation(fields: [submittedApplicationId], references: [id], onDelete: SetNull)
+  registrationResumeTokens RegistrationResumeToken[]
+
+  @@index([phone])
+  @@index([submittedApplicationId])
+  @@map("provider_application_drafts")
+}
+
+model RegistrationResumeToken {
+  id            String    @id @default(cuid())
+  draftId       String
+  applicationId String?
+  tokenHash     String    @unique
+  purpose       String
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  draft       ProviderApplicationDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  application ProviderApplication?     @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([tokenHash])
+  @@index([draftId])
+  @@index([applicationId])
+  @@map("registration_resume_tokens")
 }
 
 // ─── Job Requests ─────────────────────────────────────────────────────────────
