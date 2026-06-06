@@ -338,6 +338,17 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  // ─── Provider registration recovery ──────────────────────────────────────────
+  'admin.applications.resume_link_button': {
+    description: 'Show the per-row "Generate resume link" button on /admin/applications. Issues a ProviderResumeToken and returns a /provider/signup URL for the operator to share.',
+    owner: 'ops',
+    defaultValue: false,
+  },
+  'whatsapp.registration.web_resume': {
+    description: 'Enable the anonymous /provider/signup?t=… page that resumes a registration from a ProviderResumeToken.',
+    owner: 'prod',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY

@@ -54,6 +54,10 @@ export const FLAG_KEYS = {
   // so the hook endpoint can refuse to deliver if the rollout needs an
   // immediate pause without a dashboard round-trip.
   AUTH_OTP_WHATSAPP: 'auth.otp.whatsapp',
+  // Provider registration recovery: show "Generate resume link" button on
+  // /admin/applications, and enable anonymous /provider/signup?t=… resumption page.
+  ADMIN_APPLICATIONS_RESUME_LINK_BUTTON: 'admin.applications.resume_link_button',
+  WHATSAPP_REGISTRATION_WEB_RESUME: 'whatsapp.registration.web_resume',
 } as const satisfies Record<string, FeatureFlagKey>
 
 export type FlagKey = typeof FLAG_KEYS[keyof typeof FLAG_KEYS]
