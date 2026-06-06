@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/table'
 import type { ApplicationStatus } from '@prisma/client'
 import { getApplicationsAdminMessage } from '@/lib/admin-action-messages'
+import { readRecoveryErrorMessage } from '@/lib/recovery-error-message'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
 
@@ -670,19 +671,27 @@ async function sendRecoveryNudgeForRow(formData: FormData) {
       sendTemplate,
       templateFlagEnabled,
     })
+    // Duck-typed so a real Error instance, a serialized error shape, or a
+    // bare string all flow into the same TEMPLATE_NOT_APPROVED detection and
+    // the AdminAuditEvent.after.error capture. `instanceof Error` was failing
+    // in production on 2026-06-06 (Meta code 132001 surfaced as recovery_failed
+    // instead of recovery_template_not_approved) — likely cross-module Error
+    // identity under Turbopack — and the duck-type guard sidesteps the issue.
+    const errorMessage = result.outcome === 'error'
+      ? readRecoveryErrorMessage(result.error)
+      : null
+
     if (result.outcome === 'sent' && result.via === 'template') {
       bannerCode = 'recovery_sent_template'
     } else if (result.outcome === 'sent') {
       bannerCode = 'recovery_sent'
     } else if (result.outcome === 'skipped') {
       bannerCode = RECOVERY_BANNER_BY_SKIP_REASON[result.reason]
-    } else if (result.outcome === 'error' && result.error instanceof Error && result.error.message.includes('[TEMPLATE_NOT_APPROVED]')) {
+    } else if (result.outcome === 'error' && errorMessage?.includes('[TEMPLATE_NOT_APPROVED]')) {
       bannerCode = 'recovery_template_not_approved'
     }
 
-    const errorMessage = result.outcome === 'error' && result.error instanceof Error
-      ? result.error.message.slice(0, 512)
-      : null
+    const auditErrorMessage = errorMessage?.slice(0, 512) ?? null
 
     await db.adminAuditEvent.create({
       data: {
@@ -700,7 +709,7 @@ async function sendRecoveryNudgeForRow(formData: FormData) {
               via: result.via,
             }
             : {}),
-          ...(errorMessage ? { error: errorMessage } : {}),
+          ...(auditErrorMessage ? { error: auditErrorMessage } : {}),
         },
       },
     }).catch((error) => {
