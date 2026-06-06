@@ -22,6 +22,7 @@ describe('provider registration PWA route surface', () => {
     const source = readFileSync(join(root, 'app/(customer)/page.tsx'), 'utf8')
 
     expect(source).toContain('href="/provider/register"')
+    expect(source).toContain('https://wa.me/27693552447?text=Register')
     expect(source).not.toContain('href="/for-providers"')
   })
 

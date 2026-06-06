@@ -30,7 +30,7 @@ const onboardingSchema = baseSchema.extend({
     .refine((value) => phoneRegex.test(normalizePhone(value)), {
       message: "Enter a valid mobile number.",
     }),
-  journey: z.enum(["customer", "provider", "both"]),
+  journey: z.enum(["customer", "provider"]),
   whatsappConsentAccepted: z.boolean().refine((value) => value === true, {
     message: "WhatsApp consent is required.",
   }),
@@ -59,7 +59,7 @@ type MarketingLeadInsert = {
   email?: string;
   phone?: string;
   name?: string;
-  journey?: "customer" | "provider" | "both";
+  journey?: "customer" | "provider";
   message?: string;
   source?: string;
   venture: typeof siteConfig.venture;
@@ -87,7 +87,6 @@ function normalizePhone(value: string) {
 const journeyPrefill: Record<string, string> = {
   customer: "Hi, I want to register as a customer and book services through Plug A Pro.",
   provider: "Hi, I want to join Plug A Pro as a service provider.",
-  both: "Hi, I want to join Plug A Pro as both a customer and service provider.",
 };
 
 const magnetPrefill: Record<string, string> = {

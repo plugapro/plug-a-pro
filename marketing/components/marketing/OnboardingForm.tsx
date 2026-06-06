@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { FormFeedback } from "@/components/shared/FormFeedback";
 import { marketingConsentText } from "@/content/marketing/consent";
 
-type Journey = "customer" | "provider" | "both";
+type Journey = "customer" | "provider";
 
 const journeyOptions: Array<{
   value: Journey;
@@ -22,11 +22,6 @@ const journeyOptions: Array<{
     value: "provider",
     label: "I offer services",
     description: "Join as a service provider and start getting matched to work.",
-  },
-  {
-    value: "both",
-    label: "I do both",
-    description: "Useful if you sometimes need help and also take on paid jobs.",
   },
 ];
 
