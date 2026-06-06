@@ -53,6 +53,7 @@ import {
 } from '../service-area-guard'
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
+import { submitProviderApplication, ProviderApplicationConflictError } from '../provider-applications-submit'
 import { isEnabled } from '../flags'
 import type { ConversationData, FlowContext, FlowResult } from './types'
 
@@ -2504,36 +2505,45 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         skipEnrichment: true,
       })
 
-      const application = await tx.providerApplication.create({
-        data: {
-          providerId,
-          phone: normalizedPhone,
-          email: ctx.data.providerEmail ?? null,
-          name: submitData.name,
-          skills: canonicalSkills,
-          serviceAreas: submitData.resolvedAreaLabels,
-          experience: ctx.data.experience ?? null,
-          availability: formatAvailabilityLabel(submitData.availability),
-          alternateMobileE164: submitData.alternateMobileE164,
-          preferredLanguage: submitData.preferredLanguage,
-          reference1Name: submitData.reference1Name,
-          reference1Mobile: submitData.reference1Mobile,
-          reference2Name: submitData.reference2Name,
-          reference2Mobile: submitData.reference2Mobile,
-          callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
-          // Phase 4 follow-up Task 1: optional hourly rate.
-          hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
-          rateNegotiable: ctx.data.rateNegotiable !== false,
-          weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
-          sameDayJobs: true,
-          evidenceNote: ctx.data.evidenceNote ?? null,
-          evidenceFileUrls: submitData.evidenceAttachmentIds,
-          idNumber: submitData.idNumber,
-          isTestUser: cohort.isTestUser,
-          cohortName: cohort.cohortName,
-          status: 'PENDING',
-        },
-      })
+      const { application } = await submitProviderApplication(tx, {
+        // Required
+        phone: normalizedPhone,
+        name: submitData.name,
+        idNumber: submitData.idNumber,
+        // Use canonicalised skills so DB values are normalised (their PR adds
+        // canonicalizeServiceCategoryValues at the call site; preserve that).
+        skills: canonicalSkills,
+        serviceAreas: submitData.resolvedAreaLabels,
+        // Pass the pre-formatted label string so the DB value matches the
+        // inline create exactly (formatAvailabilityLabel collapses arrays to
+        // "Any day" / "Mon–Sat" / "Weekdays only").
+        availability: formatAvailabilityLabel(submitData.availability),
+        experience: ctx.data.experience ?? null,
+        evidenceNote: ctx.data.evidenceNote ?? null,
+
+        // Optional — preserve all columns the inline create wrote
+        providerId,
+        email: ctx.data.providerEmail ?? null,
+        alternateMobileE164: submitData.alternateMobileE164,
+        preferredLanguage: submitData.preferredLanguage,
+        reference1Name: submitData.reference1Name,
+        reference1Mobile: submitData.reference1Mobile,
+        reference2Name: submitData.reference2Name,
+        reference2Mobile: submitData.reference2Mobile,
+        callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+        // Phase 4 follow-up Task 1: optional hourly rate.
+        hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+        rateNegotiable: ctx.data.rateNegotiable !== false,
+
+        // Explicit booleans — helper spreads conditionally so we must pass
+        // both to preserve the exact behaviour of the inline create.
+        weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
+        sameDayJobs: true,
+
+        evidenceFileUrls: submitData.evidenceAttachmentIds,
+        isTestUser: cohort.isTestUser,
+        cohortName: cohort.cohortName,
+      }, { source: 'whatsapp' })
 
       const providerCategoryRows = await Promise.all(
         canonicalSkills.map(async (skill) => {
@@ -2846,15 +2856,17 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   } catch (err) {
     const duplicateRace =
-      typeof err === 'object' &&
-      err !== null &&
-      'code' in err &&
-      err.code === 'P2002'
+      err instanceof ProviderApplicationConflictError ||
+      (typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        err.code === 'P2002')
 
     if (duplicateRace) {
       const racedExisting = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
       if (racedExisting) {
         const ref = racedExisting.id.slice(-8).toUpperCase()
+        const recoveredFrom = err instanceof ProviderApplicationConflictError ? 'conflict_guard' : 'P2002'
         await sendButtons(
           ctx.phone,
           racedExisting.status === 'APPROVED'
@@ -2865,7 +2877,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
             { id: 'back_home', title: 'Main Menu' },
           ],
           undefined,
-          { metadata: { traceId, applicationId: racedExisting.id, recoveredFrom: 'P2002' } },
+          { metadata: { traceId, applicationId: racedExisting.id, recoveredFrom } },
         )
         return { nextStep: 'done' }
       }
