@@ -42,9 +42,11 @@ vi.mock('@/lib/db', () => {
     // Required by lib/whatsapp-media-batch.ts (debounceMediaBatch). The flow
     // tests don't exercise the debounce window - they fast-path through the
     // batch claim - but the mock surface must exist.
+    // updateMany is required by submitProviderApplication (advances step to reg_pending).
     conversation: {
       findUnique: vi.fn().mockResolvedValue({ data: {} }),
       update: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
   }
   mockDb.$transaction.mockImplementation(async (callback) => {
@@ -474,13 +476,15 @@ describe('registration flow - duplicate prevention', () => {
     })
 
     it('recovers cleanly when a unique constraint race creates the application first', async () => {
+      const racedApp = { id: 'app_raced_pending', status: 'PENDING', name: 'Thabo Nkosi' }
+      // Call 1: registration.ts outer duplicate check → no active app yet
+      // Call 2: submitProviderApplication conflict guard inside tx → sees the raced app,
+      //         throws ProviderApplicationConflictError (previously this was simulated via P2002)
+      // Call 3: catch-block race recovery lookup → same raced app
       ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          id: 'app_raced_pending',
-          status: 'PENDING',
-          name: 'Thabo Nkosi',
-        })
+        .mockResolvedValueOnce(racedApp)
+        .mockResolvedValueOnce(racedApp)
       ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockRejectedValue({
         code: 'P2002',
       })
@@ -540,11 +544,12 @@ describe('registration flow - duplicate prevention', () => {
       )
 
       expect(result.nextStep).toBe('done')
+      // idNumber normalised to null by submitProviderApplication helper (undefined input → null stored)
       expect(db.providerApplication.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             email: null,
-            idNumber: undefined,
+            idNumber: null,
             status: 'PENDING',
           }),
         }),
