@@ -20,6 +20,7 @@ import { initializeBookingPayment } from '../payments'
 import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
 import { expireOpenJobRequest } from '../job-requests/expire-job-request'
+import { getUrgencyMatchingPolicy } from '../urgency'
 import { releaseProviderCapacity } from './reservation'
 import { sendText } from '../whatsapp-interactive'
 import { hasSuccessfulMessageForRecipient } from '../message-events'
@@ -694,6 +695,7 @@ function buildMatchingJobRequest(record: {
   customerAcceptedAmount: Prisma.Decimal | null
   customerAcceptedScope: string | null
   autoCreateBookingOnAssignment: boolean
+  latestDispatchDecisionId: string | null
   isTestRequest: boolean
   cohortName: string | null
   providerPreference: string | null
@@ -731,6 +733,7 @@ function buildMatchingJobRequest(record: {
     customerAcceptedAmount: record.customerAcceptedAmount,
     customerAcceptedScope: record.customerAcceptedScope,
     autoCreateBookingOnAssignment: record.autoCreateBookingOnAssignment,
+    latestDispatchDecisionId: record.latestDispatchDecisionId,
     isTestRequest: record.isTestRequest,
     cohortName: record.cohortName,
     providerPreference: record.providerPreference ?? null,
@@ -776,6 +779,7 @@ export async function loadMatchingJobRequest(client: any, jobRequestId: string) 
       customerAcceptedAmount: true,
       customerAcceptedScope: true,
       autoCreateBookingOnAssignment: true,
+      latestDispatchDecisionId: true,
       isTestRequest: true,
       cohortName: true,
       providerPreference: true,
@@ -2718,11 +2722,9 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
   sent: number
   skippedRecent: number
   skippedNoPhone: number
+  skippedFinalNoMatch: number
   failed: number
 }> {
-  const recentCutoff = new Date(
-    now.getTime() - MATCHING_CONFIG.quickMatchProgressUpdateMinutes * 60_000,
-  )
   // OPEN is the live status for Quick Match AUTO_ASSIGN requests - the status
   // never transitions to MATCHING in this flow. Also include MATCHING in case
   // a legacy transition fired. Remove the active-hold filter so updates fire
@@ -2736,9 +2738,15 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
     select: {
       id: true,
       category: true,
+      urgency: true,
       isTestRequest: true,
       cohortName: true,
       customer: { select: { phone: true, isTestUser: true } },
+      dispatchDecisions: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { failureClass: true, primaryReason: true },
+      },
     },
     take: 50,
   })
@@ -2748,16 +2756,33 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
     sent: 0,
     skippedRecent: 0,
     skippedNoPhone: 0,
+    skippedFinalNoMatch: 0,
     failed: 0,
   }
 
   for (const request of requests) {
+    const latestDecision = request.dispatchDecisions[0] ?? null
+    if (
+      latestDecision?.failureClass === 'EMPTY_POOL' ||
+      latestDecision?.failureClass === 'STRUCTURAL'
+    ) {
+      result.skippedFinalNoMatch++
+      console.info('[matching] quick-match progress skipped after final no-match', {
+        jobRequestId: request.id,
+        failureClass: latestDecision.failureClass,
+        primaryReason: latestDecision.primaryReason,
+      })
+      continue
+    }
+
     const phone = request.customer?.phone
     if (!phone) {
       result.skippedNoPhone++
       continue
     }
 
+    const policy = getUrgencyMatchingPolicy(request.urgency)
+    const recentCutoff = new Date(now.getTime() - policy.progressPingMinutes * 60_000)
     const recent = await db.messageEvent.findFirst({
       where: {
         to: phone,
@@ -2789,7 +2814,7 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
             isTestRequest: request.isTestRequest,
             cohortName: request.cohortName,
             recipientIsTest: request.customer?.isTestUser ?? false,
-            idempotencyKey: `quick_match_progress:${request.id}:${Math.floor(now.getTime() / (MATCHING_CONFIG.quickMatchProgressUpdateMinutes * 60_000))}`,
+            idempotencyKey: `quick_match_progress:${request.id}:${Math.floor(now.getTime() / (policy.progressPingMinutes * 60_000))}`,
           },
         },
       )

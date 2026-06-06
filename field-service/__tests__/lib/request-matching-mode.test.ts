@@ -148,9 +148,16 @@ describe('selectCustomerRequestMatchingMode', () => {
     ).rejects.toThrow(RequestMatchingModeError)
   })
 
-  it('sends explicit no-provider copy when quick_match returns NO_MATCH', async () => {
+  it('keeps reassuring the customer when manual quick_match returns a transient NO_MATCH', async () => {
     mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
-    mockOrchestrateMatch.mockResolvedValue({ status: 'NO_MATCH', filteredOut: [], consideredCount: 0 })
+    mockOrchestrateMatch.mockResolvedValue({
+      status: 'NO_MATCH',
+      filteredOut: [],
+      consideredCount: 10,
+      failureClass: 'TRANSIENT',
+      primaryReason: 'RESERVATION_FAILED',
+      evidence: ['reservation_failures=10'],
+    })
 
     const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
     const result = await selectCustomerRequestMatchingMode({
@@ -163,6 +170,32 @@ describe('selectCustomerRequestMatchingMode', () => {
     const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
     expect(outbound).toContain('No providers in your area are available right now')
     expect(outbound).toContain("We'll keep trying and notify you")
+  })
+
+  it('does not send keep-trying copy when manual quick_match immediately gives up structurally', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockOrchestrateMatch.mockResolvedValue({
+      status: 'NO_MATCH',
+      filteredOut: [],
+      consideredCount: 0,
+      failureClass: 'EMPTY_POOL',
+      primaryReason: 'NO_LOCATION_MATCH',
+      evidence: ['considered_count=0'],
+    })
+
+    const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
+    const result = await selectCustomerRequestMatchingMode({
+      requestId: 'jr-1',
+      customerId: 'cust-1',
+      mode: 'quick_match',
+    })
+
+    expect(result.status).toBe('matching_started')
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining("We'll keep trying"),
+      expect.anything(),
+    )
   })
 
   it('selecting review_first returns ready only after candidates are generated', async () => {

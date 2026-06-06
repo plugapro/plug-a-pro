@@ -12,7 +12,7 @@ import { resolveSuburbNodeId } from '../location-nodes'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { normalizePhone } from '../utils'
 import { openCase } from '../cases'
-import { MATCHING_CONFIG } from '../matching/config'
+import { getUrgencyMatchingPolicy } from '../urgency'
 import { createTestCohortContext, testRequestFields } from '../internal-test-cohort'
 import { phoneLookupVariants } from '../whatsapp-identity'
 import { normaliseLocationDisplayName } from '../location-format'
@@ -127,6 +127,17 @@ function maskPhone(phone?: string | null) {
   const digits = phone.replace(/\D/g, '')
   if (digits.length <= 4) return '***'
   return `***${digits.slice(-4)}`
+}
+
+function getExplicitRequestDeadline(params: CreateJobRequestParams) {
+  const dates = [
+    params.requestedWindowEnd,
+    params.requestedArrivalLatest,
+    params.requestedWindowStart,
+  ].filter((value): value is Date => value instanceof Date)
+
+  if (dates.length === 0) return null
+  return new Date(Math.max(...dates.map((value) => value.getTime())))
 }
 
 export async function createJobRequest(
@@ -361,20 +372,15 @@ export async function createJobRequest(
       categoryRequirements.policy.bookingOnAssignment &&
       typeof params.customerAcceptedAmount === 'number'
 
-    // Compute expiry: default is jobRequestMaxAgeDays from now.
-    // If the client specified an urgency window (requestedArrivalLatest) that is
-    // earlier, use that + 24 h buffer so we don't expire before the window closes.
-    const defaultExpiresAt = new Date(
-      Date.now() + MATCHING_CONFIG.jobRequestMaxAgeDays * 24 * 60 * 60 * 1000,
-    )
-    const urgencyExpiresAt =
-      params.requestedArrivalLatest
-        ? new Date(params.requestedArrivalLatest.getTime() + 24 * 60 * 60 * 1000)
-        : null
+    // Compute expiry from the normalized urgency policy. The stored deadline is
+    // the tighter of the urgency hard give-up and any explicit requested window.
+    const urgencyPolicy = getUrgencyMatchingPolicy(params.urgency)
+    const hardGiveUpExpiresAt = new Date(Date.now() + urgencyPolicy.hardGiveUpMinutes * 60 * 1000)
+    const explicitDeadline = getExplicitRequestDeadline(params)
     const expiresAt =
-      urgencyExpiresAt && urgencyExpiresAt < defaultExpiresAt
-        ? urgencyExpiresAt
-        : defaultExpiresAt
+      explicitDeadline && explicitDeadline < hardGiveUpExpiresAt
+        ? explicitDeadline
+        : hardGiveUpExpiresAt
 
     const jobRequest = await tx.jobRequest.create({
       data: {
@@ -475,6 +481,16 @@ export async function createJobRequest(
       const matchResult = await orchestrateMatch(result.jobRequestId, { triggeredBy: 'job_creation' })
 
       if (matchResult.status === 'NO_MATCH') {
+        if (matchResult.failureClass === 'EMPTY_POOL' || matchResult.failureClass === 'STRUCTURAL') {
+          console.log('[create-job-request] no providers found - final no-match notification handled by expiry', {
+            jobRequestId: result.jobRequestId,
+            consideredCount: matchResult.consideredCount,
+            failureClass: matchResult.failureClass,
+            primaryReason: matchResult.primaryReason,
+          })
+          return
+        }
+
         console.log('[create-job-request] no providers found - cron will retry', {
           jobRequestId: result.jobRequestId,
           consideredCount: matchResult.consideredCount,
