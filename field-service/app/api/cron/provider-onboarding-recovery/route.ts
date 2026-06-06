@@ -1,16 +1,15 @@
-// ─── Cron: Provider WhatsApp onboarding recovery queue ──────────────────────
-// Sends audited, stage-specific recovery nudges for stalled provider onboarding
-// rows. Add ?dryRun=1 to inspect the current queue without sending messages.
+// ─── Cron: Provider WhatsApp onboarding recovery nudges ─────────────────────
+// Sends audit-limited WhatsApp follow-ups for stalled provider onboarding rows
+// that are still inside the WhatsApp customer-care session window.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
+import { sendTemplate } from '@/lib/whatsapp'
 import {
-  listProviderOnboardingRecoveryRows,
   sendProviderOnboardingRecoveryFollowUps,
   summarizeProviderOnboardingRecoveryRows,
 } from '@/lib/provider-onboarding-recovery'
-import { sendTemplate } from '@/lib/whatsapp'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -24,42 +23,32 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date()
-    const url = new URL(request.url)
-    const dryRun = url.searchParams.get('dryRun') === '1' || url.searchParams.get('dryRun') === 'true'
-    const templateFlagEnabled = dryRun
-      ? false
-      : await isEnabled('whatsapp.recovery.template_send')
-    const result = dryRun
-      ? null
-      : await sendProviderOnboardingRecoveryFollowUps(db, {
-          now,
-          sendTemplate,
-          templateFlagEnabled,
-        })
-    const rows = result?.rows ?? await listProviderOnboardingRecoveryRows(db, { now })
-    const summary = summarizeProviderOnboardingRecoveryRows(rows)
+    const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send')
+    const recovery = await sendProviderOnboardingRecoveryFollowUps(db, {
+      now,
+      sendTemplate,
+      templateFlagEnabled,
+    })
+    const summary = summarizeProviderOnboardingRecoveryRows(recovery.rows)
     const durationMs = Date.now() - cronStart
     console.log(JSON.stringify({
       event: 'cron_complete',
       cron: cronName,
-      mode: dryRun ? 'dry_run' : 'automated_nudges',
+      mode: 'auto_nudge',
       durationMs,
-      sent: result?.sent ?? 0,
-      skipped: result?.skipped ?? 0,
-      errors: result?.errors ?? 0,
+      sent: recovery.sent,
+      skipped: recovery.skipped,
+      errors: recovery.errors,
       ...summary,
       timestamp: new Date().toISOString(),
     }))
     return NextResponse.json({
       ok: true,
-      mode: dryRun ? 'dry_run' : 'automated_nudges',
+      mode: 'auto_nudge',
       durationMs,
-      sent: result?.sent ?? 0,
-      skipped: result?.skipped ?? 0,
-      errors: result?.errors ?? 0,
-      sentRefs: result?.sentRefs ?? [],
-      skippedRefs: result?.skippedRefs ?? [],
-      errorRefs: result?.errorRefs ?? [],
+      sent: recovery.sent,
+      skipped: recovery.skipped,
+      errors: recovery.errors,
       ...summary,
     })
   } catch (error) {

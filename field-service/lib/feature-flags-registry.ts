@@ -118,6 +118,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'whatsapp.recovery.template_send': {
+    description: 'Enable WhatsApp onboarding recovery outside the 23h session window using approved provider recovery templates.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   // ─── Admin customer details ──────────────────────────────────────────────────
   'admin.customers.whatsapp_pref_toggle': {
     description: 'Enable admin toggle of customer WhatsApp service and marketing opt-in preferences.',

@@ -1,26 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockIsEnabled, mockListRows, mockSendTemplate, mockSummarizeRows, mockSendFollowUps } = vi.hoisted(() => ({
-  mockIsEnabled: vi.fn(),
-  mockListRows: vi.fn(),
-  mockSendTemplate: vi.fn(),
-  mockSummarizeRows: vi.fn(),
+const { mockSendFollowUps, mockSummarizeRows } = vi.hoisted(() => ({
   mockSendFollowUps: vi.fn(),
+  mockSummarizeRows: vi.fn(),
 }))
-
-vi.mock('@/lib/flags', () => ({
-  isEnabled: mockIsEnabled,
+const { mockIsEnabled } = vi.hoisted(() => ({
+  mockIsEnabled: vi.fn(),
 }))
 
 vi.mock('@/lib/provider-onboarding-recovery', () => ({
-  listProviderOnboardingRecoveryRows: mockListRows,
   sendProviderOnboardingRecoveryFollowUps: mockSendFollowUps,
   summarizeProviderOnboardingRecoveryRows: mockSummarizeRows,
 }))
-
-vi.mock('@/lib/whatsapp', () => ({
-  sendTemplate: mockSendTemplate,
-}))
+vi.mock('@/lib/flags', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/flags')>('@/lib/flags')
+  return {
+    ...actual,
+    isEnabled: mockIsEnabled,
+  }
+})
 
 import { GET } from '@/app/api/cron/provider-onboarding-recovery/route'
 
@@ -35,15 +33,6 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
       { stage: 'evidence_upload', followUpStatus: 'due' },
       { stage: 'approved', followUpStatus: 'submitted_excluded' },
     ]
-    mockListRows.mockResolvedValue(rows)
-    mockSummarizeRows.mockReturnValue({
-      total: rows.length,
-      byStage: { evidence_upload: 1, approved: 1 },
-      dueFollowUps: 1,
-      submitted: 1,
-      approved: 1,
-      pending: 0,
-    })
     mockSendFollowUps.mockResolvedValue({
       total: rows.length,
       due: 1,
@@ -51,9 +40,14 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
       skipped: 0,
       errors: 0,
       rows,
-      sentRefs: ['wa_sent'],
-      skippedRefs: [],
-      errorRefs: [],
+    })
+    mockSummarizeRows.mockReturnValue({
+      total: rows.length,
+      byStage: { evidence_upload: 1, approved: 1 },
+      dueFollowUps: 1,
+      submitted: 1,
+      approved: 1,
+      pending: 0,
     })
   })
 
@@ -63,10 +57,10 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
     }))
 
     expect(res.status).toBe(401)
-    expect(mockListRows).not.toHaveBeenCalled()
+    expect(mockSendFollowUps).not.toHaveBeenCalled()
   })
 
-  it('sends audited onboarding recovery nudges on scheduled runs', async () => {
+  it('sends due onboarding recovery nudges and reports the queue summary', async () => {
     const res = await GET(new Request('http://localhost/api/cron/provider-onboarding-recovery', {
       headers: { authorization: `Bearer ${CRON_SECRET}` },
     }))
@@ -76,45 +70,21 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
     expect(res.status).toBe(200)
     expect(body).toMatchObject({
       ok: true,
-      mode: 'automated_nudges',
+      mode: 'auto_nudge',
       total: 2,
       dueFollowUps: 1,
       sent: 1,
       skipped: 0,
       errors: 0,
     })
-    expect(body.sentRefs).toEqual(['wa_sent'])
-    expect(mockIsEnabled).toHaveBeenCalledWith('whatsapp.recovery.template_send')
     expect(mockSendFollowUps).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       now: expect.any(Date),
-      sendTemplate: mockSendTemplate,
+      sendTemplate: expect.any(Function),
       templateFlagEnabled: false,
     }))
     expect(mockSummarizeRows).toHaveBeenCalledWith([
       { stage: 'evidence_upload', followUpStatus: 'due' },
       { stage: 'approved', followUpStatus: 'submitted_excluded' },
     ])
-  })
-
-  it('supports dry-run reporting without sending WhatsApp messages', async () => {
-    const res = await GET(new Request('http://localhost/api/cron/provider-onboarding-recovery?dryRun=1', {
-      headers: { authorization: `Bearer ${CRON_SECRET}` },
-    }))
-
-    const body = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(body).toMatchObject({
-      ok: true,
-      mode: 'dry_run',
-      total: 2,
-      dueFollowUps: 1,
-      sent: 0,
-    })
-    expect(mockSendFollowUps).not.toHaveBeenCalled()
-    expect(mockIsEnabled).not.toHaveBeenCalled()
-    expect(mockListRows).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
-      now: expect.any(Date),
-    }))
   })
 })

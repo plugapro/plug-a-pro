@@ -54,7 +54,7 @@ export const FLAG_KEYS = {
   // so the hook endpoint can refuse to deliver if the rollout needs an
   // immediate pause without a dashboard round-trip.
   AUTH_OTP_WHATSAPP: 'auth.otp.whatsapp',
-  WHATSAPP_RECOVERY_TEMPLATE_SEND: 'whatsapp.recovery.template_send',
+  RECOVERY_TEMPLATE_SEND: 'whatsapp.recovery.template_send',
 } as const satisfies Record<string, FeatureFlagKey>
 
 export type FlagKey = typeof FLAG_KEYS[keyof typeof FLAG_KEYS]

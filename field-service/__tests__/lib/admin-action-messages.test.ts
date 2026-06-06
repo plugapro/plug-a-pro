@@ -48,4 +48,18 @@ describe('admin action messages', () => {
       text: 'Dispatch action could not be completed right now. Refresh the queue and try again.',
     })
   })
+
+  it('maps template-based recovery sends to a distinct success message', () => {
+    expect(getApplicationsAdminMessage('recovery_sent_template')).toEqual({
+      tone: 'success',
+      text: 'Recovery template message sent.',
+    })
+  })
+
+  it('maps template-not-approved errors to a clear operator remediation', () => {
+    expect(getApplicationsAdminMessage('recovery_template_not_approved')).toEqual({
+      tone: 'error',
+      text: 'Template not approved in Meta. Approve the recovery template set before retrying.',
+    })
+  })
 })

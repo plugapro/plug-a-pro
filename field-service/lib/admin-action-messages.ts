@@ -33,21 +33,13 @@ export function getApplicationsAdminMessage(code?: string | null) {
     case 'recovery_sent':
       return { tone: 'success' as const, text: 'WhatsApp recovery message sent.' }
     case 'recovery_sent_template':
-      return {
-        tone: 'success' as const,
-        text: 'Recovery template sent successfully outside the 23h WhatsApp session window.',
-      }
+      return { tone: 'success' as const, text: 'Recovery template message sent.' }
     case 'recovery_batch_dispatched':
       return { tone: 'success' as const, text: 'Recovery batch dispatched. Check the row outcomes for results.' }
     case 'recovery_skipped_window':
       return {
         tone: 'error' as const,
         text: 'Outside the 23h WhatsApp session window - the provider must send us a message before we can reply with free text.',
-      }
-    case 'recovery_template_not_approved':
-      return {
-        tone: 'error' as const,
-        text: 'Recovery template is not approved in Meta yet. Keep the row queued or send only inside the 23h session window.',
       }
     case 'recovery_skipped_no_phone':
       return {
@@ -73,6 +65,11 @@ export function getApplicationsAdminMessage(code?: string | null) {
       return {
         tone: 'error' as const,
         text: 'WhatsApp send failed. Check provider-onboarding-recovery logs and retry.',
+      }
+    case 'recovery_template_not_approved':
+      return {
+        tone: 'error' as const,
+        text: 'Template not approved in Meta. Approve the recovery template set before retrying.',
       }
     default:
       return null

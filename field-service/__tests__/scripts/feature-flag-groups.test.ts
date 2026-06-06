@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { FeatureFlagKey } from '@/lib/feature-flags-registry'
 import {
   OPS_CRUD_FEATURE_FLAGS,
+  listRegisteredFeatureFlagKeys,
   resolveFeatureFlagTargets,
 } from '../../scripts/feature-flag-groups'
 
@@ -95,5 +96,9 @@ describe('feature flag rollout groups', () => {
     expect(() => resolveFeatureFlagTargets({ flag: 'admin.crud.locations', group: 'ops-crud' })).toThrow(
       'Use either --flag or --group',
     )
+  })
+
+  it('includes the WhatsApp recovery template-send flag in registry-backed seed targets', () => {
+    expect(listRegisteredFeatureFlagKeys()).toContain('whatsapp.recovery.template_send')
   })
 })

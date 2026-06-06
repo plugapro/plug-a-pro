@@ -1,39 +1,38 @@
-import type { TemplateName } from './messaging-templates'
 import type { ProviderOnboardingRecoveryTemplateKey } from './provider-onboarding-recovery'
-import type { WhatsAppComponent } from './whatsapp'
+import type { TemplateName, WhatsAppComponent } from './whatsapp'
 
-const RECOVERY_TEMPLATE_BY_MESSAGE_KEY = {
+const RECOVERY_TEMPLATE_BY_MESSAGE_KEY: Readonly<
+  Record<ProviderOnboardingRecoveryTemplateKey, TemplateName | null>
+> = {
   evidence_upload: 'provider_recovery_evidence',
   started_blocked: 'provider_recovery_started_blocked',
-  id_verification_stuck: 'provider_recovery_started_blocked',
-  skills_picker_stuck: 'provider_recovery_started_blocked',
-  location_picker_stuck: 'provider_recovery_started_blocked',
   register_started_no_name: 'provider_recovery_no_name',
   welcome_idle: 'provider_recovery_welcome_idle',
   flow_conflict: 'provider_recovery_flow_conflict',
-  submitted_pending: null,
-  submitted_approved: null,
-} as const satisfies Record<ProviderOnboardingRecoveryTemplateKey, TemplateName | null>
-
-function safeProviderFirstName(providerName: string | null) {
-  const firstToken = providerName?.trim().split(/\s+/)[0] ?? ''
-  const firstName = firstToken.replace(/[^A-Za-z'-]/g, '')
-  return firstName.length >= 2 && firstName.length <= 40 ? firstName : 'there'
+  submitted_no_recovery: null,
 }
 
-export function recoveryTemplateNameForMessageKey(
-  key: ProviderOnboardingRecoveryTemplateKey,
-): TemplateName | null {
+export function recoveryTemplateNameForMessageKey(key: ProviderOnboardingRecoveryTemplateKey) {
   return RECOVERY_TEMPLATE_BY_MESSAGE_KEY[key]
 }
 
-export function buildRecoveryTemplateComponents(input: {
-  providerName: string | null
-}): WhatsAppComponent[] {
-  return [
-    {
-      type: 'body',
-      parameters: [{ type: 'text', text: safeProviderFirstName(input.providerName) }],
-    },
-  ]
+function firstNameFromProfile(value?: string | null) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const first = trimmed.split(/\s+/)[0]
+  return first.length > 0 ? first : null
 }
+
+export function buildRecoveryTemplateComponents(params: {
+  providerName?: string | null
+}): WhatsAppComponent[] {
+  const providerName = firstNameFromProfile(params.providerName) ?? 'there'
+  return [{
+    type: 'body',
+    parameters: [
+      { type: 'text', text: providerName },
+    ],
+  }]
+}
+
