@@ -50,6 +50,10 @@ This file is the Session 0 audit for the current workspace.
 - `/admin/validation` → `field-service/app/(admin)/admin/validation/page.tsx`
 - `/admin/vouchers` → `field-service/app/(admin)/admin/vouchers/page.tsx`
 
+### Provider routes
+- `/provider/signup` → `field-service/app/(provider)/provider/signup/page.tsx` (anonymous, token-gated by ProviderResumeToken)
+- `/provider/signup/confirmation` → `field-service/app/(provider)/provider/signup/confirmation/page.tsx`
+
 ### Important route aliases
 - `/admin/providers` is a thin alias that re-exports `../technicians/page.tsx`
 - `/admin/providers/[id]` is a thin alias that re-exports `../../technicians/[id]/page.tsx`
@@ -219,6 +223,8 @@ This file is the Session 0 audit for the current workspace.
   - `admin.crud.providers`
   - `admin.users.v2`
   - `admin.vouchers`
+  - `admin.applications.resume_link_button`
+  - `whatsapp.registration.web_resume`
 
 ### Integrations
 - Transactional messaging
