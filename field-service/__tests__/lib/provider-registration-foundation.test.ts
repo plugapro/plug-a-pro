@@ -35,4 +35,27 @@ describe('provider registration foundation helpers', () => {
       lastCompletedStep: 4,
     })).toEqual({ route: '/provider/register/status', state: 'more_info' })
   })
+
+  it('routes approved providers to the provider portal instead of restarting registration', () => {
+    expect(resolveProviderRegistrationDestination({
+      applicationStatus: 'APPROVED',
+      hasActiveDraft: true,
+      lastCompletedStep: 4,
+    })).toEqual({ route: '/provider' })
+
+    expect(resolveProviderRegistrationDestination({
+      applicationStatus: 'NONE',
+      providerStatus: 'ACTIVE',
+    })).toEqual({ route: '/provider' })
+  })
+
+  it('routes submitted pending and rejected applications to registration status', () => {
+    expect(resolveProviderRegistrationDestination({
+      applicationStatus: 'PENDING',
+    })).toEqual({ route: '/provider/register/status', state: 'pending' })
+
+    expect(resolveProviderRegistrationDestination({
+      applicationStatus: 'REJECTED',
+    })).toEqual({ route: '/provider/register/status', state: 'rejected' })
+  })
 })

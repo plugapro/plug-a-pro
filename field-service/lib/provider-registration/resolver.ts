@@ -53,7 +53,7 @@ export function resolveProviderRegistrationDestination(
   }
 
   if (input.providerStatus === 'ACTIVE' || input.applicationStatus === 'APPROVED') {
-    return { route: '/provider/register/status', state: 'approved' }
+    return { route: '/provider' }
   }
 
   if (input.applicationStatus === 'PENDING') {

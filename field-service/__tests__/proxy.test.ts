@@ -569,6 +569,17 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('keeps provider registration capture APIs public before provider login', async () => {
+    const { proxy } = await import('../proxy')
+
+    for (const path of ['/api/provider/registration/draft', '/api/provider/registration/submit']) {
+      const res = await proxy(new NextRequest(`http://localhost${path}`))
+      expect(res.status).toBe(200)
+      expect(res.headers.get('location')).toBeNull()
+    }
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
   it('allows unauthenticated access to /r/* short handoff links', async () => {
     const { proxy } = await import('../proxy')
 
