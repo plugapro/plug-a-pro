@@ -256,6 +256,13 @@ describe('submitProviderApplicationFromWebAction', () => {
     expect(getApplicationStore()[0].status).toBe('PENDING')
     const updatedToken = getTokenStore().get(tokenId)
     expect(updatedToken.usedAt).not.toBeNull()
+
+    // Verify Conversation.data now contains the user-submitted fields
+    const updatedConv = getConversationStore().get(conv.id)
+    expect(updatedConv.data).toEqual(expect.objectContaining({
+      name: 'Web User', // pre-existing captured
+      bio: expect.any(String), // also still there
+    }))
   })
 
   it('rejects on token re-use', async () => {
@@ -298,6 +305,49 @@ describe('submitProviderApplicationFromWebAction', () => {
     await expect(
       submitProviderApplicationFromWebAction({ rawToken: 'x'.repeat(43), payload: {} }),
     ).rejects.toThrow(/disabled|feature/i)
+  })
+
+  it('persists user-submitted bio/references/profilePhotoUrl into Conversation.data', async () => {
+    const conv = {
+      id: 'conv-persist',
+      phone: '+27000000040',
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'Persist Test',
+        idNumber: '8001015009087',
+        skills: ['plumbing'],
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon'],
+        hourlyRate: 100,
+        evidenceFileUrls: [],
+        // bio, references, profilePhotoUrl intentionally absent — form must provide them
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    await submitProviderApplicationFromWebAction({
+      rawToken,
+      payload: {
+        bio: 'I am an experienced plumber with five years of work history.',
+        references: 'Available on request from past clients on demand.',
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+      },
+    })
+
+    const after = getConversationStore().get(conv.id)
+    expect(after.data.bio).toBe('I am an experienced plumber with five years of work history.')
+    expect(after.data.references).toBe('Available on request from past clients on demand.')
+    expect(after.data.profilePhotoUrl).toBe('https://blob.example.com/photo.jpg')
   })
 })
 

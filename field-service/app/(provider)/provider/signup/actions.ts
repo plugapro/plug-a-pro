@@ -44,6 +44,15 @@ export async function submitProviderApplicationFromWebAction(
     // 4. Merge captured + submitted data.
     const merged: Record<string, unknown> = { ...capturedData, ...parsed.data }
 
+    // 4a. Persist merged form data back to Conversation.data so the approval
+    // flow (syncProviderRecord) picks up all fields, including those the
+    // helper doesn't accept (e.g. bio, references, profilePhotoUrl).
+    await tx.conversation.update({
+      where: { id: conv.id },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma Json field accepts any serialisable value
+      data: { data: merged as never },
+    })
+
     // 5. Build SubmitInput — only pass fields the web flow knows about.
     const submitInput: SubmitInput = {
       phone: conv.phone,
