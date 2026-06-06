@@ -9,11 +9,15 @@ const {
   mockOrchestrateMatch,
   mockGeocodeAddress,
   mockGetJobRequestAccessUrl,
+  mockSendText,
 } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
     provider: {
       findFirst: vi.fn(),
+    },
+    customer: {
+      findUnique: vi.fn(),
     },
   },
   mockResolveCategoryRequirements: vi.fn(),
@@ -21,6 +25,7 @@ const {
   mockOrchestrateMatch: vi.fn(),
   mockGeocodeAddress: vi.fn(),
   mockGetJobRequestAccessUrl: vi.fn(),
+  mockSendText: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
@@ -43,6 +48,10 @@ vi.mock('../../lib/matching/orchestrator', () => ({
 
 vi.mock('../../lib/job-request-access', () => ({
   getJobRequestAccessUrl: mockGetJobRequestAccessUrl,
+}))
+
+vi.mock('../../lib/whatsapp-interactive', () => ({
+  sendText: mockSendText,
 }))
 
 // after() from next/server requires a request scope; stub it in tests so
@@ -141,6 +150,12 @@ describe('createJobRequest', () => {
     mockGeocodeAddress.mockResolvedValue({ lat: -26.1, lng: 27.9 })
     mockGetJobRequestAccessUrl.mockResolvedValue(null)
     mockDb.provider.findFirst.mockResolvedValue(null)
+    mockDb.customer.findUnique.mockResolvedValue({
+      phone: '+27821234567',
+      name: 'Test Customer',
+      isTestUser: false,
+    })
+    mockSendText.mockResolvedValue(undefined)
     mockDispatchLeads.mockResolvedValue({
       noMatch: false,
       leadsDispatched: 1,
@@ -476,6 +491,60 @@ describe('createJobRequest', () => {
     await expect(createJobRequest(BASE_PARAMS)).resolves.toBeDefined()
   })
 
+  it('does not send retry-style no-match copy when creation matching gives up structurally', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+    mockOrchestrateMatch.mockResolvedValue({
+      status: 'NO_MATCH',
+      filteredOut: [],
+      consideredCount: 0,
+      failureClass: 'EMPTY_POOL',
+      primaryReason: 'NO_LOCATION_MATCH',
+      evidence: ['considered_count=0'],
+    })
+
+    await createJobRequest(BASE_PARAMS)
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining("We're searching for a suitable provider"),
+      expect.objectContaining({
+        templateName: 'interactive:request_received_no_match',
+      }),
+    )
+  })
+
+  it('keeps request-received no-match copy for transient creation matching failures', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+    mockOrchestrateMatch.mockResolvedValue({
+      status: 'NO_MATCH',
+      filteredOut: [],
+      consideredCount: 10,
+      failureClass: 'TRANSIENT',
+      primaryReason: 'RESERVATION_FAILED',
+      evidence: ['reservation_failures=10'],
+    })
+
+    await createJobRequest(BASE_PARAMS)
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining("We're searching for a suitable provider"),
+      expect.objectContaining({
+        templateName: 'interactive:request_received_no_match',
+      }),
+    )
+  })
+
   it('returns a created request even if ticket URL generation fails', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
@@ -499,6 +568,25 @@ describe('createJobRequest', () => {
 
   // ── expiresAt computation ─────────────────────────────────────────────────
 
+  it('normalizes WhatsApp and PWA urgency values into matching policies', async () => {
+    const { getUrgencyMatchingPolicy, normalizeUrgency } = await import('../../lib/urgency')
+
+    expect(normalizeUrgency('urgent')).toBe('asap')
+    expect(normalizeUrgency('asap')).toBe('asap')
+    expect(normalizeUrgency('avail_asap')).toBe('asap')
+    expect(normalizeUrgency('soon')).toBe('within_24h')
+    expect(normalizeUrgency('within_24h')).toBe('within_24h')
+    expect(normalizeUrgency('this_week')).toBe('this_week')
+    expect(normalizeUrgency('avail_this_week')).toBe('this_week')
+    expect(normalizeUrgency('avail_weekend')).toBe('this_week')
+    expect(normalizeUrgency(null)).toBe('flexible')
+    expect(normalizeUrgency('unknown')).toBe('flexible')
+    expect(getUrgencyMatchingPolicy('urgent')).toMatchObject({
+      progressPingMinutes: 15,
+      hardGiveUpMinutes: 120,
+    })
+  })
+
   it('sets expiresAt to jobRequestMaxAgeDays from now by default', async () => {
     const { MATCHING_CONFIG } = await import('../../lib/matching/config')
     const tx = makeTx()
@@ -521,25 +609,43 @@ describe('createJobRequest', () => {
     expect(expiresMs).toBeLessThanOrEqual(after + defaultOffsetMs + 500)
   })
 
-  it('uses requestedArrivalLatest + 24h when that falls before the 7-day default', async () => {
+  it('uses requestedArrivalLatest as the explicit ceiling when it falls before the 7-day default', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
 
-    // 2 days from now → arrivalLatest + 24h = 3 days, well inside the 7-day default
+    // 2 days from now is well inside the 7-day flexible hard give-up.
     const requestedArrivalLatest = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
     await createJobRequest({ ...BASE_PARAMS, requestedArrivalLatest })
 
     const { data } = (tx.jobRequest.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
     const expiresMs = (data.expiresAt as Date).getTime()
-    const expectedMs = requestedArrivalLatest.getTime() + 24 * 60 * 60 * 1000
+    const expectedMs = requestedArrivalLatest.getTime()
     expect(expiresMs).toBeGreaterThanOrEqual(expectedMs - 500)
     expect(expiresMs).toBeLessThanOrEqual(expectedMs + 500)
   })
 
-  it('keeps the 7-day default when requestedArrivalLatest + 24h would exceed it', async () => {
+  it('uses the tighter urgency hard give-up for ASAP requests', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    const before = Date.now()
+    await createJobRequest({ ...BASE_PARAMS, urgency: 'asap' })
+    const after = Date.now()
+
+    const { data } = (tx.jobRequest.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    const expiresMs = (data.expiresAt as Date).getTime()
+    const asapOffsetMs = 2 * 60 * 60 * 1000
+    expect(expiresMs).toBeGreaterThanOrEqual(before + asapOffsetMs - 500)
+    expect(expiresMs).toBeLessThanOrEqual(after + asapOffsetMs + 500)
+  })
+
+  it('keeps the 7-day flexible cap when requestedArrivalLatest would exceed it', async () => {
     const { MATCHING_CONFIG } = await import('../../lib/matching/config')
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
@@ -547,7 +653,7 @@ describe('createJobRequest', () => {
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
 
-    // 8 days from now → arrivalLatest + 24h = 9 days, exceeds the 7-day default
+    // 8 days from now exceeds the 7-day flexible hard give-up.
     const requestedArrivalLatest = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000)
     const before = Date.now()
     await createJobRequest({ ...BASE_PARAMS, requestedArrivalLatest })

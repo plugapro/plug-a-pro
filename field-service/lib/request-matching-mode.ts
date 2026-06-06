@@ -281,10 +281,24 @@ export async function selectCustomerRequestMatchingMode(params: {
   if (request.customer?.phone) {
     let text = ''
     if (params.mode === 'quick_match') {
-      text =
-        quickMatchResult?.status === 'NO_MATCH'
+      const finalNoMatch =
+        quickMatchResult?.status === 'NO_MATCH' &&
+        (quickMatchResult.failureClass === 'EMPTY_POOL' || quickMatchResult.failureClass === 'STRUCTURAL')
+          ? quickMatchResult
+          : null
+
+      if (!finalNoMatch) {
+        text =
+          quickMatchResult?.status === 'NO_MATCH'
           ? `Quick Match started.\n\nNo providers in your area are available right now.\n\nWe'll keep trying and notify you the moment one becomes available.`
           : `Quick Match started.\n\nWe're checking with one suitable provider now.\nIf they don't respond, we'll try the next provider.`
+      } else {
+        console.info('[request-matching-mode] quick_match final no-match notification handled by expiry', {
+          requestId: request.id,
+          failureClass: finalNoMatch.failureClass,
+          primaryReason: finalNoMatch.primaryReason,
+        })
+      }
     }
 
     if (params.mode === 'review_first') {
@@ -309,25 +323,27 @@ export async function selectCustomerRequestMatchingMode(params: {
         })
       })
     } else {
-      await sendText(
-        request.customer.phone,
-        text,
-        {
-          templateName: 'interactive:client_matching_mode_selected',
-          metadata: {
+      if (text) {
+        await sendText(
+          request.customer.phone,
+          text,
+          {
+            templateName: 'interactive:client_matching_mode_selected',
+            metadata: {
+              requestId: request.id,
+              mode: params.mode,
+              reviewCandidateCount,
+            },
+          },
+        ).catch((error) => {
+          console.warn('[request-matching-mode] customer matching mode notification failed', {
             requestId: request.id,
             mode: params.mode,
             reviewCandidateCount,
-          },
-        },
-      ).catch((error) => {
-        console.warn('[request-matching-mode] customer matching mode notification failed', {
-          requestId: request.id,
-          mode: params.mode,
-          reviewCandidateCount,
-          error: error instanceof Error ? error.message : String(error),
+            error: error instanceof Error ? error.message : String(error),
+          })
         })
-      })
+      }
     }
   }
 
