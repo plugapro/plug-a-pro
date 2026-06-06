@@ -63,7 +63,7 @@ export type ValidateResult =
   | { ok: false; reason: 'not_found' | 'expired' | 'used' | 'revoked' }
 
 export async function validateProviderResumeToken(client: Tx, rawToken: string): Promise<ValidateResult> {
-  if (!rawToken || rawToken.length !== 43 || rawToken.length > 128) return { ok: false, reason: 'not_found' }
+  if (!rawToken || rawToken.length !== 43) return { ok: false, reason: 'not_found' }
   const tokenHash = hashProviderResumeToken(rawToken)
   const row = await client.providerResumeToken.findUnique({ where: { tokenHash } })
   if (!row) return { ok: false, reason: 'not_found' }

@@ -51,8 +51,8 @@ This file is the Session 0 audit for the current workspace.
 - `/admin/vouchers` → `field-service/app/(admin)/admin/vouchers/page.tsx`
 
 ### Provider routes
-- `/provider/signup` → `field-service/app/(provider)/provider/signup/page.tsx` (anonymous, token-gated by ProviderResumeToken)
-- `/provider/signup/confirmation` → `field-service/app/(provider)/provider/signup/confirmation/page.tsx`
+- `/provider/signup` → `field-service/app/provider/signup/page.tsx` (anonymous, token-gated by ProviderResumeToken)
+- `/provider/signup/confirmation` → `field-service/app/provider/signup/confirmation/page.tsx`
 
 ### Important route aliases
 - `/admin/providers` is a thin alias that re-exports `../technicians/page.tsx`

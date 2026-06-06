@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { getSession } from '@/lib/auth'
 import { crudAction } from '@/lib/crud-action'
 import { issueProviderResumeToken } from '@/lib/provider-resume-tokens'
+import { getPublicAppUrl } from '@/lib/provider-credit-copy'
 
 const Input = z.object({ conversationId: z.string().min(1) })
 
@@ -43,7 +44,7 @@ export async function generateResumeLinkAction(
         source: 'recovery_nudge',
       })
 
-      const baseUrl = (process.env.APP_URL ?? 'https://plugapro.co.za').replace(/\/$/, '')
+      const baseUrl = getPublicAppUrl() || 'https://app.plugapro.co.za'
       const url = `${baseUrl}/provider/signup?t=${rawToken}`
 
       revalidatePath('/admin/applications')

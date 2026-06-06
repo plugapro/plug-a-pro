@@ -22,6 +22,10 @@ const {
 
 vi.mock('next/cache', () => ({ revalidatePath: mockRevalidatePath }))
 
+vi.mock('@/lib/provider-credit-copy', () => ({
+  getPublicAppUrl: () => 'https://app.plugapro.co.za',
+}))
+
 vi.mock('@/lib/auth', () => ({
   getSession: vi.fn(async () => ({ id: 'sb-user-1' })),
   createServiceClient: vi.fn(),
