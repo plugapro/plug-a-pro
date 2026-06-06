@@ -4,11 +4,13 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import {
   listProviderOnboardingRecoveryRows,
   sendProviderOnboardingRecoveryFollowUps,
   summarizeProviderOnboardingRecoveryRows,
 } from '@/lib/provider-onboarding-recovery'
+import { sendTemplate } from '@/lib/whatsapp'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -24,9 +26,16 @@ export async function GET(request: Request) {
     const now = new Date()
     const url = new URL(request.url)
     const dryRun = url.searchParams.get('dryRun') === '1' || url.searchParams.get('dryRun') === 'true'
+    const templateFlagEnabled = dryRun
+      ? false
+      : await isEnabled('whatsapp.recovery.template_send')
     const result = dryRun
       ? null
-      : await sendProviderOnboardingRecoveryFollowUps(db, { now })
+      : await sendProviderOnboardingRecoveryFollowUps(db, {
+          now,
+          sendTemplate,
+          templateFlagEnabled,
+        })
     const rows = result?.rows ?? await listProviderOnboardingRecoveryRows(db, { now })
     const summary = summarizeProviderOnboardingRecoveryRows(rows)
     const durationMs = Date.now() - cronStart

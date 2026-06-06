@@ -24,9 +24,13 @@ import { buildMetadata } from '@/lib/metadata'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
 import {
+  WHATSAPP_RECOVERY_SESSION_WINDOW_MS,
   listProviderOnboardingRecoveryRows,
   providerOnboardingStageLabel,
+  sendProviderOnboardingRecoveryFollowUpForRef,
+  sendProviderOnboardingRecoveryFollowUps,
 } from '@/lib/provider-onboarding-recovery'
+import { recoveryTemplateNameForMessageKey } from '@/lib/provider-onboarding-recovery-template-config'
 import { PROVIDER_PROFILE_PHOTO_LABEL } from '@/lib/provider-attachment-labels'
 import {
   OPS_QUEUE_TYPES,
@@ -49,6 +53,7 @@ import {
 } from '@/components/ui/table'
 import type { ApplicationStatus } from '@prisma/client'
 import { getApplicationsAdminMessage } from '@/lib/admin-action-messages'
+import { sendTemplate } from '@/lib/whatsapp'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
 
@@ -83,6 +88,10 @@ const CategoryApprovalSchema = z.object({
 
 const MoreInfoApplicationSchema = ApplicationActionSchema.extend({
   reason: z.string().min(5),
+})
+
+const SendRecoveryRowSchema = z.object({
+  safeUserRef: z.string().min(1),
 })
 
 const providerApplicationSelect = {
@@ -618,6 +627,149 @@ async function releaseApplication(formData: FormData) {
   revalidatePath('/admin')
 }
 
+// ─── Recovery follow-up actions ──────────────────────────────────────────────
+
+const RECOVERY_BANNER_BY_SKIP_REASON: Record<
+  'not_found' | 'no_phone' | 'outside_session_window' | 'already_claimed' | 'no_recovery_for_stage',
+  string
+> = {
+  not_found: 'recovery_skipped_not_found',
+  no_phone: 'recovery_skipped_no_phone',
+  outside_session_window: 'recovery_skipped_window',
+  already_claimed: 'recovery_skipped_locked',
+  no_recovery_for_stage: 'recovery_skipped_stage',
+}
+
+function isTemplateNotApprovedError(error: unknown) {
+  return error instanceof Error
+    ? error.message.includes('[TEMPLATE_NOT_APPROVED]')
+    : String(error).includes('[TEMPLATE_NOT_APPROVED]')
+}
+
+async function sendRecoveryNudgeForRow(formData: FormData) {
+  'use server'
+  const parsed = SendRecoveryRowSchema.safeParse({
+    safeUserRef: String(formData.get('safeUserRef') ?? ''),
+  })
+  if (!parsed.success) return
+  const { safeUserRef } = parsed.data
+
+  const admin = await requireAdmin()
+  if (!APPLICATION_ROLES.includes(admin.adminRole as (typeof APPLICATION_ROLES)[number])) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  if (!crudEnabled) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send', { userId: admin.id })
+  let bannerCode = 'recovery_failed'
+
+  try {
+    const result = await sendProviderOnboardingRecoveryFollowUpForRef(db, {
+      safeUserRef,
+      actorId: `operator:${admin.id}`,
+      sendTemplate,
+      templateFlagEnabled,
+    })
+
+    if (result.outcome === 'sent') {
+      bannerCode = result.via === 'template' ? 'recovery_sent_template' : 'recovery_sent'
+    } else if (result.outcome === 'skipped') {
+      bannerCode = RECOVERY_BANNER_BY_SKIP_REASON[result.reason]
+    } else if (isTemplateNotApprovedError(result.error)) {
+      bannerCode = 'recovery_template_not_approved'
+    }
+
+    await db.adminAuditEvent.create({
+      data: {
+        adminId: admin.id,
+        action: 'provider_onboarding_recovery.manual_send',
+        entityType: 'ProviderOnboardingRecovery',
+        entityId: safeUserRef,
+        after: {
+          outcome: result.outcome,
+          ...(result.outcome === 'skipped' ? { reason: result.reason } : {}),
+          ...(result.outcome === 'sent' ? {
+            stage: result.row.stage,
+            messageTemplateKey: result.row.messageTemplateKey,
+            via: result.via,
+          } : {}),
+          ...(result.outcome === 'error' ? {
+            error: result.error instanceof Error ? result.error.message : String(result.error),
+          } : {}),
+        },
+      },
+    }).catch((error) => {
+      console.error('[admin/applications] manual recovery audit write failed', { safeUserRef, error })
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] sendRecoveryNudgeForRow failed', { safeUserRef, error })
+  }
+
+  revalidatePath('/admin/applications')
+  redirect(`/admin/applications?message=${bannerCode}`)
+}
+
+async function sendAllDueRecoveryNudges() {
+  'use server'
+  const admin = await requireAdmin()
+  if (!APPLICATION_ROLES.includes(admin.adminRole as (typeof APPLICATION_ROLES)[number])) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  if (!crudEnabled) {
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send', { userId: admin.id })
+
+  try {
+    const result = await sendProviderOnboardingRecoveryFollowUps(db, {
+      actorId: `operator:${admin.id}`,
+      sendTemplate,
+      templateFlagEnabled,
+    })
+    await db.adminAuditEvent.create({
+      data: {
+        adminId: admin.id,
+        action: 'provider_onboarding_recovery.batch_send',
+        entityType: 'ProviderOnboardingRecovery',
+        entityId: `batch:${admin.id}:${Date.now()}`,
+        after: {
+          total: result.total,
+          due: result.due,
+          sent: result.sent,
+          skipped: result.skipped,
+          errors: result.errors,
+        },
+      },
+    }).catch((error) => {
+      console.error('[admin/applications] batch recovery audit write failed', { error })
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] sendAllDueRecoveryNudges failed', { error })
+    revalidatePath('/admin/applications')
+    redirect('/admin/applications?message=recovery_failed')
+  }
+
+  revalidatePath('/admin/applications')
+  redirect('/admin/applications?message=recovery_batch_dispatched')
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -641,15 +793,17 @@ export default async function ApplicationsPage({
 }) {
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const recoveryTemplateFlagEnabled = await isEnabled('whatsapp.recovery.template_send', { userId: admin.id })
   const { message } = await searchParams
   const banner = getApplicationsAdminMessage(message)
+  const pageNow = new Date()
 
   const applications = await db.providerApplication.findMany({
     select: providerApplicationSelect,
     orderBy: { submittedAt: 'desc' },
     take: 100,
   })
-  const onboardingRecoveryRows = await listProviderOnboardingRecoveryRows(db)
+  const onboardingRecoveryRows = await listProviderOnboardingRecoveryRows(db, { now: pageNow })
   const conflictingApplicationIds = getConflictingActiveProviderApplicationIds(applications)
   const assignments = await listOpsQueueAssignments(
     db,
@@ -689,12 +843,19 @@ export default async function ApplicationsPage({
               WhatsApp onboarding recovery
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Recovery queue for recent inbound WhatsApp provider leads. Operator follow-ups are audit-limited; phone numbers are masked.
+              Recovery queue for recent inbound WhatsApp provider leads. Automatic nudges are audit-limited; phone numbers are masked.
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Stages: {RECOVERY_STAGE_KEYS.join(', ')}
-          </p>
+          <div className="flex flex-col items-end gap-2">
+            <p className="text-xs text-muted-foreground">
+              Stages: {RECOVERY_STAGE_KEYS.join(', ')}
+            </p>
+            <form action={sendAllDueRecoveryNudges}>
+              <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                Send all due now
+              </SubmitButton>
+            </form>
+          </div>
         </div>
 
         <Card>
@@ -716,57 +877,78 @@ export default async function ApplicationsPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {onboardingRecoveryRows.map((row) => (
-                  <TableRow key={`${row.source}:${row.id}`} data-admin-onboarding-recovery-row={row.stage}>
-                    <TableCell>
-                      <Badge variant={row.priority <= 2 ? 'warning' : 'outline'} className="rounded-full">
-                        P{row.priority}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <span className="block">{row.phoneMasked}</span>
-                      <span className="block text-xs text-muted-foreground">Tail {row.phoneTail}</span>
-                      <span className="block text-xs text-muted-foreground">{row.safeUserRef}</span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={row.stage === 'flow_conflict' ? 'warning' : 'outline'} className="rounded-full">
-                        {providerOnboardingStageLabel(row.stage)}
-                      </Badge>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {row.flow && row.step ? `${row.flow} / ${row.step}` : row.source}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.lastInteractionAt.toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      {row.followUpDueAt ? (
-                        <span className="block text-xs">
-                          Due {row.followUpDueAt.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}
+                {onboardingRecoveryRows.map((row) => {
+                  const outsideSessionWindow =
+                    pageNow.getTime() - row.lastInteractionAt.getTime() > WHATSAPP_RECOVERY_SESSION_WINDOW_MS
+                  const canSendRecovery = recoveryTemplateNameForMessageKey(row.messageTemplateKey) !== null
+                  const sendLabel =
+                    outsideSessionWindow && recoveryTemplateFlagEnabled ? 'Send template' : 'Send now'
+
+                  return (
+                    <TableRow key={`${row.source}:${row.id}`} data-admin-onboarding-recovery-row={row.stage}>
+                      <TableCell>
+                        <Badge variant={row.priority <= 2 ? 'warning' : 'outline'} className="rounded-full">
+                          P{row.priority}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <span className="block">{row.phoneMasked}</span>
+                        <span className="block text-xs text-muted-foreground">Tail {row.phoneTail}</span>
+                        <span className="block text-xs text-muted-foreground">{row.safeUserRef}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={row.stage === 'flow_conflict' ? 'warning' : 'outline'} className="rounded-full">
+                          {providerOnboardingStageLabel(row.stage)}
+                        </Badge>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {row.flow && row.step ? `${row.flow} / ${row.step}` : row.source}
                         </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <span className="block">{row.providerName ?? '-'}</span>
-                      <span className="block text-xs">{row.serviceCategory ?? 'Service not captured'}</span>
-                      <span className="block text-xs">{row.area ?? 'Area not captured'}</span>
-                      {row.applicationStatus ? (
-                        <span className="block text-xs">Application: {row.applicationStatus}</span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <span className="block">{row.followUpStatus}</span>
-                      <span className="block text-xs">Last: {row.lastOutcomeStatus}</span>
-                      {row.operatorNotes ? (
-                        <span className="block text-xs">{row.operatorNotes}</span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="max-w-xl text-xs text-muted-foreground">
-                      <p className="font-medium text-foreground">{row.recommendedAction}</p>
-                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-2 font-sans text-xs leading-relaxed text-muted-foreground">
-                        {row.followUpMessage}
-                      </pre>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.lastInteractionAt.toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {outsideSessionWindow ? (
+                          <Badge variant="warning" className="mt-1 flex w-fit rounded-full">
+                            Outside 23h window
+                          </Badge>
+                        ) : null}
+                        {row.followUpDueAt ? (
+                          <span className="block text-xs">
+                            Due {row.followUpDueAt.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <span className="block">{row.providerName ?? '-'}</span>
+                        <span className="block text-xs">{row.serviceCategory ?? 'Service not captured'}</span>
+                        <span className="block text-xs">{row.area ?? 'Area not captured'}</span>
+                        {row.applicationStatus ? (
+                          <span className="block text-xs">Application: {row.applicationStatus}</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <span className="block">{row.followUpStatus}</span>
+                        <span className="block text-xs">Last: {row.lastOutcomeStatus}</span>
+                        {row.operatorNotes ? (
+                          <span className="block text-xs">{row.operatorNotes}</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="max-w-xl text-xs text-muted-foreground">
+                        <p className="font-medium text-foreground">{row.recommendedAction}</p>
+                        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-2 font-sans text-xs leading-relaxed text-muted-foreground">
+                          {row.followUpMessage}
+                        </pre>
+                        {canSendRecovery ? (
+                          <form action={sendRecoveryNudgeForRow} className="mt-2">
+                            <input type="hidden" name="safeUserRef" value={row.safeUserRef} />
+                            <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                              {sendLabel}
+                            </SubmitButton>
+                          </form>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           )}

@@ -6,6 +6,8 @@ import {
   listProviderOnboardingRecoveryRows,
   personalizeProviderOnboardingRecoveryMessage,
   recordProviderOnboardingRecoveryOutcome,
+  safeRefForPhone,
+  sendProviderOnboardingRecoveryFollowUpForRef,
   sendProviderOnboardingRecoveryFollowUps,
 } from '@/lib/provider-onboarding-recovery'
 
@@ -22,6 +24,49 @@ function conversation(overrides: Record<string, unknown>) {
     updatedAt: new Date('2026-06-04T09:20:00.000Z'),
     timeoutNotifiedAt: null,
     ...overrides,
+  }
+}
+
+function recoverySendClient(overrides: {
+  phone?: string
+  step?: string
+  data?: Record<string, unknown>
+  updatedAt?: Date
+  updateCount?: number
+} = {}) {
+  const phone = overrides.phone ?? '27820000001'
+  const updatedAt = overrides.updatedAt ?? new Date('2026-06-04T09:20:00.000Z')
+
+  return {
+    inboundWhatsAppMessage: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          phone,
+          messageType: 'text',
+          firstSeenAt: updatedAt,
+          lastSeenAt: updatedAt,
+        },
+      ]),
+    },
+    conversation: {
+      findMany: vi.fn().mockResolvedValue([
+        conversation({
+          id: 'conv-name',
+          phone: `+${phone}`,
+          step: overrides.step ?? 'reg_collect_name',
+          data: overrides.data ?? {},
+          updatedAt,
+        }),
+      ]),
+      updateMany: vi.fn().mockResolvedValue({ count: overrides.updateCount ?? 1 }),
+    },
+    providerApplication: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    auditLog: {
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+    },
   }
 }
 
@@ -347,11 +392,14 @@ describe('provider onboarding recovery', () => {
       },
     }
     const sendText = vi.fn().mockResolvedValue('wamid.recovery.1')
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.template.1')
 
     const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
       now,
       since,
       sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
     })
 
     expect(result).toMatchObject({
@@ -366,8 +414,12 @@ describe('provider onboarding recovery', () => {
       expect.stringContaining('full name'),
       expect.objectContaining({
         templateName: 'provider_onboarding_recovery:register_started_no_name',
+        metadata: expect.objectContaining({
+          via: 'session_text',
+        }),
       }),
     )
+    expect(sendTemplate).not.toHaveBeenCalled()
     expect(client.conversation.updateMany).toHaveBeenCalledWith({
       where: { id: 'conv-name', timeoutNotifiedAt: null },
       data: { timeoutNotifiedAt: new Date(0) },
@@ -390,9 +442,159 @@ describe('provider onboarding recovery', () => {
       messageTemplateKey: 'register_started_no_name',
       actionType: 'automated_nudge_sent',
       result: 'sent',
+      via: 'session_text',
     })
     expect(JSON.stringify(call.data)).not.toContain('+27820000001')
     expect(JSON.stringify(call.data)).not.toContain('27820000001')
+  })
+
+  it('skips outside-window recovery sends while the template flag is disabled', async () => {
+    const outsideWindowAt = new Date('2026-06-03T10:45:00.000Z')
+    const outsideSince = new Date('2026-06-03T09:00:00.000Z')
+    const client = recoverySendClient({ updatedAt: outsideWindowAt })
+    const sendText = vi.fn().mockResolvedValue('wamid.recovery.1')
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.template.1')
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: outsideSince,
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: false,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 0,
+      skipped: 1,
+      errors: 0,
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendTemplate).not.toHaveBeenCalled()
+    expect(client.conversation.updateMany).not.toHaveBeenCalled()
+    expect(client.auditLog.create.mock.calls[0][0].data.after).toMatchObject({
+      actionType: 'automated_nudge_skipped',
+      outcomeStatus: 'skipped',
+      result: 'outside_whatsapp_session_window',
+      via: null,
+    })
+  })
+
+  it('uses recovery templates outside the session window when the template flag is enabled', async () => {
+    const outsideWindowAt = new Date('2026-06-03T10:45:00.000Z')
+    const outsideSince = new Date('2026-06-03T09:00:00.000Z')
+    const client = recoverySendClient({ updatedAt: outsideWindowAt })
+    const sendText = vi.fn().mockResolvedValue('wamid.recovery.1')
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.template.1')
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: outsideSince,
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 1,
+      skipped: 0,
+      errors: 0,
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendTemplate).toHaveBeenCalledWith({
+      to: '+27820000001',
+      template: 'provider_recovery_no_name',
+      components: [
+        {
+          type: 'body',
+          parameters: [{ type: 'text', text: 'there' }],
+        },
+      ],
+      metadata: expect.objectContaining({
+        safeUserRef: safeRefForPhone('27820000001'),
+        recoveryStage: 'register_started_no_name',
+        via: 'template',
+      }),
+    })
+    expect(client.auditLog.create.mock.calls[0][0].data.after).toMatchObject({
+      outcomeStatus: 'message_sent',
+      actionType: 'automated_nudge_sent',
+      result: 'sent',
+      via: 'template',
+    })
+  })
+
+  it('releases the recovery claim and returns an error when template sending fails', async () => {
+    const outsideWindowAt = new Date('2026-06-03T10:45:00.000Z')
+    const outsideSince = new Date('2026-06-03T09:00:00.000Z')
+    const client = recoverySendClient({ updatedAt: outsideWindowAt })
+    const error = new Error('[TEMPLATE_NOT_APPROVED] provider_recovery_no_name not approved')
+    const sendText = vi.fn().mockResolvedValue('wamid.recovery.1')
+    const sendTemplate = vi.fn().mockRejectedValue(error)
+
+    const result = await sendProviderOnboardingRecoveryFollowUpForRef(client as never, {
+      safeUserRef: safeRefForPhone('27820000001'),
+      now,
+      since: outsideSince,
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+      actorId: 'operator:admin-1',
+    })
+
+    expect(result).toMatchObject({
+      outcome: 'error',
+      row: expect.objectContaining({ safeUserRef: safeRefForPhone('27820000001') }),
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendTemplate).toHaveBeenCalledTimes(1)
+    expect(client.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conv-name', timeoutNotifiedAt: null },
+      data: { timeoutNotifiedAt: new Date(0) },
+    })
+    expect(client.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conv-name', timeoutNotifiedAt: new Date(0) },
+      data: { timeoutNotifiedAt: null },
+    })
+    expect(client.auditLog.create.mock.calls[0][0].data.after).toMatchObject({
+      actionType: 'manual_nudge_skipped',
+      outcomeStatus: 'skipped',
+      result: 'send_failed',
+      error: error.message,
+      via: null,
+    })
+  })
+
+  it('returns via for single-row session sends', async () => {
+    const client = recoverySendClient()
+    const sendText = vi.fn().mockResolvedValue('wamid.recovery.1')
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.template.1')
+
+    const result = await sendProviderOnboardingRecoveryFollowUpForRef(client as never, {
+      safeUserRef: safeRefForPhone('27820000001'),
+      now,
+      since,
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+      actorId: 'operator:admin-1',
+    })
+
+    expect(result).toMatchObject({
+      outcome: 'sent',
+      via: 'session_text',
+      row: expect.objectContaining({ safeUserRef: safeRefForPhone('27820000001') }),
+    })
+    expect(sendText).toHaveBeenCalledTimes(1)
+    expect(sendTemplate).not.toHaveBeenCalled()
+    expect(client.auditLog.create.mock.calls[0][0].data.after).toMatchObject({
+      actionType: 'manual_nudge_sent',
+      outcomeStatus: 'message_sent',
+      via: 'session_text',
+    })
   })
 
   it('logs automated nudge skips without raw phone numbers', async () => {
@@ -471,6 +673,7 @@ describe('provider onboarding recovery', () => {
       notes: 'Manual WhatsApp sent from operator phone',
       nextFollowUpAt: new Date('2026-06-04T10:30:00.000Z'),
       actorId: 'operator:test',
+      via: 'template',
     })
 
     const call = client.auditLog.create.mock.calls[0][0]
@@ -481,6 +684,7 @@ describe('provider onboarding recovery', () => {
       entityType: 'ProviderOnboardingRecovery',
       entityId: 'wa_4179bfef51',
     })
+    expect(call.data.after).toMatchObject({ via: 'template' })
     expect(JSON.stringify(call.data)).toContain('082****567')
     expect(JSON.stringify(call.data)).not.toContain('+27821234567')
     expect(JSON.stringify(call.data)).not.toContain('27821234567')
