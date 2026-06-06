@@ -1819,7 +1819,30 @@ model Conversation {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  resumeTokens ProviderResumeToken[]
+
   @@map("conversations")
+}
+
+model ProviderResumeToken {
+  id                  String    @id @default(cuid())
+  tokenHash           String    @unique // sha256(rawToken) hex; raw never stored
+  conversationId      String
+  phone               String
+  issuedByAdminUserId String
+  issuedAt            DateTime  @default(now())
+  expiresAt           DateTime
+  usedAt              DateTime?
+  revokedAt           DateTime?
+  revokedReason       String?
+  source              String
+
+  conversation  Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  issuedByAdmin AdminUser    @relation(fields: [issuedByAdminUserId], references: [id])
+
+  @@index([conversationId])
+  @@index([phone, expiresAt])
+  @@map("provider_resume_tokens")
 }
 
 // ─── Audit ────────────────────────────────────────────────────────────────────
@@ -2545,10 +2568,11 @@ model AdminUser {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  invitedBy      AdminUser?        @relation("AdminInvitedBy", fields: [invitedById], references: [id])
-  invitees       AdminUser[]       @relation("AdminInvitedBy")
-  auditEvents    AdminAuditEvent[]
-  voucherBatches VoucherBatch[]
+  invitedBy                    AdminUser?           @relation("AdminInvitedBy", fields: [invitedById], references: [id])
+  invitees                     AdminUser[]          @relation("AdminInvitedBy")
+  auditEvents                  AdminAuditEvent[]
+  voucherBatches               VoucherBatch[]
+  issuedProviderResumeTokens   ProviderResumeToken[]
 
   @@map("admin_users")
 }
