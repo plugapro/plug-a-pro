@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/table'
 import type { ApplicationStatus } from '@prisma/client'
 import { getApplicationsAdminMessage } from '@/lib/admin-action-messages'
+import { ResumeLinkButton } from '@/components/admin/applications/resume-link-button'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
 
@@ -641,6 +642,7 @@ export default async function ApplicationsPage({
 }) {
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const resumeLinkButtonEnabled = await isEnabled('admin.applications.resume_link_button', { userId: admin.id })
   const { message } = await searchParams
   const banner = getApplicationsAdminMessage(message)
 
@@ -713,6 +715,7 @@ export default async function ApplicationsPage({
                   <TableHead>Captured</TableHead>
                   <TableHead>Outcome</TableHead>
                   <TableHead>Action / message</TableHead>
+                  {resumeLinkButtonEnabled && <TableHead>Resume link</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -765,6 +768,14 @@ export default async function ApplicationsPage({
                         {row.followUpMessage}
                       </pre>
                     </TableCell>
+                    {resumeLinkButtonEnabled && (
+                      <TableCell>
+                        <ResumeLinkButton
+                          conversationId={row.source === 'conversation' ? row.id : ''}
+                          disabled={row.source !== 'conversation' || row.followUpStatus === 'submitted_excluded'}
+                        />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
