@@ -49,9 +49,10 @@ Confirmed conclusions:
 
 - **No user-visible side effects.** No WhatsApp / email / SMS sent during recovery; no status transitions on `ProviderApplication`, `Provider`, `JobRequest`, or `ProviderIdentityVerification` that would trigger downstream notification handlers.
 - **No re-charging vendors.** Didit re-pulls must use read-only endpoints; we do not re-initiate liveness sessions. Pricing/retention of Didit's read API is an external vendor fact and is **to be confirmed** before run — treat as "read-only, cost to confirm."
-- **Meta 30-day media retention.** The wipe was within 48 h, so all media IDs in `inbound_whatsapp_messages` from the past 30 days are still retrievable from Meta. Anything older than 30 days is gone from Meta regardless.
+- **Meta media retention is split.** Per Meta's media documentation: media IDs received via webhook expire after **7 days**, while media IDs from API upload expire after **30 days**. All `InboundWhatsAppMessage.payload` media IDs in this recovery are webhook-sourced, so the practical retention ceiling is 7 days for inbound media — not 30. Replay is "attemptable, not guaranteed." Treat every harvested media ID as a candidate and verify by live sample GET before claiming completeness. Source: https://support.chatarchitect.com/books/meta-whatsapp/page/media-developer-documentation/revisions/640 (mirror of Meta WhatsApp Cloud API media docs).
 - **Idempotency.** Every recovery step must be safely re-runnable. `downloadAndStoreWhatsAppMedia` is already idempotent via the `uploadedBy = system:whatsapp:${mediaId}` + `label` lookup.
 - **Additive only.** No schema migrations; no drops or renames; no inline `'use server'` actions touched.
+- **Column-naming convention in raw SQL.** Prisma models in this repo use `@@map` for table names but do **not** use `@map` on individual fields, so Postgres column names are the field names verbatim in camelCase. All raw SQL must double-quote camelCase identifiers (`"externalId"`, `"firstSeenAt"`, `"verificationId"`, `"blobKey"`, etc.). Snake_case identifiers will silently fail to resolve.
 
 ---
 
@@ -104,9 +105,13 @@ Interpretation:
 - Previously failing cron / write paths stop emitting SQLSTATE 25006.
 - Monitor errors for 10–15 minutes.
 
-### Gate 0 — Survival counts (5 min, runs only if Phase 0 outcome is "real data loss")
+### Gate 0 — Survival counts + high-watermark capture (5 min, runs only if Phase 0 outcome is "real data loss")
 
-Compare prod and restore-clone counts for: `inbound_whatsapp_messages`, `attachments`, `provider_identity_verifications`, `provider_identity_documents`, `provider_verification_webhook_events`, and `storage.objects WHERE bucket_id = 'identity-documents'`. The table in §2 is the captured snapshot for today's run. The script must re-run this gate and abort if the live counts have unexpectedly changed since the snapshot.
+Compare prod and restore-clone counts for: `inbound_whatsapp_messages`, `attachments`, `provider_identity_verifications`, `provider_identity_documents`, `provider_verification_webhook_events`, and `storage.objects WHERE bucket_id = 'identity-documents'`.
+
+**High-watermark bound.** Because writes are reopened after Phase 0, count equality is no longer a safe re-run guard — new inbound messages and attachments can legitimately arrive between dry-run and apply. The gate captures a single timestamp `gateCapturedAt = now()` (recorded into the plan JSON), and **all subsequent recovery reads filter rows to `"firstSeenAt" <= gateCapturedAt` (or `"createdAt" <= gateCapturedAt` for tables without `firstSeenAt`)**. Rows newer than `gateCapturedAt` are out of scope for this recovery; they belong to live operation post-reopening.
+
+The apply step re-runs Gate 0 with the same `gateCapturedAt` and verifies that counts of rows `<= gateCapturedAt` have not changed (those are now historical and should be frozen). If they have changed, the apply aborts and asks for a fresh plan. A short maintenance window during apply is recommended but not required — the high-watermark filter is the primary correctness mechanism.
 
 ### Workstream A — WhatsApp media replay (`Attachment`)
 
@@ -114,23 +119,28 @@ Compare prod and restore-clone counts for: `inbound_whatsapp_messages`, `attachm
 
 **Step A1 — Harvest media IDs.**
 
+Postgres column names are Prisma field names verbatim (no `@map` directives on `InboundWhatsAppMessage` fields), so identifiers are camelCase and must be double-quoted in raw SQL. The 7-day inbound-media retention ceiling sets the upper bound on harvest age — anything older is a guaranteed Meta 404.
+
 ```sql
 SELECT
-  external_id,
+  "externalId",
   phone,
-  message_type,
-  first_seen_at,
-  payload -> message_type ->> 'id' AS media_id,
-  payload -> message_type ->> 'caption' AS caption
+  "messageType",
+  "firstSeenAt",
+  payload -> "messageType" ->> 'id'      AS media_id,
+  payload -> "messageType" ->> 'caption' AS caption
 FROM inbound_whatsapp_messages
-WHERE message_type IN ('image','document','video')
-  AND first_seen_at >= now() - interval '30 days'
-ORDER BY first_seen_at;
+WHERE "messageType" IN ('image','document','video')
+  AND "firstSeenAt" <= :gateCapturedAt
+  AND "firstSeenAt" >= :gateCapturedAt - interval '7 days'
+ORDER BY "firstSeenAt";
 ```
 
-Produces a `media_candidates` working table: `external_id`, `phone`, `message_type`, `first_seen_at`, `media_id`, `caption`.
+Produces a `media_candidates` working table: `externalId`, `phone`, `messageType`, `firstSeenAt`, `media_id`, `caption`, plus a derived `age_bucket` column (`< 24h`, `1–3 d`, `3–7 d`) used for prioritisation and for live-sample-GET sizing in step A2.
 
 **Step A2 — Filter by replay eligibility.**
+
+**Live sample GET first.** Before any bulk replay, attempt a Meta GET on 3 candidate IDs from each `age_bucket`. A 200 confirms the bucket is replayable. A 404 across all samples in a bucket marks the bucket as expired — those rows go to the reconciliation CSV with `reason = WHATSAPP_MEDIA_BEYOND_META_RETENTION` rather than being attempted in bulk.
 
 `downloadAndStoreWhatsAppMedia` accepts `image/jpeg`, `image/png`, `image/webp`, `application/pdf` only (see `lib/whatsapp-media.ts`'s `ALLOWED_EVIDENCE_TYPES`). Therefore:
 
@@ -151,11 +161,18 @@ Produces a `media_candidates` working table: `external_id`, `phone`, `message_ty
 
 Resolution is recorded as `(media_id, parent_kind, parent_id, label, confidence)` where confidence is `HIGH` (restore-clone exact match), `MEDIUM` (phone+window+step), or `LOW` (phone-only fallback).
 
-**Step A4 — Replay via `downloadAndStoreWhatsAppMedia`.**
+**Step A4 — Replay via a new recovery helper.**
 
-For each eligible `(media_id, parent_kind, parent_id, label)` with confidence ≥ MEDIUM, call the existing function. It is already idempotent — duplicate runs are no-ops. `LOW`-confidence rows go to the reconciliation CSV instead and are reviewed manually.
+`downloadAndStoreWhatsAppMedia` only accepts a `providerApplicationId` parameter and only populates that FK on the created `Attachment` row (`field-service/lib/whatsapp-media.ts:41,98`). It is **not** sufficient on its own for `jobId`, `jobRequestId`, or `inspectionSlotId` recovery. Two ways to fix this; the spec picks the first:
+
+1. **(chosen) Introduce `recoverWhatsAppAttachment(params: { mediaId, parent: { kind, id }, label })`** in `lib/whatsapp-media.ts`. Extract the download-and-blob-upload portion of `downloadAndStoreWhatsAppMedia` into a private helper, then have both functions call it. The new function creates the `Attachment` row with the correct FK populated based on `parent.kind ∈ { 'providerApplication', 'jobRequest', 'job', 'inspectionSlot' }`. Idempotency is preserved by the same `uploadedBy = system:whatsapp:${mediaId}` + `label` lookup.
+2. Post-create FK repair: call the existing function (which leaves `providerApplicationId` null for non-application parents), then UPDATE the new row to set the correct FK. Rejected because it requires a follow-up write per row, hides intent, and the helper's existing `findFirst` idempotency check would falsely match an unrelated null-parent attachment from a previous run.
+
+For each eligible `(media_id, parent.kind, parent.id, label)` with confidence ≥ MEDIUM, call `recoverWhatsAppAttachment`. `LOW`-confidence rows go to the reconciliation CSV instead and are reviewed manually.
 
 The function only writes to `Attachment`. No status transitions are touched, so workstream A is silent by construction. We do not need to patch global senders.
+
+**Parent-FK mismatch check.** If `recoverWhatsAppAttachment` finds an existing `Attachment` row matching `uploadedBy` + `label` whose populated FK disagrees with the `parent` argument (e.g. existing row has `jobRequestId = X`, request says `providerApplicationId = Y`), the function refuses to write and emits a `PARENT_FK_MISMATCH` reconciliation row instead. This prevents a bad parent-resolution from clobbering a correct earlier write on rerun.
 
 ### Workstream B — KYC replay (`ProviderIdentityVerification` + `ProviderIdentityDocument`)
 
@@ -163,18 +180,36 @@ The function only writes to `Attachment`. No status transitions are touched, so 
 
 **Step B1 — Import surviving Supabase Storage objects + restore-clone metadata.**
 
+Postgres columns are camelCase quoted (same Prisma `@@map`-without-`@map` pattern). `storage.objects` is a Supabase-managed table — it has `id`, `bucket_id`, `name`, `owner`, `created_at`, `updated_at`, `last_accessed_at`, `metadata` (jsonb), `path_tokens`, `version`, `user_metadata`. **There is no `mime_type` column on `storage.objects`**; the MIME type lives in `metadata->>'mimetype'`. Verify the exact key name against the live `storage.objects` row before relying on it.
+
 ```sql
 -- in restore clone
-SELECT id, verification_id, document_kind, blob_key, mime_type, size_bytes, sha256
-FROM provider_identity_documents;
+SELECT
+  id,
+  "verificationId",
+  "documentKind",
+  "blobKey",
+  "mimeType",
+  "sizeBytes",
+  sha256
+FROM provider_identity_documents
+WHERE "createdAt" <= :gateCapturedAt;
 
 -- in live prod (storage.objects survived)
-SELECT name, bucket_id, mime_type, metadata
+SELECT
+  name,
+  bucket_id,
+  metadata->>'mimetype' AS mime_type,
+  (metadata->>'size')::bigint AS size_bytes,
+  created_at
 FROM storage.objects
-WHERE bucket_id = 'identity-documents';
+WHERE bucket_id = 'identity-documents'
+  AND created_at <= :gateCapturedAt;
 ```
 
-Match storage objects to restore-clone document metadata by `blob_key` (storage `name` corresponds to the `blob_key` recorded in `ProviderIdentityDocument`). Re-create rows directly in live prod for matched pairs:
+**Match by parsing `blobKey`.** The identity-document `blobKey` is stored in the format `supabase://${bucket}/${path}` (see `SUPABASE_IDENTITY_REF_PREFIX` and `supabaseIdentityReference` in `field-service/lib/storage.ts:11,459`). Use the existing `parseSupabaseIdentityReference` helper (`storage.ts:463`) to split each restore-clone `blobKey` into `{ bucket, path }`, then join `bucket = storage.objects.bucket_id` and `path = storage.objects.name` to pair restore-clone document rows with live storage objects.
+
+Re-create rows directly in live prod for matched pairs:
 
 - Insert the restore-clone `ProviderIdentityVerification` row (using restore values, preserving original `id`, `vendorReference`, `vendorWorkflowId`, scores, decision, `consentTextHash`, `accessTokenHash`).
 - Insert the restore-clone `ProviderIdentityDocument` row, keeping the original `blobKey` (so the surviving storage object is the live target without a re-upload), `sha256`, `mimeType`, `sizeBytes`, `deleteAfter`.
@@ -183,7 +218,18 @@ This covers the 4 documents and 2 verifications that exist in the restore clone.
 
 **Step B2 — Reconcile the 10 storage objects vs 4 document rows.**
 
-There are 6 storage objects that have no metadata anywhere. For each, try to recover a row from the restore-clone `provider_verification_webhook_events` (10 events, 6 `vendorReference`s). A webhook event without a corresponding `ProviderIdentityVerification` is an orphan event we treat as evidence that a verification existed; we reconstruct a stub `ProviderIdentityVerification` row from the webhook payload (`vendorKey`, `vendorReference`, `livenessSessionReference`, `rawPayloadRedacted`) and link the storage object via `blobKey` matching where possible. Unmatched storage objects go to the reconciliation CSV.
+There are 6 storage objects that have no metadata anywhere. **Do not auto-reconstruct stub `ProviderIdentityVerification` rows from orphan webhook events.** Webhook events alone do not prove which provider or application a verification belonged to — `verificationId` may be null on an orphan webhook event, `vendorReference` may correspond to a deleted attempt, and inserting a provider-linked stub on weak evidence risks silently mis-attributing a stranger's KYC to a real provider.
+
+Instead, for each orphan storage object:
+
+1. Attempt to establish provenance through one of three proofs:
+   - A restore-clone `ProviderIdentityDocument.blobKey` that parses to the same `{ bucket, path }` (already covered in B1).
+   - A restore-clone `ProviderVerificationWebhookEvent` whose payload (or `rawPayloadRedacted`) references the storage object's `name` / `path` / a derivable verification ID with non-null `verificationId` linking back to a restored `Provider` or `ProviderApplication` row.
+   - A live `Provider` / `ProviderApplication` row whose surviving fields independently link to the verification (e.g. `Provider.payoutVerifiedAt` paired with a matching restore-clone verification row).
+2. If at least one of the three proofs holds, reconstruct the `ProviderIdentityVerification` row from the strongest source and link the storage object via `blobKey` matching.
+3. Otherwise, **gap-report only**: emit a reconciliation row with `reason = IDENTITY_STORAGE_ORPHAN` and recommended action `manual_triage_before_reconstruction`. Do not write a verification or document row.
+
+Orphan webhook events with no corresponding storage object and no provider linkage get their own reconciliation row with `reason = KYC_VENDOR_REF_NO_PROVIDER_LINK` and remain in the restore clone only; they are not migrated to live prod.
 
 **Step B3 — Didit API top-up.**
 
@@ -213,8 +259,10 @@ Gap kinds:
 
 - `WHATSAPP_VIDEO_UNSUPPORTED` — recommended action: skip or extend allow-list.
 - `WHATSAPP_MEDIA_RESOLUTION_LOW_CONFIDENCE` — recommended action: manual review before replay.
-- `WHATSAPP_MEDIA_BEYOND_META_RETENTION` — recommended action: re-request only if onboarding-in-progress, else grandfather.
-- `IDENTITY_STORAGE_ORPHAN` — recommended action: archive object, mark provider KYC-incomplete with documented gap.
+- `WHATSAPP_MEDIA_BEYOND_META_RETENTION` — recommended action: re-request only if onboarding-in-progress, else grandfather. Triggered by either age (> 7 days from `firstSeenAt`) or a confirmed 404 on the live sample GET for its age bucket.
+- `PARENT_FK_MISMATCH` — recommended action: reconcile against an earlier successful replay before any rerun touches the row.
+- `IDENTITY_STORAGE_ORPHAN` — recommended action: manual triage; do not auto-reconstruct a verification row.
+- `KYC_VENDOR_REF_NO_PROVIDER_LINK` — recommended action: leave in restore clone, do not migrate.
 - `IDENTITY_VENDOR_REFRESH_FAILED` — recommended action: re-request from Didit by phone, or treat as recovered-with-gaps.
 - `SHA256_MISMATCH` — recommended action: investigate before treating as recovered.
 
@@ -252,19 +300,24 @@ Supabase Storage interactions (read for B1, no writes — surviving objects stay
 
 ## 7. Risks
 
-- **Wrong-parent attachment.** A phone-only resolution at `LOW` confidence could attach a media object to the wrong `ProviderApplication` or `JobRequest`. Mitigation: `LOW`-confidence rows are gap-reported, not replayed.
-- **Meta retention drift.** If any media in the harvest is older than ~30 days at apply time, the Meta GET will 404. The replay function already handles that path — it errors and the row goes into the report.
+- **Wrong-parent attachment.** A phone-only resolution at `LOW` confidence could attach a media object to the wrong `ProviderApplication` / `JobRequest` / `Job` / `InspectionSlot`. Mitigation: `LOW`-confidence rows are gap-reported, not replayed. `recoverWhatsAppAttachment`'s parent-FK mismatch check prevents reruns from clobbering correct earlier writes.
+- **Meta retention drift.** Inbound (webhook-sourced) media IDs are 7-day, not 30-day. Anything older than 7 days at apply time will 404. Mitigation: harvest window capped at 7 days from `gateCapturedAt`; live sample GET per `age_bucket` confirms each bucket before bulk replay.
+- **Stub-verification mis-attribution.** Reconstructing `ProviderIdentityVerification` from orphan webhook events can attribute someone else's KYC to a real provider. Mitigation: B2 requires one of three independent proofs before reconstruction; otherwise gap-report.
 - **Didit double-charge.** Mitigated by restricting B3 to read endpoints and confirming pricing before run.
 - **Silent status side effect.** Mitigated by §4.C layer 3 (no status writes) and by the dry-run-first protocol.
-- **Restore clone drift.** If the clone is being modified by parallel work, B1 reads could differ between dry-run and apply. Mitigation: take a snapshot of the clone (or freeze writes) before apply.
+- **Restore clone drift.** If the clone is being modified by parallel work, B1 reads could differ between dry-run and apply. Mitigation: take a snapshot of the clone (or freeze writes) before apply; bound clone reads by `gateCapturedAt`.
+- **Post-Phase-0 live writes between gate and apply.** Mitigated by the high-watermark filter in Gate 0 — all recovery reads bound by `<= gateCapturedAt`. New rows that arrive after the gate are out of scope and remain in live operation untouched.
 
 ---
 
 ## 8. Testing
 
-- Unit: a fixture-driven test for the parent-resolution function in A3, covering each confidence level and the ambiguous-phone case.
-- Unit: a test for the storage-object → document-row matcher in B1.
-- Integration (dry-run only): run `plan --dry-run` against a snapshot of restore clone + live prod, assert the reconciliation CSV row count matches expected gaps.
+- Unit: fixture-driven test for the parent-resolution function in A3, covering each confidence level and the ambiguous-phone case.
+- Unit: test for `recoverWhatsAppAttachment` covering each `parent.kind`, idempotency on rerun, and the `PARENT_FK_MISMATCH` refusal path.
+- Unit: test for the storage-object → document-row matcher in B1, covering `supabase://` parsing via `parseSupabaseIdentityReference` and the `metadata->>'mimetype'` extraction path.
+- Unit: test for B2 orphan triage — assert that orphan storage objects without one of the three proofs emit `IDENTITY_STORAGE_ORPHAN` and never write a verification row.
+- Unit: live-sample-GET sampler — given a fixture of media IDs across age buckets, the sampler returns the correct bucket-level replay/expired verdict.
+- Integration (dry-run only): run `plan --dry-run` against a snapshot of restore clone + live prod, assert the reconciliation CSV row count matches expected gaps and that the high-watermark filter excludes any rows newer than `gateCapturedAt`.
 - Manual: spot-check three recovered `Attachment` rows in the admin UI to confirm the image renders via the `/api/attachments/[id]` proxy.
 
 No new Playwright smoke is required — this is a one-time recovery script, not a feature.
