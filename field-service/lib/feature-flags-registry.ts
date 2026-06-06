@@ -197,6 +197,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  // ─── WhatsApp recovery ───────────────────────────────────────────────────────
+  'whatsapp.recovery.template_send': {
+    description: 'Enable approved WABA template sends for provider onboarding recovery rows outside the 23h WhatsApp session window.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   // ─── Customer features ───────────────────────────────────────────────────────
   'feature.customer.address_book': {
     description: 'Enable multi-site address book for customers (M1-T4/T5).',

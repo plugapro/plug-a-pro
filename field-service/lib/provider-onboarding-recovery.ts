@@ -3,6 +3,12 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 import { maskPhone } from './support-diagnostics'
 import { normalizePhone } from './utils'
 import { sendText as defaultSendText } from './whatsapp-interactive'
+import type { TemplateName } from './messaging-templates'
+import type { WhatsAppComponent } from './whatsapp'
+import {
+  buildRecoveryTemplateComponents,
+  recoveryTemplateNameForMessageKey,
+} from './provider-onboarding-recovery-template-config'
 
 export type ProviderOnboardingRecoveryStage =
   | 'welcome_idle'
@@ -130,6 +136,14 @@ type BuildRowsInput = {
 }
 
 type SendTextFn = typeof defaultSendText
+type SendTemplateFn = (params: {
+  to: string
+  template: TemplateName
+  components?: WhatsAppComponent[]
+  metadata?: Record<string, unknown>
+}) => Promise<string>
+
+export type ProviderOnboardingRecoverySendVia = 'session_text' | 'template'
 
 export type ProviderOnboardingRecoverySendResult = {
   total: number
@@ -171,7 +185,7 @@ const OUTCOME_STATUSES: ReadonlySet<string> = new Set<ProviderOnboardingRecovery
   'duplicate_or_invalid',
 ])
 
-const WHATSAPP_RECOVERY_SESSION_WINDOW_MS = 23 * 60 * 60_000
+export const WHATSAPP_RECOVERY_SESSION_WINDOW_MS = 23 * 60 * 60_000
 const CONVERSATION_RECOVERY_LOCK = new Date(0)
 
 const CUSTOMER_FLOW_MARKERS = [
@@ -746,7 +760,7 @@ async function releaseRegistrationConversationRecoveryClaim(
 }
 
 type AttemptRecoverySendOutcome =
-  | { outcome: 'sent' }
+  | { outcome: 'sent'; via: ProviderOnboardingRecoverySendVia }
   | { outcome: 'skipped'; reason: 'no_phone' | 'outside_session_window' | 'already_claimed' | 'no_recovery_for_stage' }
   | { outcome: 'error'; error: unknown }
 
@@ -756,16 +770,20 @@ async function attemptSendRecoveryForRow(params: {
   phone: string | undefined
   now: Date
   sendText: SendTextFn
+  sendTemplate?: SendTemplateFn
+  templateFlagEnabled: boolean
   actorId: string
   notes: string
 }): Promise<AttemptRecoverySendOutcome> {
-  const { client, row, phone, now, sendText, actorId, notes } = params
+  const { client, row, phone, now, sendText, sendTemplate, templateFlagEnabled, actorId, notes } = params
 
   if (row.messageTemplateKey === 'submitted_no_recovery') {
     return { outcome: 'skipped', reason: 'no_recovery_for_stage' }
   }
   if (!phone) return { outcome: 'skipped', reason: 'no_phone' }
-  if (!isWithinWhatsAppRecoveryWindow(now, row.lastInteractionAt)) {
+  const insideWindow = isWithinWhatsAppRecoveryWindow(now, row.lastInteractionAt)
+  const templateName = recoveryTemplateNameForMessageKey(row.messageTemplateKey)
+  if (!insideWindow && (!templateFlagEnabled || !sendTemplate || !templateName)) {
     return { outcome: 'skipped', reason: 'outside_session_window' }
   }
 
@@ -773,14 +791,26 @@ async function attemptSendRecoveryForRow(params: {
   if (!claimed) return { outcome: 'skipped', reason: 'already_claimed' }
 
   try {
-    await sendText(phone, row.followUpMessage, {
-      templateName: `provider_onboarding_recovery:${row.messageTemplateKey}`,
-      metadata: {
-        safeUserRef: row.safeUserRef,
-        recoveryStage: row.stage,
-        followUpDueAt: row.followUpDueAt?.toISOString() ?? null,
-      },
-    })
+    const via: ProviderOnboardingRecoverySendVia = insideWindow ? 'session_text' : 'template'
+    const metadata = {
+      safeUserRef: row.safeUserRef,
+      recoveryStage: row.stage,
+      followUpDueAt: row.followUpDueAt?.toISOString() ?? null,
+      via,
+    }
+    if (via === 'session_text') {
+      await sendText(phone, row.followUpMessage, {
+        templateName: `provider_onboarding_recovery:${row.messageTemplateKey}`,
+        metadata,
+      })
+    } else {
+      await sendTemplate?.({
+        to: phone,
+        template: templateName as TemplateName,
+        components: buildRecoveryTemplateComponents({ providerName: row.providerName }),
+        metadata,
+      })
+    }
     await markRegistrationConversationRecovered(client, row, now)
     await recordProviderOnboardingRecoveryOutcome(client, {
       safeUserRef: row.safeUserRef,
@@ -791,8 +821,9 @@ async function attemptSendRecoveryForRow(params: {
       outcomeStatus: 'message_sent',
       notes,
       actorId,
+      via,
     })
-    return { outcome: 'sent' }
+    return { outcome: 'sent', via }
   } catch (error) {
     await releaseRegistrationConversationRecoveryClaim(client, row)
     console.error('[provider-onboarding-recovery] follow-up send failed', {
@@ -806,7 +837,15 @@ async function attemptSendRecoveryForRow(params: {
 
 export async function sendProviderOnboardingRecoveryFollowUps(
   client: RecoveryClient,
-  options: { now?: Date; since?: Date; take?: number; sendText?: SendTextFn; actorId?: string } = {},
+  options: {
+    now?: Date
+    since?: Date
+    take?: number
+    sendText?: SendTextFn
+    sendTemplate?: SendTemplateFn
+    templateFlagEnabled?: boolean
+    actorId?: string
+  } = {},
 ): Promise<ProviderOnboardingRecoverySendResult> {
   const now = options.now ?? new Date()
   const since = options.since ?? new Date(now.getTime() - 24 * 60 * 60_000)
@@ -847,6 +886,8 @@ export async function sendProviderOnboardingRecoveryFollowUps(
       phone: phoneBySafeRef.get(row.safeUserRef),
       now,
       sendText,
+      sendTemplate: options.sendTemplate,
+      templateFlagEnabled: options.templateFlagEnabled ?? false,
       actorId,
       notes,
     })
@@ -866,7 +907,7 @@ export async function sendProviderOnboardingRecoveryFollowUps(
 }
 
 export type ProviderOnboardingRecoverySingleSendResult =
-  | { outcome: 'sent'; row: ProviderOnboardingRecoveryRow }
+  | { outcome: 'sent'; via: ProviderOnboardingRecoverySendVia; row: ProviderOnboardingRecoveryRow }
   | {
       outcome: 'skipped'
       reason: 'not_found' | 'no_phone' | 'outside_session_window' | 'already_claimed' | 'no_recovery_for_stage'
@@ -888,6 +929,8 @@ export async function sendProviderOnboardingRecoveryFollowUpForRef(
     since?: Date
     take?: number
     sendText?: SendTextFn
+    sendTemplate?: SendTemplateFn
+    templateFlagEnabled?: boolean
   },
 ): Promise<ProviderOnboardingRecoverySingleSendResult> {
   const now = params.now ?? new Date()
@@ -912,11 +955,13 @@ export async function sendProviderOnboardingRecoveryFollowUpForRef(
     phone: phoneBySafeRef.get(row.safeUserRef),
     now,
     sendText,
+    sendTemplate: params.sendTemplate,
+    templateFlagEnabled: params.templateFlagEnabled ?? false,
     actorId: params.actorId,
     notes: 'Operator-triggered WhatsApp onboarding recovery sent.',
   })
 
-  if (outcome.outcome === 'sent') return { outcome: 'sent', row }
+  if (outcome.outcome === 'sent') return { outcome: 'sent', via: outcome.via, row }
   if (outcome.outcome === 'skipped') return { outcome: 'skipped', reason: outcome.reason, row }
   return { outcome: 'error', row, error: outcome.error }
 }
@@ -933,6 +978,7 @@ export async function recordProviderOnboardingRecoveryOutcome(
     notes?: string | null
     nextFollowUpAt?: Date | null
     actorId?: string
+    via?: ProviderOnboardingRecoverySendVia
   },
 ) {
   await client.auditLog.create({
@@ -950,6 +996,7 @@ export async function recordProviderOnboardingRecoveryOutcome(
         outcomeStatus: input.outcomeStatus,
         notes: input.notes ?? null,
         nextFollowUpAt: input.nextFollowUpAt?.toISOString() ?? null,
+        via: input.via ?? null,
       } satisfies Prisma.InputJsonObject,
     },
   })

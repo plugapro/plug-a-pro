@@ -5,6 +5,7 @@ import {
   classifyProviderOnboardingStage,
   listProviderOnboardingRecoveryRows,
   recordProviderOnboardingRecoveryOutcome,
+  sendProviderOnboardingRecoveryFollowUpForRef,
   sendProviderOnboardingRecoveryFollowUps,
 } from '@/lib/provider-onboarding-recovery'
 
@@ -319,9 +320,324 @@ describe('provider onboarding recovery', () => {
       outcomeStatus: 'message_sent',
       recoveryStage: 'register_started_no_name',
       messageTemplateKey: 'register_started_no_name',
+      via: 'session_text',
     })
     expect(JSON.stringify(call.data)).not.toContain('+27820000001')
     expect(JSON.stringify(call.data)).not.toContain('27820000001')
+  })
+
+  it('skips outside-window recovery sends while the template flag is disabled', async () => {
+    const outsideWindowSince = new Date('2026-06-03T09:00:00.000Z')
+    const client = {
+      inboundWhatsAppMessage: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            phone: '27820000001',
+            messageType: 'text',
+            firstSeenAt: outsideWindowSince,
+            lastSeenAt: new Date('2026-06-03T10:20:00.000Z'),
+          },
+        ]),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([
+          conversation({
+            id: 'conv-outside',
+            phone: '+27820000001',
+            step: 'reg_collect_name',
+            data: {},
+            updatedAt: new Date('2026-06-03T10:20:00.000Z'),
+          }),
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      auditLog: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+    }
+    const sendText = vi.fn().mockResolvedValue('wamid.text')
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.template')
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: outsideWindowSince,
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: false,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 0,
+      skipped: 1,
+      errors: 0,
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendTemplate).not.toHaveBeenCalled()
+    expect(client.conversation.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('sends approved recovery templates outside the session window when the template flag is enabled', async () => {
+    const outsideWindowSince = new Date('2026-06-03T09:00:00.000Z')
+    const client = {
+      inboundWhatsAppMessage: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            phone: '27820000001',
+            messageType: 'text',
+            firstSeenAt: outsideWindowSince,
+            lastSeenAt: new Date('2026-06-03T10:20:00.000Z'),
+          },
+        ]),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([
+          conversation({
+            id: 'conv-template',
+            phone: '+27820000001',
+            step: 'reg_collect_name',
+            data: { name: 'Naledi Maseko' },
+            updatedAt: new Date('2026-06-03T10:20:00.000Z'),
+          }),
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      auditLog: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+    }
+    const sendText = vi.fn().mockResolvedValue('wamid.text')
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.template')
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: outsideWindowSince,
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({
+      total: 1,
+      due: 1,
+      sent: 1,
+      skipped: 0,
+      errors: 0,
+    })
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendTemplate).toHaveBeenCalledWith({
+      to: '+27820000001',
+      template: 'provider_recovery_no_name',
+      components: [
+        {
+          type: 'body',
+          parameters: [{ type: 'text', text: 'Naledi' }],
+        },
+      ],
+      metadata: expect.objectContaining({
+        safeUserRef: expect.stringMatching(/^wa_/),
+        recoveryStage: 'register_started_no_name',
+        via: 'template',
+      }),
+    })
+    const call = client.auditLog.create.mock.calls[0][0]
+    expect(call.data.after).toMatchObject({
+      outcomeStatus: 'message_sent',
+      recoveryStage: 'register_started_no_name',
+      messageTemplateKey: 'register_started_no_name',
+      via: 'template',
+    })
+  })
+
+  it('releases the recovery claim when a template send is not approved', async () => {
+    const outsideWindowSince = new Date('2026-06-03T09:00:00.000Z')
+    const client = {
+      inboundWhatsAppMessage: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            phone: '27820000001',
+            messageType: 'text',
+            firstSeenAt: outsideWindowSince,
+            lastSeenAt: new Date('2026-06-03T10:20:00.000Z'),
+          },
+        ]),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([
+          conversation({
+            id: 'conv-template-fail',
+            phone: '+27820000001',
+            step: 'reg_collect_name',
+            data: {},
+            updatedAt: new Date('2026-06-03T10:20:00.000Z'),
+          }),
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      auditLog: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+    }
+    const sendTemplate = vi.fn().mockRejectedValue(new Error('[TEMPLATE_NOT_APPROVED] provider_recovery_no_name'))
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since: outsideWindowSince,
+      sendText: vi.fn(),
+      sendTemplate,
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({
+      sent: 0,
+      skipped: 0,
+      errors: 1,
+    })
+    expect(client.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conv-template-fail', timeoutNotifiedAt: null },
+      data: { timeoutNotifiedAt: new Date(0) },
+    })
+    expect(client.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conv-template-fail', timeoutNotifiedAt: new Date(0) },
+      data: { timeoutNotifiedAt: null },
+    })
+  })
+
+  it('keeps inside-window recovery sends on session text even when template sending is enabled', async () => {
+    const client = {
+      inboundWhatsAppMessage: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            phone: '27820000001',
+            messageType: 'text',
+            firstSeenAt: since,
+            lastSeenAt: new Date('2026-06-04T09:20:00.000Z'),
+          },
+        ]),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([
+          conversation({
+            id: 'conv-inside',
+            phone: '+27820000001',
+            step: 'reg_collect_name',
+            data: {},
+            updatedAt: new Date('2026-06-04T09:20:00.000Z'),
+          }),
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      auditLog: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+    }
+    const sendText = vi.fn().mockResolvedValue('wamid.text')
+    const sendTemplate = vi.fn().mockResolvedValue('wamid.template')
+
+    const result = await sendProviderOnboardingRecoveryFollowUps(client as never, {
+      now,
+      since,
+      sendText,
+      sendTemplate,
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({ sent: 1, skipped: 0, errors: 0 })
+    expect(sendText).toHaveBeenCalledTimes(1)
+    expect(sendTemplate).not.toHaveBeenCalled()
+    const call = client.auditLog.create.mock.calls[0][0]
+    expect(call.data.after).toMatchObject({
+      via: 'session_text',
+    })
+  })
+
+  it('returns via for single-row sends so admin redirects can distinguish template sends', async () => {
+    const outsideWindowSince = new Date('2026-06-03T09:00:00.000Z')
+    const client = {
+      inboundWhatsAppMessage: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            phone: '27820000001',
+            messageType: 'text',
+            firstSeenAt: outsideWindowSince,
+            lastSeenAt: new Date('2026-06-03T10:20:00.000Z'),
+          },
+        ]),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([
+          conversation({
+            id: 'conv-single-template',
+            phone: '+27820000001',
+            step: 'reg_collect_name',
+            data: {},
+            updatedAt: new Date('2026-06-03T10:20:00.000Z'),
+          }),
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      auditLog: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+    }
+    const rows = buildProviderOnboardingRecoveryRowsFromSnapshots({
+      now,
+      inbound: [
+        {
+          phone: '27820000001',
+          messageType: 'text',
+          firstSeenAt: outsideWindowSince,
+          lastSeenAt: new Date('2026-06-03T10:20:00.000Z'),
+        },
+      ],
+      conversations: [
+        conversation({
+          id: 'conv-single-template',
+          phone: '+27820000001',
+          step: 'reg_collect_name',
+          data: {},
+          updatedAt: new Date('2026-06-03T10:20:00.000Z'),
+        }),
+      ],
+      applications: [],
+      outcomeEvents: [],
+    })
+
+    const result = await sendProviderOnboardingRecoveryFollowUpForRef(client as never, {
+      safeUserRef: rows[0].safeUserRef,
+      actorId: 'operator:test',
+      now,
+      since: outsideWindowSince,
+      sendText: vi.fn(),
+      sendTemplate: vi.fn().mockResolvedValue('wamid.template'),
+      templateFlagEnabled: true,
+    })
+
+    expect(result).toMatchObject({
+      outcome: 'sent',
+      via: 'template',
+    })
   })
 
   it('records manual recovery outcomes without writing raw phone numbers', async () => {
@@ -341,6 +657,7 @@ describe('provider onboarding recovery', () => {
       notes: 'Manual WhatsApp sent from operator phone',
       nextFollowUpAt: new Date('2026-06-04T10:30:00.000Z'),
       actorId: 'operator:test',
+      via: 'template',
     })
 
     const call = client.auditLog.create.mock.calls[0][0]
@@ -350,6 +667,9 @@ describe('provider onboarding recovery', () => {
       action: 'provider_onboarding_recovery.outcome_logged',
       entityType: 'ProviderOnboardingRecovery',
       entityId: 'wa_4179bfef51',
+    })
+    expect(call.data.after).toMatchObject({
+      via: 'template',
     })
     expect(JSON.stringify(call.data)).toContain('082****567')
     expect(JSON.stringify(call.data)).not.toContain('+27821234567')
