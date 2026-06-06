@@ -28,6 +28,7 @@ const DRAFT_ID_KEY = 'pap_provider_registration_draft_id_v1'
 
 const STEP_KEYS = ['welcome', 'phone', 'profile', 'services', 'area', 'availability', 'review', 'status'] as const
 type StepKey = (typeof STEP_KEYS)[number]
+type ApplicationState = 'pending' | 'more_info' | 'approved' | 'rejected' | 'cancelled'
 
 type RegistrationFormState = {
   phone: string
@@ -48,6 +49,7 @@ type RegistrationFormState = {
 
 type Props = {
   initialStep: StepKey
+  initialApplicationState?: ApplicationState | null
   skillOptions: ServiceCategoryOption[]
 }
 
@@ -81,6 +83,50 @@ const STEP_META: Record<StepKey, { index: number; title: string; eyebrow: string
 
 const AVAILABILITY_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
+const STATUS_COPY: Record<ApplicationState, {
+  title: string
+  body: (reference: string) => string
+  tone: 'success' | 'warning' | 'danger'
+  actionLabel: string
+  actionHref: string
+}> = {
+  pending: {
+    title: 'Your application is waiting for review.',
+    body: (reference) => `Ref: ${reference || 'Pending'}. We will send updates on WhatsApp after review.`,
+    tone: 'success',
+    actionLabel: 'Go to provider sign in',
+    actionHref: '/provider-sign-in',
+  },
+  more_info: {
+    title: 'Your application needs more information.',
+    body: () => 'Our team needs a few more details before marketplace access can be reviewed. Check WhatsApp for the requested update.',
+    tone: 'warning',
+    actionLabel: 'Go to provider sign in',
+    actionHref: '/provider-sign-in',
+  },
+  approved: {
+    title: 'Your provider access is approved.',
+    body: () => 'Open the provider portal to review your profile, availability and credits before taking leads.',
+    tone: 'success',
+    actionLabel: 'Open provider portal',
+    actionHref: '/provider',
+  },
+  rejected: {
+    title: 'Your application was not approved yet.',
+    body: () => 'This registration cannot be activated in its current form. Check WhatsApp for the review outcome and support options.',
+    tone: 'danger',
+    actionLabel: 'Go to provider sign in',
+    actionHref: '/provider-sign-in',
+  },
+  cancelled: {
+    title: 'Your application was cancelled.',
+    body: () => 'This registration is no longer under review. Start a new application only if the support team asks you to reapply.',
+    tone: 'warning',
+    actionLabel: 'Go to provider sign in',
+    actionHref: '/provider-sign-in',
+  },
+}
+
 function parseStoredState(): RegistrationFormState {
   if (typeof window === 'undefined') return DEFAULT_STATE
   const raw = window.localStorage.getItem(STATE_KEY)
@@ -113,9 +159,10 @@ function selectedServiceLabels(form: RegistrationFormState, options: ServiceCate
   return labels.length > 0 ? labels.join(', ') : 'None selected'
 }
 
-export function ProviderRegistrationClient({ initialStep, skillOptions }: Props) {
+export function ProviderRegistrationClient({ initialStep, initialApplicationState, skillOptions }: Props) {
   const router = useRouter()
   const step = initialStep
+  const statusCopy = STATUS_COPY[initialApplicationState ?? 'pending']
   const [form, setForm] = useState<RegistrationFormState>(DEFAULT_STATE)
   const [draftId, setDraftId] = useState('')
   const [resumeToken, setResumeToken] = useState('')
@@ -507,14 +554,34 @@ export function ProviderRegistrationClient({ initialStep, skillOptions }: Props)
 
           {step === 'status' && (
             <div className="space-y-4">
-              <div className="rounded-[18px] border border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] p-4">
-                <p className="text-[14px] font-bold text-[var(--tone-success-fg)]">Your application is waiting for review.</p>
+              <div
+                className={[
+                  'rounded-[18px] border p-4',
+                  statusCopy.tone === 'danger'
+                    ? 'border-[var(--tone-danger-border)] bg-[var(--tone-danger-bg)]'
+                    : statusCopy.tone === 'warning'
+                      ? 'border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]'
+                      : 'border-[var(--tone-success-border)] bg-[var(--tone-success-bg)]',
+                ].join(' ')}
+              >
+                <p
+                  className={[
+                    'text-[14px] font-bold',
+                    statusCopy.tone === 'danger'
+                      ? 'text-[var(--tone-danger-fg)]'
+                      : statusCopy.tone === 'warning'
+                        ? 'text-[var(--tone-warning-fg)]'
+                        : 'text-[var(--tone-success-fg)]',
+                  ].join(' ')}
+                >
+                  {statusCopy.title}
+                </p>
                 <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--ink-mute)]">
-                  Ref: {form.submittedRef || 'Pending'}. We will send updates on WhatsApp after review.
+                  {statusCopy.body(form.submittedRef)}
                 </p>
               </div>
               <Button fullWidth asChild>
-                <Link href="/provider-sign-in">Go to provider sign in</Link>
+                <Link href={statusCopy.actionHref}>{statusCopy.actionLabel}</Link>
               </Button>
             </div>
           )}

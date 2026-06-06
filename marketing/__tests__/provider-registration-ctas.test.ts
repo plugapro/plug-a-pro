@@ -59,4 +59,13 @@ describe("provider registration CTAs", () => {
 
     expect(readSource("app/(marketing)/for-providers/page.tsx")).toContain("WhatsAppCtaButton");
   });
+
+  it("keeps the provider registration link compatible with composed mobile menu controls", () => {
+    const source = readSource("components/marketing/ProviderRegistrationCta.tsx");
+
+    expect(source).toContain("forwardRef<HTMLAnchorElement");
+    expect(source).toContain("...props");
+    expect(source).toContain("ref={ref}");
+    expect(source).toContain("onClick?.(event)");
+  });
 });

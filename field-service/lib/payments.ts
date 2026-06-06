@@ -72,8 +72,12 @@ function readPaymentEnv(name: string): string {
   return globalThis.process?.env?.[name]?.trim() ?? ''
 }
 
+function resolvePspProviderName(): string {
+  return readPaymentEnv('PSP_PROVIDER') || 'payfast'
+}
+
 function assertCheckoutProviderConfigured() {
-  const provider = readPaymentEnv('PSP_PROVIDER') || 'payfast'
+  const provider = resolvePspProviderName()
   const payfastSandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
   const payfastPassphrase = readPaymentEnv('PAYFAST_PASSPHRASE')
 
@@ -429,7 +433,7 @@ class PayAtGoProvider implements PspProvider {
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
 function getProvider(): PspProvider {
-  const provider = readPaymentEnv('PSP_PROVIDER') || 'payfast'
+  const provider = resolvePspProviderName()
   switch (provider) {
     case 'payfast':
       return new PayFastProvider()
@@ -447,6 +451,7 @@ function getProvider(): PspProvider {
 export async function createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
   assertCheckoutProviderConfigured()
 
+  const providerName = resolvePspProviderName()
   const session = await getProvider().createCheckout(params)
 
   // Persist checkout session to DB
@@ -458,12 +463,13 @@ export async function createCheckout(params: CheckoutParams): Promise<CheckoutSe
       collectionMode: 'PLATFORM_CHECKOUT',
       amount: params.amount / 100,
       currency: params.currency,
-      pspProvider: readPaymentEnv('PSP_PROVIDER') || 'peach',
+      pspProvider: providerName,
       pspCheckoutId: session.id,
       checkoutUrl: session.url,
     },
     update: {
       collectionMode: 'PLATFORM_CHECKOUT',
+      pspProvider: providerName,
       pspCheckoutId: session.id,
       checkoutUrl: session.url,
       status: 'PENDING',

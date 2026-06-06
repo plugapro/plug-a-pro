@@ -65,4 +65,30 @@ describe('generic PayFast PSP configuration', () => {
 
     expect(mockDb.payment.upsert).not.toHaveBeenCalled()
   })
+
+  it('persists the resolved default PSP provider used for checkout creation', async () => {
+    process.env.PSP_PROVIDER = '   '
+    process.env.PAYFAST_PASSPHRASE = 'live-passphrase'
+
+    const { createCheckout } = await import('@/lib/payments')
+
+    await createCheckout({
+      bookingId: 'booking-2',
+      amount: 25_000,
+      currency: 'ZAR',
+      description: 'Default provider payment',
+      successUrl: 'https://app.example.com/success',
+      cancelUrl: 'https://app.example.com/cancel',
+      notifyUrl: 'https://app.example.com/api/webhooks/payments',
+    })
+
+    expect(mockDb.payment.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        pspProvider: 'payfast',
+      }),
+      update: expect.objectContaining({
+        pspProvider: 'payfast',
+      }),
+    }))
+  })
 })

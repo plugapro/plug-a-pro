@@ -71,6 +71,7 @@ export default async function ProviderRegistrationPage({
   return (
     <ProviderRegistrationClient
       initialStep={requestedStep as StepKey}
+      initialApplicationState={destination?.state ?? null}
       skillOptions={getPilotServiceCategories()}
     />
   )

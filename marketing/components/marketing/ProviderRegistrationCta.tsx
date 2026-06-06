@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { CSSProperties, MouseEvent } from "react";
+import { forwardRef } from "react";
+import type { ComponentPropsWithoutRef, CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
 import { getProviderRegistrationUrl } from "@/lib/provider-registration-url";
@@ -22,8 +23,8 @@ interface ProviderRegistrationCtaButtonProps extends ProviderRegistrationCtaProp
 }
 
 type ProviderRegistrationCtaLinkProps = ProviderRegistrationCtaProps & {
-  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
-};
+  className?: string;
+} & Omit<ComponentPropsWithoutRef<typeof Link>, "href" | "children" | "className">;
 
 function trackProviderRegistrationClick(label: string, source: string) {
   analytics.providerRegistrationClick(source);
@@ -53,22 +54,20 @@ export function ProviderRegistrationCtaButton({
   );
 }
 
-export function ProviderRegistrationCtaLink({
-  label,
-  source,
-  className,
-  onClick,
-}: ProviderRegistrationCtaLinkProps) {
-  return (
-    <Link
-      href={getProviderRegistrationUrl()}
-      className={className}
-      onClick={(event) => {
-        trackProviderRegistrationClick(label, source);
-        onClick?.(event);
-      }}
-    >
-      {label}
-    </Link>
-  );
-}
+export const ProviderRegistrationCtaLink = forwardRef<HTMLAnchorElement, ProviderRegistrationCtaLinkProps>(
+  function ProviderRegistrationCtaLink({ label, source, onClick, ...props }, ref) {
+    return (
+      <Link
+        href={getProviderRegistrationUrl()}
+        ref={ref}
+        {...props}
+        onClick={(event) => {
+          trackProviderRegistrationClick(label, source);
+          onClick?.(event);
+        }}
+      >
+        {label}
+      </Link>
+    );
+  }
+);

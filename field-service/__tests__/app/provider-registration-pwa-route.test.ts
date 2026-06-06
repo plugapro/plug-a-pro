@@ -40,4 +40,16 @@ describe('provider registration PWA route surface', () => {
     expect(source).toContain('provider_registration_resume')
     expect(source).toContain('console.info(JSON.stringify')
   })
+
+  it('preserves authenticated application status when rendering the status route', () => {
+    const routeSource = readFileSync(join(root, 'app/provider/register/[[...step]]/page.tsx'), 'utf8')
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(routeSource).toContain('initialApplicationState={destination?.state ?? null}')
+    expect(clientSource).toContain('initialApplicationState?: ApplicationState | null')
+    expect(clientSource).toContain('more_info')
+    expect(clientSource).toContain('needs more information')
+    expect(clientSource).toContain('not approved yet')
+    expect(clientSource).toContain('was cancelled')
+  })
 })
