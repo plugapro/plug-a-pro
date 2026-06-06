@@ -2725,6 +2725,10 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
   skippedFinalNoMatch: number
   failed: number
 }> {
+  const progressLookbackCutoff = new Date(
+    now.getTime() - getUrgencyMatchingPolicy('flexible').hardGiveUpMinutes * 60_000,
+  )
+
   // OPEN is the live status for Quick Match AUTO_ASSIGN requests - the status
   // never transitions to MATCHING in this flow. Also include MATCHING in case
   // a legacy transition fired. Remove the active-hold filter so updates fire
@@ -2733,7 +2737,7 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
     where: {
       status: { in: ['OPEN', 'MATCHING'] },
       assignmentMode: 'AUTO_ASSIGN',
-      createdAt: { gte: new Date(now.getTime() - 48 * 60 * 60 * 1000) },
+      createdAt: { gte: progressLookbackCutoff },
     },
     select: {
       id: true,

@@ -111,7 +111,10 @@ export async function orchestrateMatch(
     isTestRequest: resolvedIsTestRequest,
     cohortName: resolvedIsTestRequest ? jobRequest.cohortName : null,
   }
-  const hadPriorDispatchDecision = Boolean(jobRequest.latestDispatchDecisionId)
+  const hadPriorDispatchDecision = await hasPriorDispatchDecision(
+    jobRequestId,
+    jobRequest.latestDispatchDecisionId,
+  )
 
   console.info('[orchestrator] match start', {
     jobRequestId,
@@ -487,6 +490,28 @@ export async function orchestrateMatch(
     const error = err instanceof Error ? err.message : String(err)
     console.error('[orchestrator] match failed', { jobRequestId, error, triggeredBy: options.triggeredBy })
     return { status: 'ERROR', error }
+  }
+}
+
+async function hasPriorDispatchDecision(
+  jobRequestId: string,
+  latestDispatchDecisionId?: string | null,
+) {
+  if (latestDispatchDecisionId) return true
+
+  try {
+    const priorDecision = await db.dispatchDecision.findFirst({
+      where: { jobRequestId },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    return Boolean(priorDecision)
+  } catch (err) {
+    console.error('[orchestrator] prior dispatch decision check failed', {
+      jobRequestId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return true
   }
 }
 

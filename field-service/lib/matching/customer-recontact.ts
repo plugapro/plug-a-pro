@@ -107,6 +107,24 @@ function latestPrimaryReason(jobRequest: MatchableJobRequestRecord) {
   return jobRequest.dispatchDecisions?.[0]?.primaryReason ?? null
 }
 
+const AREA_UNAVAILABLE_REASONS = new Set([
+  'NO_LOCATION_MATCH',
+  'OUTSIDE_SERVICE_AREA',
+])
+
+const SERVICE_UNAVAILABLE_REASONS = new Set([
+  'NO_SKILL_MATCH_IN_LOCATION',
+  'MISSING_REQUIRED_SKILL',
+  'MISSING_REQUIRED_CERTIFICATION',
+  'MISSING_REQUIRED_EQUIPMENT',
+  'MISSING_REQUIRED_VEHICLE',
+])
+
+const PROVIDER_APPROVAL_GAP_REASONS = new Set([
+  'CATEGORY_NOT_APPROVED',
+  'TECHNICIAN_INACTIVE',
+])
+
 function buildReasonedExhaustedMessage(
   jobRequest: MatchableJobRequestRecord,
   primaryReason: string,
@@ -115,7 +133,7 @@ function buildReasonedExhaustedMessage(
   const serviceName = jobRequest.title?.trim() || jobRequest.category
   const area = formatArea(jobRequest)
 
-  if (primaryReason === 'NO_LOCATION_MATCH') {
+  if (AREA_UNAVAILABLE_REASONS.has(primaryReason)) {
     return (
       `😔 *Sorry, ${name}*.\n\n` +
       `Plug A Pro is not available in ${area} yet for *${serviceName}*.\n\n` +
@@ -123,7 +141,7 @@ function buildReasonedExhaustedMessage(
     )
   }
 
-  if (primaryReason === 'NO_SKILL_MATCH_IN_LOCATION' || primaryReason === 'MISSING_REQUIRED_SKILL') {
+  if (SERVICE_UNAVAILABLE_REASONS.has(primaryReason)) {
     return (
       `😔 *Sorry, ${name}*.\n\n` +
       `We do not have a matching *${serviceName}* provider available in *${area}* yet.\n\n` +
@@ -131,7 +149,7 @@ function buildReasonedExhaustedMessage(
     )
   }
 
-  if (primaryReason === 'CATEGORY_NOT_APPROVED') {
+  if (PROVIDER_APPROVAL_GAP_REASONS.has(primaryReason)) {
     return (
       `😔 *Sorry, ${name}*.\n\n` +
       `The providers we found for *${serviceName}* in *${area}* are not approved for that service yet.\n\n` +

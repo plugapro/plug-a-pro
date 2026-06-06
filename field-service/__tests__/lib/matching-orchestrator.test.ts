@@ -20,7 +20,7 @@ const {
 } = vi.hoisted(() => ({
   mockDb: {
     assignmentHold: { findFirst: vi.fn() },
-    dispatchDecision: { create: vi.fn(), update: vi.fn() },
+    dispatchDecision: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     matchAttempt: { create: vi.fn(), update: vi.fn() },
     jobRequest: {
       update: vi.fn(),
@@ -161,6 +161,7 @@ describe('orchestrateMatch', () => {
     // Default: no alt-slot negotiation in flight
     mockDb.jobRequest.findUnique.mockResolvedValue({ altSlotNegotiationSentAt: null, altSlotNegotiationOutcome: null })
     mockDb.dispatchDecision.create.mockResolvedValue({ id: 'decision-1' })
+    mockDb.dispatchDecision.findFirst.mockResolvedValue(null)
     mockDb.dispatchDecision.update.mockResolvedValue({})
     mockDb.matchAttempt.create.mockImplementation(async ({ data }: any) => ({
       id: `attempt-${data.providerId}`,
@@ -282,6 +283,30 @@ describe('orchestrateMatch', () => {
 
     expect(result.status).toBe('NO_MATCH')
     expect((result as any).failureClass).toBe('STRUCTURAL')
+    expect(mockExpireOpenJobRequest).not.toHaveBeenCalled()
+    expect(mockNotifyExpiredJobParties).not.toHaveBeenCalled()
+  })
+
+  it('does not immediately expire a structural-looking NO_MATCH when a prior row exists without the latest pointer', async () => {
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest({ latestDispatchDecisionId: null }))
+    mockDb.dispatchDecision.findFirst.mockResolvedValue({ id: 'decision-old' })
+    mockLoadCandidatePool.mockResolvedValue([makeCandidate('p1')])
+    mockFilterEligibleProviders.mockResolvedValue({
+      eligible: [],
+      filteredOut: [{ providerId: 'p1', filteredReasonCodes: ['OUTSIDE_SERVICE_AREA'] }],
+      nearMiss: [],
+    })
+
+    const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
+
+    expect(result.status).toBe('NO_MATCH')
+    expect((result as any).failureClass).toBe('STRUCTURAL')
+    expect(mockDb.dispatchDecision.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { jobRequestId: 'job-1' },
+        select: { id: true },
+      }),
+    )
     expect(mockExpireOpenJobRequest).not.toHaveBeenCalled()
     expect(mockNotifyExpiredJobParties).not.toHaveBeenCalled()
   })
