@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { validateProviderResumeToken } from '@/lib/provider-resume-tokens'
+import { CapturedPanel } from './captured-panel'
 
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
@@ -14,12 +15,8 @@ export const metadata: Metadata = {
 }
 
 // ─── Inline stubs — replaced by Tasks 10 and 11 ──────────────────────────────
-// CapturedPanel and RemainingFieldsForm will become real imports once those
-// tasks create ./captured-panel.tsx and ./remaining-fields-form.tsx.
-
-function CapturedPanel({ data: _data }: { data: Record<string, unknown> }) {
-  return null
-}
+// RemainingFieldsForm will become a real import once Task 11 creates
+// ./remaining-fields-form.tsx.
 
 function RemainingFieldsForm(_props: {
   rawToken: string
