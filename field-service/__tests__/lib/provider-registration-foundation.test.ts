@@ -57,5 +57,9 @@ describe('provider registration foundation helpers', () => {
     expect(resolveProviderRegistrationDestination({
       applicationStatus: 'REJECTED',
     })).toEqual({ route: '/provider/register/status', state: 'rejected' })
+
+    expect(resolveProviderRegistrationDestination({
+      applicationStatus: 'CANCELLED',
+    })).toEqual({ route: '/provider/register/status', state: 'cancelled' })
   })
 })

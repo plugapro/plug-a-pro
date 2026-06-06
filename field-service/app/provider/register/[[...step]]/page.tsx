@@ -4,7 +4,7 @@ import { getPilotServiceCategories } from '@/lib/service-categories'
 import { buildMetadata } from '@/lib/metadata'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { findLatestActiveProviderApplicationByPhone } from '@/lib/provider-applications'
+import { findLatestProviderRegistrationApplicationByPhone } from '@/lib/provider-applications'
 import { resolveProviderRegistrationDestination } from '@/lib/provider-registration/resolver'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +32,7 @@ async function resolveAuthenticatedEntryDestination() {
   if (!session?.phone) return null
 
   const [application, draft] = await Promise.all([
-    findLatestActiveProviderApplicationByPhone(db, session.phone).catch(() => null),
+    findLatestProviderRegistrationApplicationByPhone(db, session.phone).catch(() => null),
     findActiveProviderRegistrationDraft(session.phone),
   ])
 

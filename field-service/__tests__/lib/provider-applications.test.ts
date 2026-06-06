@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   findConflictingActiveProviderApplications,
   findLatestActiveProviderApplicationByPhone,
+  findLatestProviderRegistrationApplicationByPhone,
   getConflictingActiveProviderApplicationIds,
 } from '@/lib/provider-applications'
 
@@ -58,6 +59,37 @@ describe('provider application identity helpers', () => {
         phone: '+27821234567',
         status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] },
         id: { not: 'app_current' },
+      },
+      orderBy: { submittedAt: 'desc' },
+      select: {
+        id: true,
+        phone: true,
+        status: true,
+        name: true,
+        providerId: true,
+        submittedAt: true,
+      },
+    })
+  })
+
+  it('finds registration-entry applications including rejected and cancelled states', async () => {
+    const client = {
+      providerApplication: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'app_latest',
+          phone: '+27821234567',
+          status: 'CANCELLED',
+        }),
+      },
+    }
+
+    const result = await findLatestProviderRegistrationApplicationByPhone(client as never, '082 123 4567')
+
+    expect(result).toMatchObject({ id: 'app_latest', status: 'CANCELLED' })
+    expect(client.providerApplication.findFirst).toHaveBeenCalledWith({
+      where: {
+        phone: '+27821234567',
+        status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED', 'REJECTED', 'CANCELLED'] },
       },
       orderBy: { submittedAt: 'desc' },
       select: {

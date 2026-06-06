@@ -1,6 +1,8 @@
 import { normalizePhone } from './utils'
 
 export const ACTIVE_PROVIDER_APPLICATION_STATUSES = ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] as const
+export const REGISTRATION_ENTRY_PROVIDER_APPLICATION_STATUSES =
+  ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED', 'REJECTED', 'CANCELLED'] as const
 
 export type ActiveProviderApplicationStatus =
   (typeof ACTIVE_PROVIDER_APPLICATION_STATUSES)[number]
@@ -19,6 +21,14 @@ type ProviderApplicationLookupClient = {
     findFirst: (...args: any[]) => Promise<ActiveProviderApplicationSummary | null>
     findMany?: (...args: any[]) => Promise<ActiveProviderApplicationSummary[]>
   }
+}
+
+type ProviderApplicationLookupStatus =
+  (typeof REGISTRATION_ENTRY_PROVIDER_APPLICATION_STATUSES)[number]
+
+type ProviderApplicationLookupOptions = {
+  excludeId?: string
+  statuses?: ProviderApplicationLookupStatus[]
 }
 
 // TODO: replace any-typed method args with Prisma.TransactionClient once
@@ -47,15 +57,15 @@ export function normalizeProviderApplicationPhone(phone: string) {
   return normalizePhone(phone)
 }
 
-export async function findLatestActiveProviderApplicationByPhone(
+async function findLatestProviderApplicationByPhone(
   client: ProviderApplicationLookupClient,
   phone: string,
-  options?: { excludeId?: string },
+  options?: ProviderApplicationLookupOptions,
 ) {
   return client.providerApplication.findFirst({
     where: {
       phone: normalizeProviderApplicationPhone(phone),
-      status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
+      status: { in: options?.statuses ?? [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
       ...(options?.excludeId ? { id: { not: options.excludeId } } : {}),
     },
     orderBy: { submittedAt: 'desc' },
@@ -68,6 +78,25 @@ export async function findLatestActiveProviderApplicationByPhone(
       submittedAt: true,
     },
   })
+}
+
+export async function findLatestProviderRegistrationApplicationByPhone(
+  client: ProviderApplicationLookupClient,
+  phone: string,
+  options?: Omit<ProviderApplicationLookupOptions, 'statuses'>,
+) {
+  return findLatestProviderApplicationByPhone(client, phone, {
+    ...options,
+    statuses: [...REGISTRATION_ENTRY_PROVIDER_APPLICATION_STATUSES],
+  })
+}
+
+export async function findLatestActiveProviderApplicationByPhone(
+  client: ProviderApplicationLookupClient,
+  phone: string,
+  options?: { excludeId?: string },
+) {
+  return findLatestProviderApplicationByPhone(client, phone, options)
 }
 
 export async function findConflictingActiveProviderApplications(
