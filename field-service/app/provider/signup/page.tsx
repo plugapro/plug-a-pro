@@ -64,6 +64,10 @@ export default async function ProviderSignupPage({
   if (!conv) return <ErrorPanel reason="not_found" />
 
   const capturedData = (conv.data as Record<string, unknown>) ?? {}
+  // Backfill canonical key from WhatsApp's variant before computing sections
+  if (!capturedData.idNumber && typeof capturedData.providerIdNumber === 'string') {
+    capturedData.idNumber = capturedData.providerIdNumber
+  }
 
   return (
     <main className="mx-auto max-w-md p-4 sm:p-6">

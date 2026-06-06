@@ -213,7 +213,7 @@ beforeEach(() => {
 // ─── Import helpers and actions after mocks ───────────────────────────────────
 
 import { issueProviderResumeToken } from '@/lib/provider-resume-tokens'
-import { submitProviderApplicationFromWebAction, updateCapturedFieldAction } from '@/app/(provider)/provider/signup/actions'
+import { submitProviderApplicationFromWebAction, updateCapturedFieldAction } from '@/app/provider/signup/actions'
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -377,5 +377,28 @@ describe('updateCapturedFieldAction', () => {
     // Token must NOT be consumed
     const tokens = Array.from(getTokenStore().values())
     expect(tokens[0].usedAt).toBeNull()
+  })
+
+  it('rejects fields not on the allowlist', async () => {
+    const conv = {
+      id: 'conv-evil',
+      phone: '+27000000050',
+      flow: 'registration',
+      step: 'reg_collect_city',
+      data: {},
+      expiresAt: new Date(Date.now() + 3600_000),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    await expect(
+      updateCapturedFieldAction({ rawToken, field: 'step', value: 'admin' }),
+    ).rejects.toThrow(/field_not_allowed/i)
   })
 })

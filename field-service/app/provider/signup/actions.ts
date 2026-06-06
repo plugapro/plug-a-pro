@@ -32,6 +32,10 @@ export async function submitProviderApplicationFromWebAction(
     // 2. Load captured conversation data.
     const conv = await tx.conversation.findUniqueOrThrow({ where: { id: v.conversationId } })
     const capturedData = (conv.data as Record<string, unknown>) ?? {}
+    // Backfill canonical key from WhatsApp's variant before computing sections (I1)
+    if (!capturedData.idNumber && typeof capturedData.providerIdNumber === 'string') {
+      capturedData.idNumber = capturedData.providerIdNumber
+    }
 
     // 3. Build a dynamic Zod schema for any fields still missing from captured data.
     const sections = selectMissingSections(capturedData)
@@ -49,7 +53,6 @@ export async function submitProviderApplicationFromWebAction(
     // helper doesn't accept (e.g. bio, references, profilePhotoUrl).
     await tx.conversation.update({
       where: { id: conv.id },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma Json field accepts any serialisable value
       data: { data: merged as never },
     })
 
@@ -96,6 +99,12 @@ const UpdateSchema = z.object({
   value: z.unknown(),
 })
 
+// I3: Allowlist — token holders may only write these fields to Conversation.data.
+const ALLOWED_FIELDS = new Set([
+  'name', 'idNumber', 'skills', 'regionLabel', 'cityLabel', 'availability',
+  'hourlyRate', 'profilePhotoUrl', 'bio', 'references', 'evidenceFileUrls',
+])
+
 export async function updateCapturedFieldAction(
   input: z.infer<typeof UpdateSchema>,
 ): Promise<{ ok: true }> {
@@ -105,19 +114,25 @@ export async function updateCapturedFieldAction(
 
   const { rawToken, field, value } = UpdateSchema.parse(input)
 
-  // Validate the token without consuming it — the edit affordance must not burn
-  // the token; submission will do that.
-  const v = await validateProviderResumeToken(db, rawToken)
-  if (!v.ok) throw new Error(`token_${v.reason}`)
+  // I3: Reject writes to fields not on the allowlist.
+  if (!ALLOWED_FIELDS.has(field)) throw new Error('field_not_allowed')
 
-  const conv = await db.conversation.findUniqueOrThrow({ where: { id: v.conversationId } })
-  const existing = (conv.data as Record<string, unknown>) ?? {}
+  // I2: Wrap in a transaction to eliminate the TOCTOU race between
+  // read-existing-data and write-merged-data.
+  return db.$transaction(async (tx) => {
+    // Validate the token without consuming it — the edit affordance must not burn
+    // the token; submission will do that.
+    const v = await validateProviderResumeToken(tx, rawToken)
+    if (!v.ok) throw new Error(`token_${v.reason}`)
 
-  await db.conversation.update({
-    where: { id: v.conversationId },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma Json field accepts any serialisable value
-    data: { data: { ...existing, [field]: value } as any },
+    const conv = await tx.conversation.findUniqueOrThrow({ where: { id: v.conversationId } })
+    const existing = (conv.data as Record<string, unknown>) ?? {}
+
+    await tx.conversation.update({
+      where: { id: v.conversationId },
+      data: { data: { ...existing, [field]: value } as never },
+    })
+
+    return { ok: true as const }
   })
-
-  return { ok: true as const }
 }
