@@ -580,58 +580,6 @@ export const TEMPLATES = {
       'Hi {{1}}, want to strengthen your Plug A Pro profile? Tap below to add one work photo. Skip is fine — we already have your application.',
   },
 
-  // ─── Provider onboarding recovery templates (23h fallback path) ───────────
-
-  provider_recovery_evidence: {
-    name: 'provider_recovery_evidence',
-    language: 'en_ZA',
-    category: 'UTILITY',
-    description: 'Recovery template for providers stuck on the evidence upload step.',
-    // {{1}} provider first name (fall back to "there" if unknown)
-    example:
-      'Hi {{1}}, to finish your Plug A Pro registration please upload one work photo or proof-of-service sample here.',
-  },
-
-  provider_recovery_started_blocked: {
-    name: 'provider_recovery_started_blocked',
-    language: 'en_ZA',
-    category: 'UTILITY',
-    description: 'Recovery template for providers with a mid-flow registration interruption.',
-    // {{1}} provider first name (fall back to "there" if unknown)
-    example:
-      'Hi {{1}}, you started your registration but it was interrupted. Tap continue in your app to complete registration.',
-  },
-
-  provider_recovery_no_name: {
-    name: 'provider_recovery_no_name',
-    language: 'en_ZA',
-    category: 'UTILITY',
-    description: 'Recovery template for providers who tapped register but did not provide a name.',
-    // {{1}} provider first name (fall back to "there" if unknown)
-    example:
-      'Hi {{1}}, we still need your name to continue your Plug A Pro application. Tap to continue and complete registration.',
-  },
-
-  provider_recovery_welcome_idle: {
-    name: 'provider_recovery_welcome_idle',
-    language: 'en_ZA',
-    category: 'UTILITY',
-    description: 'Recovery template for providers that have only seen the WhatsApp welcome flow.',
-    // {{1}} provider first name (fall back to "there" if unknown)
-    example:
-      'Hi {{1}}, we can help you finish your Plug A Pro provider registration. Tap to restart and continue.',
-  },
-
-  provider_recovery_flow_conflict: {
-    name: 'provider_recovery_flow_conflict',
-    language: 'en_ZA',
-    category: 'UTILITY',
-    description: 'Recovery template for providers in a registration/customer-flow conflict state.',
-    // {{1}} provider first name (fall back to "there" if unknown)
-    example:
-      'Hi {{1}}, your chat may have mixed registration and service request flows. Tap here to fix the registration path.',
-  },
-
 } as const
 
 export type TemplateName = keyof typeof TEMPLATES

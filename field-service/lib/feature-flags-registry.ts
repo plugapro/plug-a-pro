@@ -363,12 +363,6 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
-  'whatsapp.recovery.template_send': {
-    description: 'Allow provider onboarding recovery sends outside the 23h WhatsApp session window by using approved WABA recovery templates.',
-    owner: 'eng',
-    defaultValue: false,
-  },
-
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',
