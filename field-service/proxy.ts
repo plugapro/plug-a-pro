@@ -33,6 +33,7 @@ const PUBLIC_PATHS = [
   '/join',                 // flyer-friendly provider short URL → server-redirects to /provider-sign-in
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
+  '/provider/register',     // provider registration PWA entry and capture steps
   '/provider/terms',       // provider credit rules are linked before login/application
   '/provider/verification', // WhatsApp identity step-up CTA must load before provider login
   '/provider/verify',      // token-gated identity verification PWA links are public
@@ -57,6 +58,7 @@ const PUBLIC_PATHS = [
   '/api/payat-go/callback',// Pay@Go RTP callback from Pay@ infrastructure
   '/api/review-first/provider-profile/shortlist', // signed profile-token shortlist action
   '/api/provider/identity/upload', // token-gated identity upload endpoint; handler validates token
+  '/api/provider/registration', // public registration capture API; handlers validate rollout and resume tokens
   '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
   '/api/auth/session',              // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',                 // called client-side after OTP — no session cookie yet

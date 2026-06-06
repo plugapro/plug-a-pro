@@ -234,6 +234,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'provider.pwa.registration': {
+    description: 'Enable the provider registration PWA capture flow behind a product rollout flag.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   'provider.onboarding.auto_approve': {
     description: 'Enable cron-based auto-approval of standard (non-high-risk) provider applications.',
     owner: 'ops',

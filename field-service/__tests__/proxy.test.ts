@@ -558,6 +558,18 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('keeps provider registration entry public on app domain', async () => {
+    const { proxy } = await import('../proxy')
+
+    for (const path of ['/provider/register', '/provider/register/welcome', '/provider/register/phone']) {
+      const res = await proxy(new NextRequest(`https://app.plugapro.co.za${path}`))
+
+      expect(res.status).toBe(200)
+      expect(res.headers.get('location')).toBeNull()
+    }
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
   it('allows unauthenticated access to /r/* short handoff links', async () => {
     const { proxy } = await import('../proxy')
 

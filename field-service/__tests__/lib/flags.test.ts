@@ -49,6 +49,13 @@ describe('feature flag registry', () => {
       defaultValue: false,
     })
   })
+
+  it('registers provider PWA registration disabled by default', () => {
+    expect(FEATURE_FLAGS_REGISTRY['provider.pwa.registration']).toMatchObject({
+      owner: 'prod',
+      defaultValue: false,
+    })
+  })
 })
 
 describe('isEnabled - default behaviour', () => {
