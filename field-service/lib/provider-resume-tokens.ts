@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from './db'
 
@@ -29,7 +29,7 @@ export async function issueProviderResumeToken(
   const tokenHash = hashProviderResumeToken(rawToken)
   const expiresAt = new Date(Date.now() + SEVEN_DAYS_MS)
 
-  const tokenId = await (client as typeof db).$transaction(async (tx) => {
+  const doInTx = async (tx: Tx): Promise<string> => {
     await tx.providerResumeToken.updateMany({
       where: { conversationId: args.conversationId, usedAt: null, revokedAt: null },
       data: { revokedAt: new Date(), revokedReason: 'superseded' },
@@ -46,7 +46,14 @@ export async function issueProviderResumeToken(
       select: { id: true },
     })
     return row.id
-  })
+  }
+
+  // If the caller already holds a transaction (e.g. crudAction's tx callback),
+  // run the ops in that transaction. Otherwise open a new one. $transaction is
+  // only present on the top-level Prisma client, not on TransactionClient.
+  const tokenId = '$transaction' in client
+    ? await (client as typeof db).$transaction((tx) => doInTx(tx))
+    : await doInTx(client)
 
   return { rawToken, tokenId, expiresAt }
 }
@@ -56,7 +63,7 @@ export type ValidateResult =
   | { ok: false; reason: 'not_found' | 'expired' | 'used' | 'revoked' }
 
 export async function validateProviderResumeToken(client: Tx, rawToken: string): Promise<ValidateResult> {
-  if (!rawToken || rawToken.length < 32) return { ok: false, reason: 'not_found' }
+  if (!rawToken || rawToken.length !== 43 || rawToken.length > 128) return { ok: false, reason: 'not_found' }
   const tokenHash = hashProviderResumeToken(rawToken)
   const row = await client.providerResumeToken.findUnique({ where: { tokenHash } })
   if (!row) return { ok: false, reason: 'not_found' }
@@ -77,7 +84,7 @@ export async function consumeProviderResumeToken(client: Tx, tokenId: string): P
 export async function revokeProviderResumeTokensForConversation(
   client: Tx,
   conversationId: string,
-  reason: 'admin_revoked' | 'superseded' = 'admin_revoked',
+  reason: 'admin_revoked' = 'admin_revoked',
 ): Promise<number> {
   const result = await client.providerResumeToken.updateMany({
     where: { conversationId, usedAt: null, revokedAt: null },
