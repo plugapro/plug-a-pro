@@ -83,6 +83,7 @@ type RegistrationFormState = {
 type Props = {
   initialStep: StepKey
   initialApplicationState?: ApplicationState | null
+  initialApplicationRef?: string | null
   skillOptions: ServiceCategoryOption[]
 }
 
@@ -148,19 +149,34 @@ const IDENTITY_OPTIONS = [
 const EXPERIENCE_OPTIONS = ['0-1 years', '1-3 years', '3-5 years', '5+ years']
 const HOURS_OPTIONS = ['Standard 7am-5pm', 'Extended 6am-8pm', '24/7']
 
+type StatusActionHref = string | ((reference: string) => string)
+
+function supportHref(message: string) {
+  const configured = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER || process.env.NEXT_PUBLIC_WHATSAPP_BUSINESS_NUMBER
+  const digits = configured?.replace(/\D/g, '')
+  if (!digits) return `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Provider registration support')}`
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`
+}
+
+function resolveStatusActionHref(href: StatusActionHref, reference: string) {
+  return typeof href === 'function' ? href(reference) : href
+}
+
 const STATUS_COPY: Record<Exclude<ApplicationState, 'draft'>, {
   title: string
   body: (reference: string) => string
   tone: 'success' | 'warning' | 'danger'
   actionLabel: string
-  actionHref: string
+  actionHref: StatusActionHref
 }> = {
   pending: {
     title: "We're reviewing your application",
     body: (reference) => `Ref: ${reference || 'Pending'}. We will send review updates on WhatsApp.`,
     tone: 'success',
-    actionLabel: 'Add work evidence',
-    actionHref: '/provider/register/evidence',
+    actionLabel: 'Contact support',
+    actionHref: (reference) => supportHref(
+      `Hi Plug A Pro, I want to add work evidence to my provider application${reference ? ` Ref: ${reference}.` : '.'}`,
+    ),
   },
   more_info: {
     title: 'Your application needs more information',
@@ -248,7 +264,7 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
   }
 }
 
-export function ProviderRegistrationClient({ initialStep, initialApplicationState, skillOptions }: Props) {
+export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, skillOptions }: Props) {
   const router = useRouter()
   const step = initialStep
   const [form, setForm] = useState<RegistrationFormState>(DEFAULT_STATE)
@@ -528,12 +544,21 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   const meta = STEP_META[step]
   const statusKey = initialApplicationState && initialApplicationState !== 'draft' ? initialApplicationState : 'pending'
   const statusCopy = STATUS_COPY[statusKey]
+  const statusReference = initialApplicationRef ?? form.submittedRef
+  const statusActionHref = resolveStatusActionHref(statusCopy.actionHref, statusReference)
+  const statusActionUsesAnchor = statusActionHref.startsWith('http') || statusActionHref.startsWith('mailto:')
+  const statusActionOpensNewTab = statusActionHref.startsWith('http')
   const showStepper = Boolean(meta.step)
 
   return (
-    <main className="min-h-dvh bg-[linear-gradient(180deg,#F7FBFA_0%,#F6F3FF_48%,#FFFFFF_100%)] text-[var(--ink)]">
-      <div className="mx-auto flex min-h-dvh w-full max-w-[460px] flex-col px-4 pb-28 pt-4">
-        <header className="sticky top-0 z-20 -mx-4 border-b border-white/70 bg-white/86 px-4 pb-3 pt-3 backdrop-blur">
+    <main className="relative min-h-dvh overflow-x-hidden bg-background text-[var(--ink)]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-28 -left-20 -right-20 h-80"
+        style={{ background: 'radial-gradient(60% 80% at 50% 0%, rgba(139,63,232,0.15), transparent 70%)' }}
+      />
+      <div className="relative z-[1] mx-auto flex min-h-dvh w-full max-w-[460px] flex-col px-4 pb-28 pt-4">
+        <header className="sticky top-0 z-20 -mx-4 border-b border-[var(--border)] bg-background/95 px-4 pb-3 pt-3 backdrop-blur">
           <div className="flex items-center justify-between gap-2">
             <Button
               type="button"
@@ -545,7 +570,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
               <ArrowLeft size={18} />
             </Button>
             <div className="min-w-0 flex-1 text-center">
-              <p className="text-[12px] font-semibold text-[#0F766E]">{meta.eyebrow}</p>
+              <p className="text-[12px] font-semibold text-[var(--brand-purple)]">{meta.eyebrow}</p>
               <h1 className="truncate text-[17px] font-bold text-[var(--ink)]">{meta.title}</h1>
             </div>
             <Button type="button" variant="ghost" size="sm" onClick={saveAndExit} loading={saving}>
@@ -560,13 +585,13 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                     key={index}
                     className={[
                       'h-1.5 rounded-full',
-                      index + 1 <= (meta.step ?? 0) ? 'bg-[#0F766E]' : 'bg-slate-200',
+                      index + 1 <= (meta.step ?? 0) ? 'brand-gradient' : 'bg-[var(--border)]',
                     ].join(' ')}
                   />
                 ))}
               </div>
-              <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-[#0F766E]" style={{ width: `${progress}%` }} />
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--border)]">
+                <div className="h-full rounded-full brand-gradient" style={{ width: `${progress}%` }} />
               </div>
             </div>
           )}
@@ -672,9 +697,9 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 <button
                   type="button"
                   onClick={() => update('profilePhotoUrl', form.profilePhotoUrl ? '' : 'profile-photo-pending')}
-                  className="flex min-h-[84px] items-center gap-3 rounded-lg border border-dashed border-[#0F766E]/40 bg-[#ECFDF5] p-4 text-left"
+                  className="flex min-h-[84px] items-center gap-3 rounded-lg border border-dashed border-[var(--tone-brand-border)] bg-[var(--tone-brand-bg)] p-4 text-left"
                 >
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-white text-[#0F766E]">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-card text-[var(--brand-purple)]">
                     <Camera size={20} />
                   </span>
                   <span>
@@ -801,7 +826,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                       key={area}
                       type="button"
                       onClick={() => toggleArea(area)}
-                      className="rounded-full bg-[#E0F2FE] px-3 py-1.5 text-[12px] font-semibold text-[#075985]"
+                      className="rounded-full brand-gradient-soft px-3 py-1.5 text-[12px] font-semibold text-[var(--brand-purple)] shadow-[inset_0_0_0_1px_var(--tone-brand-border)]"
                     >
                       {area}
                     </button>
@@ -816,7 +841,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                   step={5}
                   value={form.travelRadiusKm}
                   onChange={(event) => update('travelRadiusKm', Number(event.target.value))}
-                  className="w-full accent-[#0F766E]"
+                  className="w-full accent-[var(--brand-purple)]"
                 />
               </Field>
               <Notice>Customers see your general service area first. Full contact handover happens only through approved lead flows.</Notice>
@@ -848,12 +873,12 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
               <Field label="Base call-out fee">
                 <Input inputMode="decimal" value={form.callOutFee} onChange={(event) => update('callOutFee', event.target.value)} placeholder="150" />
               </Field>
-              <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-white p-3">
+              <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-card p-3">
                 <input
                   type="checkbox"
                   checked={form.emergencyAvailable}
                   onChange={(event) => update('emergencyAvailable', event.target.checked)}
-                  className="mt-1 size-4 accent-[#0F766E]"
+                  className="mt-1 size-4 accent-[var(--brand-purple)]"
                 />
                 <span>
                   <span className="block text-[13px] font-semibold text-[var(--ink)]">Available for emergency jobs</span>
@@ -941,18 +966,18 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                   <SummaryRow label="ID type" value={form.identityBasis || 'Not selected'} />
                   <SummaryRow label="Verification" value="Can be completed after submit" />
                 </ReviewSection>
-                <div className="rounded-lg border border-[#BAE6FD] bg-[#F0F9FF] p-3">
-                  <p className="text-[13px] font-bold text-[#075985]">What happens next</p>
-                  <p className="mt-1 text-[12px] leading-relaxed text-[#0C4A6E]">
+                <div className="rounded-lg border border-[var(--tone-info-border)] bg-[var(--tone-info-bg)] p-3">
+                  <p className="text-[13px] font-bold text-[var(--tone-info-fg)]">What happens next</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-mute)]">
                     We review the application, ask for more information if needed, then activate approved providers. Identity verification remains required before credit top-ups.
                   </p>
                 </div>
-                <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-white p-3">
+                <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-card p-3">
                   <input
                     type="checkbox"
                     checked={form.consentAccepted}
                     onChange={(event) => update('consentAccepted', event.target.checked)}
-                    className="mt-1 size-4 accent-[#0F766E]"
+                    className="mt-1 size-4 accent-[var(--brand-purple)]"
                   />
                   <span className="text-[12.5px] leading-relaxed text-[var(--ink-mute)]">
                     I confirm this information is accurate and I accept the provider terms. Plug A Pro may review my profile before activating job leads.
@@ -1002,7 +1027,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
           )}
 
           {step === 'status' && (
-            <ScreenPanel icon={meta.icon} title={statusCopy.title} description={statusCopy.body(form.submittedRef)}>
+            <ScreenPanel icon={meta.icon} title={statusCopy.title} description={statusCopy.body(statusReference)}>
               <div
                 className={[
                   'rounded-lg border p-4',
@@ -1031,7 +1056,17 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
               </div>
               <FooterActions>
                 <Button fullWidth asChild>
-                  <Link href={statusCopy.actionHref}>{statusCopy.actionLabel}</Link>
+                  {statusActionUsesAnchor ? (
+                    <a
+                      href={statusActionHref}
+                      target={statusActionOpensNewTab ? '_blank' : undefined}
+                      rel={statusActionOpensNewTab ? 'noreferrer' : undefined}
+                    >
+                      {statusCopy.actionLabel}
+                    </a>
+                  ) : (
+                    <Link href={statusActionHref}>{statusCopy.actionLabel}</Link>
+                  )}
                 </Button>
                 <Button fullWidth variant="secondary" asChild>
                   <Link href="/provider-sign-in">Provider sign in</Link>
@@ -1054,7 +1089,7 @@ function ScreenPanel({ icon, title, description, children }: {
   return (
     <div className="space-y-5">
       <div className="flex items-start gap-3">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-[#0F766E] text-white">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-lg brand-gradient text-white">
           {icon}
         </div>
         <div>
@@ -1069,7 +1104,7 @@ function ScreenPanel({ icon, title, description, children }: {
 
 function FooterActions({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/75 bg-white/88 px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur">
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-background/95 px-4 py-3 shadow-[0_-10px_30px_rgba(0,0,0,0.18)] backdrop-blur">
       <div className="mx-auto grid max-w-[460px] gap-2">
         {children}
       </div>
@@ -1103,8 +1138,8 @@ function ChoiceButton({ selected, onClick, children }: { selected: boolean; onCl
       className={[
         'min-h-10 rounded-lg border px-3 py-2 text-[13px] font-semibold transition-colors',
         selected
-          ? 'border-[#0F766E] bg-[#CCFBF1] text-[#115E59]'
-          : 'border-[var(--border)] bg-white text-[var(--ink)] hover:bg-[var(--card-alt)]',
+          ? 'border-[var(--tone-brand-border)] brand-gradient-soft text-[var(--brand-purple)]'
+          : 'border-[var(--border)] bg-card text-[var(--ink)] hover:bg-[var(--card-alt)]',
       ].join(' ')}
     >
       {children}
@@ -1114,7 +1149,7 @@ function ChoiceButton({ selected, onClick, children }: { selected: boolean; onCl
 
 function InfoRow({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-white p-3">
+    <div className="rounded-lg border border-[var(--border)] bg-card p-3">
       <p className="text-[13px] font-bold text-[var(--ink)]">{title}</p>
       <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-mute)]">{body}</p>
     </div>
@@ -1123,7 +1158,7 @@ function InfoRow({ title, body }: { title: string; body: string }) {
 
 function Notice({ children }: { children: ReactNode }) {
   return (
-    <div className="flex gap-2 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] p-3 text-[12px] leading-relaxed text-[#92400E]">
+    <div className="flex gap-2 rounded-lg border border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)] p-3 text-[12px] leading-relaxed text-[var(--tone-warning-fg)]">
       <Info className="mt-0.5 size-4 shrink-0" />
       <span>{children}</span>
     </div>
@@ -1137,10 +1172,10 @@ function ReviewSection({ title, editStep, onEdit, children }: {
   children: ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-white p-3">
+    <section className="rounded-lg border border-[var(--border)] bg-card p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-[14px] font-bold text-[var(--ink)]">{title}</h3>
-        <button type="button" onClick={() => onEdit(editStep)} className="text-[12px] font-bold text-[#0F766E]">
+        <button type="button" onClick={() => onEdit(editStep)} className="text-[12px] font-bold text-[var(--brand-purple)]">
           Edit
         </button>
       </div>

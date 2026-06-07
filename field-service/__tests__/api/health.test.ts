@@ -118,7 +118,9 @@ describe('GET /api/health', () => {
     const { db } = await import('@/lib/db')
     ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
     const flags = await import('@/lib/flags')
-    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(true)
+    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => key === 'auth.otp.whatsapp',
+    )
 
     const { GET } = await import('../../app/api/health/route')
     const res = await GET()
@@ -127,6 +129,8 @@ describe('GET /api/health', () => {
     expect(res.status).toBe(200)
     expect(body).toHaveProperty('auth')
     expect(body.auth.otp_whatsapp_flag).toBe('enabled')
+    expect(body.auth.otp_security_report_flag).toBe('disabled')
+    expect(body.auth.otp_security_report_config).toBe('disabled')
   })
 
   it('reports otp_whatsapp_flag: "unknown" when isEnabled throws, response still 200', async () => {
@@ -158,5 +162,46 @@ describe('GET /api/health', () => {
 
     expect(res.status).toBe(200)
     expect(body.auth.supabase_env_complete).toBe(false)
+  })
+
+  it('degrades when OTP security reporting is enabled without OTP_HASH_PEPPER', async () => {
+    delete process.env.OTP_HASH_PEPPER
+
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+    const flags = await import('@/lib/flags')
+    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => key === 'security.otp.report',
+    )
+
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(body.status).toBe('degraded')
+    expect(body.db).toBe('ok')
+    expect(body.auth.otp_security_report_flag).toBe('enabled')
+    expect(body.auth.otp_security_report_config).toBe('missing_otp_hash_pepper')
+  })
+
+  it('reports OTP security reporting as ready when enabled with OTP_HASH_PEPPER', async () => {
+    process.env.OTP_HASH_PEPPER = 'health-test-pepper'
+
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+    const flags = await import('@/lib/flags')
+    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => key === 'security.otp.report',
+    )
+
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('ok')
+    expect(body.auth.otp_security_report_flag).toBe('enabled')
+    expect(body.auth.otp_security_report_config).toBe('ready')
   })
 })

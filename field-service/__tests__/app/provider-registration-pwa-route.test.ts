@@ -47,11 +47,35 @@ describe('provider registration PWA route surface', () => {
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
 
     expect(routeSource).toContain('initialApplicationState={destination?.state ?? null}')
+    expect(routeSource).toContain('initialApplicationRef={destination?.applicationRef ?? null}')
     expect(clientSource).toContain('initialApplicationState?: ApplicationState | null')
+    expect(clientSource).toContain('initialApplicationRef?: string | null')
+    expect(clientSource).toContain('statusReference')
     expect(clientSource).toContain('more_info')
     expect(clientSource).toContain('needs more information')
     expect(clientSource).toContain('not approved yet')
     expect(clientSource).toContain('was cancelled')
+  })
+
+  it('does not strand pending applicants on the blocked evidence route', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(clientSource).toContain("actionLabel: 'Contact support'")
+    expect(clientSource).toContain('supportHref(')
+    expect(clientSource).not.toContain("actionHref: '/provider/register/evidence'")
+  })
+
+  it('uses the shared app theme tokens instead of a one-off light registration palette', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(clientSource).toContain('bg-background')
+    expect(clientSource).toContain('bg-card')
+    expect(clientSource).toContain('text-[var(--brand-purple)]')
+    expect(clientSource).not.toContain('#F7FBFA')
+    expect(clientSource).not.toContain('#F6F3FF')
+    expect(clientSource).not.toContain('#0F766E')
+    expect(clientSource).not.toContain('#CCFBF1')
+    expect(clientSource).not.toContain('bg-white')
   })
 
   it('exposes the complete design handoff screen map instead of collapsing steps', () => {

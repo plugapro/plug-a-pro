@@ -12,6 +12,9 @@ const HAS_PAYMENT_CREDENTIALS =
   Boolean(process.env.PEACH_ACCESS_TOKEN && process.env.PEACH_ENTITY_ID) ||
   Boolean(process.env.PAYFAST_MERCHANT_ID && process.env.PAYFAST_MERCHANT_KEY)
 
+type FlagStatus = 'enabled' | 'disabled' | 'unknown'
+type OtpSecurityReportConfigStatus = 'disabled' | 'ready' | 'missing_otp_hash_pepper' | 'unknown'
+
 async function probeWhatsApp(): Promise<'ok' | 'error' | 'unknown'> {
   if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) return 'unknown'
   try {
@@ -31,6 +34,17 @@ async function probeWhatsApp(): Promise<'ok' | 'error' | 'unknown'> {
   }
 }
 
+function flagStatus(result: PromiseSettledResult<boolean>): FlagStatus {
+  if (result.status !== 'fulfilled') return 'unknown'
+  return result.value ? 'enabled' : 'disabled'
+}
+
+function otpSecurityReportConfigStatus(flag: FlagStatus): OtpSecurityReportConfigStatus {
+  if (flag === 'unknown') return 'unknown'
+  if (flag === 'disabled') return 'disabled'
+  return process.env.OTP_HASH_PEPPER?.trim() ? 'ready' : 'missing_otp_hash_pepper'
+}
+
 export async function GET() {
   const timestamp = new Date().toISOString()
   const build = {
@@ -40,33 +54,36 @@ export async function GET() {
     builtAt: BUILT_AT,
   }
 
-  const [dbResult, whatsappResult, otpFlagResult] = await Promise.allSettled([
+  const [dbResult, whatsappResult, otpFlagResult, otpSecurityReportFlagResult] = await Promise.allSettled([
     db.$queryRaw`SELECT 1`,
     probeWhatsApp(),
     isEnabled(FLAG_KEYS.AUTH_OTP_WHATSAPP),
+    isEnabled('security.otp.report'),
   ])
 
   const dbOk = dbResult.status === 'fulfilled'
   const whatsapp = whatsappResult.status === 'fulfilled' ? whatsappResult.value : 'error'
   const payments: 'ok' | 'unknown' = HAS_PAYMENT_CREDENTIALS ? 'ok' : 'unknown'
+  const otpSecurityReportFlag = flagStatus(otpSecurityReportFlagResult)
+  const otpSecurityReportConfig = otpSecurityReportConfigStatus(otpSecurityReportFlag)
 
   const auth = {
-    otp_whatsapp_flag: otpFlagResult.status === 'fulfilled'
-      ? (otpFlagResult.value ? 'enabled' : 'disabled')
-      : 'unknown',
+    otp_whatsapp_flag: flagStatus(otpFlagResult),
+    otp_security_report_flag: otpSecurityReportFlag,
+    otp_security_report_config: otpSecurityReportConfig,
     supabase_env_complete: Boolean(
       process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     ),
   }
 
-  if (dbOk) {
+  if (dbOk && otpSecurityReportConfig !== 'missing_otp_hash_pepper') {
     return NextResponse.json(
       { status: 'ok', db: 'ok', whatsapp, payments, auth, timestamp, build },
       { status: 200 },
     )
   }
   return NextResponse.json(
-    { status: 'degraded', db: 'error', whatsapp, payments, auth, timestamp, build },
+    { status: 'degraded', db: dbOk ? 'ok' : 'error', whatsapp, payments, auth, timestamp, build },
     { status: 503 },
   )
 }
