@@ -36,3 +36,7 @@ vouchers*.xlsx
 # Media source files (raw assets — processed outputs go into app public/ dirs)
 media assets/
 .vercel
+
+# whatsapp-blob-audit / db-wipe-ingest output (safety net if run from monorepo root)
+recovery/
+recovery-canary/

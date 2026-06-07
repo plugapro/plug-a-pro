@@ -32,6 +32,20 @@ import type { MediaIdIndex } from './whatsapp-blob-audit/types'
 
 type Args = { out: string; concurrency: number; timeoutMs: number; includeSensitive: boolean }
 
+// Strict positive-integer parser. Number('abc') / Number('') / Number('-5') all
+// produce NaN or invalid values that, if passed unchecked to the workers, cause
+// silent zero-worker runs (concurrency=NaN) or unbounded timeouts (timeoutMs=NaN).
+// Reject and fall back to the default with a warning rather than producing
+// surprising behaviour.
+function parsePositiveInt(raw: string, label: string, fallback: number): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    console.warn(`[audit] ignoring invalid --${label}=${JSON.stringify(raw)}; using default ${fallback}`)
+    return fallback
+  }
+  return n
+}
+
 function parseArgs(argv: string[]): Args {
   let out = './recovery'
   let concurrency = 8
@@ -41,8 +55,8 @@ function parseArgs(argv: string[]): Args {
     const flag = argv[i]
     const next = argv[i + 1]
     if (flag === '--out' && next) { out = next; i++ }
-    else if (flag === '--concurrency' && next) { concurrency = Number(next); i++ }
-    else if (flag === '--timeout-ms' && next) { timeoutMs = Number(next); i++ }
+    else if (flag === '--concurrency' && next) { concurrency = parsePositiveInt(next, 'concurrency', concurrency); i++ }
+    else if (flag === '--timeout-ms' && next) { timeoutMs = parsePositiveInt(next, 'timeout-ms', timeoutMs); i++ }
     else if (flag === '--include-sensitive') { includeSensitive = true }
   }
   return { out, concurrency, timeoutMs, includeSensitive }

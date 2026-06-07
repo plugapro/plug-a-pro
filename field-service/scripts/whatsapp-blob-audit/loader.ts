@@ -83,6 +83,13 @@ export async function loadInboundMediaCandidates(): Promise<InboundMediaCandidat
 // Meta-supplied digits (e.g., '27768196963') while provider_applications.phone
 // and customers.phone store the E.164 form with leading '+'. Strip the '+' on
 // both sides so map keys match regardless of which side is the canonical store.
+//
+// As of 2026-06-07 audit, no rows in provider_applications or customers store
+// the legacy `00`-prefixed international format — verified via:
+//   SELECT count(*) FROM provider_applications WHERE phone LIKE '00%';  -- 0
+//   SELECT count(*) FROM customers WHERE phone LIKE '00%';              -- 0
+// If that changes, extend this helper AND the regexp_replace in
+// loadPhoneParentHints to also strip a `^00` prefix.
 export function normalizePhoneKey(phone: string): string {
   return phone.startsWith('+') ? phone.slice(1) : phone
 }
