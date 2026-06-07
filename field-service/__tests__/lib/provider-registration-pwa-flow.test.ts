@@ -1,11 +1,43 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  ProviderRegistrationValidationError,
   saveProviderRegistrationDraft,
   submitProviderRegistrationApplication,
 } from '@/lib/provider-registration/pwa-flow'
 
+function structuredSuburbRows(ids = ['sub_maboneng']) {
+  return ids.map((id, index) => ({
+    id,
+    nodeType: 'SUBURB',
+    slug: `gauteng__johannesburg__jhb_central__${id.replace(/^sub_/, '')}`,
+    label: index === 0 ? 'Maboneng' : `Suburb ${index + 1}`,
+    postalCode: '2094',
+    provinceKey: 'gauteng',
+    cityKey: 'johannesburg',
+    regionKey: 'jhb_central',
+    parent: {
+      id: 'region-jhb-central',
+      nodeType: 'REGION',
+      label: 'JHB Central',
+      parent: {
+        id: 'city-johannesburg',
+        nodeType: 'CITY',
+        label: 'Johannesburg',
+        parent: {
+          id: 'province-gauteng',
+          nodeType: 'PROVINCE',
+          label: 'Gauteng',
+        },
+      },
+    },
+  }))
+}
+
 function createDraftClient() {
   return {
+    locationNode: {
+      findMany: vi.fn().mockResolvedValue(structuredSuburbRows()),
+    },
     providerApplicationDraft: {
       create: vi.fn().mockResolvedValue({ id: 'draft-1' }),
       update: vi.fn().mockResolvedValue({ id: 'draft-1' }),
@@ -37,6 +69,12 @@ function createSubmitClient() {
     registrationResumeToken: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
+    locationNode: {
+      findMany: vi.fn().mockResolvedValue(structuredSuburbRows()),
+    },
+    technicianServiceArea: {
+      upsert: vi.fn().mockResolvedValue({ id: 'area-1' }),
+    },
     providerCategory: {
       createMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
@@ -48,6 +86,9 @@ function createSubmitClient() {
   return {
     tx,
     client: {
+      locationNode: {
+        findMany: vi.fn().mockResolvedValue(structuredSuburbRows()),
+      },
       $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
     },
   }
@@ -67,6 +108,9 @@ describe('provider registration PWA flow', () => {
       skills: ['plumbing'],
       serviceAreas: ['Maboneng'],
       locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
       travelRadiusKm: 25,
       lastCompletedStep: 2,
     })
@@ -82,6 +126,7 @@ describe('provider registration PWA flow', () => {
         profilePhotoUrl: 'https://store.public.blob.vercel-storage.com/photo.jpg',
         skills: ['plumbing'],
         categorySlugs: ['plumbing'],
+        serviceAreas: ['Maboneng'],
         locationNodeIds: ['sub_maboneng'],
         travelRadiusKm: 25,
       }),
@@ -119,6 +164,80 @@ describe('provider registration PWA flow', () => {
     expect(result.resumeToken).not.toBe('expired-or-stale-token')
   })
 
+  it('rejects typed-only service areas once the area step is completed', async () => {
+    const client = createDraftClient()
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['Roodport'],
+      lastCompletedStep: 4,
+    })).rejects.toMatchObject({
+      code: 'STRUCTURED_SERVICE_AREA_REQUIRED',
+    })
+
+    expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
+  })
+
+  it('derives service area labels from selected canonical suburb nodes', async () => {
+    const client = createDraftClient()
+
+    await saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['Roodport'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      lastCompletedStep: 4,
+    })
+
+    expect(client.providerApplicationDraft.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        serviceAreas: ['Maboneng'],
+        locationNodeIds: ['sub_maboneng'],
+      }),
+    }))
+  })
+
+  it('rejects selected suburbs that do not belong to the submitted hierarchy', async () => {
+    const client = createDraftClient()
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-roodepoort',
+      lastCompletedStep: 4,
+    })).rejects.toBeInstanceOf(ProviderRegistrationValidationError)
+  })
+
+  it('requires the selected parent hierarchy with submitted suburb node ids', async () => {
+    const { client, tx } = createSubmitClient()
+
+    await expect(submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['sub_maboneng'],
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+    })).rejects.toMatchObject({
+      code: 'INVALID_LOCATION_HIERARCHY',
+    })
+
+    expect(tx.providerApplication.create).not.toHaveBeenCalled()
+  })
+
   it('submits a draft as a linked pending provider application', async () => {
     const { client, tx } = createSubmitClient()
 
@@ -130,6 +249,10 @@ describe('provider registration PWA flow', () => {
       email: 'thabo@example.com',
       skills: ['plumbing'],
       serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
       experience: '3-5 years',
       availability: 'Weekdays',
       availabilityDays: ['Sat', 'Sun'],
@@ -167,6 +290,39 @@ describe('provider registration PWA flow', () => {
       where: { id: 'draft-1' },
       data: { submittedApplicationId: 'app-1', lastCompletedStep: 8 },
     })
+    expect(tx.technicianServiceArea.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        providerId_locationNodeId: {
+          providerId: expect.any(String),
+          locationNodeId: 'sub_maboneng',
+        },
+      },
+      create: expect.objectContaining({
+        locationNodeId: 'sub_maboneng',
+        areaType: 'SUBURB',
+        label: 'Maboneng',
+      }),
+    }))
+  })
+
+  it('rejects submit payloads that only contain free-text service areas', async () => {
+    const { client, tx } = createSubmitClient()
+
+    await expect(submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['Roodport'],
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+    })).rejects.toMatchObject({
+      code: 'STRUCTURED_SERVICE_AREA_REQUIRED',
+    })
+
+    expect(tx.providerApplication.create).not.toHaveBeenCalled()
   })
 
   it('drops untrusted external profile photo URLs before persistence', async () => {
@@ -193,6 +349,10 @@ describe('provider registration PWA flow', () => {
       name: 'Thabo Nkosi',
       skills: ['plumbing'],
       serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
       availabilityDays: ['Mon'],
       callOutFee: 150,
       profilePhotoUrl: 'https://tracker.example.invalid/avatar.png',

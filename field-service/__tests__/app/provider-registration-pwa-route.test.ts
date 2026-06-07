@@ -108,6 +108,23 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).not.toContain('placeholder="082 123 4567"')
   })
 
+  it('uses canonical cascading location selectors instead of free-text area capture', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(existsSync(join(root, 'app/api/locations/provinces/route.ts'))).toBe(true)
+    expect(clientSource).toContain("fetch('/api/locations/provinces'")
+    expect(clientSource).toContain("fetch(`/api/locations/cities?provinceKey=${encodeURIComponent")
+    expect(clientSource).toContain("fetch(`/api/locations/regions?cityId=${encodeURIComponent")
+    expect(clientSource).toContain("fetch(`/api/locations/suburbs?regionId=${encodeURIComponent")
+    expect(clientSource).toContain('Select a province first')
+    expect(clientSource).toContain('No cities available for this province')
+    expect(clientSource).toContain('No suburbs available for this region')
+    expect(clientSource).not.toContain('AREA_SUGGESTIONS')
+    expect(clientSource).not.toContain('areaSearch')
+    expect(clientSource).not.toContain('addTypedArea')
+    expect(clientSource).not.toContain('placeholder="Search suburb"')
+  })
+
   it('uses the shared app theme tokens instead of a one-off light registration palette', () => {
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
 
