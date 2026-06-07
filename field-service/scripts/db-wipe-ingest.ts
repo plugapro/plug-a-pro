@@ -22,18 +22,34 @@
  * Requires: DATABASE_URL, WHATSAPP_ACCESS_TOKEN, BLOB_READ_WRITE_TOKEN.
  */
 
-// Load env files in Next.js-style priority order:
-// .env.production.local > .env.local > .env.production > .env
-// Each call only sets values not already set, so first-loaded wins for any
-// given key. WHATSAPP_ACCESS_TOKEN lives in .env.production.local; without
-// loading it explicitly the helper throws WHATSAPP_ACCESS_TOKEN_MISSING.
-import { config as loadDotenv } from 'dotenv'
-loadDotenv({ path: '.env.production.local' })
-loadDotenv({ path: '.env.local' })
-loadDotenv({ path: '.env.production' })
-loadDotenv()
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+// Load env files in Next.js-style priority order:
+//   .env.production.local > .env.local > .env.production > .env
+// First-set wins per key. WHATSAPP_ACCESS_TOKEN lives in
+// .env.production.local; without loading it explicitly the helper throws
+// WHATSAPP_ACCESS_TOKEN_MISSING. Implemented inline so the script has no
+// extra dotenv dependency.
+function loadEnvFile(path: string): void {
+  if (!existsSync(path)) return
+  const content = readFileSync(path, 'utf8')
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.replace(/^export\s+/, '').trim()
+    if (line === '' || line.startsWith('#')) continue
+    const eq = line.indexOf('=')
+    if (eq <= 0) continue
+    const key = line.slice(0, eq).trim()
+    let value = line.slice(eq + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    if (process.env[key] === undefined) process.env[key] = value
+  }
+}
+loadEnvFile('.env.production.local')
+loadEnvFile('.env.local')
+loadEnvFile('.env.production')
+loadEnvFile('.env')
 import { join } from 'node:path'
 import { buildIngestPlan } from './db-wipe-ingest/plan'
 import { applyIngestPlan } from './db-wipe-ingest/apply'
