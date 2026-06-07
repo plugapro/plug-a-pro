@@ -39,6 +39,7 @@ function timeLeft(expiresAt: string | null) {
 function BalanceHero({ credits, starter, compact = false, onTopUp, onTerms }: { credits: number; starter: number; compact?: boolean; onTopUp?: () => void; onTerms?: () => void }) {
   const purchased = Math.max(credits - starter, 0)
   const positive = credits > 0
+  const hasBothActions = Boolean(onTopUp && onTerms)
   return (
     <section className="relative overflow-hidden rounded-[24px] p-5 text-[#F4F4F6]" style={{ background: 'linear-gradient(160deg, #15161C 0%, #0A0A12 100%)' }} aria-label="Provider wallet balance">
       {/* The dark hero is intentionally theme-invariant so balance remains the page anchor. */}
@@ -46,7 +47,7 @@ function BalanceHero({ credits, starter, compact = false, onTopUp, onTerms }: { 
       <div className="relative z-10 font-mono text-[10.5px] font-bold uppercase tracking-[0.12em] text-white/55">Available credits</div>
       <div className="relative z-10 mt-1 flex items-baseline gap-2.5"><div className={`font-extrabold leading-none tracking-[-2px] ${compact ? 'text-[44px]' : 'text-[56px]'} ${positive ? 'text-[#86EFAC]' : 'text-white'}`}>{credits}</div><div className="text-[13px] text-white/55">≈ {credits} accepts</div></div>
       {!compact ? <div className="relative z-10 mt-2 text-[12.5px] text-white/55">{purchased} purchased · {starter} starter</div> : null}
-      {onTopUp || onTerms ? <div className="relative z-10 mt-4 grid grid-cols-2 gap-2">
+      {onTopUp || onTerms ? <div className={`relative z-10 mt-4 grid gap-2 ${hasBothActions ? 'grid-cols-2' : 'grid-cols-1'}`}>
         {onTopUp ? <Button type="button" variant="ghost" size="sm" onClick={onTopUp} className="h-10 rounded-[12px] bg-[#8B3FE838] text-[#D9C8FF] hover:bg-[#8B3FE84D]"><Zap className="size-4" aria-hidden />Top up</Button> : null}
         {onTerms ? <Button type="button" variant="ghost" size="sm" onClick={onTerms} className="h-10 rounded-[12px] bg-white/[0.06] text-white/75 hover:bg-white/[0.10]"><Info className="size-4" aria-hidden />How it works</Button> : null}
       </div> : null}
@@ -206,7 +207,7 @@ export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: Provide
       <BalanceHero
         credits={wallet.credits}
         starter={wallet.starter}
-        onTopUp={() => topUpRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        onTopUp={wallet.creditPurchaseLocked ? undefined : () => topUpRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
         onTerms={() => router.push('/credit-terms')}
       />
       <section ref={topUpRef} className="space-y-3" id="topup">
