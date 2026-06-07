@@ -83,6 +83,7 @@ type RegistrationFormState = {
 type Props = {
   initialStep: StepKey
   initialApplicationState?: ApplicationState | null
+  initialApplicationRef?: string | null
   skillOptions: ServiceCategoryOption[]
 }
 
@@ -148,19 +149,34 @@ const IDENTITY_OPTIONS = [
 const EXPERIENCE_OPTIONS = ['0-1 years', '1-3 years', '3-5 years', '5+ years']
 const HOURS_OPTIONS = ['Standard 7am-5pm', 'Extended 6am-8pm', '24/7']
 
+type StatusActionHref = string | ((reference: string) => string)
+
+function supportHref(message: string) {
+  const configured = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER || process.env.NEXT_PUBLIC_WHATSAPP_BUSINESS_NUMBER
+  const digits = configured?.replace(/\D/g, '')
+  if (!digits) return `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Provider registration support')}`
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`
+}
+
+function resolveStatusActionHref(href: StatusActionHref, reference: string) {
+  return typeof href === 'function' ? href(reference) : href
+}
+
 const STATUS_COPY: Record<Exclude<ApplicationState, 'draft'>, {
   title: string
   body: (reference: string) => string
   tone: 'success' | 'warning' | 'danger'
   actionLabel: string
-  actionHref: string
+  actionHref: StatusActionHref
 }> = {
   pending: {
     title: "We're reviewing your application",
     body: (reference) => `Ref: ${reference || 'Pending'}. We will send review updates on WhatsApp.`,
     tone: 'success',
-    actionLabel: 'Add work evidence',
-    actionHref: '/provider/register/evidence',
+    actionLabel: 'Contact support',
+    actionHref: (reference) => supportHref(
+      `Hi Plug A Pro, I want to add work evidence to my provider application${reference ? ` Ref: ${reference}.` : '.'}`,
+    ),
   },
   more_info: {
     title: 'Your application needs more information',
@@ -248,7 +264,7 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
   }
 }
 
-export function ProviderRegistrationClient({ initialStep, initialApplicationState, skillOptions }: Props) {
+export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, skillOptions }: Props) {
   const router = useRouter()
   const step = initialStep
   const [form, setForm] = useState<RegistrationFormState>(DEFAULT_STATE)
@@ -528,6 +544,10 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   const meta = STEP_META[step]
   const statusKey = initialApplicationState && initialApplicationState !== 'draft' ? initialApplicationState : 'pending'
   const statusCopy = STATUS_COPY[statusKey]
+  const statusReference = initialApplicationRef ?? form.submittedRef
+  const statusActionHref = resolveStatusActionHref(statusCopy.actionHref, statusReference)
+  const statusActionUsesAnchor = statusActionHref.startsWith('http') || statusActionHref.startsWith('mailto:')
+  const statusActionOpensNewTab = statusActionHref.startsWith('http')
   const showStepper = Boolean(meta.step)
 
   return (
@@ -1002,7 +1022,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
           )}
 
           {step === 'status' && (
-            <ScreenPanel icon={meta.icon} title={statusCopy.title} description={statusCopy.body(form.submittedRef)}>
+            <ScreenPanel icon={meta.icon} title={statusCopy.title} description={statusCopy.body(statusReference)}>
               <div
                 className={[
                   'rounded-lg border p-4',
@@ -1031,7 +1051,17 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
               </div>
               <FooterActions>
                 <Button fullWidth asChild>
-                  <Link href={statusCopy.actionHref}>{statusCopy.actionLabel}</Link>
+                  {statusActionUsesAnchor ? (
+                    <a
+                      href={statusActionHref}
+                      target={statusActionOpensNewTab ? '_blank' : undefined}
+                      rel={statusActionOpensNewTab ? 'noreferrer' : undefined}
+                    >
+                      {statusCopy.actionLabel}
+                    </a>
+                  ) : (
+                    <Link href={statusActionHref}>{statusCopy.actionLabel}</Link>
+                  )}
                 </Button>
                 <Button fullWidth variant="secondary" asChild>
                   <Link href="/provider-sign-in">Provider sign in</Link>

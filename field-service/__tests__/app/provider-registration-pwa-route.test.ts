@@ -47,11 +47,22 @@ describe('provider registration PWA route surface', () => {
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
 
     expect(routeSource).toContain('initialApplicationState={destination?.state ?? null}')
+    expect(routeSource).toContain('initialApplicationRef={destination?.applicationRef ?? null}')
     expect(clientSource).toContain('initialApplicationState?: ApplicationState | null')
+    expect(clientSource).toContain('initialApplicationRef?: string | null')
+    expect(clientSource).toContain('statusReference')
     expect(clientSource).toContain('more_info')
     expect(clientSource).toContain('needs more information')
     expect(clientSource).toContain('not approved yet')
     expect(clientSource).toContain('was cancelled')
+  })
+
+  it('does not strand pending applicants on the blocked evidence route', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(clientSource).toContain("actionLabel: 'Contact support'")
+    expect(clientSource).toContain('supportHref(')
+    expect(clientSource).not.toContain("actionHref: '/provider/register/evidence'")
   })
 
   it('exposes the complete design handoff screen map instead of collapsing steps', () => {

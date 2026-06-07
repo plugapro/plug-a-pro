@@ -56,6 +56,10 @@ async function findActiveProviderRegistrationDraft(phone: string) {
   }).catch(() => null)
 }
 
+function applicationReference(id?: string | null) {
+  return id ? id.slice(-8).toUpperCase() : null
+}
+
 async function resolveAuthenticatedEntryDestination() {
   const session = await getSession()
   if (!session?.phone) return null
@@ -65,12 +69,17 @@ async function resolveAuthenticatedEntryDestination() {
     findActiveProviderRegistrationDraft(session.phone),
   ])
 
-  return resolveProviderRegistrationDestination({
+  const destination = resolveProviderRegistrationDestination({
     applicationStatus: application?.status ?? 'NONE',
     providerStatus: session.role === 'provider' ? 'ACTIVE' : null,
     hasActiveDraft: Boolean(draft),
     lastCompletedStep: draft?.lastCompletedStep ?? null,
   })
+
+  return {
+    ...destination,
+    applicationRef: applicationReference(application?.id),
+  }
 }
 
 function shouldRedirectForRegistrationEntry(requestedStep: StepKey, destinationRoute: string): boolean {
@@ -105,6 +114,7 @@ export default async function ProviderRegistrationPage({
     <ProviderRegistrationClient
       initialStep={requestedStep as StepKey}
       initialApplicationState={destination?.state ?? null}
+      initialApplicationRef={destination?.applicationRef ?? null}
       skillOptions={getPilotServiceCategories()}
     />
   )
