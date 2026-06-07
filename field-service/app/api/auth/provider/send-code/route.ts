@@ -690,8 +690,10 @@ export async function POST(request: NextRequest) {
     }
     providerId = provider?.id
 
+    let providerPortalAccessOk = false
     if (provider) {
       const access = checkWorkerPortalAccess(provider)
+      providerPortalAccessOk = access.ok
 
       if (!access.ok) {
         providerLookupResult = access.code === 'WORKER_NOT_APPROVED' ? 'found_not_approved' : 'found_inactive'
@@ -708,7 +710,6 @@ export async function POST(request: NextRequest) {
           timestamp: timestamp(),
           step: STEP,
         })
-        return otpStartPayload({ traceId, phone })
       }
     } else {
       return otpStartPayload({ traceId, phone })
@@ -803,13 +804,15 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       if (isSupabaseAuthUserMissingError(error)) {
-        const provisioned = await provisionMissingProviderAuthUser({
-          provider,
-          phone,
-          traceId,
-          countryCode,
-          rawPhone,
-        })
+        const provisioned = providerPortalAccessOk
+          ? await provisionMissingProviderAuthUser({
+              provider,
+              phone,
+              traceId,
+              countryCode,
+              rawPhone,
+            })
+          : false
 
         if (provisioned) {
           const retryResponse = await signInWithProviderOtp()

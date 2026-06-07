@@ -11,6 +11,7 @@ type LimiterKey =
   | 'verifyByPhone'
   | 'otpReportByIp'
   | 'providerSendCodePublicByIpPhone'
+  | 'providerRegistrationProfilePhotoByPhone'
   | 'providerLookupByPhone'
   | 'providerLookupByIp'
   | 'payatGoCreateByBookingUser'
@@ -62,6 +63,11 @@ function configs(): Record<LimiterKey, LimitConfig> {
     providerSendCodePublicByIpPhone: {
       name: 'providerSendCodePublicByIpPhone',
       limit: envInt('PROVIDER_SEND_CODE_PUBLIC_LIMIT_PER_IP_PHONE_HOUR', 6),
+      windowSec: HOUR,
+    },
+    providerRegistrationProfilePhotoByPhone: {
+      name: 'providerRegistrationProfilePhotoByPhone',
+      limit: envInt('PROVIDER_REGISTRATION_PROFILE_PHOTO_LIMIT_PER_PHONE_HOUR', 12),
       windowSec: HOUR,
     },
     providerLookupByPhone: {
@@ -228,13 +234,15 @@ export async function checkOtpSendLimit(params: {
   ip?: string | null
   context?: RateLimitContext
 }): Promise<CheckOtpSendLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
-  const phoneDecision = await consume('sendByPhone', `phone:${params.phone}`)
-  if (!phoneDecision.ok) {
-    return {
-      ok: false,
-      code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
-      retryAfterMs: phoneDecision.retryAfterMs,
+  const bypassPhoneQuota = isInternalTestPhone(params.phone)
+  if (!bypassPhoneQuota) {
+    const phoneDecision = await consume('sendByPhone', `phone:${params.phone}`)
+    if (!phoneDecision.ok) {
+      return {
+        ok: false,
+        code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
+        retryAfterMs: phoneDecision.retryAfterMs,
+      }
     }
   }
 
@@ -261,12 +269,15 @@ export type CheckPublicProviderSendCodeLimitResult =
   | { ok: true }
   | { ok: false; code: 'ip_phone_limit' | 'limiter_unavailable'; retryAfterMs: number }
 
+export type CheckProviderRegistrationProfilePhotoLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'rate_limited' | 'limiter_unavailable'; retryAfterMs: number }
+
 export async function checkPublicProviderSendCodeLimit(params: {
   phone: string
   ip?: string | null
   context?: RateLimitContext
 }): Promise<CheckPublicProviderSendCodeLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
   // Keep the public pre-lookup limiter keyed to IP+phone so anonymous traffic
   // cannot brute-force lookup attempts for the same number from one source.
   const ip = params.ip?.trim() || 'unknown'
@@ -285,18 +296,41 @@ export async function checkPublicProviderSendCodeLimit(params: {
   return { ok: true }
 }
 
+export async function checkProviderRegistrationProfilePhotoLimit(params: {
+  phone: string
+  ip?: string | null
+  context?: RateLimitContext
+}): Promise<CheckProviderRegistrationProfilePhotoLimitResult> {
+  const phone = params.phone.trim() || 'unknown'
+  const decision = await consume(
+    'providerRegistrationProfilePhotoByPhone',
+    `phone:${phone}`,
+  )
+  if (!decision.ok) {
+    return {
+      ok: false,
+      code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'rate_limited',
+      retryAfterMs: decision.retryAfterMs,
+    }
+  }
+
+  return { ok: true }
+}
+
 export async function checkProviderLookupLimit(params: {
   phone: string
   ip?: string | null
   context?: RateLimitContext
 }): Promise<CheckProviderLookupLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
-  const phoneDecision = await consume('providerLookupByPhone', `phone:${params.phone}`)
-  if (!phoneDecision.ok) {
-    return {
-      ok: false,
-      code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
-      retryAfterMs: phoneDecision.retryAfterMs,
+  const bypassPhoneQuota = isInternalTestPhone(params.phone)
+  if (!bypassPhoneQuota) {
+    const phoneDecision = await consume('providerLookupByPhone', `phone:${params.phone}`)
+    if (!phoneDecision.ok) {
+      return {
+        ok: false,
+        code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
+        retryAfterMs: phoneDecision.retryAfterMs,
+      }
     }
   }
 
@@ -323,7 +357,6 @@ export async function checkOtpVerifyLimit(params: {
   phone: string
   context?: RateLimitContext
 }): Promise<CheckOtpVerifyLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
   const decision = await consume('verifyByPhone', `phone:${params.phone}`)
   if (!decision.ok) {
     return {
