@@ -272,6 +272,76 @@ describe('provider onboarding recovery', () => {
     ])
   })
 
+  it('keeps the approved-application classification when the application predates the recovery window', async () => {
+    const findManyApplications = vi.fn().mockResolvedValue([
+      {
+        id: 'app-old-approved',
+        phone: '+27827654321',
+        name: 'Sipho Dlamini',
+        status: 'APPROVED',
+        submittedAt: new Date('2026-05-01T08:00:00.000Z'),
+        reviewedAt: new Date('2026-05-02T08:00:00.000Z'),
+        skills: ['Plumbing'],
+        serviceAreas: ['Soweto'],
+      },
+    ])
+    const client = {
+      inboundWhatsAppMessage: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            phone: '27827654321',
+            messageType: 'text',
+            firstSeenAt: new Date('2026-06-04T09:45:00.000Z'),
+            lastSeenAt: new Date('2026-06-04T09:45:00.000Z'),
+          },
+        ]),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([
+          conversation({
+            id: 'conv-stale-reg',
+            phone: '+27827654321',
+            step: 'reg_collect_name',
+            data: {},
+            updatedAt: new Date('2026-06-04T09:45:00.000Z'),
+          }),
+        ]),
+      },
+      providerApplication: {
+        findMany: findManyApplications,
+      },
+      auditLog: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn(),
+      },
+    }
+
+    const rows = await listProviderOnboardingRecoveryRows(client as never, {
+      now,
+      since,
+    })
+
+    // Where clause now carries a 180-day submittedAt bound so the
+    // approved-app load stays bounded as the table grows, while still
+    // covering any realistic re-registration window.
+    const where = findManyApplications.mock.calls[0]?.[0]?.where as {
+      phone: { in: string[] }
+      submittedAt: { gte: Date }
+    }
+    expect(where.phone).toEqual({ in: ['+27827654321'] })
+    const expectedCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60_000)
+    expect(where.submittedAt.gte.getTime()).toBe(expectedCutoff.getTime())
+    expect(rows).toEqual([
+      expect.objectContaining({
+        source: 'application',
+        stage: 'approved',
+        applicationStatus: 'APPROVED',
+        followUpStatus: 'submitted_excluded',
+        messageTemplateKey: 'submitted_no_recovery',
+      }),
+    ])
+  })
+
   it('sends due WhatsApp recovery follow-ups and logs sent outcomes without raw phone numbers', async () => {
     const client = {
       inboundWhatsAppMessage: {

@@ -35,3 +35,4 @@ vouchers*.xlsx
 
 # whatsapp-blob-audit artefacts (2026-06-06)
 recovery/
+recovery-canary/
