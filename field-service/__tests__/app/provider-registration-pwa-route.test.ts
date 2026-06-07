@@ -79,6 +79,20 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).not.toContain('profile-photo-pending')
   })
 
+  it('uses the shared OTP digit boxes and auto-verifies once all digits are captured', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(clientSource).toContain("import { OtpInput } from '@/components/ui/otp-input'")
+    expect(clientSource).toContain('otpSubmitRef')
+    expect(clientSource).toContain('form.otp.length === 6 && !verifyingCode && !otpSubmitRef.current')
+    expect(clientSource).toContain('void verifyCode(form.otp)')
+    expect(clientSource).toContain('<OtpInput')
+    expect(clientSource).toContain('value={form.otp}')
+    expect(clientSource).toContain('disabled={verifyingCode}')
+    expect(clientSource).not.toContain('maxLength={6}')
+    expect(clientSource).not.toContain('placeholder="123456"')
+  })
+
   it('uses the shared app theme tokens instead of a one-off light registration palette', () => {
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
 

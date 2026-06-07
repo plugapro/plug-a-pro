@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { OtpInput } from '@/components/ui/otp-input'
 import { Textarea } from '@/components/ui/textarea'
 import type { ServiceCategoryOption } from '@/lib/service-categories'
 
@@ -281,6 +282,7 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
 export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions }: Props) {
   const router = useRouter()
   const profilePhotoInputRef = useRef<HTMLInputElement>(null)
+  const otpSubmitRef = useRef(false)
   const step = initialStep
   const [form, setForm] = useState<RegistrationFormState>(DEFAULT_STATE)
   const [draftId, setDraftId] = useState('')
@@ -312,6 +314,16 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       window.localStorage.setItem(STATE_KEY, JSON.stringify(form))
     }
   }, [form])
+
+  useEffect(() => {
+    if (step !== 'otp') return
+    if (form.otp.length === 6 && !verifyingCode && !otpSubmitRef.current) {
+      otpSubmitRef.current = true
+      void verifyCode(form.otp)
+    }
+    if (form.otp.length < 6) otpSubmitRef.current = false
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.otp, step, verifyingCode])
 
   const progress = useMemo(() => {
     const current = stepNumber(step)
@@ -493,7 +505,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
     }
   }
 
-  async function verifyCode() {
+  async function verifyCode(code = form.otp) {
     if (!validateCurrentStep('otp')) return
     setVerifyingCode(true)
     setError('')
@@ -501,7 +513,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       const response = await fetch('/api/provider/registration/verify-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: form.phone, code: form.otp }),
+        body: JSON.stringify({ phone: form.phone, code }),
       })
       const payload = await response.json()
       if (!response.ok || !payload.ok) {
@@ -715,18 +727,23 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
 
           {step === 'otp' && (
             <ScreenPanel icon={meta.icon} title="Enter the 6-digit code" description="We sent a one-time code to the mobile number you entered.">
-              <Field label="Verification code">
-                <Input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
+              <div className="space-y-2">
+                <p className="text-[13px] font-semibold text-[var(--ink)]">Verification code</p>
+                <OtpInput
                   value={form.otp}
-                  onChange={(event) => update('otp', event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="123456"
+                  onChange={(next) => update('otp', next)}
+                  disabled={verifyingCode}
                 />
-              </Field>
+              </div>
               <FooterActions>
-                <Button fullWidth onClick={verifyCode} loading={verifyingCode} loadingLabel="Checking...">
+                <Button
+                  fullWidth
+                  onClick={() => verifyCode(form.otp)}
+                  loading={verifyingCode}
+                  loadingLabel="Checking..."
+                  disabled={form.otp.length !== 6}
+                  variant={form.otp.length === 6 && !verifyingCode ? 'default' : 'secondary'}
+                >
                   Verify code
                   <ArrowRight size={18} />
                 </Button>
