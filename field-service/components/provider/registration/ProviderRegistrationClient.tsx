@@ -2,7 +2,7 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -21,9 +21,12 @@ import {
   UserRound,
   Wrench,
 } from 'lucide-react'
+import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { OtpInput } from '@/components/ui/otp-input'
 import { Textarea } from '@/components/ui/textarea'
+import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import type { ServiceCategoryOption } from '@/lib/service-categories'
 
 const STATE_KEY = 'pap_provider_registration_state_v2'
@@ -84,6 +87,7 @@ type Props = {
   initialStep: StepKey
   initialApplicationState?: ApplicationState | null
   initialApplicationRef?: string | null
+  initialDraftResumeStep?: StepKey
   skillOptions: ServiceCategoryOption[]
 }
 
@@ -221,11 +225,30 @@ function parseStoredState(): RegistrationFormState {
       serviceAreas: Array.isArray(parsed.serviceAreas) ? parsed.serviceAreas : [],
       locationNodeIds: Array.isArray(parsed.locationNodeIds) ? parsed.locationNodeIds : [],
       availabilityDays: Array.isArray(parsed.availabilityDays) ? parsed.availabilityDays : [],
+      profilePhotoUrl: usableProfilePhotoUrl(parsed.profilePhotoUrl) ?? '',
       travelRadiusKm: Number.isFinite(Number(parsed.travelRadiusKm)) ? Number(parsed.travelRadiusKm) : DEFAULT_STATE.travelRadiusKm,
     }
   } catch {
     return DEFAULT_STATE
   }
+}
+
+function usableProfilePhotoUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'https:' ? trimmed : null
+  } catch {
+    return null
+  }
+}
+
+function providerRegistrationPhoneInputValue(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (digits.startsWith('27') && digits.length >= 11) return digits.slice(2)
+  return value
 }
 
 function routeForStep(step: StepKey): string {
@@ -264,8 +287,10 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
   }
 }
 
-export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, skillOptions }: Props) {
+export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions }: Props) {
   const router = useRouter()
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null)
+  const otpSubmitRef = useRef(false)
   const step = initialStep
   const [form, setForm] = useState<RegistrationFormState>(DEFAULT_STATE)
   const [draftId, setDraftId] = useState('')
@@ -275,6 +300,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   const [submitting, setSubmitting] = useState(false)
   const [sendingCode, setSendingCode] = useState(false)
   const [verifyingCode, setVerifyingCode] = useState(false)
+  const [uploadingProfilePhoto, setUploadingProfilePhoto] = useState(false)
 
   useEffect(() => {
     setForm(parseStoredState())
@@ -296,6 +322,16 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       window.localStorage.setItem(STATE_KEY, JSON.stringify(form))
     }
   }, [form])
+
+  useEffect(() => {
+    if (step !== 'otp') return
+    if (form.otp.length === 6 && !verifyingCode && !otpSubmitRef.current) {
+      otpSubmitRef.current = true
+      void verifyCode(form.otp)
+    }
+    if (form.otp.length < 6) otpSubmitRef.current = false
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.otp, step, verifyingCode])
 
   const progress = useMemo(() => {
     const current = stepNumber(step)
@@ -477,7 +513,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
     }
   }
 
-  async function verifyCode() {
+  async function verifyCode(code = form.otp) {
     if (!validateCurrentStep('otp')) return
     setVerifyingCode(true)
     setError('')
@@ -485,7 +521,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       const response = await fetch('/api/provider/registration/verify-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: form.phone, code: form.otp }),
+        body: JSON.stringify({ phone: form.phone, code }),
       })
       const payload = await response.json()
       if (!response.ok || !payload.ok) {
@@ -500,6 +536,54 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       router.push(payload.redirectTo ?? '/provider/register/profile')
     } finally {
       setVerifyingCode(false)
+    }
+  }
+
+  async function handleProfilePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setError('')
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file.')
+      event.target.value = ''
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Photo is too large. Use an image under 10 MB.')
+      event.target.value = ''
+      return
+    }
+
+    const upload = new FormData()
+    upload.set('file', file)
+    setUploadingProfilePhoto(true)
+
+    try {
+      const response = await fetch('/api/provider/registration/profile-photo', {
+        method: 'POST',
+        body: upload,
+      })
+      const payload = await response.json().catch(() => ({})) as {
+        ok?: boolean
+        profilePhotoUrl?: string
+        message?: string
+        error?: { message?: string }
+      }
+
+      if (!response.ok || !payload.ok || !payload.profilePhotoUrl) {
+        setError(payload.message ?? payload.error?.message ?? 'Could not upload the photo right now.')
+        return
+      }
+
+      update('profilePhotoUrl', payload.profilePhotoUrl)
+    } catch {
+      setError('Could not upload the photo right now.')
+    } finally {
+      setUploadingProfilePhoto(false)
+      event.target.value = ''
     }
   }
 
@@ -626,13 +710,15 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
           {step === 'phone' && (
             <ScreenPanel icon={meta.icon} title="What number should we use?" description="Use the number you want Plug A Pro to contact for provider work.">
               <Field label="Mobile number">
-                <Input
-                  inputMode="tel"
-                  autoComplete="tel"
-                  value={form.phone}
-                  onChange={(event) => update('phone', event.target.value)}
-                  placeholder="082 123 4567"
+                <SaMobileNumberInput
+                  id="provider-registration-phone"
+                  value={providerRegistrationPhoneInputValue(form.phone)}
+                  onChange={(next) => update('phone', next)}
+                  disabled={sendingCode}
                 />
+                <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink-mute)]">
+                  {SA_OTP_SIGN_IN_HELPER_TEXT}
+                </p>
               </Field>
               <Notice>
                 Use a provider number. If this number already belongs to a customer account, we will show account options before you continue.
@@ -651,18 +737,23 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
 
           {step === 'otp' && (
             <ScreenPanel icon={meta.icon} title="Enter the 6-digit code" description="We sent a one-time code to the mobile number you entered.">
-              <Field label="Verification code">
-                <Input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
+              <div className="space-y-2">
+                <p className="text-[13px] font-semibold text-[var(--ink)]">Verification code</p>
+                <OtpInput
                   value={form.otp}
-                  onChange={(event) => update('otp', event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="123456"
+                  onChange={(next) => update('otp', next)}
+                  disabled={verifyingCode}
                 />
-              </Field>
+              </div>
               <FooterActions>
-                <Button fullWidth onClick={verifyCode} loading={verifyingCode} loadingLabel="Checking...">
+                <Button
+                  fullWidth
+                  onClick={() => verifyCode(form.otp)}
+                  loading={verifyingCode}
+                  loadingLabel="Checking..."
+                  disabled={form.otp.length !== 6}
+                  variant={form.otp.length === 6 && !verifyingCode ? 'default' : 'secondary'}
+                >
                   Verify code
                   <ArrowRight size={18} />
                 </Button>
@@ -696,7 +787,8 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
               <div className="grid gap-4">
                 <button
                   type="button"
-                  onClick={() => update('profilePhotoUrl', form.profilePhotoUrl ? '' : 'profile-photo-pending')}
+                  onClick={() => profilePhotoInputRef.current?.click()}
+                  disabled={uploadingProfilePhoto}
                   className="flex min-h-[84px] items-center gap-3 rounded-lg border border-dashed border-[var(--tone-brand-border)] bg-[var(--tone-brand-bg)] p-4 text-left"
                 >
                   <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-card text-[var(--brand-purple)]">
@@ -704,13 +796,20 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                   </span>
                   <span>
                     <span className="block text-[14px] font-bold text-[var(--ink)]">
-                      {form.profilePhotoUrl ? 'Profile photo selected' : 'Add a profile photo'}
+                      {uploadingProfilePhoto ? 'Uploading profile photo...' : form.profilePhotoUrl ? 'Profile photo uploaded' : 'Add a profile photo'}
                     </span>
                     <span className="block text-[12px] leading-relaxed text-[var(--ink-mute)]">
                       A clear face or work photo helps the team review your profile.
                     </span>
                   </span>
                 </button>
+                <input
+                  ref={profilePhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfilePhotoChange}
+                />
                 <Field label="Full name">
                   <Input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Thabo Nkosi" />
                 </Field>
@@ -744,7 +843,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 </ChoiceGroup>
               </div>
               <FooterActions>
-                <Button fullWidth onClick={() => goTo('services')} loading={saving}>
+                <Button fullWidth onClick={() => goTo('services')} loading={saving || uploadingProfilePhoto} loadingLabel={uploadingProfilePhoto ? 'Uploading...' : undefined}>
                   Continue
                   <ArrowRight size={18} />
                 </Button>
@@ -1015,7 +1114,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 <InfoRow title="Next section" body="Continue to complete profile, services, area, availability, verification choice, evidence and review." />
               </div>
               <FooterActions>
-                <Button fullWidth onClick={() => router.push('/provider/register/profile')}>
+                <Button fullWidth onClick={() => router.push(routeForStep(initialDraftResumeStep))}>
                   Continue application
                   <ArrowRight size={18} />
                 </Button>

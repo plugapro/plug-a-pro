@@ -66,6 +66,7 @@ type SyncProviderRecordInput = {
   verified: boolean
   isTestUser?: boolean
   cohortName?: string | null
+  avatarUrl?: string | null
   locationNodeIds?: string[]
   /**
    * When true, enrichment DB errors are surfaced to the caller instead of
@@ -213,6 +214,10 @@ export async function syncProviderRecord(
       status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
     }
 
+    if (input.avatarUrl) {
+      data.avatarUrl = input.avatarUrl
+    }
+
     if (input.userId) {
       data.userId = input.userId
     }
@@ -261,6 +266,7 @@ export async function syncProviderRecord(
       availableNow: leadEligible && input.availableNow,
       verified: input.verified,
       status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
+      ...(input.avatarUrl ? { avatarUrl: input.avatarUrl } : {}),
     },
   })
 

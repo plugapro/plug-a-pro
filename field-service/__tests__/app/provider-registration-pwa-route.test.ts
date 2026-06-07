@@ -65,6 +65,49 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).not.toContain("actionHref: '/provider/register/evidence'")
   })
 
+  it('wires the profile photo tile to a real image upload control', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(existsSync(join(root, 'app/api/provider/registration/profile-photo/route.ts'))).toBe(true)
+    expect(clientSource).toContain('profilePhotoInputRef')
+    expect(clientSource).toContain('handleProfilePhotoChange')
+    expect(clientSource).toContain("fetch('/api/provider/registration/profile-photo'")
+    expect(clientSource).toContain('profilePhotoInputRef.current?.click()')
+    expect(clientSource).toContain('type="file"')
+    expect(clientSource).toContain('accept="image/*"')
+    expect(clientSource).toContain('onChange={handleProfilePhotoChange}')
+    expect(clientSource).not.toContain('profile-photo-pending')
+  })
+
+  it('uses the shared OTP digit boxes and auto-verifies once all digits are captured', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(clientSource).toContain("import { OtpInput } from '@/components/ui/otp-input'")
+    expect(clientSource).toContain('otpSubmitRef')
+    expect(clientSource).toContain('form.otp.length === 6 && !verifyingCode && !otpSubmitRef.current')
+    expect(clientSource).toContain('void verifyCode(form.otp)')
+    expect(clientSource).toContain('<OtpInput')
+    expect(clientSource).toContain('value={form.otp}')
+    expect(clientSource).toContain('disabled={verifyingCode}')
+    expect(clientSource).not.toContain('maxLength={6}')
+    expect(clientSource).not.toContain('placeholder="123456"')
+  })
+
+  it('uses the same South African mobile input pattern as provider sign-in', () => {
+    const signInSource = readFileSync(join(root, 'app/(auth)/provider-sign-in/page.tsx'), 'utf8')
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(signInSource).toContain("import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'")
+    expect(clientSource).toContain("import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'")
+    expect(clientSource).toContain("import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'")
+    expect(clientSource).toContain('providerRegistrationPhoneInputValue')
+    expect(clientSource).toContain('<SaMobileNumberInput')
+    expect(clientSource).toContain('value={providerRegistrationPhoneInputValue(form.phone)}')
+    expect(clientSource).toContain("onChange={(next) => update('phone', next)}")
+    expect(clientSource).toContain('{SA_OTP_SIGN_IN_HELPER_TEXT}')
+    expect(clientSource).not.toContain('placeholder="082 123 4567"')
+  })
+
   it('uses the shared app theme tokens instead of a one-off light registration palette', () => {
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
 
@@ -76,6 +119,18 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).not.toContain('#0F766E')
     expect(clientSource).not.toContain('#CCFBF1')
     expect(clientSource).not.toContain('bg-white')
+  })
+
+  it('lets saved draft applicants continue into the registration steps', () => {
+    const routeSource = readFileSync(join(root, 'app/provider/register/[[...step]]/page.tsx'), 'utf8')
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(routeSource).toContain('DRAFT_CONTINUATION_STEPS')
+    expect(routeSource).toContain("if (destinationRoute === '/provider/register/draft') return !DRAFT_CONTINUATION_STEPS.has(requestedStep)")
+    expect(routeSource).toContain("initialDraftResumeStep={destination?.draftResumeStep ?? 'profile'}")
+    expect(clientSource).toContain('initialDraftResumeStep?: StepKey')
+    expect(clientSource).toContain('routeForStep(initialDraftResumeStep)')
+    expect(clientSource).not.toContain("router.push('/provider/register/profile')")
   })
 
   it('exposes the complete design handoff screen map instead of collapsing steps', () => {

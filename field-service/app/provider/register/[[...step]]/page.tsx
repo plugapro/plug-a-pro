@@ -43,6 +43,17 @@ type StepKey =
   | 'draft'
   | 'status'
 
+const DRAFT_CONTINUATION_STEPS = new Set<StepKey>([
+  'draft',
+  'profile',
+  'services',
+  'area',
+  'availability',
+  'verify',
+  'evidence',
+  'review',
+])
+
 async function findActiveProviderRegistrationDraft(phone: string) {
   const draftClient = (db as any).providerApplicationDraft
   if (!draftClient?.findFirst) return null
@@ -58,6 +69,22 @@ async function findActiveProviderRegistrationDraft(phone: string) {
 
 function applicationReference(id?: string | null) {
   return id ? id.slice(-8).toUpperCase() : null
+}
+
+function draftResumeStep(lastCompletedStep?: number | null): StepKey {
+  if (!lastCompletedStep || lastCompletedStep <= 1) return 'profile'
+  if (lastCompletedStep >= 8) return 'review'
+
+  const nextSteps: Record<number, StepKey> = {
+    2: 'services',
+    3: 'area',
+    4: 'availability',
+    5: 'verify',
+    6: 'evidence',
+    7: 'review',
+  }
+
+  return nextSteps[lastCompletedStep] ?? 'profile'
 }
 
 async function resolveAuthenticatedEntryDestination() {
@@ -79,13 +106,14 @@ async function resolveAuthenticatedEntryDestination() {
   return {
     ...destination,
     applicationRef: applicationReference(application?.id),
+    draftResumeStep: draftResumeStep(draft?.lastCompletedStep),
   }
 }
 
 function shouldRedirectForRegistrationEntry(requestedStep: StepKey, destinationRoute: string): boolean {
   if (destinationRoute === '/provider') return true
   if (destinationRoute === '/provider/register/status') return requestedStep !== 'status' && requestedStep !== 'submitted'
-  if (destinationRoute === '/provider/register/draft') return requestedStep !== 'draft'
+  if (destinationRoute === '/provider/register/draft') return !DRAFT_CONTINUATION_STEPS.has(requestedStep)
   if (destinationRoute === '/provider/register/welcome') return false
   return requestedStep === 'welcome'
 }
@@ -115,6 +143,7 @@ export default async function ProviderRegistrationPage({
       initialStep={requestedStep as StepKey}
       initialApplicationState={destination?.state ?? null}
       initialApplicationRef={destination?.applicationRef ?? null}
+      initialDraftResumeStep={destination?.draftResumeStep ?? 'profile'}
       skillOptions={getPilotServiceCategories()}
     />
   )
