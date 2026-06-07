@@ -1,6 +1,6 @@
 // ─── Admin: Provider application review ───────────────────────────────────────
 // Lists all ProviderApplications submitted via WhatsApp.
-// Approve: creates Provider + Supabase user invite + WhatsApp notification.
+// Approve: creates Provider + Supabase auth link + WhatsApp notification.
 // Reject: sends rejection WhatsApp + updates status.
 
 export const dynamic = 'force-dynamic'
@@ -16,6 +16,7 @@ import { isEnabled } from '@/lib/flags'
 import { sendTemplate } from '@/lib/whatsapp'
 import { crudAction } from '@/lib/crud-action'
 import { syncProviderRecord } from '@/lib/provider-record'
+import { createOrResolveProviderApprovalAuthUser } from '@/lib/provider-approval-auth-user'
 import {
   findConflictingActiveProviderApplications,
   getConflictingActiveProviderApplicationIds,
@@ -231,18 +232,25 @@ async function approveApplication(formData: FormData) {
       },
       run: async (_data, tx) => {
         const supabase = createServiceClient()
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          phone: app.phone,
-          user_metadata: {
-            role: 'provider',
+        let authUser: { userId: string; source: 'created' | 'existing' }
+        try {
+          authUser = await createOrResolveProviderApprovalAuthUser({
+            db: tx as never,
+            supabase,
+            phone: app.phone,
             name: app.name,
-          },
-          phone_confirm: true,
-        })
-
-        if (authError || !authData.user) {
-          console.error('[applications] Supabase user create failed:', authError)
+            providerId: app.providerId,
+          })
+        } catch (authError) {
+          console.error('[applications] Supabase user create/resolve failed:', authError)
           throw new Error('Supabase user creation failed')
+        }
+
+        if (authUser.source === 'existing') {
+          console.info('[applications] Reusing existing Supabase auth user for provider approval', {
+            applicationId: app.id,
+            providerId: app.providerId,
+          })
         }
 
       // Phase 4 follow-up Task 5 - atomicity invariant:
@@ -256,7 +264,7 @@ async function approveApplication(formData: FormData) {
       // __tests__/lib/provider-record.test.ts asserts the verified->ACTIVE
       // mapping on every code path.
       const providerId = await syncProviderRecord(tx as typeof db, {
-        userId: authData?.user?.id ?? null,
+        userId: authUser.userId,
         phone: app.phone,
         name: app.name,
         skills: app.skills,
@@ -268,17 +276,15 @@ async function approveApplication(formData: FormData) {
         cohortName: app.cohortName,
       })
 
-      if (authData?.user?.id) {
-        const { error: metaError } = await supabase.auth.admin.updateUserById(authData.user.id, {
-          user_metadata: {
-            role: 'provider',
-            name: app.name,
-            providerId,
-          },
-        })
-        if (metaError) {
-          console.error('[applications] Failed to stamp providerId in user_metadata:', metaError)
-        }
+      const { error: metaError } = await supabase.auth.admin.updateUserById(authUser.userId, {
+        user_metadata: {
+          role: 'provider',
+          name: app.name,
+          providerId,
+        },
+      })
+      if (metaError) {
+        console.error('[applications] Failed to stamp providerId in user_metadata:', metaError)
       }
 
       const statusUpdate = await tx.providerApplication.updateMany({
