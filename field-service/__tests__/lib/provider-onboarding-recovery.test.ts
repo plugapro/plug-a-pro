@@ -321,9 +321,16 @@ describe('provider onboarding recovery', () => {
       since,
     })
 
-    expect(findManyApplications.mock.calls[0]?.[0]?.where).toEqual({
-      phone: { in: ['+27827654321'] },
-    })
+    // Where clause now carries a 180-day submittedAt bound so the
+    // approved-app load stays bounded as the table grows, while still
+    // covering any realistic re-registration window.
+    const where = findManyApplications.mock.calls[0]?.[0]?.where as {
+      phone: { in: string[] }
+      submittedAt: { gte: Date }
+    }
+    expect(where.phone).toEqual({ in: ['+27827654321'] })
+    const expectedCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60_000)
+    expect(where.submittedAt.gte.getTime()).toBe(expectedCutoff.getTime())
     expect(rows).toEqual([
       expect.objectContaining({
         source: 'application',

@@ -632,12 +632,18 @@ export async function listProviderOnboardingRecoveryRows(
       },
       orderBy: { updatedAt: 'desc' },
     }),
-    // Load the latest application per phone regardless of submittedAt.
+    // Load the latest application per phone within a generous 180-day window.
     // An approved provider whose application predates the recovery window will
     // otherwise lose their applicationStatus, get reclassified from a stale
     // registration conversation, and reappear in the queue as "needs action".
+    // The 180-day bound covers all realistic re-registration windows without
+    // letting the query scan the unbounded application history as the table
+    // grows (production-safety: code-review pre-merge gap from PR #41).
     client.providerApplication.findMany({
-      where: { phone: { in: phones } },
+      where: {
+        phone: { in: phones },
+        submittedAt: { gte: new Date(now.getTime() - 180 * 24 * 60 * 60_000) },
+      },
       select: {
         id: true,
         phone: true,
