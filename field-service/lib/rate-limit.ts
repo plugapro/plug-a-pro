@@ -1,7 +1,6 @@
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 import { recordAuditLog } from './audit'
-import { isInternalTestPhone } from './internal-test-cohort'
 
 export type RateLimitContext = Record<string, unknown>
 
@@ -228,7 +227,6 @@ export async function checkOtpSendLimit(params: {
   ip?: string | null
   context?: RateLimitContext
 }): Promise<CheckOtpSendLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
   const phoneDecision = await consume('sendByPhone', `phone:${params.phone}`)
   if (!phoneDecision.ok) {
     return {
@@ -266,7 +264,6 @@ export async function checkPublicProviderSendCodeLimit(params: {
   ip?: string | null
   context?: RateLimitContext
 }): Promise<CheckPublicProviderSendCodeLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
   // Keep the public pre-lookup limiter keyed to IP+phone so anonymous traffic
   // cannot brute-force lookup attempts for the same number from one source.
   const ip = params.ip?.trim() || 'unknown'
@@ -290,7 +287,6 @@ export async function checkProviderLookupLimit(params: {
   ip?: string | null
   context?: RateLimitContext
 }): Promise<CheckProviderLookupLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
   const phoneDecision = await consume('providerLookupByPhone', `phone:${params.phone}`)
   if (!phoneDecision.ok) {
     return {
@@ -323,7 +319,6 @@ export async function checkOtpVerifyLimit(params: {
   phone: string
   context?: RateLimitContext
 }): Promise<CheckOtpVerifyLimitResult> {
-  if (isInternalTestPhone(params.phone)) return { ok: true }
   const decision = await consume('verifyByPhone', `phone:${params.phone}`)
   if (!decision.ok) {
     return {
