@@ -32,7 +32,12 @@ export type ProviderRegistrationDraftInput = {
   phone: string
   email?: string | null
   name?: string | null
+  businessName?: string | null
+  preferredContact?: string | null
+  identityBasis?: string | null
+  profilePhotoUrl?: string | null
   skills?: string[] | string | null
+  categorySlugs?: string[] | string | null
   serviceAreas?: string[] | string | null
   locationNodeIds?: string[] | null
   experience?: string | null
@@ -42,6 +47,7 @@ export type ProviderRegistrationDraftInput = {
   availabilityHours?: string | null
   emergencyAvailable?: boolean | null
   callOutFee?: number | string | null
+  travelRadiusKm?: number | string | null
   evidenceNote?: string | null
   reference1Name?: string | null
   reference1Mobile?: string | null
@@ -131,6 +137,15 @@ function normalizedCallOutFee(value: number | string | null | undefined): number
   return parsed
 }
 
+function normalizedTravelRadius(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+    throw new ProviderRegistrationValidationError('Choose a valid travel radius.', 'INVALID_TRAVEL_RADIUS')
+  }
+  return parsed
+}
+
 function safeStep(value: number | null | undefined): number {
   if (!Number.isFinite(Number(value))) return 0
   return Math.max(0, Math.min(8, Number(value)))
@@ -139,6 +154,8 @@ function safeStep(value: number | null | undefined): number {
 function normalizeDraftInput(input: ProviderRegistrationDraftInput) {
   const phone = normalizedPhone(input.phone)
   const skills = normalizeServiceCategorySelections(stringList(input.skills))
+  const selectedCategorySlugs = normalizeServiceCategorySelections(stringList(input.categorySlugs))
+  const categorySlugs = selectedCategorySlugs.length > 0 ? selectedCategorySlugs : skills
   const serviceAreas = stringList(input.serviceAreas)
   const locationNodeIds = stringList(input.locationNodeIds ?? [])
   const availabilityDays = stringList(input.availabilityDays ?? [])
@@ -149,8 +166,12 @@ function normalizeDraftInput(input: ProviderRegistrationDraftInput) {
     phone,
     email: cleanString(input.email),
     name: cleanString(input.name),
+    businessName: cleanString(input.businessName),
+    preferredContact: cleanString(input.preferredContact),
+    identityBasis: cleanString(input.identityBasis),
+    profilePhotoUrl: cleanString(input.profilePhotoUrl),
     skills,
-    categorySlugs: skills,
+    categorySlugs,
     serviceAreas,
     locationNodeIds,
     experience: cleanString(input.experience),
@@ -160,6 +181,7 @@ function normalizeDraftInput(input: ProviderRegistrationDraftInput) {
     availabilityHours: cleanString(input.availabilityHours),
     emergencyAvailable: input.emergencyAvailable === true,
     callOutFee,
+    travelRadiusKm: normalizedTravelRadius(input.travelRadiusKm),
     evidenceNote: cleanString(input.evidenceNote),
     reference1Name: cleanString(input.reference1Name),
     reference1Mobile: cleanString(input.reference1Mobile),
@@ -193,14 +215,13 @@ export async function saveProviderRegistrationDraft(
 ): Promise<{ draftId: string; resumeToken: string }> {
   const data = normalizeDraftInput(input)
   const tokenDraftId = await resolveTokenDraftId(client, input.resumeToken)
-  const draftId = tokenDraftId ?? cleanString(input.draftId)
 
-  if (draftId) {
+  if (tokenDraftId) {
     await client.providerApplicationDraft.update({
-      where: { id: draftId },
+      where: { id: tokenDraftId },
       data,
     })
-    return { draftId, resumeToken: input.resumeToken ?? '' }
+    return { draftId: tokenDraftId, resumeToken: input.resumeToken ?? '' }
   }
 
   const draft = await client.providerApplicationDraft.create({ data })

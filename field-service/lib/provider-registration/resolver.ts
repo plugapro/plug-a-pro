@@ -17,24 +17,7 @@ type RegistrationDestinationInput = {
 
 type RegistrationDestination = {
   route: string
-  state?: 'pending' | 'more_info' | 'approved' | 'rejected' | 'cancelled'
-}
-
-const STEP_ROUTES: Record<number, string> = {
-  0: '/provider/register/phone',
-  1: '/provider/register/profile',
-  2: '/provider/register/services',
-  3: '/provider/register/area',
-  4: '/provider/register/availability',
-  5: '/provider/register/review',
-  6: '/provider/register/review',
-  7: '/provider/register/review',
-  8: '/provider/register/review',
-}
-
-function nextDraftRoute(lastCompletedStep?: number | null): string {
-  const completedStep = Math.max(0, Math.min(8, Number(lastCompletedStep ?? 0)))
-  return STEP_ROUTES[completedStep] ?? STEP_ROUTES[0]
+  state?: 'draft' | 'pending' | 'more_info' | 'approved' | 'rejected' | 'cancelled'
 }
 
 export function resolveProviderRegistrationDestination(
@@ -52,7 +35,11 @@ export function resolveProviderRegistrationDestination(
     return { route: '/provider/register/status', state: 'cancelled' }
   }
 
-  if (input.providerStatus === 'ACTIVE' || input.applicationStatus === 'APPROVED') {
+  if (input.applicationStatus === 'APPROVED') {
+    return { route: '/provider/register/status', state: 'approved' }
+  }
+
+  if (input.providerStatus === 'ACTIVE') {
     return { route: '/provider' }
   }
 
@@ -61,7 +48,7 @@ export function resolveProviderRegistrationDestination(
   }
 
   if (input.hasActiveDraft) {
-    return { route: nextDraftRoute(input.lastCompletedStep) }
+    return { route: '/provider/register/draft', state: 'draft' }
   }
 
   return { route: '/provider/register/welcome' }
