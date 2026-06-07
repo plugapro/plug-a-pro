@@ -52,3 +52,24 @@ describe('loadMediaIdIndex', () => {
     expect(index.size).toBe(2)
   })
 })
+
+describe('loadInboundMediaCandidates', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns one InboundMediaCandidate per inbound_whatsapp_messages row with a non-null media_id', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRawUnsafe as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { media_id: 'm1', phone: '+27111', messageType: 'image', firstSeenAt: new Date('2026-06-06T11:00:00Z') },
+      { media_id: 'm2', phone: '+27222', messageType: 'document', firstSeenAt: new Date('2026-06-04T11:00:00Z') },
+      { media_id: null, phone: '+27333', messageType: 'image', firstSeenAt: new Date('2026-06-06T10:00:00Z') },
+    ])
+    const { loadInboundMediaCandidates } = await import('@/scripts/whatsapp-blob-audit/loader')
+    const rows = await loadInboundMediaCandidates()
+    expect(db.$queryRawUnsafe).toHaveBeenCalledWith(expect.stringMatching(/SELECT/i))
+    expect(db.$queryRawUnsafe).toHaveBeenCalledWith(expect.stringContaining(`"messageType" IN ('image','document','video')`))
+    expect(db.$queryRawUnsafe).not.toHaveBeenCalledWith(expect.stringMatching(/UPDATE|DELETE|INSERT/i))
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toEqual({ mediaId: 'm1', phone: '+27111', messageType: 'image', firstSeenAt: new Date('2026-06-06T11:00:00Z') })
+    expect(rows[1].mediaId).toBe('m2')
+  })
+})

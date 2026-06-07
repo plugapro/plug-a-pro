@@ -31,3 +31,10 @@ export type GapRow = {
   replayable: boolean
   reason: string
 }
+
+export type InboundMediaCandidate = {
+  mediaId: string
+  phone: string
+  messageType: 'image' | 'document' | 'video'
+  firstSeenAt: Date
+}

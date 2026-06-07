@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import type { AttachmentRow, MediaIdIndex } from './types'
+import type { AttachmentRow, MediaIdIndex, InboundMediaCandidate } from './types'
 
 type RawRow = {
   id: string
@@ -53,4 +53,28 @@ export async function loadMediaIdIndex(): Promise<MediaIdIndex> {
     if (r.media_id) index.set(r.media_id, r.firstSeenAt)
   }
   return index
+}
+
+export async function loadInboundMediaCandidates(): Promise<InboundMediaCandidate[]> {
+  const rows = await db.$queryRawUnsafe<Array<{ media_id: string | null; phone: string; messageType: string; firstSeenAt: Date }>>(
+    `SELECT
+       payload -> "messageType" ->> 'id' AS media_id,
+       phone,
+       "messageType",
+       "firstSeenAt"
+     FROM inbound_whatsapp_messages
+     WHERE "messageType" IN ('image','document','video')`,
+  )
+  const out: InboundMediaCandidate[] = []
+  for (const r of rows) {
+    if (!r.media_id) continue
+    if (r.messageType !== 'image' && r.messageType !== 'document' && r.messageType !== 'video') continue
+    out.push({
+      mediaId: r.media_id,
+      phone: r.phone,
+      messageType: r.messageType,
+      firstSeenAt: r.firstSeenAt,
+    })
+  }
+  return out
 }
