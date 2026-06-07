@@ -139,6 +139,7 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
       traceId: 'provider_security_not_found',
       provider: null,
       expectedCode: 'WORKER_NOT_FOUND',
+      shouldSendOtp: false,
     },
     {
       name: 'not approved',
@@ -152,6 +153,7 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
         status: 'UNDER_REVIEW',
       },
       expectedCode: 'WORKER_NOT_APPROVED',
+      shouldSendOtp: true,
     },
     {
       name: 'inactive',
@@ -165,9 +167,12 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
         status: 'ACTIVE',
       },
       expectedCode: 'WORKER_INACTIVE',
+      shouldSendOtp: true,
     },
   ])('returns a uniform OTP-start response and masked logs for $name providers', async (scenario) => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null })
     mocks.db.provider.findUnique.mockResolvedValue(scenario.provider)
+    mocks.createClient.mockReturnValue({ auth: { signInWithOtp } })
 
     const res = await postProviderSendCode({
       phone: RAW_PHONE,
@@ -183,7 +188,15 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
       traceId: scenario.traceId,
     })
     expect(body.error).toBeUndefined()
-    expect(mocks.createClient).not.toHaveBeenCalled()
+    if (scenario.shouldSendOtp) {
+      expect(signInWithOtp).toHaveBeenCalledWith({
+        phone: NORMALIZED_PHONE,
+        options: { shouldCreateUser: false },
+      })
+    } else {
+      expect(mocks.createClient).not.toHaveBeenCalled()
+      expect(signInWithOtp).not.toHaveBeenCalled()
+    }
 
     expectSerializedValueNotToContainPhones(body, [RAW_PHONE])
     expectLogsToUseMaskedPhoneOnly({
