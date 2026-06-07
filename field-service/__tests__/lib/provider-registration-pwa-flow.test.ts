@@ -97,6 +97,28 @@ describe('provider registration PWA flow', () => {
     expect(tokenHash).not.toContain(result.resumeToken)
   })
 
+  it('creates a fresh draft when the stored draft id has no valid resume token', async () => {
+    const client = createDraftClient()
+
+    const result = await saveProviderRegistrationDraft(client, {
+      draftId: 'missing-draft',
+      resumeToken: 'expired-or-stale-token',
+      phone: '082 303 5070',
+      lastCompletedStep: 1,
+    })
+
+    expect(client.registrationResumeToken.findUnique).toHaveBeenCalledOnce()
+    expect(client.providerApplicationDraft.update).not.toHaveBeenCalled()
+    expect(client.providerApplicationDraft.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        phone: '+27823035070',
+        lastCompletedStep: 1,
+      }),
+    }))
+    expect(result).toEqual({ draftId: 'draft-1', resumeToken: expect.any(String) })
+    expect(result.resumeToken).not.toBe('expired-or-stale-token')
+  })
+
   it('submits a draft as a linked pending provider application', async () => {
     const { client, tx } = createSubmitClient()
 

@@ -215,14 +215,13 @@ export async function saveProviderRegistrationDraft(
 ): Promise<{ draftId: string; resumeToken: string }> {
   const data = normalizeDraftInput(input)
   const tokenDraftId = await resolveTokenDraftId(client, input.resumeToken)
-  const draftId = tokenDraftId ?? cleanString(input.draftId)
 
-  if (draftId) {
+  if (tokenDraftId) {
     await client.providerApplicationDraft.update({
-      where: { id: draftId },
+      where: { id: tokenDraftId },
       data,
     })
-    return { draftId, resumeToken: input.resumeToken ?? '' }
+    return { draftId: tokenDraftId, resumeToken: input.resumeToken ?? '' }
   }
 
   const draft = await client.providerApplicationDraft.create({ data })
