@@ -78,6 +78,18 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).not.toContain('bg-white')
   })
 
+  it('lets saved draft applicants continue into the registration steps', () => {
+    const routeSource = readFileSync(join(root, 'app/provider/register/[[...step]]/page.tsx'), 'utf8')
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(routeSource).toContain('DRAFT_CONTINUATION_STEPS')
+    expect(routeSource).toContain("if (destinationRoute === '/provider/register/draft') return !DRAFT_CONTINUATION_STEPS.has(requestedStep)")
+    expect(routeSource).toContain("initialDraftResumeStep={destination?.draftResumeStep ?? 'profile'}")
+    expect(clientSource).toContain('initialDraftResumeStep?: StepKey')
+    expect(clientSource).toContain('routeForStep(initialDraftResumeStep)')
+    expect(clientSource).not.toContain("router.push('/provider/register/profile')")
+  })
+
   it('exposes the complete design handoff screen map instead of collapsing steps', () => {
     const routeSource = readFileSync(join(root, 'app/provider/register/[[...step]]/page.tsx'), 'utf8')
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')

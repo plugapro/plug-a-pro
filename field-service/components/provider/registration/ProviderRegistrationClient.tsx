@@ -84,6 +84,7 @@ type Props = {
   initialStep: StepKey
   initialApplicationState?: ApplicationState | null
   initialApplicationRef?: string | null
+  initialDraftResumeStep?: StepKey
   skillOptions: ServiceCategoryOption[]
 }
 
@@ -264,7 +265,7 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
   }
 }
 
-export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, skillOptions }: Props) {
+export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions }: Props) {
   const router = useRouter()
   const step = initialStep
   const [form, setForm] = useState<RegistrationFormState>(DEFAULT_STATE)
@@ -1015,7 +1016,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 <InfoRow title="Next section" body="Continue to complete profile, services, area, availability, verification choice, evidence and review." />
               </div>
               <FooterActions>
-                <Button fullWidth onClick={() => router.push('/provider/register/profile')}>
+                <Button fullWidth onClick={() => router.push(routeForStep(initialDraftResumeStep))}>
                   Continue application
                   <ArrowRight size={18} />
                 </Button>
