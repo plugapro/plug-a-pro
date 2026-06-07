@@ -109,6 +109,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.clearAllMocks()
   delete process.env.SUPABASE_AUTH_HOOK_SECRET
+  vi.unstubAllEnvs()
 })
 
 function buildSignedRequest(params: {
@@ -176,6 +177,28 @@ describe('POST /api/auth/hooks/send-sms security gate', () => {
     expect(markChallengeSendFailed).not.toHaveBeenCalled()
     expect(markChallengeCancelled).not.toHaveBeenCalled()
     expect(recordDeliveryRefusedDuringLock).not.toHaveBeenCalled()
+  })
+
+  it('does not require OTP_HASH_PEPPER when security.otp.report is off in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('VITEST', 'false')
+    vi.stubEnv('OTP_HASH_PEPPER', '')
+    vi.mocked(isEnabled).mockImplementation(async (key) => key === 'auth.otp.whatsapp')
+
+    const res = await POST(buildSignedRequest())
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({})
+    expect(deliverOtp).toHaveBeenCalledWith({
+      phone: TEST_PHONE,
+      code: TEST_OTP,
+      context: expect.objectContaining({
+        userId: TEST_USER_ID,
+        hookRequestId: expect.any(String),
+        traceId: expect.any(String),
+      }),
+    })
+    expect(recordOtpChallenge).not.toHaveBeenCalled()
   })
 
   it('records a challenge, delivers OTP and marks SENT when security.otp.report is on', async () => {

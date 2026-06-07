@@ -172,7 +172,9 @@ export async function POST(request: NextRequest) {
   const securityOn = await isEnabled('security.otp.report', {
     userId: userId ?? undefined,
   })
-  const reportDeliveryMode = getOtpSecurityConfig().reportDeliveryMode
+  const reportDeliveryMode = securityOn
+    ? getOtpSecurityConfig().reportDeliveryMode
+    : null
   const ua = request.headers.get('user-agent')
   let challengeId: string | null = null
   let reportToken: string | null = null
