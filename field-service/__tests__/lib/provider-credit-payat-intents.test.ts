@@ -2,13 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockDb, mockCreatePayatPaymentRequest, state } = vi.hoisted(() => {
   const state = {
-    provider: {
-      id: 'provider-1',
-      phone: '+27821234567',
-      name: 'Provider One',
-      email: 'pro@example.com',
-      kycStatus: 'VERIFIED',
-    },
+	    provider: {
+	      id: 'provider-1',
+	      phone: '+27821234567',
+	      name: 'Provider One',
+	      email: 'pro@example.com',
+	      active: true,
+	      verified: true,
+	      status: 'ACTIVE',
+	      kycStatus: 'VERIFIED',
+	      suspendedUntil: null,
+	    },
     highAssuranceVerification: { id: 'verification-1', providerId: 'provider-1' },
     createdIntent: null as any,
   }

@@ -1,13 +1,35 @@
-import { KycStatus } from '@prisma/client'
+import { KycStatus, ProviderStatus } from '@prisma/client'
 import { db } from '../db'
-import { isEnabled } from '../flags'
+
+export type ProviderCreditGateProvider = {
+  active: boolean
+  verified: boolean
+  status: ProviderStatus
+  kycStatus: KycStatus
+  suspendedUntil: Date | null
+}
+
+export type ProviderCreditBlockReason =
+  | 'PROVIDER_NOT_FOUND'
+  | 'PROVIDER_INACTIVE'
+  | 'PROVIDER_NOT_APPROVED'
+  | 'PROVIDER_NOT_ACTIVE'
+  | 'PROVIDER_SUSPENDED'
+  | 'KYC_NOT_VERIFIED'
+  | 'HIGH_ASSURANCE_IDENTITY_REQUIRED'
 
 export type IdentityVerificationLookupClient = {
   provider: {
     findUnique(args: {
       where: { id: string }
-      select: { kycStatus: true }
-    }): Promise<{ kycStatus: KycStatus } | null>
+      select: {
+        active: true
+        verified: true
+        status: true
+        kycStatus: true
+        suspendedUntil: true
+      }
+    }): Promise<ProviderCreditGateProvider | null>
   }
   providerIdentityVerification: {
     findFirst(args: {
@@ -32,6 +54,28 @@ export type HighAssuranceCreditVerificationWhere = IdentityVerificationFindFirst
 
 export type EligibilityLookupClient = IdentityVerificationLookupClient
 
+export function providerCreditProfileBlockReason(
+  provider: ProviderCreditGateProvider | null,
+  now = new Date(),
+): ProviderCreditBlockReason | null {
+  if (!provider) return 'PROVIDER_NOT_FOUND'
+  if (!provider.active) return 'PROVIDER_INACTIVE'
+  if (!provider.verified) return 'PROVIDER_NOT_APPROVED'
+  if (provider.status !== ProviderStatus.ACTIVE) return 'PROVIDER_NOT_ACTIVE'
+  if (provider.suspendedUntil && provider.suspendedUntil.getTime() > now.getTime()) {
+    return 'PROVIDER_SUSPENDED'
+  }
+  if (provider.kycStatus !== KycStatus.VERIFIED) return 'KYC_NOT_VERIFIED'
+  return null
+}
+
+export function isProviderProfileEligibleForCreditPurchases(
+  provider: ProviderCreditGateProvider | null,
+  now = new Date(),
+): provider is ProviderCreditGateProvider {
+  return providerCreditProfileBlockReason(provider, now) === null
+}
+
 export function buildHighAssuranceCreditVerificationWhere(
   providerId: string,
   now = new Date(),
@@ -48,7 +92,9 @@ export function buildHighAssuranceCreditVerificationWhere(
 export class IdentityCreditGateError extends Error {
   readonly code = 'IDENTITY_NOT_VERIFIED'
 
-  constructor() {
+  constructor(
+    readonly reason: ProviderCreditBlockReason = 'HIGH_ASSURANCE_IDENTITY_REQUIRED',
+  ) {
     super('High-assurance identity verification is required before purchasing credits.')
     this.name = 'IdentityCreditGateError'
   }
@@ -60,10 +106,16 @@ async function findEligibleCreditIdentity(
 ): Promise<{ providerId: string; verificationId: string } | null> {
   const provider = await client.provider.findUnique({
     where: { id: providerId },
-    select: { kycStatus: true },
+    select: {
+      active: true,
+      verified: true,
+      status: true,
+      kycStatus: true,
+      suspendedUntil: true,
+    },
   })
 
-  if (!provider || provider.kycStatus !== KycStatus.VERIFIED) {
+  if (!isProviderProfileEligibleForCreditPurchases(provider)) {
     return null
   }
 
@@ -84,10 +136,6 @@ export async function assertIdentityVerifiedForCredits(
   providerId: string,
   client: IdentityVerificationLookupClient = db,
 ): Promise<{ providerId: string; verificationId: string | null }> {
-  if (!(await isEnabled('provider.identity.verification'))) {
-    return { providerId, verificationId: null }
-  }
-
   const eligibleIdentity = await findEligibleCreditIdentity(providerId, client)
 
   if (!eligibleIdentity) {
@@ -108,18 +156,12 @@ export async function assertIdentityVerifiedForCredits(
 // findEligibleCreditIdentity. Change that helper when the paid-credit
 // verification predicate changes.
 //
-// Returns true when:
-//   - the flag 'provider.identity.verification' is off (no-op; current behaviour)
-//   - OR the provider has kycStatus === VERIFIED and a current PASSED/PASS/HIGH
-//     ProviderIdentityVerification row.
+// Returns true only when the provider profile is active, marketplace-approved,
+// status ACTIVE, KYC VERIFIED, not currently suspended, and has a current
+// PASSED/PASS/HIGH ProviderIdentityVerification row.
 export async function isProviderEligibleForCredits(
   providerId: string,
   client: EligibilityLookupClient = db,
 ): Promise<boolean> {
-  if (!(await isEnabled('provider.identity.verification'))) {
-    // Flag off means everyone is eligible, preserving behaviour before gating.
-    return true
-  }
-
   return Boolean(await findEligibleCreditIdentity(providerId, client))
 }

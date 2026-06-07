@@ -15,6 +15,7 @@ import {
   createManualEftTopUpIntent,
   createPayfastTopUpIntent,
   getManualEftBankAccountInstructions,
+  logBlockedProviderCreditTopUpAttempt,
   ProviderCreditPaymentIntentError,
   type PayfastTopUpMethod,
   type PayatTopUpFailureCode,
@@ -53,6 +54,7 @@ function payatPackageIdForAmount(amountCents: number) {
 
 type ProviderWalletActor = {
   id: string
+  userId: string
   phone: string | null
   kycStatus: KycStatus
 }
@@ -69,9 +71,11 @@ export type ProviderWallet = {
   starter: number
   pendingIntents: ProviderWalletPendingIntent[]
   recentActivity: ProviderWalletRecentActivityItem[]
-  /** true when the provider.identity.verification flag is on and the provider
-   *  has not completed high-assurance KYC. The top-up UI hides packages and
-   *  shows a verification prompt instead. */
+  /**
+   * True when the provider is not eligible for paid credit purchases.
+   * The wallet balance remains visible, but payment creation and active
+   * payment-link surfaces stay locked until verification is complete.
+   */
   creditPurchaseLocked: boolean
   identityVerificationStatus: ProviderIdentityVerificationStatus
   creditGateStatus: ProviderCreditGateStatus
@@ -174,6 +178,7 @@ async function getAuthenticatedProvider(): Promise<ProviderWalletActor> {
   // then fall back to the authenticated session to keep Pay@ creation reliable.
   return {
     id: provider.id,
+    userId: session.id,
     phone: provider.phone ?? session.phone ?? null,
     kycStatus: provider.kycStatus,
   }
@@ -374,14 +379,16 @@ export async function getProviderWalletSummary(): Promise<ProviderWalletSummary>
 export async function getProviderWallet(): Promise<ProviderWallet> {
   const provider = await getAuthenticatedProvider()
 
-  const [balance, pendingIntents, walletEntries, eligible] = await Promise.all([
+  const [balance, walletEntries, eligible] = await Promise.all([
     getProviderWalletBalance(provider.id),
-    getProviderPendingIntents(provider.id),
     getProviderWalletLedgerEntries(provider.id, { limit: LEDGER_LIMIT }),
     isProviderEligibleForCredits(provider.id),
   ])
   const creditPurchaseLocked = !eligible
   const identityVerificationStatus = providerIdentityVerificationStatus(provider.kycStatus)
+  const pendingIntents = creditPurchaseLocked
+    ? []
+    : await getProviderPendingIntents(provider.id)
 
   return {
     credits: balance.totalCreditBalance,
@@ -405,8 +412,36 @@ export async function getProviderWallet(): Promise<ProviderWallet> {
   }
 }
 
+export async function getProviderCreditPurchaseGate(): Promise<Pick<
+  ProviderWallet,
+  'creditPurchaseLocked' | 'identityVerificationStatus' | 'creditGateStatus'
+>> {
+  const provider = await getAuthenticatedProvider()
+  const eligible = await isProviderEligibleForCredits(provider.id)
+  const creditPurchaseLocked = !eligible
+  const identityVerificationStatus = providerIdentityVerificationStatus(provider.kycStatus)
+
+  return {
+    creditPurchaseLocked,
+    identityVerificationStatus,
+    creditGateStatus: providerCreditGateStatus(identityVerificationStatus, creditPurchaseLocked),
+  }
+}
+
 export async function getProviderPendingIntents(providerId?: string): Promise<ProviderWalletPendingIntent[]> {
-  const resolvedId = providerId ?? (await getAuthenticatedProvider()).id
+  const actor = providerId ? null : await getAuthenticatedProvider()
+  const resolvedId = providerId ?? actor!.id
+
+  if (!providerId && !(await isProviderEligibleForCredits(resolvedId))) {
+    logBlockedProviderCreditTopUpAttempt({
+      providerId: resolvedId,
+      userId: actor!.userId,
+      verificationStatus: actor!.kycStatus,
+      attemptedAction: 'provider_payat_pending_links_read',
+    })
+    return []
+  }
+
   const pendingIntents = await db.paymentIntent.findMany({
     where: {
       providerId: resolvedId,
@@ -497,6 +532,20 @@ export async function getPaymentIntentStatus(intentId: string): Promise<PaymentI
     }
   }
 
+  if (!(await isProviderEligibleForCredits(actor.id))) {
+    logBlockedProviderCreditTopUpAttempt({
+      providerId: actor.id,
+      userId: actor.userId,
+      verificationStatus: actor.kycStatus,
+      attemptedAction: 'provider_payat_payment_instructions_read',
+    })
+    return {
+      ok: false,
+      code: 'FORBIDDEN',
+      message: 'Top-ups are available after your identity has been verified.',
+    }
+  }
+
   console.info('[payat] intent_status_read', {
     providerId: actor.id,
     intentId,
@@ -529,6 +578,20 @@ export async function notifyProviderPayatTopUpInitiated(
       ok: false,
       code: 'FORBIDDEN',
       message: 'You are not authorized to notify this top-up intent.',
+    }
+  }
+
+  if (!(await isProviderEligibleForCredits(actor.id))) {
+    logBlockedProviderCreditTopUpAttempt({
+      providerId: actor.id,
+      userId: actor.userId,
+      verificationStatus: actor.kycStatus,
+      attemptedAction: 'provider_payat_link_whatsapp_send',
+    })
+    return {
+      ok: false,
+      code: 'FORBIDDEN',
+      message: 'Top-ups are available after your identity has been verified.',
     }
   }
 
@@ -704,6 +767,17 @@ export async function getProviderTopUpIntentInstructions(
   intentId: string,
 ): Promise<ProviderTopUpIntentInstructions | null> {
   const provider = await getAuthenticatedProvider()
+
+  if (!(await isProviderEligibleForCredits(provider.id))) {
+    logBlockedProviderCreditTopUpAttempt({
+      providerId: provider.id,
+      userId: provider.userId,
+      verificationStatus: provider.kycStatus,
+      attemptedAction: 'manual_eft_top_up_instructions_read',
+    })
+    return null
+  }
+
   const intent = await db.paymentIntent.findFirst({
     where: {
       id: intentId,
@@ -744,6 +818,7 @@ export async function createProviderTopUpIntent(
     providerId: provider.id,
     amountCents,
     providerCellphone: provider.phone,
+    actorUserId: provider.userId,
   })
 
   revalidatePath('/provider/credits')
@@ -809,6 +884,19 @@ export async function createProviderPayatTopUpIntent(
   try {
     const provider = await getAuthenticatedProvider()
     providerId = provider.id
+    if (!(await isProviderEligibleForCredits(provider.id))) {
+      logBlockedProviderCreditTopUpAttempt({
+        providerId: provider.id,
+        userId: provider.userId,
+        verificationStatus: provider.kycStatus,
+        attemptedAction: 'payat_top_up_intent_create',
+      })
+      throw new ProviderCreditPaymentIntentError(
+        'IDENTITY_NOT_VERIFIED',
+        'Top-ups are available after your identity has been verified.',
+      )
+    }
+
     const wallet = await db.providerWallet.upsert({
       where: { providerId: provider.id },
       update: {},
@@ -844,6 +932,7 @@ export async function createProviderPayatTopUpIntent(
       providerId: provider.id,
       amountCents,
       providerCellphone: provider.phone,
+      actorUserId: provider.userId,
     })
     intentId = result.intent.id
     internalReference = result.intent.paymentReference
@@ -1028,6 +1117,19 @@ export async function createProviderPayfastTopUpIntent(
   try {
     const provider = await getAuthenticatedProvider()
     providerId = provider.id
+    if (!(await isProviderEligibleForCredits(provider.id))) {
+      logBlockedProviderCreditTopUpAttempt({
+        providerId: provider.id,
+        userId: provider.userId,
+        verificationStatus: provider.kycStatus,
+        attemptedAction: 'payfast_top_up_intent_create',
+      })
+      throw new ProviderCreditPaymentIntentError(
+        'IDENTITY_NOT_VERIFIED',
+        'Top-ups are available after your identity has been verified.',
+      )
+    }
+
     const activeIntentCount = await db.paymentIntent.count({
       where: {
         providerId: provider.id,
@@ -1054,6 +1156,7 @@ export async function createProviderPayfastTopUpIntent(
       amountCents,
       paymentMethod,
       providerCellphone: provider.phone,
+      actorUserId: provider.userId,
     })
     intentId = result.intent.id
 

@@ -154,7 +154,7 @@ function VerificationPromptCard({ creditGateStatus }: { creditGateStatus: Provid
           onClick={handleVerify}
         >
           {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ArrowRight className="size-4" aria-hidden />}
-          Verify my ID
+          Complete verification
         </Button>
         <p className="text-[11.5px] text-[var(--ink-soft)]">Takes ~2 min · Required once</p>
       </div>
@@ -244,7 +244,7 @@ export function CreditsEntryClient({ wallet, creditPriceZar }: { wallet: Provide
           </div>
         </div>
       )}
-      {pendingCount > 0 ? (
+      {!wallet.creditPurchaseLocked && pendingCount > 0 ? (
         <button
           type="button"
           onClick={() => router.push('/provider/credits/pending')}
@@ -316,7 +316,27 @@ function PendingIntentRow({ intent }: { intent: ProviderWalletPendingIntent }) {
   )
 }
 
-export function PendingIntentList({ intents }: { intents: ProviderWalletPendingIntent[] }) {
+export function LockedTopUpScreen({ creditGateStatus }: { creditGateStatus: ProviderWallet['creditGateStatus'] }) {
+  return (
+    <CreditsShell eyebrow="Provider wallet" title="Top-ups locked" subtitle="Complete verification before using paid credit top-ups." backHref="/provider/credits">
+      <VerificationPromptCard creditGateStatus={creditGateStatus} />
+    </CreditsShell>
+  )
+}
+
+export function PendingIntentList({
+  intents,
+  creditPurchaseLocked = false,
+  creditGateStatus,
+}: {
+  intents: ProviderWalletPendingIntent[]
+  creditPurchaseLocked?: boolean
+  creditGateStatus?: ProviderWallet['creditGateStatus']
+}) {
+  if (creditPurchaseLocked && creditGateStatus) {
+    return <LockedTopUpScreen creditGateStatus={creditGateStatus} />
+  }
+
   return (
     <CreditsShell eyebrow="Pay@ payments" title="Active links" subtitle="Resume a payment link you already created." backHref="/provider/credits">
       {intents.length === 0 ? (

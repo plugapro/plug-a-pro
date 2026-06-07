@@ -128,12 +128,13 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
       where: { userId: 'user-1' },
       select: { id: true, phone: true, name: true, email: true },
     })
-    expect(mockCreatePayatTopUpIntent).toHaveBeenCalledWith({
-      providerId: 'provider-1',
-      amountCents: 10_000,
-      providerCellphone: '+27821234567',
-      metadata: undefined,
-    })
+	    expect(mockCreatePayatTopUpIntent).toHaveBeenCalledWith({
+	      providerId: 'provider-1',
+	      amountCents: 10_000,
+	      providerCellphone: '+27821234567',
+	      actorUserId: 'user-1',
+	      metadata: undefined,
+	    })
     expect(mockCreateManualEftTopUpIntent).not.toHaveBeenCalled()
   })
 
@@ -179,12 +180,13 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith({
-      providerId: 'provider-1',
-      amountCents: 10_000,
-      providerCellphone: '+27821234567',
-      metadata: undefined,
-    })
+	    expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith({
+	      providerId: 'provider-1',
+	      amountCents: 10_000,
+	      providerCellphone: '+27821234567',
+	      actorUserId: 'user-1',
+	      metadata: undefined,
+	    })
   })
 
   it('keeps Payfast available as an explicit secondary provider path', async () => {
@@ -204,15 +206,16 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(mockCreatePayfastTopUpIntent).toHaveBeenCalledWith({
-      providerId: 'provider-1',
-      amountCents: 10_000,
-      paymentMethod: 'PAYFAST_CARD',
-      providerName: 'Provider One',
-      providerEmail: 'provider@example.com',
-      providerCellphone: '+27821234567',
-      metadata: undefined,
-    })
+	    expect(mockCreatePayfastTopUpIntent).toHaveBeenCalledWith({
+	      providerId: 'provider-1',
+	      amountCents: 10_000,
+	      paymentMethod: 'PAYFAST_CARD',
+	      providerName: 'Provider One',
+	      providerEmail: 'provider@example.com',
+	      providerCellphone: '+27821234567',
+	      actorUserId: 'user-1',
+	      metadata: undefined,
+	    })
   })
 
   it('rejects non-provider sessions before provider lookup', async () => {

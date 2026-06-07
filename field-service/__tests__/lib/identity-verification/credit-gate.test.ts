@@ -6,6 +6,22 @@ const { mockFindFirst, mockProviderFindUnique, mockIsEnabled } = vi.hoisted(() =
   mockIsEnabled: vi.fn(),
 }))
 
+const activeVerifiedProvider = {
+  active: true,
+  verified: true,
+  status: 'ACTIVE',
+  kycStatus: 'VERIFIED',
+  suspendedUntil: null,
+}
+
+const providerCreditSelect = {
+  active: true,
+  verified: true,
+  status: true,
+  kycStatus: true,
+  suspendedUntil: true,
+}
+
 vi.mock('../../../lib/db', () => ({
   db: {
     provider: {
@@ -22,11 +38,11 @@ vi.mock('../../../lib/flags', () => ({
 }))
 
 describe('paid credit identity gate', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockIsEnabled.mockResolvedValue(true)
-    mockProviderFindUnique.mockResolvedValue({ kycStatus: 'VERIFIED' })
-  })
+	  beforeEach(() => {
+	    vi.clearAllMocks()
+	    mockIsEnabled.mockResolvedValue(true)
+	    mockProviderFindUnique.mockResolvedValue(activeVerifiedProvider)
+	  })
 
   it('passes when latest verification is high assurance and not expired', async () => {
     const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
@@ -74,8 +90,8 @@ describe('paid credit identity gate', () => {
   })
 
   it('blocks providers whose coarse KYC status is not verified even with high-assurance verification', async () => {
-    const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
-    mockProviderFindUnique.mockResolvedValue({ kycStatus: 'SUBMITTED' })
+	    const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
+	    mockProviderFindUnique.mockResolvedValue({ ...activeVerifiedProvider, kycStatus: 'SUBMITTED' })
     mockFindFirst.mockResolvedValue({ id: 'ver-1', providerId: 'provider-1' })
 
     await expect(assertIdentityVerifiedForCredits('provider-1')).rejects.toMatchObject({
@@ -87,7 +103,7 @@ describe('paid credit identity gate', () => {
   it('uses the supplied Prisma client when checking inside a transaction', async () => {
     const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
     const txFindFirst = vi.fn().mockResolvedValue({ id: 'ver-tx', providerId: 'provider-1' })
-    const txProviderFindUnique = vi.fn().mockResolvedValue({ kycStatus: 'VERIFIED' })
+	    const txProviderFindUnique = vi.fn().mockResolvedValue(activeVerifiedProvider)
 
     await expect(
       assertIdentityVerifiedForCredits('provider-1', {
@@ -99,23 +115,23 @@ describe('paid credit identity gate', () => {
       verificationId: 'ver-tx',
     })
 
-    expect(txProviderFindUnique).toHaveBeenCalledWith({
-      where: { id: 'provider-1' },
-      select: { kycStatus: true },
-    })
+	    expect(txProviderFindUnique).toHaveBeenCalledWith({
+	      where: { id: 'provider-1' },
+	      select: providerCreditSelect,
+	    })
     expect(txFindFirst).toHaveBeenCalledTimes(1)
     expect(mockFindFirst).not.toHaveBeenCalled()
   })
 
-  it('short-circuits when the identity verification feature flag is disabled', async () => {
+  it('does not short-circuit when the identity verification feature flag is disabled', async () => {
     const { assertIdentityVerifiedForCredits } = await import('../../../lib/identity-verification/credit-gate')
     mockIsEnabled.mockResolvedValue(false)
+    mockFindFirst.mockResolvedValue(null)
 
-    await expect(assertIdentityVerifiedForCredits('provider-1')).resolves.toEqual({
-      providerId: 'provider-1',
-      verificationId: null,
+    await expect(assertIdentityVerifiedForCredits('provider-1')).rejects.toMatchObject({
+      code: 'IDENTITY_NOT_VERIFIED',
     })
-    expect(mockFindFirst).not.toHaveBeenCalled()
+    expect(mockFindFirst).toHaveBeenCalled()
   })
 
   it('reports provider eligible for credit display when kyc status and high-assurance verification both pass', async () => {
@@ -124,10 +140,10 @@ describe('paid credit identity gate', () => {
 
     await expect(isProviderEligibleForCredits('provider-1')).resolves.toBe(true)
 
-    expect(mockProviderFindUnique).toHaveBeenCalledWith({
-      where: { id: 'provider-1' },
-      select: { kycStatus: true },
-    })
+	    expect(mockProviderFindUnique).toHaveBeenCalledWith({
+	      where: { id: 'provider-1' },
+	      select: providerCreditSelect,
+	    })
     expect(mockFindFirst).toHaveBeenCalledWith({
       where: {
         providerId: 'provider-1',
@@ -150,7 +166,7 @@ describe('paid credit identity gate', () => {
 
   it('reports provider ineligible for credit display when kyc status is not verified', async () => {
     const { isProviderEligibleForCredits } = await import('../../../lib/identity-verification/credit-gate')
-    mockProviderFindUnique.mockResolvedValue({ kycStatus: 'SUBMITTED' })
+	    mockProviderFindUnique.mockResolvedValue({ ...activeVerifiedProvider, kycStatus: 'SUBMITTED' })
 
     await expect(isProviderEligibleForCredits('provider-1')).resolves.toBe(false)
     expect(mockFindFirst).not.toHaveBeenCalled()

@@ -14,19 +14,33 @@ const {
   mockCreatePayatPaymentRequest,
   state,
 } = vi.hoisted(() => {
-  const state: {
-    provider: { id: string; phone: string | null; name: string | null; email: string | null; kycStatus: string } | null
-    highAssuranceVerification: { id: string; providerId: string } | null
-    existingReferences: Set<string>
-    intents: any[]
-  } = {
+	  const state: {
+	    provider: {
+	      id: string
+	      phone: string | null
+	      name: string | null
+	      email: string | null
+	      active: boolean
+	      verified: boolean
+	      status: string
+	      kycStatus: string
+	      suspendedUntil: Date | null
+	    } | null
+	    highAssuranceVerification: { id: string; providerId: string } | null
+	    existingReferences: Set<string>
+	    intents: any[]
+	  } = {
     provider: {
       id: 'provider-1',
-      phone: '+27821234567',
-      name: 'Provider One',
-      email: 'provider@example.com',
-      kycStatus: 'VERIFIED',
-    },
+	      phone: '+27821234567',
+	      name: 'Provider One',
+	      email: 'provider@example.com',
+	      active: true,
+	      verified: true,
+	      status: 'ACTIVE',
+	      kycStatus: 'VERIFIED',
+	      suspendedUntil: null,
+	    },
     highAssuranceVerification: { id: 'verification-1', providerId: 'provider-1' },
     existingReferences: new Set(),
     intents: [],
@@ -97,11 +111,15 @@ describe('provider credit payment intents', () => {
 
     state.provider = {
       id: 'provider-1',
-      phone: '+27821234567',
-      name: 'Provider One',
-      email: 'provider@example.com',
-      kycStatus: 'VERIFIED',
-    }
+	      phone: '+27821234567',
+	      name: 'Provider One',
+	      email: 'provider@example.com',
+	      active: true,
+	      verified: true,
+	      status: 'ACTIVE',
+	      kycStatus: 'VERIFIED',
+	      suspendedUntil: null,
+	    }
     state.highAssuranceVerification = { id: 'verification-1', providerId: 'provider-1' }
     state.existingReferences = new Set()
     state.intents = []
@@ -346,7 +364,7 @@ describe('provider credit payment intents', () => {
     consoleSpy.mockRestore()
   })
 
-  it('rejects creation when provider has no high-assurance identity verification', async () => {
+	  it('rejects creation when provider has no high-assurance identity verification', async () => {
     state.highAssuranceVerification = null
 
     await expect(
@@ -359,9 +377,31 @@ describe('provider credit payment intents', () => {
     } satisfies Partial<ProviderCreditPaymentIntentError>)
 
     expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
-  })
+	  })
 
-  it('T-7: blocks a second PENDING_PAYMENT Pay@ intent for the same provider+amount', async () => {
+	  it('rejects Pay@ creation for an unverified provider even when the rollout flag is off', async () => {
+	    vi.stubEnv('FEATURE_FLAGS', JSON.stringify({ 'provider.identity.verification': false }))
+	    invalidateFlagCache()
+	    state.provider = {
+	      ...state.provider!,
+	      kycStatus: 'NOT_STARTED',
+	    }
+
+	    await expect(
+	      createPayatTopUpIntent({
+	        providerId: 'provider-1',
+	        amountCents: 10_000,
+	        actorUserId: 'user-1',
+	      }),
+	    ).rejects.toMatchObject({
+	      code: 'IDENTITY_NOT_VERIFIED',
+	    } satisfies Partial<ProviderCreditPaymentIntentError>)
+
+	    expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
+	    expect(mockCreatePayatPaymentRequest).not.toHaveBeenCalled()
+	  })
+
+	  it('T-7: blocks a second PENDING_PAYMENT Pay@ intent for the same provider+amount', async () => {
     mockDb.paymentIntent.findFirst.mockResolvedValue({ id: 'intent-existing' })
 
     await expect(

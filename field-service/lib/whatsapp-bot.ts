@@ -1543,6 +1543,45 @@ async function processInboundMessageUnlocked(
     }
 
     if (reply.id === 'provider_top_up_credits') {
+      const provider = await findProviderByWhatsAppPhone(phone, { id: true })
+      if (!provider) {
+        await sendText(phone, 'Unable to load your provider profile. Please try again or visit the provider portal.')
+        return
+      }
+
+      const { isProviderEligibleForCredits } = await import('./identity-verification/credit-gate')
+      if (!(await isProviderEligibleForCredits(provider.id))) {
+        let verificationUrl = getPublicAppUrl('/provider/verification')
+        try {
+          const { issueProviderIdentityVerificationLink } = await import('./identity-verification/link')
+          const verificationLink = await issueProviderIdentityVerificationLink({
+            providerId: provider.id,
+            channel: 'PWA',
+            purpose: 'CREDIT_TOP_UP',
+          })
+          verificationUrl = verificationLink.verificationUrl ?? verificationUrl
+        } catch (linkError) {
+          console.error('[whatsapp-bot] top-up identity verification link issue failed', {
+            providerId: provider.id,
+            error: linkError instanceof Error ? linkError.message : String(linkError),
+          })
+        }
+        if (verificationUrl) {
+          await sendCtaUrl(
+            phone,
+            '🛡️ *Identity check required*\n\nYou must complete identity verification before purchasing top-up credits.',
+            ctaLabelFor('identity_verification'),
+            verificationUrl,
+          )
+        } else {
+          await sendText(
+            phone,
+            '🛡️ Identity check required. Reply *verify identity* to continue top-ups.',
+          )
+        }
+        return
+      }
+
       const feeRaw = process.env.PAYAT_MERCHANT_FEE_FIXED_CENTS
       const feeCents = feeRaw && Number.isFinite(parseInt(feeRaw, 10)) ? parseInt(feeRaw, 10) : 700
       const feeR = Math.round(feeCents / 100)

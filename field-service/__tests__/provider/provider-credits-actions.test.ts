@@ -43,6 +43,7 @@ vi.mock('../../lib/provider-credit-payment-intents', () => ({
   createPayatTopUpIntent: vi.fn(),
   createManualEftTopUpIntent: vi.fn(),
   createPayfastTopUpIntent: vi.fn(),
+  logBlockedProviderCreditTopUpAttempt: vi.fn(),
   ProviderCreditPaymentIntentError: class ProviderCreditPaymentIntentError extends Error {
     constructor(public readonly code: string, message: string) {
       super(message)
@@ -100,8 +101,10 @@ vi.mock('../../lib/payat', () => ({
 }))
 
 describe('provider credits server actions', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+    const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
+    ;(isProviderEligibleForCredits as any).mockResolvedValue(true)
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug A Pro Holdings')
     vi.stubEnv('PROVIDER_CREDIT_EFT_BANK_NAME', 'Pilot Bank')
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER', '123456789')
@@ -233,6 +236,7 @@ describe('provider credits server actions', () => {
       providerId: 'provider-1',
       amountCents: 10_000,
       providerCellphone: '+27821234567',
+      actorUserId: 'user-1',
     })
     expect(result).toMatchObject({
       intentId: 'intent-1',
@@ -271,10 +275,32 @@ describe('provider credits server actions', () => {
       providerId: 'provider-1',
       amountCents: 10_000,
       providerCellphone: '+27821234567',
+      actorUserId: 'user-1',
     })
   })
 
   describe('createProviderPayatTopUpIntent error classification', () => {
+    it('blocks unverified providers before wallet upsert or Pay@ intent creation', async () => {
+      const { db } = await arrangeProvider()
+      const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
+      const { issueProviderIdentityVerificationLink } = await import('../../lib/identity-verification/link')
+      const { createPayatTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
+      ;(isProviderEligibleForCredits as any).mockResolvedValue(false)
+
+      const { createProviderPayatTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
+      const result = await createProviderPayatTopUpIntent(10_000)
+
+      expect(result).toMatchObject({ ok: false, code: 'IDENTITY_NOT_VERIFIED' })
+      expect(db.providerWallet.upsert).not.toHaveBeenCalled()
+      expect(db.paymentIntent.count).not.toHaveBeenCalled()
+      expect(createPayatTopUpIntent).not.toHaveBeenCalled()
+      expect(issueProviderIdentityVerificationLink).toHaveBeenCalledWith({
+        providerId: 'provider-1',
+        channel: 'PWA',
+        purpose: 'CREDIT_TOP_UP',
+      })
+    })
+
     it('returns TOO_MANY_PENDING when provider already has 3 pending intents', async () => {
       const { db } = await arrangeProvider()
       ;(db.paymentIntent.count as any).mockResolvedValue(3)
@@ -447,7 +473,45 @@ describe('provider credits server actions', () => {
     })
   })
 
+  it('blocks payment instruction reads for unverified providers with existing Pay@ links', async () => {
+    const { db } = await arrangeProvider()
+    const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
+    ;(isProviderEligibleForCredits as any).mockResolvedValue(false)
+    ;(db.paymentIntent.findFirst as any).mockResolvedValue({
+      status: 'PENDING_PAYMENT',
+      paidAt: null,
+      creditedAt: null,
+      amountCents: 10_000,
+      paymentReference: 'PAT-ABCDEF',
+      creditsToIssue: 2,
+      expiresAt: new Date('2026-05-22T09:00:00.000Z'),
+      paymentMethod: 'PAYAT',
+      metadata: { paymentLink: 'https://go.payat.co.za/pay/intent-payat-1' },
+    })
+
+    const { getPaymentIntentStatus } = await import('../../app/(provider)/provider/credits/actions')
+    await expect(getPaymentIntentStatus('intent-payat-1')).resolves.toEqual({
+      ok: false,
+      code: 'FORBIDDEN',
+      message: 'Top-ups are available after your identity has been verified.',
+    })
+  })
+
   describe('createProviderPayfastTopUpIntent', () => {
+    it('blocks unverified providers before Payfast intent creation', async () => {
+      const { db } = await arrangeProvider()
+      const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
+      const { createPayfastTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
+      ;(isProviderEligibleForCredits as any).mockResolvedValue(false)
+
+      const { createProviderPayfastTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
+      const result = await createProviderPayfastTopUpIntent(10_000)
+
+      expect(result).toMatchObject({ ok: false, code: 'IDENTITY_NOT_VERIFIED' })
+      expect(db.paymentIntent.count).not.toHaveBeenCalled()
+      expect(createPayfastTopUpIntent).not.toHaveBeenCalled()
+    })
+
     it('returns TOO_MANY_PENDING discriminated union (not throw) when count >= 3', async () => {
       const { db } = await arrangeProvider()
       ;(db.paymentIntent.count as any).mockResolvedValue(3)
@@ -554,6 +618,7 @@ describe('provider credits server actions', () => {
       providerId: 'provider-1',
       amountCents: 10_000,
       providerCellphone: '+27821234567',
+      actorUserId: 'user-1',
     })
   })
 
@@ -716,8 +781,8 @@ describe('provider credits server actions', () => {
 
       expect(wallet.creditPurchaseLocked).toBe(true)
       expect(wallet.identityVerificationStatus.label).toBe('Identity verified')
-      expect(wallet.creditGateStatus.title).toBe('Secure liveness needed')
-      expect(wallet.creditGateStatus.description).toContain('secure PWA verification')
+      expect(wallet.creditGateStatus.title).toBe('Top-ups are locked until your identity is verified.')
+      expect(wallet.creditGateStatus.description).toContain('verify your profile')
       expect(wallet.creditGateStatus.description).not.toContain('unlocked')
     })
 
