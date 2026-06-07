@@ -170,6 +170,10 @@ describe('proxy admin access', () => {
     '/api/security/otp/report',
     '/api/security/otp/verify-failed',
     '/api/locations/search?q=Roodepoort',
+    '/api/locations/provinces',
+    '/api/locations/cities?provinceKey=gauteng',
+    '/api/locations/regions?cityId=city-johannesburg',
+    '/api/locations/suburbs?regionId=region-jhb-west',
   ])('allows unauthenticated access to public baseline route %s', async (path) => {
     const { proxy } = await import('../proxy')
 
