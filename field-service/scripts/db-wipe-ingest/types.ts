@@ -4,7 +4,8 @@ export type IngestPlanRow = {
   mediaId: string
   mediaIdSuffix: string
   messageType: 'image' | 'document' | 'video'
-  phone: string
+  phoneMasked: string
+  phoneTail: string
   firstSeenAt: string
   ageBucket: MetaAgeBucket
   parentKind: 'providerApplication' | null
@@ -16,7 +17,8 @@ export type IngestPlanRow = {
 export type IngestSkippedRow = {
   mediaId: string
   mediaIdSuffix: string
-  phone: string
+  phoneMasked: string
+  phoneTail: string
   ageBucket: MetaAgeBucket
   reason: 'beyond_meta_retention'
 }

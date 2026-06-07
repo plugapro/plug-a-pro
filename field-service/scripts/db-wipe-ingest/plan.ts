@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { maskPhone } from '@/lib/support-diagnostics'
 import { classifyMetaAge } from '../whatsapp-blob-audit/age-bucket'
 import { loadAttachments, loadInboundMediaCandidates, loadPhoneParentHints, normalizePhoneKey } from '../whatsapp-blob-audit/loader'
 import type { AttachmentSnapshot, IngestPlan, IngestPlanRow, IngestSkippedRow } from './types'
@@ -34,12 +35,15 @@ export async function buildIngestPlan(now: Date): Promise<IngestPlan> {
   const skippedRows: IngestSkippedRow[] = []
 
   for (const c of missing) {
+    const phoneMasked = maskPhone(c.phone) ?? 'masked'
+    const phoneTail = normalizePhoneKey(c.phone).replace(/\D/g, '').slice(-4)
     const bucket = classifyMetaAge(c.firstSeenAt, now)
     if (bucket === 'gt_30d' || bucket === 'unknown') {
       skippedRows.push({
         mediaId: c.mediaId,
         mediaIdSuffix: c.mediaId.slice(-8),
-        phone: c.phone,
+        phoneMasked,
+        phoneTail,
         ageBucket: bucket,
         reason: 'beyond_meta_retention',
       })
@@ -47,16 +51,24 @@ export async function buildIngestPlan(now: Date): Promise<IngestPlan> {
     }
     const hint = hints.get(normalizePhoneKey(c.phone))
     const paIds = hint?.providerApplicationIds ?? []
-    const parentKind = paIds.length > 0 ? 'providerApplication' as const : null
-    const parentId = paIds[0] ?? null
+    const jrIds = hint?.jobRequestIds ?? []
+    const hasProviderConflict = paIds.length > 1 || (paIds.length === 1 && jrIds.length > 0)
+    const canAutoLinkProviderApplication = paIds.length === 1 && jrIds.length === 0
+    // Only a single ProviderApplication match is safe to auto-link. Multiple
+    // provider matches, or a competing JobRequest match for the same phone, mean
+    // the operator needs a manual review pass rather than us attaching evidence
+    // to whichever row the database happened to return first.
+    const parentKind = canAutoLinkProviderApplication ? 'providerApplication' as const : null
+    const parentId = canAutoLinkProviderApplication ? paIds[0] : null
     const parentConfidence: IngestPlanRow['parentConfidence'] =
-      paIds.length === 1 ? 'HIGH' : paIds.length > 1 ? 'MEDIUM' : 'NONE'
+      canAutoLinkProviderApplication ? 'HIGH' : hasProviderConflict ? 'MEDIUM' : 'NONE'
 
     rows.push({
       mediaId: c.mediaId,
       mediaIdSuffix: c.mediaId.slice(-8),
       messageType: c.messageType,
-      phone: c.phone,
+      phoneMasked,
+      phoneTail,
       firstSeenAt: c.firstSeenAt.toISOString(),
       ageBucket: bucket,
       parentKind,

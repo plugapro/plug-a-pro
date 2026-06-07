@@ -45,7 +45,12 @@ export async function applyIngestPlan(plan: IngestPlan, opts: ApplyOpts = {}): P
     try {
       const { attachmentId } = await downloadAndStoreWhatsAppMedia({
         mediaId: row.mediaId,
-        providerApplicationId: row.parentKind === 'providerApplication' ? row.parentId : null,
+        // Only high-confidence plan rows may write a ProviderApplication FK.
+        // This also protects apply from older plan files that stored an
+        // arbitrary parentId on MEDIUM-confidence rows.
+        providerApplicationId: row.parentKind === 'providerApplication' && row.parentConfidence === 'HIGH'
+          ? row.parentId
+          : null,
         label: row.label,
       })
       const r: IngestResult = {

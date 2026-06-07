@@ -632,8 +632,12 @@ export async function listProviderOnboardingRecoveryRows(
       },
       orderBy: { updatedAt: 'desc' },
     }),
+    // Load the latest application per phone regardless of submittedAt.
+    // An approved provider whose application predates the recovery window will
+    // otherwise lose their applicationStatus, get reclassified from a stale
+    // registration conversation, and reappear in the queue as "needs action".
     client.providerApplication.findMany({
-      where: { phone: { in: phones }, submittedAt: { gte: since } },
+      where: { phone: { in: phones } },
       select: {
         id: true,
         phone: true,

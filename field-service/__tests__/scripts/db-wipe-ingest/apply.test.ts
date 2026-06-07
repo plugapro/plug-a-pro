@@ -15,7 +15,8 @@ const baseRow = {
   mediaId: 'm1',
   mediaIdSuffix: 'm1',
   messageType: 'image' as const,
-  phone: '27111',
+  phoneMasked: '***',
+  phoneTail: '1111',
   firstSeenAt: '2026-06-06T11:00:00Z',
   ageBucket: '1_to_3d' as const,
   parentKind: 'providerApplication' as const,
@@ -93,6 +94,27 @@ describe('applyIngestPlan', () => {
     })
     expect(mock).toHaveBeenNthCalledWith(2, {
       mediaId: 'm2',
+      providerApplicationId: null,
+      label: 'evidence',
+    })
+  })
+
+  it('does not pass providerApplicationId for medium-confidence rows from older plan files', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.attachment.count as ReturnType<typeof vi.fn>).mockResolvedValue(5)
+    const { downloadAndStoreWhatsAppMedia } = await import('@/lib/whatsapp-media')
+    const mock = downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>
+    mock.mockResolvedValue({ attachmentId: 'a_x' })
+    const { applyIngestPlan } = await import('@/scripts/db-wipe-ingest/apply')
+
+    await applyIngestPlan(makePlan({
+      rows: [
+        { ...baseRow, parentKind: 'providerApplication', parentId: 'ambiguous_app', parentConfidence: 'MEDIUM' },
+      ],
+    }))
+
+    expect(mock).toHaveBeenCalledWith({
+      mediaId: 'm1',
       providerApplicationId: null,
       label: 'evidence',
     })
