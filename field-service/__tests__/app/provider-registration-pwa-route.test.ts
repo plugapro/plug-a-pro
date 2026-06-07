@@ -93,6 +93,21 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).not.toContain('placeholder="123456"')
   })
 
+  it('uses the same South African mobile input pattern as provider sign-in', () => {
+    const signInSource = readFileSync(join(root, 'app/(auth)/provider-sign-in/page.tsx'), 'utf8')
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(signInSource).toContain("import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'")
+    expect(clientSource).toContain("import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'")
+    expect(clientSource).toContain("import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'")
+    expect(clientSource).toContain('providerRegistrationPhoneInputValue')
+    expect(clientSource).toContain('<SaMobileNumberInput')
+    expect(clientSource).toContain('value={providerRegistrationPhoneInputValue(form.phone)}')
+    expect(clientSource).toContain("onChange={(next) => update('phone', next)}")
+    expect(clientSource).toContain('{SA_OTP_SIGN_IN_HELPER_TEXT}')
+    expect(clientSource).not.toContain('placeholder="082 123 4567"')
+  })
+
   it('uses the shared app theme tokens instead of a one-off light registration palette', () => {
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
 

@@ -21,10 +21,12 @@ import {
   UserRound,
   Wrench,
 } from 'lucide-react'
+import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { OtpInput } from '@/components/ui/otp-input'
 import { Textarea } from '@/components/ui/textarea'
+import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import type { ServiceCategoryOption } from '@/lib/service-categories'
 
 const STATE_KEY = 'pap_provider_registration_state_v2'
@@ -241,6 +243,12 @@ function usableProfilePhotoUrl(value: unknown): string | null {
   } catch {
     return null
   }
+}
+
+function providerRegistrationPhoneInputValue(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (digits.startsWith('27') && digits.length >= 11) return digits.slice(2)
+  return value
 }
 
 function routeForStep(step: StepKey): string {
@@ -702,13 +710,15 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
           {step === 'phone' && (
             <ScreenPanel icon={meta.icon} title="What number should we use?" description="Use the number you want Plug A Pro to contact for provider work.">
               <Field label="Mobile number">
-                <Input
-                  inputMode="tel"
-                  autoComplete="tel"
-                  value={form.phone}
-                  onChange={(event) => update('phone', event.target.value)}
-                  placeholder="082 123 4567"
+                <SaMobileNumberInput
+                  id="provider-registration-phone"
+                  value={providerRegistrationPhoneInputValue(form.phone)}
+                  onChange={(next) => update('phone', next)}
+                  disabled={sendingCode}
                 />
+                <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink-mute)]">
+                  {SA_OTP_SIGN_IN_HELPER_TEXT}
+                </p>
               </Field>
               <Notice>
                 Use a provider number. If this number already belongs to a customer account, we will show account options before you continue.
