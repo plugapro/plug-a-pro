@@ -1,6 +1,10 @@
 import { classifyAge } from './age-bucket'
 import type { AttachmentRow, GapRow, HeadResult, MediaIdIndex } from './types'
 
+export type CsvExportOptions = {
+  includeSensitive?: boolean
+}
+
 const COLUMNS: Array<keyof GapRow> = [
   'attachmentId', 'mediaIdSuffix', 'ageBucket', 'parentKind', 'parentId',
   'label', 'httpStatus', 'firstSeenAt', 'replayable', 'reason',
@@ -12,6 +16,11 @@ function escape(value: string | number | boolean | null): string {
   const needsQuoting = /[",\n]/.test(s)
   const inner = s.replace(/"/g, '""')
   return needsQuoting ? `"${inner}"` : inner
+}
+
+function redactId(value: string | null): string | null {
+  if (!value) return value
+  return value.length > 8 ? `...${value.slice(-8)}` : '...'
 }
 
 export function buildGapRows(
@@ -45,10 +54,19 @@ export function buildGapRows(
   return out
 }
 
-export function gapRowsToCsv(rows: GapRow[]): string {
+function valueForCsv(row: GapRow, column: keyof GapRow, options: CsvExportOptions): string | number | boolean | null {
+  const value = row[column] ?? null
+  if (options.includeSensitive) return value as string | number | boolean | null
+  if (column === 'attachmentId' || column === 'parentId') {
+    return typeof value === 'string' ? redactId(value) : value
+  }
+  return value as string | number | boolean | null
+}
+
+export function gapRowsToCsv(rows: GapRow[], options: CsvExportOptions = {}): string {
   const header = COLUMNS.join(',')
   const body = rows
-    .map((row) => COLUMNS.map((c) => escape((row[c] ?? null) as string | number | boolean | null)).join(','))
+    .map((row) => COLUMNS.map((c) => escape(valueForCsv(row, c, options))).join(','))
     .join('\n')
   return body ? `${header}\n${body}` : header
 }

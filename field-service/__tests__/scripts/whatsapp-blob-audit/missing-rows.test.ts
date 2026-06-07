@@ -114,18 +114,34 @@ describe('findMissingRows', () => {
 })
 
 describe('missingRowsToCsv', () => {
-  it('emits header + rows with escaping; replayable as true/false; FK-hint columns present', () => {
+  it('emits header + rows with escaping and redacts phone plus FK IDs by default', () => {
     const csv = missingRowsToCsv([
       {
-        mediaIdSuffix: 'abcd1234', messageType: 'image', phone: '+27,quote',
+        mediaIdSuffix: 'abcd1234', messageType: 'image', phone: '+27821234567',
         ageBucket: 'lt_24h', firstSeenAt: '2026-06-06T11:00:00Z', replayable: true,
-        candidateParentKinds: 'providerApplication', candidateParentIds: 'pa:app_1',
+        candidateParentKinds: 'providerApplication', candidateParentIds: 'pa:provider_application_1234567890abcdef',
         reason: 'inbound_media_without_attachment_with_parent_hint',
       },
     ])
     const lines = csv.split('\n')
     expect(lines[0]).toBe('mediaIdSuffix,messageType,phone,ageBucket,firstSeenAt,replayable,candidateParentKinds,candidateParentIds,reason')
-    expect(lines[1]).toContain('"+27,quote"')
-    expect(lines[1].endsWith(',true,providerApplication,pa:app_1,inbound_media_without_attachment_with_parent_hint')).toBe(true)
+    expect(lines[1]).toContain('...4567')
+    expect(lines[1]).not.toContain('+27821234567')
+    expect(lines[1]).toContain('pa:...90abcdef')
+    expect(lines[1]).not.toContain('provider_application_1234567890abcdef')
+    expect(lines[1].endsWith(',true,providerApplication,pa:...90abcdef,inbound_media_without_attachment_with_parent_hint')).toBe(true)
+  })
+
+  it('can include full phone and FK IDs only when explicitly requested', () => {
+    const csv = missingRowsToCsv([
+      {
+        mediaIdSuffix: 'abcd1234', messageType: 'image', phone: '+27821234567',
+        ageBucket: 'lt_24h', firstSeenAt: '2026-06-06T11:00:00Z', replayable: true,
+        candidateParentKinds: 'providerApplication', candidateParentIds: 'pa:provider_application_1234567890abcdef',
+        reason: 'inbound_media_without_attachment_with_parent_hint',
+      },
+    ], { includeSensitive: true })
+    expect(csv).toContain('+27821234567')
+    expect(csv).toContain('pa:provider_application_1234567890abcdef')
   })
 })

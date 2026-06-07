@@ -10,12 +10,15 @@
  *
  * Usage:
  *   pnpm tsx scripts/audit-whatsapp-blob-gaps.ts --out ./recovery [--concurrency 8] [--timeout-ms 5000]
+ *     [--include-sensitive]
  *
  * Requires:
  *   DATABASE_URL
  *
  * Production-safety: never writes to Postgres, Vercel Blob, or Supabase Storage.
- * SELECT queries and HTTP HEAD requests only.
+ * SELECT queries and HTTP HEAD requests only. CSV output redacts phone numbers
+ * and record IDs by default; --include-sensitive is reserved for an approved
+ * recovery operator in a controlled workspace.
  */
 
 import 'dotenv/config'
@@ -27,20 +30,22 @@ import { buildGapRows, gapRowsToCsv } from './whatsapp-blob-audit/csv'
 import { findMissingRows, missingRowsToCsv } from './whatsapp-blob-audit/missing-rows'
 import type { MediaIdIndex } from './whatsapp-blob-audit/types'
 
-type Args = { out: string; concurrency: number; timeoutMs: number }
+type Args = { out: string; concurrency: number; timeoutMs: number; includeSensitive: boolean }
 
 function parseArgs(argv: string[]): Args {
   let out = './recovery'
   let concurrency = 8
   let timeoutMs = 5000
+  let includeSensitive = false
   for (let i = 2; i < argv.length; i++) {
     const flag = argv[i]
     const next = argv[i + 1]
     if (flag === '--out' && next) { out = next; i++ }
     else if (flag === '--concurrency' && next) { concurrency = Number(next); i++ }
     else if (flag === '--timeout-ms' && next) { timeoutMs = Number(next); i++ }
+    else if (flag === '--include-sensitive') { includeSensitive = true }
   }
-  return { out, concurrency, timeoutMs }
+  return { out, concurrency, timeoutMs, includeSensitive }
 }
 
 async function main(): Promise<void> {
@@ -69,7 +74,9 @@ async function main(): Promise<void> {
   mkdirSync(args.out, { recursive: true })
 
   const gaps = buildGapRows(attachments, headResults, mediaIndex, now)
-  writeFileSync(join(args.out, 'whatsapp-blob-gaps.csv'), gapRowsToCsv(gaps))
+  writeFileSync(join(args.out, 'whatsapp-blob-gaps.csv'), gapRowsToCsv(gaps, {
+    includeSensitive: args.includeSensitive,
+  }))
   console.info('[audit] wrote', join(args.out, 'whatsapp-blob-gaps.csv'), { rows: gaps.length })
 
   const gapsByBucket = gaps.reduce<Record<string, number>>((acc, r) => {
@@ -89,7 +96,9 @@ async function main(): Promise<void> {
   const phoneHints = await loadPhoneParentHints(missingCandidatePhones)
 
   const missing = findMissingRows(candidates, attachments, now, phoneHints)
-  writeFileSync(join(args.out, 'missing-attachment-rows.csv'), missingRowsToCsv(missing))
+  writeFileSync(join(args.out, 'missing-attachment-rows.csv'), missingRowsToCsv(missing, {
+    includeSensitive: args.includeSensitive,
+  }))
   console.info('[audit] wrote', join(args.out, 'missing-attachment-rows.csv'), { rows: missing.length })
 
   const missingByBucket = missing.reduce<Record<string, number>>((acc, r) => {

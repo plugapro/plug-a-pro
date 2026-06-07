@@ -1,6 +1,10 @@
 import { classifyMetaAge } from './age-bucket'
 import type { AttachmentRow, InboundMediaCandidate, MetaAgeBucket, PhoneParentHints } from './types'
 
+export type MissingRowsCsvOptions = {
+  includeSensitive?: boolean
+}
+
 export type MissingRowGap = {
   mediaIdSuffix: string
   messageType: 'image' | 'document' | 'video'
@@ -24,6 +28,28 @@ function escape(value: string | number | boolean | null): string {
   const needsQuoting = /[",\n]/.test(s)
   const inner = s.replace(/"/g, '""')
   return needsQuoting ? `"${inner}"` : inner
+}
+
+function maskPhone(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (digits.length <= 4) return '***'
+  return `...${digits.slice(-4)}`
+}
+
+function redactId(value: string): string {
+  return value.length > 8 ? `...${value.slice(-8)}` : '...'
+}
+
+function redactParentIds(value: string): string {
+  if (!value) return value
+  return value
+    .split(',')
+    .map((token) => {
+      const [prefix, id] = token.includes(':') ? token.split(':', 2) : ['', token]
+      const redacted = redactId(id)
+      return prefix ? `${prefix}:${redacted}` : redacted
+    })
+    .join(',')
 }
 
 function normalizePhoneKey(phone: string): string {
@@ -81,10 +107,22 @@ export function findMissingRows(
   return out
 }
 
-export function missingRowsToCsv(rows: MissingRowGap[]): string {
+function valueForCsv(
+  row: MissingRowGap,
+  column: keyof MissingRowGap,
+  options: MissingRowsCsvOptions,
+): string | number | boolean | null {
+  const value = row[column] ?? null
+  if (options.includeSensitive) return value as string | number | boolean | null
+  if (column === 'phone' && typeof value === 'string') return maskPhone(value)
+  if (column === 'candidateParentIds' && typeof value === 'string') return redactParentIds(value)
+  return value as string | number | boolean | null
+}
+
+export function missingRowsToCsv(rows: MissingRowGap[], options: MissingRowsCsvOptions = {}): string {
   const header = COLUMNS.join(',')
   const body = rows
-    .map((row) => COLUMNS.map((c) => escape((row[c] ?? null) as string | number | boolean | null)).join(','))
+    .map((row) => COLUMNS.map((c) => escape(valueForCsv(row, c, options))).join(','))
     .join('\n')
   return body ? `${header}\n${body}` : header
 }

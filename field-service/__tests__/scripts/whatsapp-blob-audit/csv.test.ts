@@ -44,13 +44,23 @@ describe('buildGapRows', () => {
 })
 
 describe('gapRowsToCsv', () => {
-  it('emits header + CSV rows with proper escaping', () => {
+  it('emits header + CSV rows with proper escaping and redacts record IDs by default', () => {
     const csv = gapRowsToCsv([
-      { attachmentId: 'a1', mediaIdSuffix: 'abc12345', ageBucket: 'lt_24h', parentKind: 'jobRequest', parentId: 'jr_1', label: 'evidence,with,commas', httpStatus: 404, firstSeenAt: '2026-06-06T08:00:00Z', replayable: true, reason: 'dead_blob_within_meta_window' },
+      { attachmentId: 'attachment_abcdefghijklmnopqrstuvwxyz', mediaIdSuffix: 'abc12345', ageBucket: 'lt_24h', parentKind: 'jobRequest', parentId: 'jr_1234567890abcdef', label: 'evidence,with,commas', httpStatus: 404, firstSeenAt: '2026-06-06T08:00:00Z', replayable: true, reason: 'dead_blob_within_meta_window' },
     ])
     const lines = csv.split('\n')
     expect(lines[0]).toBe('attachmentId,mediaIdSuffix,ageBucket,parentKind,parentId,label,httpStatus,firstSeenAt,replayable,reason')
     expect(lines[1]).toContain('"evidence,with,commas"')
-    expect(lines[1].startsWith('a1,abc12345,lt_24h,jobRequest,jr_1,')).toBe(true)
+    expect(lines[1].startsWith('...stuvwxyz,abc12345,lt_24h,jobRequest,...90abcdef,')).toBe(true)
+    expect(lines[1]).not.toContain('attachment_abcdefghijklmnopqrstuvwxyz')
+    expect(lines[1]).not.toContain('jr_1234567890abcdef')
+  })
+
+  it('can include full record IDs only when explicitly requested', () => {
+    const csv = gapRowsToCsv([
+      { attachmentId: 'attachment_abcdefghijklmnopqrstuvwxyz', mediaIdSuffix: 'abc12345', ageBucket: 'lt_24h', parentKind: 'jobRequest', parentId: 'jr_1234567890abcdef', label: 'evidence', httpStatus: 404, firstSeenAt: '2026-06-06T08:00:00Z', replayable: true, reason: 'dead_blob_within_meta_window' },
+    ], { includeSensitive: true })
+    expect(csv).toContain('attachment_abcdefghijklmnopqrstuvwxyz')
+    expect(csv).toContain('jr_1234567890abcdef')
   })
 })
