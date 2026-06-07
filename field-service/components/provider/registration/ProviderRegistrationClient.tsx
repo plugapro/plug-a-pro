@@ -65,8 +65,11 @@ type RegistrationFormState = {
   mainSkill: string
   secondarySkills: string[]
   serviceAreas: string[]
-  areaSearch: string
   locationNodeIds: string[]
+  selectedProvinceId: string
+  selectedProvinceKey: string
+  selectedCityId: string
+  selectedRegionId: string
   travelRadiusKm: number
   experience: string
   bio: string
@@ -103,8 +106,11 @@ const DEFAULT_STATE: RegistrationFormState = {
   mainSkill: '',
   secondarySkills: [],
   serviceAreas: [],
-  areaSearch: '',
   locationNodeIds: [],
+  selectedProvinceId: '',
+  selectedProvinceKey: '',
+  selectedCityId: '',
+  selectedRegionId: '',
   travelRadiusKm: 25,
   experience: '',
   bio: '',
@@ -139,7 +145,6 @@ const STEP_META: Record<StepKey, { step?: number; title: string; eyebrow: string
 }
 
 const AVAILABILITY_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const AREA_SUGGESTIONS = ['Maboneng', 'Sandton', 'Randburg', 'Soweto', 'Midrand', 'Fourways']
 const CONTACT_OPTIONS: { value: PreferredContact; label: string }[] = [
   { value: 'WHATSAPP', label: 'WhatsApp' },
   { value: 'CALL', label: 'Call' },
@@ -154,6 +159,21 @@ const EXPERIENCE_OPTIONS = ['0-1 years', '1-3 years', '3-5 years', '5+ years']
 const HOURS_OPTIONS = ['Standard 7am-5pm', 'Extended 6am-8pm', '24/7']
 
 type StatusActionHref = string | ((reference: string) => string)
+type ProvinceOption = { id: string; slug: string; label: string }
+type CityOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string }
+type RegionOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string; regionKey: string; suburbCount?: number }
+type SuburbOption = {
+  id: string
+  slug: string
+  label: string
+  regionLabel: string
+  cityLabel: string
+  provinceLabel: string
+  postalCode: string
+  provinceKey: string
+  cityKey: string
+  regionKey: string
+}
 
 function supportHref(message: string) {
   const configured = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER || process.env.NEXT_PUBLIC_WHATSAPP_BUSINESS_NUMBER
@@ -224,6 +244,10 @@ function parseStoredState(): RegistrationFormState {
       secondarySkills: Array.isArray(parsed.secondarySkills) ? parsed.secondarySkills : [],
       serviceAreas: Array.isArray(parsed.serviceAreas) ? parsed.serviceAreas : [],
       locationNodeIds: Array.isArray(parsed.locationNodeIds) ? parsed.locationNodeIds : [],
+      selectedProvinceId: typeof parsed.selectedProvinceId === 'string' ? parsed.selectedProvinceId : '',
+      selectedProvinceKey: typeof parsed.selectedProvinceKey === 'string' ? parsed.selectedProvinceKey : '',
+      selectedCityId: typeof parsed.selectedCityId === 'string' ? parsed.selectedCityId : '',
+      selectedRegionId: typeof parsed.selectedRegionId === 'string' ? parsed.selectedRegionId : '',
       availabilityDays: Array.isArray(parsed.availabilityDays) ? parsed.availabilityDays : [],
       profilePhotoUrl: usableProfilePhotoUrl(parsed.profilePhotoUrl) ?? '',
       travelRadiusKm: Number.isFinite(Number(parsed.travelRadiusKm)) ? Number(parsed.travelRadiusKm) : DEFAULT_STATE.travelRadiusKm,
@@ -301,6 +325,17 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   const [sendingCode, setSendingCode] = useState(false)
   const [verifyingCode, setVerifyingCode] = useState(false)
   const [uploadingProfilePhoto, setUploadingProfilePhoto] = useState(false)
+  const [provinces, setProvinces] = useState<ProvinceOption[]>([])
+  const [cities, setCities] = useState<CityOption[]>([])
+  const [regions, setRegions] = useState<RegionOption[]>([])
+  const [suburbs, setSuburbs] = useState<SuburbOption[]>([])
+  const [locationLoading, setLocationLoading] = useState({
+    provinces: false,
+    cities: false,
+    regions: false,
+    suburbs: false,
+  })
+  const [locationLoadError, setLocationLoadError] = useState('')
 
   useEffect(() => {
     setForm(parseStoredState())
@@ -333,6 +368,108 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.otp, step, verifyingCode])
 
+  useEffect(() => {
+    if (step !== 'area') return
+    let cancelled = false
+
+    setLocationLoading((current) => ({ ...current, provinces: true }))
+    setLocationLoadError('')
+    fetch('/api/locations/provinces')
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !Array.isArray(payload)) throw new Error('Location options unavailable')
+        if (!cancelled) setProvinces(payload as ProvinceOption[])
+      })
+      .catch(() => {
+        if (!cancelled) setLocationLoadError('Could not load provinces. Please try again.')
+      })
+      .finally(() => {
+        if (!cancelled) setLocationLoading((current) => ({ ...current, provinces: false }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [step])
+
+  useEffect(() => {
+    setCities([])
+    setRegions([])
+    setSuburbs([])
+    if (step !== 'area' || !form.selectedProvinceKey) return
+    let cancelled = false
+
+    setLocationLoading((current) => ({ ...current, cities: true }))
+    setLocationLoadError('')
+    fetch(`/api/locations/cities?provinceKey=${encodeURIComponent(form.selectedProvinceKey)}`)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !Array.isArray(payload)) throw new Error('Location options unavailable')
+        if (!cancelled) setCities(payload as CityOption[])
+      })
+      .catch(() => {
+        if (!cancelled) setLocationLoadError('Could not load cities. Please try again.')
+      })
+      .finally(() => {
+        if (!cancelled) setLocationLoading((current) => ({ ...current, cities: false }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [form.selectedProvinceKey, step])
+
+  useEffect(() => {
+    setRegions([])
+    setSuburbs([])
+    if (step !== 'area' || !form.selectedCityId) return
+    let cancelled = false
+
+    setLocationLoading((current) => ({ ...current, regions: true }))
+    setLocationLoadError('')
+    fetch(`/api/locations/regions?cityId=${encodeURIComponent(form.selectedCityId)}`)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !Array.isArray(payload)) throw new Error('Location options unavailable')
+        if (!cancelled) setRegions(payload as RegionOption[])
+      })
+      .catch(() => {
+        if (!cancelled) setLocationLoadError('Could not load regions. Please try again.')
+      })
+      .finally(() => {
+        if (!cancelled) setLocationLoading((current) => ({ ...current, regions: false }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [form.selectedCityId, step])
+
+  useEffect(() => {
+    setSuburbs([])
+    if (step !== 'area' || !form.selectedRegionId) return
+    let cancelled = false
+
+    setLocationLoading((current) => ({ ...current, suburbs: true }))
+    setLocationLoadError('')
+    fetch(`/api/locations/suburbs?regionId=${encodeURIComponent(form.selectedRegionId)}`)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !Array.isArray(payload)) throw new Error('Location options unavailable')
+        if (!cancelled) setSuburbs(payload as SuburbOption[])
+      })
+      .catch(() => {
+        if (!cancelled) setLocationLoadError('Could not load suburbs. Please try again.')
+      })
+      .finally(() => {
+        if (!cancelled) setLocationLoading((current) => ({ ...current, suburbs: false }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [form.selectedRegionId, step])
+
   const progress = useMemo(() => {
     const current = stepNumber(step)
     if (current <= 0) return 0
@@ -364,24 +501,58 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
     setError('')
   }
 
-  function toggleArea(area: string) {
+  function selectProvince(provinceId: string) {
+    const selected = provinces.find((province) => province.id === provinceId)
     setForm((current) => ({
       ...current,
-      serviceAreas: current.serviceAreas.includes(area)
-        ? current.serviceAreas.filter((entry) => entry !== area)
-        : [...current.serviceAreas, area],
+      selectedProvinceId: selected?.id ?? '',
+      selectedProvinceKey: selected?.slug ?? '',
+      selectedCityId: '',
+      selectedRegionId: '',
+      serviceAreas: [],
+      locationNodeIds: [],
     }))
     setError('')
   }
 
-  function addTypedArea() {
-    const area = form.areaSearch.trim()
-    if (!area) return
+  function selectCity(cityId: string) {
     setForm((current) => ({
       ...current,
-      areaSearch: '',
-      serviceAreas: Array.from(new Set([...current.serviceAreas, area])),
+      selectedCityId: cityId,
+      selectedRegionId: '',
+      serviceAreas: [],
+      locationNodeIds: [],
     }))
+    setError('')
+  }
+
+  function selectRegion(regionId: string) {
+    setForm((current) => ({
+      ...current,
+      selectedRegionId: regionId,
+      serviceAreas: [],
+      locationNodeIds: [],
+    }))
+    setError('')
+  }
+
+  function toggleSuburb(suburb: SuburbOption) {
+    setForm((current) => {
+      const existingIndex = current.locationNodeIds.indexOf(suburb.id)
+      if (existingIndex >= 0) {
+        return {
+          ...current,
+          locationNodeIds: current.locationNodeIds.filter((id) => id !== suburb.id),
+          serviceAreas: current.serviceAreas.filter((_, index) => index !== existingIndex),
+        }
+      }
+
+      return {
+        ...current,
+        locationNodeIds: [...current.locationNodeIds, suburb.id],
+        serviceAreas: [...current.serviceAreas, suburb.label],
+      }
+    })
     setError('')
   }
 
@@ -398,6 +569,9 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       categorySlugs: serviceTags(form),
       serviceAreas: form.serviceAreas,
       locationNodeIds: form.locationNodeIds,
+      provinceId: form.selectedProvinceId,
+      cityId: form.selectedCityId,
+      regionId: form.selectedRegionId,
       experience: form.experience,
       bio: form.bio,
       availabilityDays: form.availabilityDays,
@@ -435,8 +609,8 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       setError('Choose your main service.')
       return false
     }
-    if (currentStep === 'area' && form.serviceAreas.length === 0) {
-      setError('Add at least one suburb or area.')
+    if (currentStep === 'area' && form.locationNodeIds.length === 0) {
+      setError('Select at least one suburb from the list.')
       return false
     }
     if (currentStep === 'availability' && (form.availabilityDays.length === 0 || !form.callOutFee.trim())) {
@@ -588,7 +762,10 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   }
 
   async function saveAndExit() {
-    const saved = await saveDraft(Math.max(1, stepNumber(step)))
+    const completedStep = step === 'area' && form.locationNodeIds.length === 0
+      ? 3
+      : Math.max(1, stepNumber(step))
+    const saved = await saveDraft(completedStep)
     if (saved) router.push('/provider/register/draft')
   }
 
@@ -901,35 +1078,147 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
 
           {step === 'area' && (
             <ScreenPanel icon={meta.icon} title="Where can you work?" description="Select the suburbs you can reach reliably. Exact job addresses stay private until a lead is unlocked.">
-              <div className="flex gap-2">
-                <Input
-                  value={form.areaSearch}
-                  onChange={(event) => update('areaSearch', event.target.value)}
-                  placeholder="Search suburb"
-                />
-                <Button type="button" variant="secondary" size="icon" aria-label="Add suburb" onClick={addTypedArea}>
-                  <Check size={18} />
-                </Button>
+              {locationLoadError && (
+                <div className="rounded-lg border border-[var(--tone-danger-border)] bg-[var(--tone-danger-bg)] p-3 text-[12px] font-medium text-[var(--tone-danger-fg)]">
+                  {locationLoadError}
+                </div>
+              )}
+              <div className="grid gap-3">
+                <Field label="Province">
+                  <LocationSelect
+                    ariaLabel="Province"
+                    value={form.selectedProvinceId}
+                    onChange={selectProvince}
+                    disabled={locationLoading.provinces}
+                    placeholder={locationLoading.provinces ? 'Loading provinces...' : 'Select province'}
+                  >
+                    {provinces.map((province) => (
+                      <option key={province.id} value={province.id}>{province.label}</option>
+                    ))}
+                  </LocationSelect>
+                  {!locationLoading.provinces && provinces.length === 0 && (
+                    <p className="mt-1 text-[12px] text-[var(--ink-mute)]">No provinces available right now</p>
+                  )}
+                </Field>
+                <Field label="City">
+                  <LocationSelect
+                    ariaLabel="City"
+                    value={form.selectedCityId}
+                    onChange={selectCity}
+                    disabled={!form.selectedProvinceKey || locationLoading.cities}
+                    placeholder={
+                      !form.selectedProvinceKey
+                        ? 'Select a province first'
+                        : locationLoading.cities
+                          ? 'Loading cities...'
+                          : 'Select city'
+                    }
+                  >
+                    {cities.map((city) => (
+                      <option key={city.id} value={city.id}>{city.label}</option>
+                    ))}
+                  </LocationSelect>
+                  {!form.selectedProvinceKey && (
+                    <p className="mt-1 text-[12px] text-[var(--ink-mute)]">Select a province first</p>
+                  )}
+                  {form.selectedProvinceKey && !locationLoading.cities && cities.length === 0 && (
+                    <p className="mt-1 text-[12px] text-[var(--ink-mute)]">No cities available for this province</p>
+                  )}
+                </Field>
+                <Field label="Region">
+                  <LocationSelect
+                    ariaLabel="Region"
+                    value={form.selectedRegionId}
+                    onChange={selectRegion}
+                    disabled={!form.selectedCityId || locationLoading.regions}
+                    placeholder={
+                      !form.selectedCityId
+                        ? 'Select a city first'
+                        : locationLoading.regions
+                          ? 'Loading regions...'
+                          : 'Select region'
+                    }
+                  >
+                    {regions.map((region) => (
+                      <option key={region.id} value={region.id}>
+                        {region.suburbCount ? `${region.label} (${region.suburbCount})` : region.label}
+                      </option>
+                    ))}
+                  </LocationSelect>
+                  {!form.selectedCityId && (
+                    <p className="mt-1 text-[12px] text-[var(--ink-mute)]">Select a city first</p>
+                  )}
+                  {form.selectedCityId && !locationLoading.regions && regions.length === 0 && (
+                    <p className="mt-1 text-[12px] text-[var(--ink-mute)]">No regions available for this city</p>
+                  )}
+                </Field>
+                <div>
+                  <p className="mb-2 text-[13px] font-semibold text-[var(--ink)]">Sub-area / suburb</p>
+                  {!form.selectedRegionId && (
+                    <div className="rounded-lg border border-[var(--border)] bg-card p-3 text-[12px] text-[var(--ink-mute)]">
+                      Select a region first
+                    </div>
+                  )}
+                  {form.selectedRegionId && locationLoading.suburbs && (
+                    <div className="rounded-lg border border-[var(--border)] bg-card p-3 text-[12px] text-[var(--ink-mute)]">
+                      Loading suburbs...
+                    </div>
+                  )}
+                  {form.selectedRegionId && !locationLoading.suburbs && suburbs.length === 0 && (
+                    <div className="rounded-lg border border-[var(--border)] bg-card p-3 text-[12px] text-[var(--ink-mute)]">
+                      No suburbs available for this region
+                    </div>
+                  )}
+                  {suburbs.length > 0 && (
+                    <div className="grid max-h-[260px] gap-2 overflow-y-auto rounded-lg border border-[var(--border)] bg-card p-2">
+                      {suburbs.map((suburb) => {
+                        const selected = form.locationNodeIds.includes(suburb.id)
+                        return (
+                          <button
+                            key={suburb.id}
+                            type="button"
+                            onClick={() => toggleSuburb(suburb)}
+                            aria-pressed={selected}
+                            className={[
+                              'flex min-h-11 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
+                              selected
+                                ? 'brand-gradient-soft text-[var(--brand-purple)] shadow-[inset_0_0_0_1.5px_var(--tone-brand-border)]'
+                                : 'bg-background text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--border)] hover:bg-[var(--card-alt)]',
+                            ].join(' ')}
+                          >
+                            <span>
+                              <span className="block font-semibold">{suburb.label}</span>
+                              <span className="block text-[11px] text-[var(--ink-mute)]">
+                                {[suburb.regionLabel, suburb.postalCode].filter(Boolean).join(' · ')}
+                              </span>
+                            </span>
+                            {selected && <Check size={17} aria-hidden />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
-              <ChoiceGroup label="Suggested areas">
-                {AREA_SUGGESTIONS.map((area) => (
-                  <ChoiceButton key={area} selected={form.serviceAreas.includes(area)} onClick={() => toggleArea(area)}>
-                    {area}
-                  </ChoiceButton>
-                ))}
-              </ChoiceGroup>
               {form.serviceAreas.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {form.serviceAreas.map((area) => (
-                    <button
-                      key={area}
-                      type="button"
-                      onClick={() => toggleArea(area)}
-                      className="rounded-full brand-gradient-soft px-3 py-1.5 text-[12px] font-semibold text-[var(--brand-purple)] shadow-[inset_0_0_0_1px_var(--tone-brand-border)]"
-                    >
-                      {area}
-                    </button>
-                  ))}
+                <div>
+                  <p className="mb-2 text-[13px] font-semibold text-[var(--ink)]">Selected suburbs</p>
+                  <div className="flex flex-wrap gap-2">
+                    {form.serviceAreas.map((area, index) => {
+                      const suburbId = form.locationNodeIds[index]
+                      const suburb = suburbs.find((item) => item.id === suburbId)
+                      return (
+                        <button
+                          key={`${suburbId}-${area}`}
+                          type="button"
+                          onClick={() => suburb && toggleSuburb(suburb)}
+                          className="rounded-full brand-gradient-soft px-3 py-1.5 text-[12px] font-semibold text-[var(--brand-purple)] shadow-[inset_0_0_0_1px_var(--tone-brand-border)]"
+                        >
+                          {area}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
               <Field label={`Travel radius: ${form.travelRadiusKm} km`}>
@@ -1217,6 +1506,28 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="text-[13px] font-semibold text-[var(--ink)]">{label}</span>
       {children}
     </label>
+  )
+}
+
+function LocationSelect({ ariaLabel, value, onChange, disabled, placeholder, children }: {
+  ariaLabel: string
+  value: string
+  onChange: (value: string) => void
+  disabled?: boolean
+  placeholder: string
+  children: ReactNode
+}) {
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      disabled={disabled}
+      className="h-[52px] w-full rounded-[16px] bg-card px-[14px] text-[15px] font-medium text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--border)] outline-none transition-shadow focus-visible:shadow-[inset_0_0_0_1.5px_var(--brand-purple)] disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <option value="">{placeholder}</option>
+      {children}
+    </select>
   )
 }
 

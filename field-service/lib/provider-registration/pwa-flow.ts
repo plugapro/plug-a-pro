@@ -4,13 +4,14 @@ import {
   findLatestActiveProviderApplicationByPhone,
   normalizeProviderApplicationPhone,
 } from '@/lib/provider-applications'
-import { syncProviderRecord } from '@/lib/provider-record'
+import { syncProviderRecord, upsertStructuredServiceAreas } from '@/lib/provider-record'
 import {
   normalizeServiceCategorySelections,
   resolveServiceCategoryTag,
 } from '@/lib/service-categories'
 import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '@/lib/location-format'
 import { hashRegistrationResumeToken } from './tokens'
 
 const RESUME_TOKEN_PURPOSE = 'provider_registration_resume'
@@ -40,6 +41,9 @@ export type ProviderRegistrationDraftInput = {
   categorySlugs?: string[] | string | null
   serviceAreas?: string[] | string | null
   locationNodeIds?: string[] | null
+  provinceId?: string | null
+  cityId?: string | null
+  regionId?: string | null
   experience?: string | null
   bio?: string | null
   availability?: string | null
@@ -65,6 +69,9 @@ export type ProviderRegistrationSubmitInput = ProviderRegistrationDraftInput & {
 }
 
 type DraftClient = {
+  locationNode?: {
+    findMany: (...args: any[]) => Promise<ProviderRegistrationLocationNode[]>
+  }
   providerApplicationDraft: {
     create: (...args: any[]) => Promise<{ id: string }>
     update: (...args: any[]) => Promise<{ id: string }>
@@ -80,6 +87,12 @@ type DraftClient = {
 }
 
 type SubmitTransactionClient = {
+  locationNode?: {
+    findMany: (...args: any[]) => Promise<ProviderRegistrationLocationNode[]>
+  }
+  technicianServiceArea?: {
+    upsert: (...args: any[]) => Promise<unknown>
+  }
   customer: { findFirst: (...args: any[]) => Promise<{ id: string } | null> }
   providerApplication: {
     findFirst: (...args: any[]) => Promise<{
@@ -100,6 +113,32 @@ type SubmitTransactionClient = {
 
 type SubmitClient = {
   $transaction: <T>(callback: (tx: SubmitTransactionClient & any) => Promise<T>) => Promise<T>
+}
+
+type ProviderRegistrationLocationNode = {
+  id: string
+  nodeType: string
+  slug: string
+  label: string
+  postalCode?: string | null
+  provinceKey: string | null
+  cityKey: string | null
+  regionKey: string | null
+  parent?: {
+    id: string
+    nodeType: string
+    label?: string | null
+    parent?: {
+      id: string
+      nodeType: string
+      label?: string | null
+      parent?: {
+        id: string
+        nodeType: string
+        label?: string | null
+      } | null
+    } | null
+  } | null
 }
 
 function cleanString(value: unknown): string | null {
@@ -166,12 +205,12 @@ function safeStep(value: number | null | undefined): number {
   return Math.max(0, Math.min(8, Number(value)))
 }
 
-function normalizeDraftInput(input: ProviderRegistrationDraftInput) {
+function normalizeDraftInputBase(input: ProviderRegistrationDraftInput) {
   const phone = normalizedPhone(input.phone)
   const skills = normalizeServiceCategorySelections(stringList(input.skills))
   const selectedCategorySlugs = normalizeServiceCategorySelections(stringList(input.categorySlugs))
   const categorySlugs = selectedCategorySlugs.length > 0 ? selectedCategorySlugs : skills
-  const serviceAreas = stringList(input.serviceAreas)
+  const serviceAreas = normaliseLocationDisplayNames(stringList(input.serviceAreas))
   const locationNodeIds = stringList(input.locationNodeIds ?? [])
   const availabilityDays = stringList(input.availabilityDays ?? [])
   const availability = cleanString(input.availability) ?? availabilityDays.join(', ')
@@ -207,6 +246,147 @@ function normalizeDraftInput(input: ProviderRegistrationDraftInput) {
   }
 }
 
+function requireStructuredServiceAreas(lastCompletedStep: number | null | undefined): boolean {
+  return safeStep(lastCompletedStep) >= 4
+}
+
+function locationHierarchyError(): ProviderRegistrationValidationError {
+  return new ProviderRegistrationValidationError(
+    'Choose a valid province, city, region and suburb combination.',
+    'INVALID_LOCATION_HIERARCHY',
+  )
+}
+
+async function resolveCanonicalServiceAreas(
+  client: Pick<DraftClient, 'locationNode'>,
+  input: ProviderRegistrationDraftInput,
+  locationNodeIds: string[],
+  fallbackServiceAreas: string[],
+  requireStructured: boolean,
+): Promise<{ locationNodeIds: string[]; serviceAreas: string[] }> {
+  if (locationNodeIds.length === 0) {
+    if (requireStructured) {
+      throw new ProviderRegistrationValidationError(
+        'Select at least one suburb from the list.',
+        'STRUCTURED_SERVICE_AREA_REQUIRED',
+      )
+    }
+    return { locationNodeIds: [], serviceAreas: fallbackServiceAreas }
+  }
+
+  if (requireStructured && (!input.provinceId || !input.cityId || !input.regionId)) {
+    throw locationHierarchyError()
+  }
+
+  if (!client.locationNode?.findMany) {
+    throw new ProviderRegistrationValidationError(
+      'Location options are not available right now.',
+      'LOCATION_DATA_UNAVAILABLE',
+      500,
+    )
+  }
+
+  const nodes = await client.locationNode.findMany({
+    where: {
+      id: { in: locationNodeIds },
+      nodeType: 'SUBURB',
+      active: true,
+      postalCode: { not: null },
+    },
+    select: {
+      id: true,
+      nodeType: true,
+      slug: true,
+      label: true,
+      postalCode: true,
+      provinceKey: true,
+      cityKey: true,
+      regionKey: true,
+      parent: {
+        select: {
+          id: true,
+          nodeType: true,
+          label: true,
+          parent: {
+            select: {
+              id: true,
+              nodeType: true,
+              label: true,
+              parent: {
+                select: {
+                  id: true,
+                  nodeType: true,
+                  label: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  if (nodesById.size !== locationNodeIds.length) {
+    throw new ProviderRegistrationValidationError(
+      'Select a valid suburb from the list.',
+      'INVALID_LOCATION_NODE',
+    )
+  }
+
+  const serviceAreas: string[] = []
+  for (const locationNodeId of locationNodeIds) {
+    const node = nodesById.get(locationNodeId)
+    const region = node?.parent
+    const city = region?.parent
+    const province = city?.parent
+
+    if (
+      !node ||
+      node.nodeType !== 'SUBURB' ||
+      !node.postalCode ||
+      !region ||
+      region.nodeType !== 'REGION' ||
+      !city ||
+      city.nodeType !== 'CITY' ||
+      !province ||
+      province.nodeType !== 'PROVINCE'
+    ) {
+      throw locationHierarchyError()
+    }
+
+    if (input.regionId && region.id !== input.regionId) throw locationHierarchyError()
+    if (input.cityId && city.id !== input.cityId) throw locationHierarchyError()
+    if (input.provinceId && province.id !== input.provinceId) throw locationHierarchyError()
+
+    serviceAreas.push(normaliseLocationDisplayName(node.label))
+  }
+
+  return { locationNodeIds, serviceAreas }
+}
+
+async function normalizeDraftInput(
+  client: Pick<DraftClient, 'locationNode'>,
+  input: ProviderRegistrationDraftInput,
+  options?: { requireStructuredServiceAreas?: boolean },
+) {
+  const data = normalizeDraftInputBase(input)
+  const requireStructured = options?.requireStructuredServiceAreas ?? requireStructuredServiceAreas(input.lastCompletedStep)
+  const location = await resolveCanonicalServiceAreas(
+    client,
+    input,
+    data.locationNodeIds,
+    data.serviceAreas,
+    requireStructured,
+  )
+
+  return {
+    ...data,
+    serviceAreas: location.serviceAreas,
+    locationNodeIds: location.locationNodeIds,
+  }
+}
+
 function newResumeToken(): string {
   return randomBytes(32).toString('base64url')
 }
@@ -228,7 +408,7 @@ export async function saveProviderRegistrationDraft(
   client: DraftClient,
   input: ProviderRegistrationDraftInput,
 ): Promise<{ draftId: string; resumeToken: string }> {
-  const data = normalizeDraftInput(input)
+  const data = await normalizeDraftInput(client, input)
   const tokenDraftId = await resolveTokenDraftId(client, input.resumeToken)
 
   if (tokenDraftId) {
@@ -304,7 +484,7 @@ export async function submitProviderRegistrationApplication(
   | { outcome: 'created'; applicationId: string; ref: string }
   | { outcome: 'existing_pending' | 'existing_approved' | 'existing_more_info'; applicationId: string; ref: string }
 > {
-  const data = normalizeDraftInput({ ...input, lastCompletedStep: 8 })
+  const baseData = normalizeDraftInputBase({ ...input, lastCompletedStep: 8 })
   const name = cleanString(input.name)
 
   if (!name) {
@@ -314,22 +494,34 @@ export async function submitProviderRegistrationApplication(
     throw new ProviderRegistrationValidationError('Accept the provider terms before submitting.', 'CONSENT_REQUIRED')
   }
 
-  const completeness = evaluateProviderProfileCompleteness({
-    phone: data.phone,
-    name,
-    skills: data.skills,
-    serviceAreas: data.serviceAreas,
-    locationNodeIds: data.locationNodeIds,
-    availability: data.availability,
-    callOutFee: data.callOutFee,
-  })
-  if (!completeness.canSubmit) {
-    throw new ProviderRegistrationValidationError('Complete the required registration fields before submitting.', 'INCOMPLETE_APPLICATION')
-  }
-
   const tokenHash = await hashRegistrationResumeToken(input.resumeToken)
 
   return client.$transaction(async (tx) => {
+    const location = await resolveCanonicalServiceAreas(
+      tx,
+      input,
+      baseData.locationNodeIds,
+      baseData.serviceAreas,
+      true,
+    )
+    const data = {
+      ...baseData,
+      serviceAreas: location.serviceAreas,
+      locationNodeIds: location.locationNodeIds,
+    }
+    const completeness = evaluateProviderProfileCompleteness({
+      phone: data.phone,
+      name,
+      skills: data.skills,
+      serviceAreas: data.serviceAreas,
+      locationNodeIds: data.locationNodeIds,
+      availability: data.availability,
+      callOutFee: data.callOutFee,
+    })
+    if (!completeness.canSubmit) {
+      throw new ProviderRegistrationValidationError('Complete the required registration fields before submitting.', 'INCOMPLETE_APPLICATION')
+    }
+
     const existingCustomer = await tx.customer.findFirst({
       where: { phone: { in: phoneVariants(data.phone) } },
       select: { id: true },
@@ -422,6 +614,10 @@ export async function submitProviderRegistrationApplication(
         })),
         skipDuplicates: true,
       })
+    }
+
+    if (data.locationNodeIds.length > 0) {
+      await upsertStructuredServiceAreas(tx, providerId, data.locationNodeIds)
     }
 
     await tx.providerApplicationDraft.update({

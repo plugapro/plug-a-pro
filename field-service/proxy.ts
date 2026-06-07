@@ -67,7 +67,7 @@ const PUBLIC_PATHS = [
   '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
   '/api/track',                     // public tracking API; handler validates tracking identifiers
-  '/api/locations/search',          // public location search used before booking/auth
+  '/api/locations',                 // public canonical location taxonomy used before booking/provider registration auth
   '/api/debug',                     // key-protected diagnostic endpoints — handlers enforce their own key check
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard
