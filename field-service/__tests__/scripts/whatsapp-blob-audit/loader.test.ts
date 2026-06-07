@@ -73,3 +73,54 @@ describe('loadInboundMediaCandidates', () => {
     expect(rows[1].mediaId).toBe('m2')
   })
 })
+
+describe('loadPhoneParentHints', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns an empty map when phones is empty (no DB round-trip)', async () => {
+    const { db } = await import('@/lib/db')
+    const { loadPhoneParentHints } = await import('@/scripts/whatsapp-blob-audit/loader')
+    const hints = await loadPhoneParentHints([])
+    expect(hints.size).toBe(0)
+    expect(db.$queryRawUnsafe).not.toHaveBeenCalled()
+  })
+
+  it('aggregates ProviderApplication + JobRequest IDs keyed by normalised phone (no leading +)', async () => {
+    const { db } = await import('@/lib/db')
+    const mock = db.$queryRawUnsafe as ReturnType<typeof vi.fn>
+    // First call: provider_applications (stored with leading +)
+    mock.mockResolvedValueOnce([
+      { id: 'app_1', phone: '+27111' },
+      { id: 'app_2', phone: '+27111' },
+      { id: 'app_3', phone: '+27222' },
+    ])
+    // Second call: job_requests JOIN customers (stored with leading +)
+    mock.mockResolvedValueOnce([
+      { id: 'jr_9', phone: '+27111' },
+      { id: 'jr_10', phone: '+27333' },
+    ])
+    const { loadPhoneParentHints } = await import('@/scripts/whatsapp-blob-audit/loader')
+    // Inbound phones (no +) — and a duplicate to verify de-dup
+    const hints = await loadPhoneParentHints(['27111', '27222', '27333', '27111'])
+
+    expect(mock).toHaveBeenCalledTimes(2)
+    // SQL must strip leading + on the stored side so both formats line up
+    expect(mock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringMatching(/regexp_replace\(phone,\s*'\^\\\+'/),
+      expect.arrayContaining(['27111', '27222', '27333']),
+    )
+    expect(mock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('job_requests'),
+      expect.arrayContaining(['27111', '27222', '27333']),
+    )
+    expect(mock).not.toHaveBeenCalledWith(expect.stringMatching(/UPDATE|DELETE|INSERT/i))
+
+    // Map keys are normalised (no leading +) regardless of how the DB stored them.
+    expect(hints.get('27111')).toEqual({ providerApplicationIds: ['app_1', 'app_2'], jobRequestIds: ['jr_9'] })
+    expect(hints.get('27222')).toEqual({ providerApplicationIds: ['app_3'], jobRequestIds: [] })
+    expect(hints.get('27333')).toEqual({ providerApplicationIds: [], jobRequestIds: ['jr_10'] })
+    expect(hints.get('+27111')).toBeUndefined()
+  })
+})

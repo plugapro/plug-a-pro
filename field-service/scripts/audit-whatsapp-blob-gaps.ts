@@ -21,7 +21,7 @@
 import 'dotenv/config'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadAttachments, loadInboundMediaCandidates } from './whatsapp-blob-audit/loader'
+import { loadAttachments, loadInboundMediaCandidates, loadPhoneParentHints } from './whatsapp-blob-audit/loader'
 import { headCheckAll } from './whatsapp-blob-audit/head-checker'
 import { buildGapRows, gapRowsToCsv } from './whatsapp-blob-audit/csv'
 import { findMissingRows, missingRowsToCsv } from './whatsapp-blob-audit/missing-rows'
@@ -79,7 +79,16 @@ async function main(): Promise<void> {
   }, {})
   console.info('[audit] dead-blob gap distribution', gapsByBucket)
 
-  const missing = findMissingRows(candidates, attachments, now)
+  // FK-resolution hint pass: look up which ProviderApplication / JobRequest
+  // rows exist for each phone in the missing candidate set. Read-only, two
+  // extra SELECTs bounded by ANY($1::text[]).
+  const missingCandidatePhones = candidates
+    .filter((c) => !new Set(attachments.map((a) => a.mediaId)).has(c.mediaId))
+    .map((c) => c.phone)
+  console.info('[audit] loading FK-resolution hints', { uniquePhones: new Set(missingCandidatePhones).size })
+  const phoneHints = await loadPhoneParentHints(missingCandidatePhones)
+
+  const missing = findMissingRows(candidates, attachments, now, phoneHints)
   writeFileSync(join(args.out, 'missing-attachment-rows.csv'), missingRowsToCsv(missing))
   console.info('[audit] wrote', join(args.out, 'missing-attachment-rows.csv'), { rows: missing.length })
 

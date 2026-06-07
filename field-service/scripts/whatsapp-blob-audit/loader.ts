@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import type { AttachmentRow, MediaIdIndex, InboundMediaCandidate } from './types'
+import type { AttachmentRow, MediaIdIndex, InboundMediaCandidate, PhoneParentHints } from './types'
 
 type RawRow = {
   id: string
@@ -77,4 +77,57 @@ export async function loadInboundMediaCandidates(): Promise<InboundMediaCandidat
     })
   }
   return out
+}
+
+// Phone key normalization: inbound_whatsapp_messages.phone stores the raw
+// Meta-supplied digits (e.g., '27768196963') while provider_applications.phone
+// and customers.phone store the E.164 form with leading '+'. Strip the '+' on
+// both sides so map keys match regardless of which side is the canonical store.
+export function normalizePhoneKey(phone: string): string {
+  return phone.startsWith('+') ? phone.slice(1) : phone
+}
+
+// FK-resolution hint loader. Given the unique set of phones from inbound
+// candidates, returns the ProviderApplication and JobRequest IDs each phone
+// has in live prod. The recovery script can pin the right parent via
+// closest-time matching; this audit just enumerates the candidates so the
+// operator can review which media maps to which entity.
+//
+// Read-only: SELECTs against provider_applications + job_requests/customers.
+// Uses parameterised array binding so the phone list cannot break out of the
+// query string. The WHERE clauses normalise the stored phone by stripping a
+// leading '+' so they match the normalised array bind argument.
+export async function loadPhoneParentHints(phones: string[]): Promise<PhoneParentHints> {
+  const hints: PhoneParentHints = new Map()
+  if (phones.length === 0) return hints
+  const normalizedUnique = Array.from(new Set(phones.map(normalizePhoneKey)))
+
+  const apps = await db.$queryRawUnsafe<Array<{ id: string; phone: string }>>(
+    `SELECT id, phone
+     FROM provider_applications
+     WHERE regexp_replace(phone, '^\\+', '') = ANY($1::text[])`,
+    normalizedUnique,
+  )
+  for (const a of apps) {
+    const key = normalizePhoneKey(a.phone)
+    const entry = hints.get(key) ?? { providerApplicationIds: [], jobRequestIds: [] }
+    entry.providerApplicationIds.push(a.id)
+    hints.set(key, entry)
+  }
+
+  const jrs = await db.$queryRawUnsafe<Array<{ id: string; phone: string }>>(
+    `SELECT jr.id, c.phone
+     FROM job_requests jr
+     JOIN customers c ON c.id = jr."customerId"
+     WHERE regexp_replace(c.phone, '^\\+', '') = ANY($1::text[])`,
+    normalizedUnique,
+  )
+  for (const j of jrs) {
+    const key = normalizePhoneKey(j.phone)
+    const entry = hints.get(key) ?? { providerApplicationIds: [], jobRequestIds: [] }
+    entry.jobRequestIds.push(j.id)
+    hints.set(key, entry)
+  }
+
+  return hints
 }
