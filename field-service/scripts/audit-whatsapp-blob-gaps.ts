@@ -1,9 +1,12 @@
 /**
  * audit-whatsapp-blob-gaps.ts
  *
- * READ-ONLY audit of Attachment rows whose Vercel Blob URLs no longer resolve.
- * Emits a CSV of dead/error rows with their Meta media-retention age bucket
- * so the operator knows what is still replayable.
+ * READ-ONLY audit of Attachment rows whose Vercel Blob URLs no longer resolve,
+ * PLUS inbound WhatsApp media that has no Attachment row at all.
+ *
+ * Emits two CSVs under <out>/:
+ *   - whatsapp-blob-gaps.csv          (dead-blob gaps; rows the operator already had)
+ *   - missing-attachment-rows.csv     (inbound media never persisted as Attachment)
  *
  * Usage:
  *   pnpm tsx scripts/audit-whatsapp-blob-gaps.ts --out ./recovery [--concurrency 8] [--timeout-ms 5000]
@@ -11,16 +14,18 @@
  * Requires:
  *   DATABASE_URL
  *
- * Production-safety: this script never writes to Postgres, Vercel Blob, or
- * Supabase Storage. It issues SELECT queries and HTTP HEAD requests only.
+ * Production-safety: never writes to Postgres, Vercel Blob, or Supabase Storage.
+ * SELECT queries and HTTP HEAD requests only.
  */
 
 import 'dotenv/config'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadAttachments, loadMediaIdIndex } from './whatsapp-blob-audit/loader'
+import { loadAttachments, loadInboundMediaCandidates } from './whatsapp-blob-audit/loader'
 import { headCheckAll } from './whatsapp-blob-audit/head-checker'
 import { buildGapRows, gapRowsToCsv } from './whatsapp-blob-audit/csv'
+import { findMissingRows, missingRowsToCsv } from './whatsapp-blob-audit/missing-rows'
+import type { MediaIdIndex } from './whatsapp-blob-audit/types'
 
 type Args = { out: string; concurrency: number; timeoutMs: number }
 
@@ -40,9 +45,14 @@ function parseArgs(argv: string[]): Args {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv)
-  console.info('[audit] loading attachments and media index...')
-  const [attachments, mediaIndex] = await Promise.all([loadAttachments(), loadMediaIdIndex()])
-  console.info('[audit] loaded', { attachments: attachments.length, mediaIndex: mediaIndex.size })
+  const now = new Date()
+
+  console.info('[audit] loading attachments and inbound media candidates...')
+  const [attachments, candidates] = await Promise.all([loadAttachments(), loadInboundMediaCandidates()])
+  console.info('[audit] loaded', { attachments: attachments.length, candidates: candidates.length })
+
+  // Derive MediaIdIndex from candidates — saves one round-trip vs. loadMediaIdIndex().
+  const mediaIndex: MediaIdIndex = new Map(candidates.map((c) => [c.mediaId, c.firstSeenAt]))
 
   console.info('[audit] head-checking blob URLs', { concurrency: args.concurrency, timeoutMs: args.timeoutMs })
   const headResults = await headCheckAll(attachments, {
@@ -50,23 +60,35 @@ async function main(): Promise<void> {
     timeoutMs: args.timeoutMs,
   })
 
-  const summary = headResults.reduce<Record<string, number>>((acc, r) => {
+  const headSummary = headResults.reduce<Record<string, number>>((acc, r) => {
     acc[r.status] = (acc[r.status] ?? 0) + 1
     return acc
   }, {})
-  console.info('[audit] head-check summary', summary)
+  console.info('[audit] head-check summary', headSummary)
 
-  const gaps = buildGapRows(attachments, headResults, mediaIndex, new Date())
   mkdirSync(args.out, { recursive: true })
+
+  const gaps = buildGapRows(attachments, headResults, mediaIndex, now)
   writeFileSync(join(args.out, 'whatsapp-blob-gaps.csv'), gapRowsToCsv(gaps))
   console.info('[audit] wrote', join(args.out, 'whatsapp-blob-gaps.csv'), { rows: gaps.length })
 
-  const byBucket = gaps.reduce<Record<string, number>>((acc, r) => {
+  const gapsByBucket = gaps.reduce<Record<string, number>>((acc, r) => {
     const key = `${r.ageBucket}/${r.replayable ? 'replayable' : 'expired'}`
     acc[key] = (acc[key] ?? 0) + 1
     return acc
   }, {})
-  console.info('[audit] gap distribution', byBucket)
+  console.info('[audit] dead-blob gap distribution', gapsByBucket)
+
+  const missing = findMissingRows(candidates, attachments, now)
+  writeFileSync(join(args.out, 'missing-attachment-rows.csv'), missingRowsToCsv(missing))
+  console.info('[audit] wrote', join(args.out, 'missing-attachment-rows.csv'), { rows: missing.length })
+
+  const missingByBucket = missing.reduce<Record<string, number>>((acc, r) => {
+    const key = `${r.ageBucket}/${r.replayable ? 'replayable' : 'expired'}`
+    acc[key] = (acc[key] ?? 0) + 1
+    return acc
+  }, {})
+  console.info('[audit] missing-row gap distribution', missingByBucket)
 }
 
 main().catch((err) => {
