@@ -156,6 +156,21 @@ export async function uploadProviderPaymentProof(params: {
   return blob.url
 }
 
+export async function uploadProviderProfilePhoto(file: File): Promise<string> {
+  await validateFile(file)
+
+  const ext = safeExtension(file)
+  const key = `provider-registration/profile-photos/${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`
+
+  const blob = await put(key, file, {
+    access: 'public',
+    addRandomSuffix: true,
+    contentType: file.type,
+  })
+
+  return blob.url
+}
+
 export async function getProviderPaymentProof(url: string) {
   return get(url, {
     access: 'private',

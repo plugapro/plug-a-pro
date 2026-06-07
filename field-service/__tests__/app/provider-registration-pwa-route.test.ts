@@ -65,6 +65,20 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).not.toContain("actionHref: '/provider/register/evidence'")
   })
 
+  it('wires the profile photo tile to a real image upload control', () => {
+    const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
+
+    expect(existsSync(join(root, 'app/api/provider/registration/profile-photo/route.ts'))).toBe(true)
+    expect(clientSource).toContain('profilePhotoInputRef')
+    expect(clientSource).toContain('handleProfilePhotoChange')
+    expect(clientSource).toContain("fetch('/api/provider/registration/profile-photo'")
+    expect(clientSource).toContain('profilePhotoInputRef.current?.click()')
+    expect(clientSource).toContain('type="file"')
+    expect(clientSource).toContain('accept="image/*"')
+    expect(clientSource).toContain('onChange={handleProfilePhotoChange}')
+    expect(clientSource).not.toContain('profile-photo-pending')
+  })
+
   it('uses the shared app theme tokens instead of a one-off light registration palette', () => {
     const clientSource = readFileSync(join(root, 'components/provider/registration/ProviderRegistrationClient.tsx'), 'utf8')
 

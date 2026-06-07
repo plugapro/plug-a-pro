@@ -108,6 +108,17 @@ function cleanString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
+function cleanUrlString(value: unknown): string | null {
+  const trimmed = cleanString(value)
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'https:' ? trimmed : null
+  } catch {
+    return null
+  }
+}
+
 function stringList(value: string[] | string | null | undefined): string[] {
   const raw = Array.isArray(value)
     ? value
@@ -169,7 +180,7 @@ function normalizeDraftInput(input: ProviderRegistrationDraftInput) {
     businessName: cleanString(input.businessName),
     preferredContact: cleanString(input.preferredContact),
     identityBasis: cleanString(input.identityBasis),
-    profilePhotoUrl: cleanString(input.profilePhotoUrl),
+    profilePhotoUrl: cleanUrlString(input.profilePhotoUrl),
     skills,
     categorySlugs,
     serviceAreas,
@@ -340,6 +351,7 @@ export async function submitProviderRegistrationApplication(
       isTestUser: cohort.isTestUser,
       cohortName: cohort.cohortName,
       locationNodeIds: data.locationNodeIds,
+      avatarUrl: data.profilePhotoUrl,
       skipEnrichment: true,
     })
 

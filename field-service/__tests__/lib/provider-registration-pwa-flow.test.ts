@@ -134,6 +134,7 @@ describe('provider registration PWA flow', () => {
       availability: 'Weekdays',
       callOutFee: 150,
       emergencyAvailable: true,
+      profilePhotoUrl: 'https://blob.example/profile-photo.png',
       consentAccepted: true,
     })
 
@@ -145,6 +146,7 @@ describe('provider registration PWA flow', () => {
         active: false,
         verified: false,
         status: 'APPLICATION_PENDING',
+        avatarUrl: 'https://blob.example/profile-photo.png',
       }),
     }))
     expect(tx.providerApplication.create).toHaveBeenCalledWith(expect.objectContaining({

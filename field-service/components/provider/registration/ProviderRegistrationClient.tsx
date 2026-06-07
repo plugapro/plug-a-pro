@@ -2,7 +2,7 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -222,10 +222,23 @@ function parseStoredState(): RegistrationFormState {
       serviceAreas: Array.isArray(parsed.serviceAreas) ? parsed.serviceAreas : [],
       locationNodeIds: Array.isArray(parsed.locationNodeIds) ? parsed.locationNodeIds : [],
       availabilityDays: Array.isArray(parsed.availabilityDays) ? parsed.availabilityDays : [],
+      profilePhotoUrl: usableProfilePhotoUrl(parsed.profilePhotoUrl) ?? '',
       travelRadiusKm: Number.isFinite(Number(parsed.travelRadiusKm)) ? Number(parsed.travelRadiusKm) : DEFAULT_STATE.travelRadiusKm,
     }
   } catch {
     return DEFAULT_STATE
+  }
+}
+
+function usableProfilePhotoUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'https:' ? trimmed : null
+  } catch {
+    return null
   }
 }
 
@@ -267,6 +280,7 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
 
 export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions }: Props) {
   const router = useRouter()
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null)
   const step = initialStep
   const [form, setForm] = useState<RegistrationFormState>(DEFAULT_STATE)
   const [draftId, setDraftId] = useState('')
@@ -276,6 +290,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   const [submitting, setSubmitting] = useState(false)
   const [sendingCode, setSendingCode] = useState(false)
   const [verifyingCode, setVerifyingCode] = useState(false)
+  const [uploadingProfilePhoto, setUploadingProfilePhoto] = useState(false)
 
   useEffect(() => {
     setForm(parseStoredState())
@@ -504,6 +519,54 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
     }
   }
 
+  async function handleProfilePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setError('')
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file.')
+      event.target.value = ''
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Photo is too large. Use an image under 10 MB.')
+      event.target.value = ''
+      return
+    }
+
+    const upload = new FormData()
+    upload.set('file', file)
+    setUploadingProfilePhoto(true)
+
+    try {
+      const response = await fetch('/api/provider/registration/profile-photo', {
+        method: 'POST',
+        body: upload,
+      })
+      const payload = await response.json().catch(() => ({})) as {
+        ok?: boolean
+        profilePhotoUrl?: string
+        message?: string
+        error?: { message?: string }
+      }
+
+      if (!response.ok || !payload.ok || !payload.profilePhotoUrl) {
+        setError(payload.message ?? payload.error?.message ?? 'Could not upload the photo right now.')
+        return
+      }
+
+      update('profilePhotoUrl', payload.profilePhotoUrl)
+    } catch {
+      setError('Could not upload the photo right now.')
+    } finally {
+      setUploadingProfilePhoto(false)
+      event.target.value = ''
+    }
+  }
+
   async function saveAndExit() {
     const saved = await saveDraft(Math.max(1, stepNumber(step)))
     if (saved) router.push('/provider/register/draft')
@@ -697,7 +760,8 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
               <div className="grid gap-4">
                 <button
                   type="button"
-                  onClick={() => update('profilePhotoUrl', form.profilePhotoUrl ? '' : 'profile-photo-pending')}
+                  onClick={() => profilePhotoInputRef.current?.click()}
+                  disabled={uploadingProfilePhoto}
                   className="flex min-h-[84px] items-center gap-3 rounded-lg border border-dashed border-[var(--tone-brand-border)] bg-[var(--tone-brand-bg)] p-4 text-left"
                 >
                   <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-card text-[var(--brand-purple)]">
@@ -705,13 +769,20 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                   </span>
                   <span>
                     <span className="block text-[14px] font-bold text-[var(--ink)]">
-                      {form.profilePhotoUrl ? 'Profile photo selected' : 'Add a profile photo'}
+                      {uploadingProfilePhoto ? 'Uploading profile photo...' : form.profilePhotoUrl ? 'Profile photo uploaded' : 'Add a profile photo'}
                     </span>
                     <span className="block text-[12px] leading-relaxed text-[var(--ink-mute)]">
                       A clear face or work photo helps the team review your profile.
                     </span>
                   </span>
                 </button>
+                <input
+                  ref={profilePhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfilePhotoChange}
+                />
                 <Field label="Full name">
                   <Input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Thabo Nkosi" />
                 </Field>
@@ -745,7 +816,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 </ChoiceGroup>
               </div>
               <FooterActions>
-                <Button fullWidth onClick={() => goTo('services')} loading={saving}>
+                <Button fullWidth onClick={() => goTo('services')} loading={saving || uploadingProfilePhoto} loadingLabel={uploadingProfilePhoto ? 'Uploading...' : undefined}>
                   Continue
                   <ArrowRight size={18} />
                 </Button>
