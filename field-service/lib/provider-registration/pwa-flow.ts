@@ -113,7 +113,11 @@ function cleanUrlString(value: unknown): string | null {
   if (!trimmed) return null
   try {
     const parsed = new URL(trimmed)
-    return parsed.protocol === 'https:' ? trimmed : null
+    const host = parsed.hostname.toLowerCase()
+    if (parsed.protocol === 'https:' && (host === 'vercel-storage.com' || host.endsWith('.vercel-storage.com'))) {
+      return trimmed
+    }
+    return null
   } catch {
     return null
   }
@@ -282,6 +286,17 @@ function applicationRef(id: string): string {
   return id.slice(-8).toUpperCase()
 }
 
+function hasWeekendAvailability(days: string[]): boolean {
+  return days.some((day) => {
+    const normalized = day.trim().toLowerCase()
+    return normalized === 'sat'
+      || normalized === 'sun'
+      || normalized === 'saturday'
+      || normalized === 'sunday'
+      || normalized.includes('weekend')
+  })
+}
+
 export async function submitProviderRegistrationApplication(
   client: SubmitClient,
   input: ProviderRegistrationSubmitInput,
@@ -369,7 +384,7 @@ export async function submitProviderRegistrationApplication(
         rateNegotiable: true,
         emergencyAvailable: data.emergencyAvailable,
         sameDayJobs: true,
-        weekendJobs: data.availabilityDays.includes('Saturday') || data.availabilityDays.includes('Sunday'),
+        weekendJobs: hasWeekendAvailability(data.availabilityDays),
         evidenceNote: data.evidenceNote,
         evidenceFileUrls: [],
         isTestUser: cohort.isTestUser,

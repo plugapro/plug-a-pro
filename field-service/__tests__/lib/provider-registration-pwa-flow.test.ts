@@ -63,7 +63,7 @@ describe('provider registration PWA flow', () => {
       businessName: 'Nkosi Plumbing',
       preferredContact: 'WHATSAPP',
       identityBasis: 'SA_ID',
-      profilePhotoUrl: 'https://blob.example/photo.jpg',
+      profilePhotoUrl: 'https://store.public.blob.vercel-storage.com/photo.jpg',
       skills: ['plumbing'],
       serviceAreas: ['Maboneng'],
       locationNodeIds: ['sub_maboneng'],
@@ -79,7 +79,7 @@ describe('provider registration PWA flow', () => {
         businessName: 'Nkosi Plumbing',
         preferredContact: 'WHATSAPP',
         identityBasis: 'SA_ID',
-        profilePhotoUrl: 'https://blob.example/photo.jpg',
+        profilePhotoUrl: 'https://store.public.blob.vercel-storage.com/photo.jpg',
         skills: ['plumbing'],
         categorySlugs: ['plumbing'],
         locationNodeIds: ['sub_maboneng'],
@@ -132,9 +132,10 @@ describe('provider registration PWA flow', () => {
       serviceAreas: ['Maboneng'],
       experience: '3-5 years',
       availability: 'Weekdays',
+      availabilityDays: ['Sat', 'Sun'],
       callOutFee: 150,
       emergencyAvailable: true,
-      profilePhotoUrl: 'https://blob.example/profile-photo.png',
+      profilePhotoUrl: 'https://store.public.blob.vercel-storage.com/profile-photo.png',
       consentAccepted: true,
     })
 
@@ -146,7 +147,7 @@ describe('provider registration PWA flow', () => {
         active: false,
         verified: false,
         status: 'APPLICATION_PENDING',
-        avatarUrl: 'https://blob.example/profile-photo.png',
+        avatarUrl: 'https://store.public.blob.vercel-storage.com/profile-photo.png',
       }),
     }))
     expect(tx.providerApplication.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -156,6 +157,7 @@ describe('provider registration PWA flow', () => {
         name: 'Thabo Nkosi',
         skills: ['plumbing'],
         serviceAreas: ['Maboneng'],
+        weekendJobs: true,
         status: 'PENDING',
       }),
     }))
@@ -165,5 +167,42 @@ describe('provider registration PWA flow', () => {
       where: { id: 'draft-1' },
       data: { submittedApplicationId: 'app-1', lastCompletedStep: 8 },
     })
+  })
+
+  it('drops untrusted external profile photo URLs before persistence', async () => {
+    const draftClient = createDraftClient()
+
+    await saveProviderRegistrationDraft(draftClient, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      profilePhotoUrl: 'https://tracker.example.invalid/avatar.png',
+      lastCompletedStep: 2,
+    })
+
+    expect(draftClient.providerApplicationDraft.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        profilePhotoUrl: null,
+      }),
+    }))
+
+    const { client, tx } = createSubmitClient()
+    await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['Maboneng'],
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      profilePhotoUrl: 'https://tracker.example.invalid/avatar.png',
+      consentAccepted: true,
+    })
+
+    expect(tx.provider.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.not.objectContaining({
+        avatarUrl: 'https://tracker.example.invalid/avatar.png',
+      }),
+    }))
   })
 })
