@@ -6,7 +6,36 @@ import { uploadProviderProfilePhoto } from '@/lib/storage'
 import { timestamp } from '@/lib/support-diagnostics'
 
 const SURFACE = 'provider_registration_profile_photo'
-const MAX_FILE_SIZE = 10 * 1024 * 1024
+// Aligned with Vercel Functions' 4.5 MB request body limit so the route never
+// has to reason about a request that the platform already rejected with a
+// non-JSON 413. The client validates against the same bound.
+const MAX_FILE_SIZE = 4 * 1024 * 1024
+// Server-side allowlist. Kept in sync with lib/storage.ts so that a file
+// whose declared MIME is missing or wrong is rejected with a structured 415
+// instead of falling through to a generic 500 from the storage helper.
+const ACCEPTED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+])
+
+function maskPhone(phone: string | null | undefined): string {
+  if (!phone) return ''
+  const digits = phone.replace(/\D+/g, '')
+  if (digits.length < 4) return '***'
+  return `${digits.slice(0, 3)}***${digits.slice(-3)}`
+}
+
+function logUploadEvent(level: 'info' | 'warn', fields: Record<string, unknown>) {
+  try {
+    // Structured JSON line for Vercel log search; no raw phone, no signed URLs.
+    console[level](JSON.stringify({ surface: SURFACE, ...fields }))
+  } catch {
+    // Logging must never block the upload response.
+  }
+}
 
 function categoryFor(status: number) {
   if (status === 401) return 'authentication'
@@ -51,6 +80,7 @@ function errorResponse(code: string, message: string, status: number) {
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session?.phone) {
+    logUploadEvent('warn', { event: 'session_required' })
     return errorResponse(
       'REGISTRATION_SESSION_REQUIRED',
       'Verify your mobile number before uploading a profile photo.',
@@ -58,24 +88,49 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const maskedPhone = maskPhone(session.phone)
+
   let formData: FormData
   try {
     formData = await request.formData()
   } catch {
-    return errorResponse('INVALID_PROFILE_PHOTO', 'Please choose an image file.', 422)
+    logUploadEvent('warn', { event: 'formdata_parse_failed', phone: maskedPhone })
+    return errorResponse('INVALID_PROFILE_PHOTO', 'Please choose a JPG, PNG, WEBP, or HEIC photo.', 422)
   }
 
   const upload = formData.get('file')
   if (!(upload instanceof File)) {
-    return errorResponse('INVALID_PROFILE_PHOTO', 'Please choose an image file.', 422)
+    logUploadEvent('warn', { event: 'missing_file', phone: maskedPhone })
+    return errorResponse('INVALID_PROFILE_PHOTO', 'Please choose a JPG, PNG, WEBP, or HEIC photo.', 422)
   }
 
-  if (!upload.type.startsWith('image/')) {
-    return errorResponse('INVALID_PROFILE_PHOTO', 'Please choose an image file.', 422)
+  // iOS Safari (and Files app share-sheet) sometimes surfaces HEIC/HEIF files
+  // with file.type === '' or 'application/octet-stream'. We trust the file
+  // extension in those two cases; everything else must match the accepted
+  // MIME allowlist exactly. The storage helper's byte-signature check
+  // (lib/storage.ts) remains the single source of truth on actual content.
+  const declaredType = upload.type
+  const typeIsUnknown = declaredType === '' || declaredType === 'application/octet-stream'
+  const looksLikeImage =
+    ACCEPTED_MIME_TYPES.has(declaredType) ||
+    (typeIsUnknown && /\.(heic|heif|jpe?g|png|webp)$/i.test(upload.name))
+  if (!looksLikeImage) {
+    logUploadEvent('warn', {
+      event: 'unsupported_mime',
+      phone: maskedPhone,
+      mime: declaredType || '(empty)',
+      sizeBytes: upload.size,
+    })
+    return errorResponse(
+      'PROFILE_PHOTO_UNSUPPORTED_TYPE',
+      'Use a JPG, PNG, WEBP, or HEIC photo.',
+      415,
+    )
   }
 
   if (upload.size > MAX_FILE_SIZE) {
-    return errorResponse('PROFILE_PHOTO_TOO_LARGE', 'Photo is too large. Use an image under 10 MB.', 422)
+    logUploadEvent('warn', { event: 'too_large', phone: maskedPhone, sizeBytes: upload.size })
+    return errorResponse('PROFILE_PHOTO_TOO_LARGE', 'Photo is too large. Use an image under 4 MB.', 413)
   }
 
   const rateLimit = await checkProviderRegistrationProfilePhotoLimit({
@@ -84,10 +139,11 @@ export async function POST(request: NextRequest) {
     context: { surface: SURFACE },
   })
   if (!rateLimit.ok) {
+    logUploadEvent('warn', { event: 'rate_limited', phone: maskedPhone, code: rateLimit.code })
     return errorResponse(
       rateLimit.code === 'limiter_unavailable' ? 'PROFILE_PHOTO_UPLOAD_UNAVAILABLE' : 'RATE_LIMITED',
       rateLimit.code === 'limiter_unavailable'
-        ? 'Could not upload the photo right now. Please try again.'
+        ? 'Photo upload is temporarily unavailable. Please try again.'
         : 'Too many photo uploads. Please wait before trying again.',
       rateLimit.code === 'limiter_unavailable' ? 503 : 429,
     )
@@ -95,8 +151,41 @@ export async function POST(request: NextRequest) {
 
   try {
     const profilePhotoUrl = await uploadProviderProfilePhoto(upload)
+    logUploadEvent('info', {
+      event: 'upload_succeeded',
+      phone: maskedPhone,
+      mime: declaredType || '(empty)',
+      sizeBytes: upload.size,
+    })
     return NextResponse.json({ ok: true, profilePhotoUrl })
-  } catch {
-    return errorResponse('PROFILE_PHOTO_UPLOAD_FAILED', 'Could not upload the photo right now. Please try again.', 500)
+  } catch (error) {
+    // Distinguish validation throws from storage failures so the client can
+    // pick a more useful message than the generic "try again". The storage
+    // helper throws Errors whose messages start with deterministic phrases.
+    const message = error instanceof Error ? error.message : ''
+    const isValidationError =
+      message.startsWith('File type not allowed') ||
+      message.startsWith('File extension not allowed') ||
+      message.startsWith('File content does not match') ||
+      message.startsWith('File too large')
+    logUploadEvent('warn', {
+      event: isValidationError ? 'validation_rejected' : 'storage_failed',
+      phone: maskedPhone,
+      mime: declaredType || '(empty)',
+      sizeBytes: upload.size,
+      reason: isValidationError ? message : 'storage_error',
+    })
+    if (isValidationError) {
+      return errorResponse(
+        'PROFILE_PHOTO_INVALID_CONTENT',
+        'That image looks corrupted or in an unsupported format. Try a JPG or PNG taken with your camera.',
+        422,
+      )
+    }
+    return errorResponse(
+      'PROFILE_PHOTO_UPLOAD_FAILED',
+      'Photo upload failed. Please try again.',
+      502,
+    )
   }
 }

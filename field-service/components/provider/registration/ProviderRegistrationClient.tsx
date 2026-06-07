@@ -33,6 +33,24 @@ const STATE_KEY = 'pap_provider_registration_state_v2'
 const TOKEN_KEY = 'pap_provider_registration_resume_token_v1'
 const DRAFT_ID_KEY = 'pap_provider_registration_draft_id_v1'
 
+// Vercel Functions reject request bodies larger than 4.5 MB with a non-JSON
+// 413 from the platform layer, so the multipart never reaches our handler.
+// Capping the client at 4 MB keeps the request inside that envelope.
+export const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024
+
+// Map HTTP status returned by the profile-photo route (or, for HTML 413/502s,
+// the Vercel platform) to a user-facing string. The route already returns
+// structured JSON for the cases it knows about; this only kicks in when the
+// response body is missing or not JSON.
+export function mapUploadStatusToMessage(status: number): string {
+  if (status === 401) return 'Verify your mobile number, then try again.'
+  if (status === 413) return 'Photo is too large. Use an image under 4 MB.'
+  if (status === 415 || status === 422) return 'Use a JPG, PNG, WEBP, or HEIC photo.'
+  if (status === 429) return 'Too many uploads. Please wait a minute and try again.'
+  if (status >= 500) return 'Photo upload is temporarily unavailable. Please try again.'
+  return 'Could not upload the photo. Please try again.'
+}
+
 const STEP_KEYS = [
   'welcome',
   'phone',
@@ -719,14 +737,25 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
 
     setError('')
 
-    if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file.')
+    // Accept image/* OR an unknown MIME paired with a recognised image
+    // extension. iOS Safari occasionally surfaces HEIC/HEIF files with
+    // file.type === '' or 'application/octet-stream' (Files app share-sheet),
+    // which we must not silently reject as "not an image".
+    const typeIsUnknown = file.type === '' || file.type === 'application/octet-stream'
+    const looksLikeImage =
+      file.type.startsWith('image/') ||
+      (typeIsUnknown && /\.(heic|heif|jpe?g|png|webp)$/i.test(file.name))
+    if (!looksLikeImage) {
+      setError('Please choose a JPG, PNG, WEBP, or HEIC photo.')
       event.target.value = ''
       return
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Photo is too large. Use an image under 10 MB.')
+    // Keep the client cap aligned with Vercel Functions' 4.5 MB request-body
+    // limit so the platform never rejects the multipart POST with a non-JSON
+    // 413 (which previously fell through to the generic client fallback).
+    if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+      setError('Photo is too large. Use an image under 4 MB.')
       event.target.value = ''
       return
     }
@@ -740,21 +769,25 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
         method: 'POST',
         body: upload,
       })
-      const payload = await response.json().catch(() => ({})) as {
+      const payload = await response.json().catch(() => null) as {
         ok?: boolean
         profilePhotoUrl?: string
         message?: string
         error?: { message?: string }
-      }
+      } | null
 
-      if (!response.ok || !payload.ok || !payload.profilePhotoUrl) {
-        setError(payload.message ?? payload.error?.message ?? 'Could not upload the photo right now.')
+      if (!response.ok || !payload || !payload.ok || !payload.profilePhotoUrl) {
+        // Prefer the server's structured message when present. Fall back to a
+        // status-aware default so an HTML 413 from Vercel still tells the user
+        // the actual problem rather than an opaque generic.
+        const fallback = mapUploadStatusToMessage(response.status)
+        setError(payload?.message ?? payload?.error?.message ?? fallback)
         return
       }
 
       update('profilePhotoUrl', payload.profilePhotoUrl)
     } catch {
-      setError('Could not upload the photo right now.')
+      setError('Could not upload the photo. Check your connection and try again.')
     } finally {
       setUploadingProfilePhoto(false)
       event.target.value = ''

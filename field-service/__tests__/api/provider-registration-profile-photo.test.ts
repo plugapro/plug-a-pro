@@ -79,14 +79,101 @@ describe('POST /api/provider/registration/profile-photo', () => {
       body: formData,
     }))
 
-    expect(response.status).toBe(422)
+    expect(response.status).toBe(415)
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
-      code: 'INVALID_PROFILE_PHOTO',
-      message: 'Please choose an image file.',
+      code: 'PROFILE_PHOTO_UNSUPPORTED_TYPE',
+      message: 'Use a JPG, PNG, WEBP, or HEIC photo.',
     })
     expect(mockCheckProviderRegistrationProfilePhotoLimit).not.toHaveBeenCalled()
     expect(mockUploadProviderProfilePhoto).not.toHaveBeenCalled()
+  })
+
+  it('accepts HEIC files coming from iOS Safari', async () => {
+    const formData = new FormData()
+    formData.set('file', new File(['heic-bytes'], 'IMG_4101.HEIC', { type: 'image/heic' }))
+
+    const { POST } = await import('@/app/api/provider/registration/profile-photo/route')
+    const response = await POST(new NextRequest('http://localhost/api/provider/registration/profile-photo', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockUploadProviderProfilePhoto).toHaveBeenCalledTimes(1)
+  })
+
+  it('accepts an iOS file whose MIME is empty but whose name has a known image extension', async () => {
+    // Empty type happens for HEIC files chosen via the iOS Files picker.
+    const formData = new FormData()
+    formData.set('file', new File(['bytes'], 'IMG_4101.heic', { type: '' }))
+
+    const { POST } = await import('@/app/api/provider/registration/profile-photo/route')
+    const response = await POST(new NextRequest('http://localhost/api/provider/registration/profile-photo', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockUploadProviderProfilePhoto).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects files larger than the 4 MB Vercel function body envelope with a 413', async () => {
+    const formData = new FormData()
+    const big = new Uint8Array(4 * 1024 * 1024 + 1) // 4 MB + 1 byte
+    formData.set('file', new File([big], 'big.jpg', { type: 'image/jpeg' }))
+
+    const { POST } = await import('@/app/api/provider/registration/profile-photo/route')
+    const response = await POST(new NextRequest('http://localhost/api/provider/registration/profile-photo', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(413)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: 'PROFILE_PHOTO_TOO_LARGE',
+      message: 'Photo is too large. Use an image under 4 MB.',
+    })
+    expect(mockUploadProviderProfilePhoto).not.toHaveBeenCalled()
+  })
+
+  it('surfaces storage validation throws as a 422 with a helpful message, not a generic 500', async () => {
+    mockUploadProviderProfilePhoto.mockRejectedValueOnce(
+      new Error('File content does not match declared type: image/jpeg'),
+    )
+    const formData = new FormData()
+    formData.set('file', new File(['heic-bytes-pretending-to-be-jpeg'], 'profile.jpg', { type: 'image/jpeg' }))
+
+    const { POST } = await import('@/app/api/provider/registration/profile-photo/route')
+    const response = await POST(new NextRequest('http://localhost/api/provider/registration/profile-photo', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: 'PROFILE_PHOTO_INVALID_CONTENT',
+    })
+  })
+
+  it('maps an unexpected storage failure to 502 PROFILE_PHOTO_UPLOAD_FAILED', async () => {
+    mockUploadProviderProfilePhoto.mockRejectedValueOnce(new Error('blob storage offline'))
+    const formData = new FormData()
+    formData.set('file', new File(['image-bytes'], 'profile.png', { type: 'image/png' }))
+
+    const { POST } = await import('@/app/api/provider/registration/profile-photo/route')
+    const response = await POST(new NextRequest('http://localhost/api/provider/registration/profile-photo', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: 'PROFILE_PHOTO_UPLOAD_FAILED',
+    })
   })
 
   it('rate limits repeated profile photo uploads before storage is called', async () => {
