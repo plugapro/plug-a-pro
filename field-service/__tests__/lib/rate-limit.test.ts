@@ -138,6 +138,35 @@ describe('OTP rate limiting', () => {
     await expect(checkPublicProviderSendCodeLimit({ phone: '+27820000004', ip: '203.0.113.22' })).resolves.toEqual({ ok: true })
   })
 
+  it('bypasses all four phone-keyed limiters for internal test phones', async () => {
+    // Even with limits set to 1 and the limiter unavailable (production failure
+    // mode), allowlisted internal test phones must always succeed so QA traffic
+    // is never blocked.
+    process.env.VERCEL_ENV = 'production'
+    delete process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
+    delete process.env.UPSTASH_REDIS_KV_REST_API_URL
+    delete process.env.UPSTASH_REDIS_KV_REST_API_TOKEN
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
+
+    const {
+      checkOtpSendLimit,
+      checkOtpVerifyLimit,
+      checkProviderLookupLimit,
+      checkPublicProviderSendCodeLimit,
+    } = await import('@/lib/rate-limit')
+
+    const phone = '+27823035070'
+    for (let i = 0; i < 20; i++) {
+      await expect(checkOtpSendLimit({ phone, ip: '203.0.113.30' })).resolves.toEqual({ ok: true })
+      await expect(checkOtpVerifyLimit({ phone })).resolves.toEqual({ ok: true })
+      await expect(checkProviderLookupLimit({ phone, ip: '203.0.113.30' })).resolves.toEqual({ ok: true })
+      await expect(checkPublicProviderSendCodeLimit({ phone, ip: '203.0.113.30' })).resolves.toEqual({ ok: true })
+    }
+  })
+
   it('limits OTP report attempts by trusted IP', async () => {
     process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
     process.env.OTP_REPORT_LIMIT_PER_IP_HOUR = '1'
