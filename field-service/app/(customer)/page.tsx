@@ -10,12 +10,20 @@ import {
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
+import { pickCustomerDisplayFirstName } from '@/lib/customer-name'
 import { buildMetadata } from '@/lib/metadata'
+import { isEnabled } from '@/lib/flags'
+import {
+  countActiveProvidersFor,
+  listServiceableCategoriesForArea,
+  resolveAreaScope,
+} from '@/lib/customer-serviceability'
 import { AppLogo } from '@/components/shared/app-logo'
 import { Wordmark } from '@/components/shared/wordmark'
 import { SectionLabel } from '@/components/ui/section-label'
 import { AreaSelector } from '@/components/customer/AreaSelector'
 import { CustomerRequestSearchForm } from '@/components/customer/CustomerRequestSearchForm'
+import { HomeServiceSearch } from '@/components/customer/HomeServiceSearch'
 
 export const metadata = buildMetadata({
   title: 'Skilled help near you - book local service providers',
@@ -82,20 +90,58 @@ export default async function CustomerHomePage({
   customer = sessionData.customer
   provider = sessionData.provider
 
+  // Serviceability v2 (customer.home.serviceability_v2):
+  //   - Replaces the free-text search input with HomeServiceSearch (skill picker
+  //     constrained to skills active for the chosen area).
+  //   - Scopes the "Active providers" stat card to area + selected category.
+  //   - Provides serviceable-category data so the browse tiles can mark
+  //     unavailable categories instead of letting customers tap into a dead end.
+  // When the flag is off, the page falls back to the legacy free-text input
+  // and the platform-wide provider count exactly as before.
+  const serviceabilityV2Enabled = await isEnabled('customer.home.serviceability_v2', {
+    userId: session?.id,
+  })
+
+  // Per the brief: when no area is selected we keep the platform count as the
+  // default. Once an area is set we ask for the area-scoped count so the
+  // home card reflects local coverage.
+  const areaScope = serviceabilityV2Enabled ? await resolveAreaScope(area).catch(() => null) : null
+  const serviceableCategories = serviceabilityV2Enabled
+    ? await listServiceableCategoriesForArea(areaScope).catch(() => [])
+    : []
+  const serviceableTagSet = new Set(
+    serviceableCategories.filter((c) => c.activeProviderCount > 0).map((c) => c.tag),
+  )
+
   const [completedJobsCount, verifiedProviderCount] = await Promise.all([
     db.job.count({ where: { status: 'COMPLETED' } }),
-    db.provider.count({ where: { verified: true, active: true, status: 'ACTIVE' } }),
+    serviceabilityV2Enabled && areaScope
+      ? countActiveProvidersFor({ area: areaScope }).catch(() => 0)
+      : db.provider.count({ where: { verified: true, active: true, status: 'ACTIVE' } }),
   ]).catch(() => [0, 0] as const)
 
   const isLoggedOut = !session
   const hasProviderRole = Boolean(provider) || session?.role === 'provider' || Boolean(session?.isProvider)
   const hasCustomerRole = Boolean(customer) || session?.role === 'customer'
   // Prefer the provider name for providers so a leftover placeholder "Customer"
-  // record never surfaces in the greeting ("Hi Customer").
-  const preferredName = hasProviderRole
-    ? (provider?.name || customer?.name)
-    : (customer?.name || provider?.name)
-  const firstName = (preferredName || '').split(' ')[0]
+  // record never surfaces in the greeting ("Hi Customer"). Both customer and
+  // provider names go through pickCustomerDisplayFirstName so the WhatsApp
+  // onboarding placeholder "WhatsApp Customer" (written by lib/whatsapp-flows/
+  // job-request.ts and lib/job-requests/create-job-request.ts when no real
+  // name is captured) does not surface as "Hi WhatsApp". The helper falls
+  // back to Supabase user_metadata (full_name → name → display_name → first_name)
+  // before returning null, at which point the JSX falls back to "there".
+  const customerFirstName = pickCustomerDisplayFirstName({
+    customerName: customer?.name,
+    authDisplayName: session?.authDisplayName,
+  })
+  const providerFirstName = pickCustomerDisplayFirstName({
+    customerName: provider?.name,
+    authDisplayName: session?.authDisplayName,
+  })
+  const firstName = hasProviderRole
+    ? (providerFirstName ?? customerFirstName ?? '')
+    : (customerFirstName ?? providerFirstName ?? '')
 
   return (
     <div className="relative screen-enter">
@@ -144,8 +190,21 @@ export default async function CustomerHomePage({
           Plumbers, handymen, gardeners, tilers and more - rated by customers who booked them.
         </p>
 
-        {/* Search bar */}
-        <CustomerRequestSearchForm currentArea={area ?? null} />
+        {/* Search bar — flag-gated.
+            customer.home.serviceability_v2 ON  → HomeServiceSearch (constrained
+                                                  picker: only active-in-area
+                                                  skills selectable; backend 422
+                                                  guard on submit).
+            customer.home.serviceability_v2 OFF → CustomerRequestSearchForm
+                                                  (PR #58 default: free text +
+                                                  pilot-tag alias routing into
+                                                  /book/<serviceId>).
+        */}
+        {serviceabilityV2Enabled ? (
+          <HomeServiceSearch areaSlug={area ?? null} />
+        ) : (
+          <CustomerRequestSearchForm currentArea={area ?? null} />
+        )}
 
         {/* Location chip */}
         <div className="mt-3">
@@ -176,6 +235,34 @@ export default async function CustomerHomePage({
         <div className="grid grid-cols-4 gap-2.5">
           {CATEGORIES.map((cat) => {
             const Icon = cat.icon
+            // Serviceability-v2: when an area is selected and the flag is on,
+            // render unavailable categories as disabled tiles with reduced
+            // opacity and an explanatory aria-label, instead of routing the
+            // customer to an empty /providers list.
+            const isUnavailableForArea =
+              serviceabilityV2Enabled && Boolean(area) && !serviceableTagSet.has(cat.tag)
+            if (isUnavailableForArea) {
+              return (
+                <div
+                  key={cat.label}
+                  aria-disabled
+                  aria-label={`${cat.label} - not active in this area yet`}
+                  className="flex flex-col items-center gap-2 pt-[14px] pb-[10px] px-1.5 rounded-[16px] cursor-not-allowed"
+                  style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', opacity: 0.5 }}
+                >
+                  <div
+                    className="flex items-center justify-center w-9 h-9 rounded-[11px]"
+                    style={{ background: `${cat.hue}15`, color: cat.hue }}
+                    aria-hidden
+                  >
+                    <Icon size={20} aria-hidden />
+                  </div>
+                  <span className="text-[11.5px] font-semibold text-center leading-tight tracking-[-0.01em]" style={{ color: 'var(--ink-mute)' }}>
+                    {cat.label}
+                  </span>
+                </div>
+              )
+            }
             return (
               <Link
                 key={cat.label}
@@ -238,8 +325,22 @@ export default async function CustomerHomePage({
           {[
             {
               icon: <ShieldCheck size={18} />,
-              value: verifiedProviderCount > 0 ? `${verifiedProviderCount}+` : 'Active',
-              label: 'Active providers',
+              // Serviceability-v2 surfaces an area-aware count + a "no coverage"
+              // empty state instead of the misleading platform-wide "N+" badge.
+              value:
+                serviceabilityV2Enabled && areaScope
+                  ? verifiedProviderCount > 0
+                    ? `${verifiedProviderCount}`
+                    : 'None'
+                  : verifiedProviderCount > 0
+                    ? `${verifiedProviderCount}+`
+                    : 'Active',
+              label:
+                serviceabilityV2Enabled && areaScope
+                  ? verifiedProviderCount > 0
+                    ? `Active in ${areaScope.node.label}`
+                    : `Not active in ${areaScope.node.label} yet`
+                  : 'Active providers',
             },
             {
               icon: <Star size={18} />,

@@ -22,6 +22,10 @@ export interface AuthUser {
   // `role` stays 'customer' for non-eligible providers so portal gating is unchanged;
   // `isProvider` lets UI route them away from customer context (see provider-routing).
   isProvider?: boolean
+  // Display name pulled from Supabase user_metadata at session resolution time.
+  // Used as a fallback when Customer.name is a placeholder (e.g. "WhatsApp Customer"
+  // is written by the WhatsApp onboarding flows when no name was captured).
+  authDisplayName?: string | null
 }
 
 export interface AdminAuthUser extends AuthUser {
@@ -140,6 +144,22 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
       })
     }
 
+    // Supabase user_metadata keys vary by provider/sign-up path; check the common ones
+    // in priority order so the greeting can fall back to an auth-supplied name when
+    // Customer.name is a placeholder. Stored as a single optional field rather than
+    // expanding the session shape further.
+    const meta = (user.user_metadata ?? {}) as Record<string, unknown>
+    const metaPick = (key: string): string | null => {
+      const v = meta[key]
+      return typeof v === 'string' && v.trim() ? v.trim() : null
+    }
+    const authDisplayName =
+      metaPick('full_name') ??
+      metaPick('name') ??
+      metaPick('display_name') ??
+      metaPick('first_name') ??
+      null
+
     return {
       id: user.id,
       email: user.email ?? null,
@@ -147,6 +167,7 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
       role,
       providerId,
       isProvider,
+      authDisplayName,
     }
   } catch {
     return null

@@ -233,6 +233,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'customer.home.serviceability_v2': {
+    description: 'Constrain customer PWA home search to active skills for the selected area, scope the active-providers count card to area + selected skill, and reject unsupported area/skill combinations at the request-creation API.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   // ─── Provider features ───────────────────────────────────────────────────────
   'feature.provider.pwa_inbox': {
     description: 'Enable provider PWA lead inbox, profile editor, availability toggle and earnings dashboard (M4).',

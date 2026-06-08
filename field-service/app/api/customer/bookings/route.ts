@@ -20,6 +20,11 @@ import { isInActiveServiceArea, addToServiceAreaWaitlist } from '@/lib/service-a
 import { uploadJobRequestPhoto } from '@/lib/storage'
 import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-notifications'
 import { canonicalizeServiceCategoryValue } from '@/lib/service-category-canonicalization'
+import {
+  countActiveProvidersFor,
+  resolveAreaScopeByNodeId,
+} from '@/lib/customer-serviceability'
+import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
 
 const MAX_REQUEST_PHOTOS = 5
 const MAX_REQUEST_PHOTO_SIZE = 10 * 1024 * 1024
@@ -225,6 +230,54 @@ export async function POST(req: NextRequest) {
       }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
 
       return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
+    }
+
+    // Serviceability v2 backend guard (customer.home.serviceability_v2):
+    // Reject unsupported (area, category) tuples here so a client bypassing the
+    // home-page constrained input still cannot create a request for a service
+    // we cannot fulfil. The PILOT_SKILL_TAGS check covers regulated categories;
+    // the provider-count check covers cases where the category is allowed
+    // platform-wide but has zero active providers serving the customer's area.
+    const serviceabilityV2Enabled = await isEnabled('customer.home.serviceability_v2', {
+      userId: session.id,
+    })
+    if (serviceabilityV2Enabled) {
+      if (!PILOT_SKILL_TAGS.has(canonicalCategory)) {
+        return NextResponse.json(
+          {
+            error: 'CATEGORY_UNAVAILABLE',
+            message: 'We do not have this service active yet.',
+            category: canonicalCategory,
+          },
+          { status: 422 },
+        )
+      }
+      const areaScope = await resolveAreaScopeByNodeId(resolvedAddress.locationNodeId).catch(() => null)
+      if (!areaScope) {
+        return NextResponse.json(
+          {
+            error: 'AREA_UNAVAILABLE',
+            message: 'We are not active in this area yet.',
+            locationNodeId: resolvedAddress.locationNodeId,
+          },
+          { status: 422 },
+        )
+      }
+      const activeCount = await countActiveProvidersFor({
+        area: areaScope,
+        categoryTag: canonicalCategory,
+      })
+      if (activeCount <= 0) {
+        return NextResponse.json(
+          {
+            error: 'CATEGORY_UNAVAILABLE_IN_AREA',
+            message: 'We do not have this service active in your selected area yet.',
+            category: canonicalCategory,
+            areaLabel: areaScope.node.label,
+          },
+          { status: 422 },
+        )
+      }
     }
 
     let sanitizedPreferredProviderId: string | null = null
