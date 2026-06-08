@@ -32,7 +32,7 @@ import {
   type NoMatchReason,
   type StageCounts,
 } from './diagnostics'
-import type { SlotOption } from './types'
+import type { CoverageTier, SlotOption } from './types'
 
 export type MatchOrchestrationResult =
   | { status: 'DISPATCHED'; holdId: string; providerId: string }
@@ -68,6 +68,7 @@ export type FilteredProvider = {
   providerId: string
   providerName?: string
   filteredReasonCodes: string[]
+  coverageTier?: CoverageTier
 }
 
 export async function orchestrateMatch(

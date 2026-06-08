@@ -61,6 +61,7 @@ export default async function AdminDispatchPage({
   const now = new Date()
   const pageWarnings: string[] = []
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const coverageTierBadgeEnabled = await isEnabled('admin.dispatch.coverage_tier_badge', { userId: admin.id })
 
   const requests = await db.jobRequest.findMany({
     where: {
@@ -676,14 +677,30 @@ export default async function AdminDispatchPage({
                   <CardTitle className="text-base">Filtered out</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {ranking?.filteredOut.length ? ranking.filteredOut.map((candidate) => (
-                    <div key={candidate.providerId} className="rounded-lg border p-3 text-sm">
-                      <p className="font-medium">{candidate.providerName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {candidate.filteredReasonCodes.join(', ')}
-                      </p>
-                    </div>
-                  )) : (
+                  {ranking?.filteredOut.length ? ranking.filteredOut.map((candidate) => {
+                    const showCoverageTier = coverageTierBadgeEnabled
+                      && candidate.filteredReasonCodes.includes('OUTSIDE_SERVICE_AREA')
+                      && candidate.coverageTier
+                    return (
+                      <div key={candidate.providerId} className="rounded-lg border p-3 text-sm">
+                        <p className="font-medium">{candidate.providerName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {candidate.filteredReasonCodes.join(', ')}
+                        </p>
+                        {showCoverageTier && (
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Coverage tier</span>
+                            <Badge variant="outline" className="rounded-full text-[10px]">
+                              {candidate.coverageTier}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground">
+                              {coverageTierHint(candidate.coverageTier!)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }) : (
                     <p className="text-sm text-muted-foreground">
                       No filtered candidates were recorded for this ranking.
                     </p>
@@ -746,6 +763,17 @@ export default async function AdminDispatchPage({
       </div>
     </div>
   )
+}
+
+function coverageTierHint(tier: string): string {
+  switch (tier) {
+    case 'RADIUS':           return 'matched by haversine radius'
+    case 'SUBURB_EXACT':     return 'matched by LocationNode'
+    case 'REGION_FALLBACK':  return 'matched by region fallback'
+    case 'LEGACY_STRING':    return 'matched by legacy string only — no LocationNode coverage'
+    case 'NO_MATCH':         return 'no service-area coverage for this address'
+    default:                  return ''
+  }
 }
 
 function formatDispatchAge(date: Date) {

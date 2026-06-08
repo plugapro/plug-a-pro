@@ -1686,6 +1686,7 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
         providerId: provider.id,
         providerName: provider.name,
         filteredReasonCodes,
+        coverageTier: areaCoverage.tier,
       })
       continue
     }

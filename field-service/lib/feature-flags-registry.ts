@@ -401,6 +401,17 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  // ─── Matching / dispatch diagnostics ─────────────────────────────────────────
+  'admin.providers.legacy_tsa_warning': {
+    description: 'On the /admin/technicians/[id] profile, show a warning banner when Provider.serviceAreas[] is non-empty but the provider has zero active TechnicianServiceArea rows. Diagnoses providers stranded on the legacy string-array form whose coverage no longer reaches the structured matching tier.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'admin.dispatch.coverage_tier_badge': {
+    description: 'On the /admin/dispatch activity feed, render a coverage-tier badge (RADIUS / SUBURB_EXACT / REGION_FALLBACK / LEGACY_STRING / NO_MATCH) next to OUTSIDE_SERVICE_AREA filter reasons, so operators can tell whether a provider missed by structured node, region fallback, or absent coverage entirely.',
+    owner: 'eng',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY
