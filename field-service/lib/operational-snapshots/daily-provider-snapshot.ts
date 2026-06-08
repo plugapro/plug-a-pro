@@ -247,6 +247,95 @@ export async function persistDailyProviderSnapshot(
   return row
 }
 
+// ─── WhatsApp digest ──────────────────────────────────────────────────────────
+//
+// Fire-and-(don't-)forget admin digest. Wraps `sendTemplate` so:
+//   - missing ADMIN_WHATSAPP_NUMBER → returns reason='no_admin_phone'
+//   - missing template approval / Meta-side rejection → caught, returns
+//     reason='send_failed' with the underlying error message. NEVER throws.
+//
+// The caller (cron route) treats any non-ok return as a soft warning, not a
+// 500 — the snapshot row itself has already been persisted by this point.
+
+export type DailySnapshotDigestSender = (params: {
+  to: string
+  template: 'admin_daily_provider_snapshot'
+  components?: Array<{
+    type: 'body'
+    parameters: Array<{ type: 'text'; text: string }>
+  }>
+  metadata?: Record<string, unknown>
+}) => Promise<string>
+
+export type DailySnapshotDigestResult =
+  | { sent: true; messageId: string }
+  | { sent: false; reason: 'no_admin_phone' | 'send_failed'; error?: string }
+
+/**
+ * Send the digest. Returns a structured result instead of throwing so the
+ * caller can decide whether to escalate. The default sender is the
+ * production `sendTemplate` from lib/whatsapp; tests inject a mock.
+ */
+export async function sendDailySnapshotDigest(
+  metrics: DailyProviderSnapshotMetrics,
+  options?: {
+    sender?: DailySnapshotDigestSender
+    adminPhone?: string | null
+  },
+): Promise<DailySnapshotDigestResult> {
+  const adminPhone =
+    options?.adminPhone === undefined
+      ? process.env.ADMIN_WHATSAPP_NUMBER ?? null
+      : options.adminPhone
+
+  if (!adminPhone) {
+    return { sent: false, reason: 'no_admin_phone' }
+  }
+
+  // Lazy import keeps the cron route bundle small for the (default-off) path
+  // and lets tests substitute a sender without touching whatsapp.ts module
+  // initialisation (which reads env at first require).
+  const sender: DailySnapshotDigestSender =
+    options?.sender ??
+    (await import('@/lib/whatsapp').then(
+      (m) => m.sendTemplate as unknown as DailySnapshotDigestSender,
+    ))
+
+  const date = metrics.snapshotDate.toISOString().slice(0, 10)
+  const components = [
+    {
+      type: 'body' as const,
+      parameters: [
+        { type: 'text' as const, text: date },
+        { type: 'text' as const, text: String(metrics.appsApproved) },
+        { type: 'text' as const, text: String(metrics.appsPending) },
+        { type: 'text' as const, text: String(metrics.pendingBreachingSla) },
+        { type: 'text' as const, text: String(metrics.applicationsLast7d) },
+        { type: 'text' as const, text: String(metrics.approvedLast7d) },
+      ],
+    },
+  ]
+
+  try {
+    const messageId = await sender({
+      to: adminPhone,
+      template: 'admin_daily_provider_snapshot',
+      components,
+      metadata: {
+        cron: 'daily-provider-snapshot',
+        snapshotDate: date,
+      },
+    })
+    return { sent: true, messageId }
+  } catch (err) {
+    return {
+      sent: false,
+      reason: 'send_failed',
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
 function countFor(
   rows: Array<{ status: string; _count: { _all: number } }>,
   status: string,

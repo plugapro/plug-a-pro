@@ -10,9 +10,11 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import {
   collectDailyProviderSnapshot,
   persistDailyProviderSnapshot,
+  sendDailySnapshotDigest,
 } from '@/lib/operational-snapshots/daily-provider-snapshot'
 
 const CRON_NAME = 'daily-provider-snapshot'
@@ -36,6 +38,42 @@ export async function GET(request: Request) {
     const metrics = await collectDailyProviderSnapshot(db)
     const row = await persistDailyProviderSnapshot(db, metrics)
 
+    // Soft post-step: WhatsApp digest to ADMIN_WHATSAPP_NUMBER. Gated off by
+    // default; flip `ops.daily_snapshot_whatsapp_digest` once the Meta template
+    // `admin_daily_provider_snapshot` is approved. Send failure is logged but
+    // does NOT roll back the snapshot row or 500 the cron — the snapshot data
+    // path is independent of the notification path.
+    let digest: { sent: boolean; reason?: string; error?: string } = {
+      sent: false,
+      reason: 'flag_disabled',
+    }
+    if (await isEnabled('ops.daily_snapshot_whatsapp_digest')) {
+      const result = await sendDailySnapshotDigest(metrics)
+      digest = result
+      if (!result.sent) {
+        console.warn(
+          JSON.stringify({
+            event: 'cron_digest_skipped',
+            cron: CRON_NAME,
+            snapshotId: row.id,
+            reason: result.reason,
+            error: result.error,
+            timestamp: new Date().toISOString(),
+          }),
+        )
+      } else {
+        console.log(
+          JSON.stringify({
+            event: 'cron_digest_sent',
+            cron: CRON_NAME,
+            snapshotId: row.id,
+            messageId: result.messageId,
+            timestamp: new Date().toISOString(),
+          }),
+        )
+      }
+    }
+
     const durationMs = Date.now() - cronStart
     console.log(
       JSON.stringify({
@@ -44,6 +82,7 @@ export async function GET(request: Request) {
         durationMs,
         snapshotDate: row.snapshotDate.toISOString(),
         snapshotId: row.id,
+        digestSent: digest.sent,
         timestamp: new Date().toISOString(),
       }),
     )
@@ -54,6 +93,7 @@ export async function GET(request: Request) {
       snapshotDate: row.snapshotDate.toISOString().slice(0, 10),
       snapshotId: row.id,
       durationMs,
+      digest,
       metrics: {
         appsApproved: metrics.appsApproved,
         appsPending: metrics.appsPending,

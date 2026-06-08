@@ -1,45 +1,50 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDb, mockCollect, mockPersist } = vi.hoisted(() => ({
-  mockDb: {
-    providerApplication: {
-      groupBy: vi.fn(),
-      count: vi.fn(),
+const { mockDb, mockCollect, mockPersist, mockSendDigest, mockIsEnabled } =
+  vi.hoisted(() => ({
+    mockDb: {
+      providerApplication: {
+        groupBy: vi.fn(),
+        count: vi.fn(),
+      },
+      provider: {
+        count: vi.fn(),
+      },
+      providerApplicationDraft: {
+        groupBy: vi.fn(),
+      },
+      messageEvent: {
+        count: vi.fn(),
+      },
+      otpDeliveryAttempt: {
+        count: vi.fn(),
+      },
+      providerWallet: {
+        aggregate: vi.fn(),
+      },
+      leadUnlock: {
+        count: vi.fn(),
+      },
+      jobRequest: {
+        count: vi.fn(),
+      },
+      dailyProviderSnapshot: {
+        upsert: vi.fn(),
+      },
+      $queryRaw: vi.fn(),
     },
-    provider: {
-      count: vi.fn(),
-    },
-    providerApplicationDraft: {
-      groupBy: vi.fn(),
-    },
-    messageEvent: {
-      count: vi.fn(),
-    },
-    otpDeliveryAttempt: {
-      count: vi.fn(),
-    },
-    providerWallet: {
-      aggregate: vi.fn(),
-    },
-    leadUnlock: {
-      count: vi.fn(),
-    },
-    jobRequest: {
-      count: vi.fn(),
-    },
-    dailyProviderSnapshot: {
-      upsert: vi.fn(),
-    },
-    $queryRaw: vi.fn(),
-  },
-  mockCollect: vi.fn(),
-  mockPersist: vi.fn(),
-}))
+    mockCollect: vi.fn(),
+    mockPersist: vi.fn(),
+    mockSendDigest: vi.fn(),
+    mockIsEnabled: vi.fn(),
+  }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
 vi.mock('@/lib/operational-snapshots/daily-provider-snapshot', () => ({
   collectDailyProviderSnapshot: mockCollect,
   persistDailyProviderSnapshot: mockPersist,
+  sendDailySnapshotDigest: mockSendDigest,
 }))
 
 function cronRequest(authHeader?: string) {
@@ -81,6 +86,9 @@ describe('GET /api/internal/cron/daily-provider-snapshot', () => {
       id: 'snap_1',
       snapshotDate: SAMPLE_METRICS.snapshotDate,
     })
+    // Default: flag OFF → digest path stays dormant unless a test opts in.
+    mockIsEnabled.mockResolvedValue(false)
+    mockSendDigest.mockResolvedValue({ sent: false, reason: 'no_admin_phone' })
   })
 
   it('rejects requests without an authorization header', async () => {
@@ -192,5 +200,72 @@ describe('GET /api/internal/cron/daily-provider-snapshot', () => {
     expect(res.status).toBe(200)
     expect(mockCollect).toHaveBeenCalledTimes(1)
     expect(mockPersist).toHaveBeenCalledTimes(1)
+  })
+
+  // ─── WhatsApp digest (default-off, non-blocking) ────────────────────────────
+
+  it('does NOT attempt to send the WhatsApp digest when the feature flag is disabled (default)', async () => {
+    const { GET } = await import(
+      '@/app/api/internal/cron/daily-provider-snapshot/route'
+    )
+    const res = await GET(cronRequest('Bearer test-cron-secret'))
+
+    expect(res.status).toBe(200)
+    expect(mockIsEnabled).toHaveBeenCalledWith('ops.daily_snapshot_whatsapp_digest')
+    expect(mockSendDigest).not.toHaveBeenCalled()
+    const body = await res.json()
+    expect(body.digest).toEqual({ sent: false, reason: 'flag_disabled' })
+  })
+
+  it('attempts to send the digest and surfaces sent=true in the response when the flag is enabled', async () => {
+    mockIsEnabled.mockResolvedValueOnce(true)
+    mockSendDigest.mockResolvedValueOnce({ sent: true, messageId: 'wamid.test_1' })
+    const { GET } = await import(
+      '@/app/api/internal/cron/daily-provider-snapshot/route'
+    )
+    const res = await GET(cronRequest('Bearer test-cron-secret'))
+
+    expect(res.status).toBe(200)
+    expect(mockSendDigest).toHaveBeenCalledTimes(1)
+    expect(mockSendDigest).toHaveBeenCalledWith(SAMPLE_METRICS)
+    const body = await res.json()
+    expect(body.digest).toEqual({ sent: true, messageId: 'wamid.test_1' })
+  })
+
+  it('still returns 200 + persists when the digest send fails (non-blocking)', async () => {
+    mockIsEnabled.mockResolvedValueOnce(true)
+    mockSendDigest.mockResolvedValueOnce({
+      sent: false,
+      reason: 'send_failed',
+      error: 'template not approved',
+    })
+    const { GET } = await import(
+      '@/app/api/internal/cron/daily-provider-snapshot/route'
+    )
+    const res = await GET(cronRequest('Bearer test-cron-secret'))
+
+    expect(res.status).toBe(200)
+    expect(mockPersist).toHaveBeenCalledTimes(1)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.snapshotId).toBe('snap_1')
+    expect(body.digest).toEqual({
+      sent: false,
+      reason: 'send_failed',
+      error: 'template not approved',
+    })
+  })
+
+  it('still returns 200 when the digest path is enabled but ADMIN_WHATSAPP_NUMBER is unset', async () => {
+    mockIsEnabled.mockResolvedValueOnce(true)
+    mockSendDigest.mockResolvedValueOnce({ sent: false, reason: 'no_admin_phone' })
+    const { GET } = await import(
+      '@/app/api/internal/cron/daily-provider-snapshot/route'
+    )
+    const res = await GET(cronRequest('Bearer test-cron-secret'))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.digest).toEqual({ sent: false, reason: 'no_admin_phone' })
   })
 })

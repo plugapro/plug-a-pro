@@ -580,6 +580,23 @@ export const TEMPLATES = {
       'Hi {{1}}, want to strengthen your Plug A Pro profile? Tap below to add one work photo. Skip is fine — we already have your application.',
   },
 
+  // ─── Operational digests (admin-facing, sent to ADMIN_WHATSAPP_NUMBER) ─────
+
+  admin_daily_provider_snapshot: {
+    name: 'admin_daily_provider_snapshot',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Daily provider funnel digest sent to ADMIN_WHATSAPP_NUMBER from the daily-provider-snapshot cron at 16:00 UTC (18:00 SAST). Gated behind ops.daily_snapshot_whatsapp_digest flag. UTILITY because it conveys live operational state of the provider funnel; an SLA-breach number above zero is a service-quality alert the admin needs to act on.',
+    // {{1}} snapshot date (YYYY-MM-DD)
+    // {{2}} approved providers (current total)
+    // {{3}} pending providers (current total)
+    // {{4}} pending providers breaching the 30-min approval SLA
+    // {{5}} applications submitted in the last 7 days
+    // {{6}} applications approved in the last 7 days
+    example:
+      'Plug A Pro daily snapshot — {{1}}\n\nApproved providers: {{2}}\nPending: {{3}} (incl. {{4}} past 30-min SLA)\nLast 7d applications: {{5}}\nLast 7d approved: {{6}}',
+  },
+
 } as const
 
 export type TemplateName = keyof typeof TEMPLATES
