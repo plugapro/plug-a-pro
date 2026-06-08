@@ -13,6 +13,7 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import { pickCustomerDisplayFirstName } from '@/lib/customer-name'
 import { buildMetadata } from '@/lib/metadata'
 import { isEnabled } from '@/lib/flags'
+import { getServiceCategoryLabel } from '@/lib/service-categories'
 import {
   countActiveProvidersFor,
   listServiceableCategoriesForArea,
@@ -59,9 +60,9 @@ function categoryHref(tag: string, area?: string, q?: string) {
 export default async function CustomerHomePage({
   searchParams,
 }: {
-  searchParams?: Promise<{ area?: string }>
+  searchParams?: Promise<{ area?: string; service?: string }>
 } = {}) {
-  const { area } = await (searchParams ?? Promise.resolve({} as { area?: string }))
+  const { area, service } = await (searchParams ?? Promise.resolve({} as { area?: string; service?: string }))
   const session = await getSession()
   let customer: { id: string; name: string | null } | null = null
   let provider: { id: string; name: string | null } | null = null
@@ -102,6 +103,8 @@ export default async function CustomerHomePage({
     userId: session?.id,
   })
 
+  const selectedServiceTag = service?.trim().toLowerCase() || null
+
   // Per the brief: when no area is selected we keep the platform count as the
   // default. Once an area is set we ask for the area-scoped count so the
   // home card reflects local coverage.
@@ -109,6 +112,9 @@ export default async function CustomerHomePage({
   const serviceableCategories = serviceabilityV2Enabled
     ? await listServiceableCategoriesForArea(areaScope).catch(() => [])
     : []
+  const selectedServiceCategory = selectedServiceTag
+    ? serviceableCategories.find((category) => category.tag === selectedServiceTag) ?? null
+    : null
   const serviceableTagSet = new Set(
     serviceableCategories.filter((c) => c.activeProviderCount > 0).map((c) => c.tag),
   )
@@ -201,7 +207,7 @@ export default async function CustomerHomePage({
                                                   /book/<serviceId>).
         */}
         {serviceabilityV2Enabled ? (
-          <HomeServiceSearch areaSlug={area ?? null} />
+          <HomeServiceSearch areaSlug={area ?? null} initialSelectedTag={selectedServiceTag} />
         ) : (
           <CustomerRequestSearchForm currentArea={area ?? null} />
         )}
@@ -328,18 +334,28 @@ export default async function CustomerHomePage({
               // Serviceability-v2 surfaces an area-aware count + a "no coverage"
               // empty state instead of the misleading platform-wide "N+" badge.
               value:
-                serviceabilityV2Enabled && areaScope
+                  serviceabilityV2Enabled && areaScope
                   ? verifiedProviderCount > 0
-                    ? `${verifiedProviderCount}`
-                    : 'None'
+                    ? selectedServiceTag
+                      ? selectedServiceCategory?.activeProviderCount === 0
+                        ? 'No'
+                        : `${selectedServiceCategory?.activeProviderCount ?? 0}`
+                      : `${verifiedProviderCount}`
+                    : selectedServiceTag
+                      ? 'No'
+                      : 'Not active yet'
                   : verifiedProviderCount > 0
                     ? `${verifiedProviderCount}+`
                     : 'Active',
               label:
                 serviceabilityV2Enabled && areaScope
-                  ? verifiedProviderCount > 0
-                    ? `Active in ${areaScope.node.label}`
-                    : `Not active in ${areaScope.node.label} yet`
+                  ? selectedServiceTag
+                    ? selectedServiceCategory?.activeProviderCount === 0
+                      ? `${getServiceCategoryLabel(selectedServiceTag)} not active in ${areaScope.node.label} yet`
+                      : `${getServiceCategoryLabel(selectedServiceTag)} active in ${areaScope.node.label}`
+                    : verifiedProviderCount > 0
+                      ? `Active in ${areaScope.node.label}`
+                      : `Not active in ${areaScope.node.label} yet`
                   : 'Active providers',
             },
             {

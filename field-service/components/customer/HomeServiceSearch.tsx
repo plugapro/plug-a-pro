@@ -16,7 +16,7 @@
 // so we do all filtering client-side.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Search, Zap } from 'lucide-react'
 
 type ServiceableCategory = {
@@ -38,12 +38,33 @@ type EmptyState =
   | { kind: 'skill_unknown' }
   | { kind: 'none' }
 
-export function HomeServiceSearch({ areaSlug }: { areaSlug: string | null }) {
+export function HomeServiceSearch({
+  areaSlug,
+  initialSelectedTag,
+}: {
+  areaSlug: string | null
+  initialSelectedTag?: string | null
+}) {
   const router = useRouter()
+  const pathname = usePathname()
   const [query, setQuery] = useState('')
   const [data, setData] = useState<ServiceabilityPayload | null>(null)
-  const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const [selectedTag, setSelectedTag] = useState<string | null>(initialSelectedTag?.trim().toLowerCase() || null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  function syncServiceParam(tag: string | null) {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (areaSlug) {
+      params.set('area', areaSlug)
+    } else {
+      params.delete('area')
+    }
+    if (tag) params.set('service', tag)
+    else params.delete('service')
+    const next = params.toString()
+    router.replace(`${pathname}${next ? `?${next}` : ''}`, { scroll: false })
+  }
 
   // Loading is derived rather than tracked in state: we're loading whenever the
   // currently-fetched payload's area slug doesn't yet match the area the user
@@ -74,7 +95,10 @@ export function HomeServiceSearch({ areaSlug }: { areaSlug: string | null }) {
           const stillAvailable = json.categories.some(
             (c) => c.tag === selectedTag && c.activeProviderCount > 0,
           )
-          if (!stillAvailable) setSelectedTag(null)
+          if (!stillAvailable) {
+            setSelectedTag(null)
+            syncServiceParam(null)
+          }
         }
       })
       .catch(() => {
@@ -89,6 +113,28 @@ export function HomeServiceSearch({ areaSlug }: { areaSlug: string | null }) {
     // We intentionally exclude selectedTag — it's only inspected, not re-fetched.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaSlug])
+
+  // Keep component state aligned with URL-driven selection (eg. back/forward
+  // navigation or deep-link sharing). If the URL supplies a selection that does
+  // not exist in current payload, we clear it below through the availability
+  // check and avoid enabling submit. setState-inside-effect is the documented
+  // React pattern for "adjusting state when a prop changes" — the lint rule
+  // doesn't distinguish it from cascading-render anti-patterns, so we suppress.
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+  useEffect(() => {
+    const next = initialSelectedTag?.trim().toLowerCase() || null
+    if (!next) {
+      if (selectedTag) setSelectedTag(null)
+      return
+    }
+
+    if (next !== selectedTag) {
+      setSelectedTag(next)
+    }
+    const match = data?.categories.find((c) => c.tag === next)
+    if (match) setQuery(match.label)
+  }, [initialSelectedTag, data])
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   const normalizedQuery = query.trim().toLowerCase()
 
@@ -123,10 +169,13 @@ export function HomeServiceSearch({ areaSlug }: { areaSlug: string | null }) {
     setSelectedTag(tag)
     const match = data?.categories.find((c) => c.tag === tag)
     if (match) setQuery(match.label)
+    syncServiceParam(tag)
   }
 
   function clearSelection() {
     setSelectedTag(null)
+    setQuery('')
+    syncServiceParam(null)
   }
 
   const canSubmit =
