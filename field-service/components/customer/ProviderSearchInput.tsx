@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { ProviderCard } from '@/components/shared/ProviderCard'
-import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { formatAreaSearchLabel } from '@/lib/customer-search-routing'
 import { getPilotServiceCategories } from '@/lib/service-categories'
 
 type SearchableProvider = {
@@ -88,7 +88,7 @@ export function ProviderSearchInput({
 
       <p className="text-[12px]" style={{ color: 'var(--ink-mute)' }}>
         {selectedCategory ? `Category: ${categoryLabel(selectedCategory)}` : 'All categories'}
-        {selectedArea ? ` · Area: ${normaliseLocationDisplayName(selectedArea)}` : ''}
+        {selectedArea ? ` · Area: ${formatAreaSearchLabel(selectedArea)}` : ''}
       </p>
 
       {visibleProviders.length === 0 ? (

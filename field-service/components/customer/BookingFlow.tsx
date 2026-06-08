@@ -21,7 +21,7 @@ import {
   SelectItem,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
-import { SuburbPicker } from './SuburbPicker'
+import { SuburbPicker, type Selection as SuburbSelection } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
 import { getPilotServiceCategories } from '@/lib/service-categories'
@@ -78,6 +78,8 @@ interface BookingFlowProps {
     budgetPreference: string
     photosSafeForPreview: boolean
   }>
+  initialAddress?: SuburbSelection | null
+  initialAreaLabel?: string | null
   /** Saved customer addresses (address book). Only shown when addressBookEnabled=true. */
   savedSites?: SavedSite[]
   /** Whether the feature.customer.address_book flag is enabled. */
@@ -130,6 +132,8 @@ export function BookingFlow({
   category,
   preferredProviderId = null,
   initialDraft,
+  initialAddress = null,
+  initialAreaLabel = null,
   savedSites = [],
   addressBookEnabled = false,
 }: BookingFlowProps) {
@@ -142,11 +146,11 @@ export function BookingFlow({
     addressLine2: '',
     complexName: '',
     unitNumber: '',
-    suburb: '',
-    region: '',
-    city: '',
-    province: 'Gauteng',
-    postalCode: '',
+    suburb: initialAddress?.suburb ?? '',
+    region: initialAddress?.region ?? '',
+    city: initialAddress?.city ?? '',
+    province: initialAddress?.province ?? 'Gauteng',
+    postalCode: initialAddress?.postalCode ?? '',
   })
   const [subcategory, setSubcategory] = useState(initialDraft?.subcategory ?? '')
   const [jobType, setJobType] = useState<JobType>(coerceOption(initialDraft?.jobType, JOB_TYPE_OPTIONS, 'repair'))
@@ -171,11 +175,15 @@ export function BookingFlow({
   const [photosSafeForPreview, setPhotosSafeForPreview] = useState(true)
   const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false)
   const [termsAcknowledged, setTermsAcknowledged] = useState(false)
-  const [locationNodeId, setLocationNodeId] = useState<string | null>(null)
+  const [locationNodeId, setLocationNodeId] = useState<string | null>(initialAddress?.locationNodeId ?? null)
   const [locationDetectedLabel, setLocationDetectedLabel] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [locationLoading, setLocationLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(
+    initialAreaLabel
+      ? `We could not prefill ${initialAreaLabel}. Please search for your suburb below.`
+      : null,
+  )
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
   const [ticketUrl, setTicketUrl] = useState<string | null>(null)
   const [selectedMatchingMode, setSelectedMatchingMode] = useState<MatchingMode | null>(null)
@@ -530,7 +538,8 @@ export function BookingFlow({
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
           // Draft is auto-saved to localStorage - redirect to sign-in and come back
-          window.location.href = `/sign-in?next=${encodeURIComponent(`/book/${category.slug}`)}`
+          const returnPath = `${window.location.pathname}${window.location.search}`
+          window.location.href = `/sign-in?next=${encodeURIComponent(returnPath || `/book/${category.slug}`)}`
           return
         }
         if (res.status === 400) {
@@ -758,6 +767,7 @@ export function BookingFlow({
                   <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Suburb</div>
                   <SuburbPicker
                     provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
+                    initialSelection={initialAddress}
                     onSelect={(selection) => {
                       setLocationDetectedLabel(null)
                       if (selection) {
@@ -1185,8 +1195,8 @@ export function BookingFlow({
             <Button variant="outline" onClick={() => setStep('description')} className="flex-1" size="lg">
               ← Back
             </Button>
-            <Button onClick={handleConfirm} disabled={loading} className="flex-1" size="lg">
-              {loading ? 'Submitting…' : 'Submit request'}
+            <Button onClick={handleConfirm} loading={loading} loadingLabel="Submitting..." className="flex-1" size="lg">
+              Submit request
             </Button>
           </div>
         </div>

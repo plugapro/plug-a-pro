@@ -421,6 +421,56 @@ export async function getStructuredAddressSelection(
   }
 }
 
+export async function getStructuredAddressSelectionBySlug(
+  slug: string,
+): Promise<StructuredAddressSelection | null> {
+  const node = await db.locationNode.findFirst({
+    where: {
+      slug,
+      nodeType: 'SUBURB',
+      active: true,
+      postalCode: { not: null },
+    },
+    select: {
+      id: true,
+      label: true,
+      postalCode: true,
+      parent: {
+        select: {
+          label: true,
+          parent: {
+            select: {
+              label: true,
+              parent: {
+                select: { label: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (
+    !node ||
+    !node.postalCode ||
+    !node.parent?.label ||
+    !node.parent.parent?.label ||
+    !node.parent.parent.parent?.label
+  ) {
+    return null
+  }
+
+  return {
+    locationNodeId: node.id,
+    suburb: formatNodeLabel(node.label),
+    region: formatNodeLabel(node.parent.label),
+    city: formatNodeLabel(node.parent.parent.label),
+    province: formatNodeLabel(node.parent.parent.parent.label),
+    postalCode: node.postalCode,
+  }
+}
+
 export async function resolveStructuredAddressByLabels(input: {
   suburb: string
   city?: string | null

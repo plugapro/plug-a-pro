@@ -8,6 +8,7 @@ const {
   mockResolveReusableCustomerSites,
   mockJobRequestFindFirst,
   mockProviderFindFirst,
+  mockLocationNodeFindFirst,
   mockBookingFlow,
   mockRedirect,
   mockNotFound,
@@ -17,6 +18,7 @@ const {
   mockResolveReusableCustomerSites: vi.fn(),
   mockJobRequestFindFirst: vi.fn(),
   mockProviderFindFirst: vi.fn(),
+  mockLocationNodeFindFirst: vi.fn(),
   mockBookingFlow: vi.fn((props: any) => (
     <main>
       Booking flow for {props.category.slug}
@@ -57,6 +59,9 @@ vi.mock('@/lib/db', () => ({
     provider: {
       findFirst: mockProviderFindFirst,
     },
+    locationNode: {
+      findFirst: mockLocationNodeFindFirst,
+    },
   },
 }))
 
@@ -72,6 +77,7 @@ describe('customer booking entry auth gate', () => {
     mockResolveReusableCustomerSites.mockResolvedValue([])
     mockJobRequestFindFirst.mockResolvedValue(null)
     mockProviderFindFirst.mockResolvedValue(null)
+    mockLocationNodeFindFirst.mockResolvedValue(null)
   })
 
   it('lets logged-out visitors reach /book routes through proxy', async () => {
@@ -138,6 +144,97 @@ describe('customer booking entry auth gate', () => {
         title: 'Old leaking tap',
         description: 'Kitchen sink leak',
       },
+    }), undefined)
+  })
+
+  it('prefills the booking flow from a home search service alias and selected area', async () => {
+    mockLocationNodeFindFirst.mockResolvedValue({
+      id: 'loc-little-falls',
+      label: 'little falls',
+      postalCode: '1724',
+      parent: {
+        label: 'jhb west',
+        parent: {
+          label: 'johannesburg',
+          parent: { label: 'gauteng' },
+        },
+      },
+    })
+
+    const Page = (await import('@/app/(customer)/book/[serviceId]/page')).default
+
+    renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ serviceId: 'tiling' }),
+        searchParams: Promise.resolve({
+          q: 'Tiler',
+          area: 'gauteng__johannesburg__jhb_west__little_falls',
+        }),
+      }),
+    )
+
+    expect(mockLocationNodeFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        slug: 'gauteng__johannesburg__jhb_west__little_falls',
+        nodeType: 'SUBURB',
+        active: true,
+      }),
+    }))
+    expect(mockBookingFlow).toHaveBeenCalledWith(expect.objectContaining({
+      initialDraft: expect.objectContaining({
+        subcategory: 'Tiler',
+      }),
+      initialAddress: {
+        locationNodeId: 'loc-little-falls',
+        suburb: 'Little Falls',
+        region: 'JHB West',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        postalCode: '1724',
+      },
+    }), undefined)
+  })
+
+  it('allows unknown home-search skills to continue through the Other request flow', async () => {
+    const Page = (await import('@/app/(customer)/book/[serviceId]/page')).default
+
+    renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ serviceId: 'other' }),
+        searchParams: Promise.resolve({ q: 'Solar geyser repair' }),
+      }),
+    )
+
+    expect(mockNotFound).not.toHaveBeenCalled()
+    expect(mockBookingFlow).toHaveBeenCalledWith(expect.objectContaining({
+      category: expect.objectContaining({
+        slug: 'other',
+        name: 'Other',
+      }),
+      initialDraft: expect.objectContaining({
+        title: 'Solar geyser repair',
+        subcategory: 'Solar geyser repair',
+      }),
+    }), undefined)
+  })
+
+  it('surfaces a safe fallback label when the selected area cannot be resolved', async () => {
+    mockLocationNodeFindFirst.mockResolvedValue(null)
+    const Page = (await import('@/app/(customer)/book/[serviceId]/page')).default
+
+    renderToStaticMarkup(
+      await Page({
+        params: Promise.resolve({ serviceId: 'tiling' }),
+        searchParams: Promise.resolve({
+          q: 'Tiler',
+          area: 'gauteng__johannesburg__jhb_west__little_falls',
+        }),
+      }),
+    )
+
+    expect(mockBookingFlow).toHaveBeenCalledWith(expect.objectContaining({
+      initialAddress: null,
+      initialAreaLabel: 'Little Falls',
     }), undefined)
   })
 })

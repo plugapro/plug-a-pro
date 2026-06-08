@@ -8,16 +8,21 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { resolveReusableCustomerSites } from '@/lib/customer-address-book'
+import { getStructuredAddressSelectionBySlug } from '@/lib/location-nodes'
+import { formatAreaSearchLabel } from '@/lib/customer-search-routing'
 import { buildMetadata } from '@/lib/metadata'
 import { BookingFlow } from '@/components/customer/BookingFlow'
-import { getPilotServiceCategories } from '@/lib/service-categories'
+import { SERVICE_CATEGORY_OPTIONS, getPilotServiceCategories } from '@/lib/service-categories'
 
 export const metadata = buildMetadata({ title: 'Request a Job' })
 
-// Only pilot skills are valid booking routes. Navigating to /book/electrical
-// returns 404 until that trade is opened for the pilot.
+// Pilot skills and the "other" capture fallback are valid booking routes.
+// Restricted real trades such as /book/electrical still 404 until opened.
 const CATEGORIES = Object.fromEntries(
-  getPilotServiceCategories().map((cat) => [
+  [
+    ...getPilotServiceCategories(),
+    ...SERVICE_CATEGORY_OPTIONS.filter((cat) => cat.tag === 'other'),
+  ].map((cat) => [
     cat.tag,
     { name: cat.label, description: cat.description },
   ]),
@@ -28,13 +33,15 @@ export default async function RequestJobPage({
   searchParams,
 }: {
   params: Promise<{ serviceId: string }>
-  searchParams: Promise<{ template?: string; provider?: string }>
+  searchParams: Promise<{ template?: string; provider?: string; q?: string; area?: string }>
 }) {
-  const [{ serviceId: category }, { template: templateId, provider: preferredProviderIdRaw }] = await Promise.all([
+  const [{ serviceId: category }, { template: templateId, provider: preferredProviderIdRaw, q, area }] = await Promise.all([
     params,
     searchParams,
   ])
   const preferredProviderId = preferredProviderIdRaw?.trim() || null
+  const searchTerm = q?.trim() || ''
+  const areaSlug = area?.trim() || ''
   const session = await getSession()
 
   const categoryInfo = CATEGORIES[category]
@@ -65,7 +72,11 @@ export default async function RequestJobPage({
   const addressBookEnabled = Boolean(session && customer && savedSites.length > 0)
 
   // Resolve template pre-fill - silently ignore invalid/missing ids.
-  let initialDraft: { title: string; description: string } | undefined
+  let initialDraft: {
+    title?: string
+    description?: string
+    subcategory?: string
+  } | undefined
   if (templateId && customer) {
     const template = await db.jobRequest.findFirst({
       where: { id: templateId, customerId: customer.id },
@@ -78,6 +89,20 @@ export default async function RequestJobPage({
       }
     }
   }
+  if (searchTerm) {
+    const searchDraft = category === 'other'
+      ? { title: searchTerm, subcategory: searchTerm }
+      : { subcategory: searchTerm }
+    initialDraft = { ...searchDraft, ...initialDraft }
+  }
+
+  const initialAddress = areaSlug
+    ? await getStructuredAddressSelectionBySlug(areaSlug).catch((err) => {
+        console.warn('[book] area prefill lookup failed', { areaSlug, err })
+        return null
+      })
+    : null
+  const initialAreaLabel = areaSlug && !initialAddress ? formatAreaSearchLabel(areaSlug) : null
 
   const eligiblePreferredProvider = preferredProviderId
     ? await db.provider.findFirst({
@@ -118,6 +143,8 @@ export default async function RequestJobPage({
       savedSites={savedSites}
       addressBookEnabled={addressBookEnabled}
       initialDraft={initialDraft}
+      initialAddress={initialAddress}
+      initialAreaLabel={initialAreaLabel}
       preferredProviderId={eligiblePreferredProvider?.id ?? null}
     />
   )
