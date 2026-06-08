@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Heavy dynamic imports under full-suite parallel load can exceed the
+// default 5s testTimeout. Bump per-file (validated 2026-06-08).
+vi.setConfig({ testTimeout: 15_000 })
+
 const {
   mockJobRequest,
   mockDispatchDecision,

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { acceptSelectedProviderJob } from '../../lib/selected-provider-acceptance'
 
+// Heavy dynamic imports under full-suite parallel load can exceed the
+// default 5s testTimeout. Bump per-file (validated 2026-06-08).
+vi.setConfig({ testTimeout: 15_000 })
+
 const { mockDb, mockSendTemplate, state } = vi.hoisted(() => {
   const state: {
     lead: any
