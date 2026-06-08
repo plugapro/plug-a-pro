@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { notFound } from 'next/navigation'
-import { PaymentIntentStatusClient } from '@/components/provider/credits'
-import { getPaymentIntentStatus } from '../../actions'
+import { LockedTopUpScreen, PaymentIntentStatusClient } from '@/components/provider/credits'
+import { getPaymentIntentStatus, getProviderCreditPurchaseGate } from '../../actions'
 import ExpiredPayatIntentScreen from './expired'
 
 function isExpired(expiresAt: string | null) {
@@ -23,7 +23,13 @@ export default async function ProviderPayatIntentPage({
   ])
   const status = await getPaymentIntentStatus(intentId)
 
-  if (!status.ok) notFound()
+  if (!status.ok) {
+    if (status.code === 'FORBIDDEN') {
+      const gate = await getProviderCreditPurchaseGate()
+      return <LockedTopUpScreen creditGateStatus={gate.creditGateStatus} />
+    }
+    notFound()
+  }
 
   if (
     resolvedSearchParams.status === 'expired' ||

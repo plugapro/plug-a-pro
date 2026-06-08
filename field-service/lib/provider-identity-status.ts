@@ -111,17 +111,9 @@ export function providerCreditGateStatus(
     }
   }
 
-  if (identityStatus.kycStatus === 'VERIFIED') {
-    return {
-      title: 'Secure liveness needed',
-      description: 'Complete the secure PWA verification step to unlock credit top-ups.',
-      tone: 'warning',
-    }
-  }
-
   return {
-    title: identityStatus.creditGateTitle,
-    description: identityStatus.creditGateDescription,
+    title: 'Top-ups are locked until your identity is verified.',
+    description: 'We need to verify your profile before you can buy credits and accept paid job leads.',
     tone: identityStatus.tone,
   }
 }

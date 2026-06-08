@@ -81,11 +81,16 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     isTestLead: false,
     cohortName: null,
     unlock: null,
-    provider: {
-      id: 'provider-c13',
-      name: 'Kamo Electrical',
-      phone: '+27110000000',
-    },
+	    provider: {
+	      id: 'provider-c13',
+	      name: 'Kamo Electrical',
+	      phone: '+27110000000',
+	      active: true,
+	      verified: true,
+	      status: 'ACTIVE',
+	      kycStatus: 'VERIFIED',
+	      suspendedUntil: null,
+	    },
     providerResponses: [
       {
         callOutFee: 350,
@@ -124,8 +129,8 @@ function makeLead(overrides: Record<string, unknown> = {}) {
 
 function makeTx() {
   return {
-    lead: {
-      findUnique: vi.fn().mockImplementation(async () => state.lead),
+	    lead: {
+	      findUnique: vi.fn().mockImplementation(async () => state.lead),
       update: vi.fn().mockImplementation(async (args: any) => {
         if (args?.data?.status) state.lead = { ...state.lead, status: args.data.status }
         return state.lead
@@ -138,8 +143,24 @@ function makeTx() {
         }
         return { count: 1 }
       }),
-    },
-    providerWallet: {
+	    },
+	    provider: {
+	      findUnique: vi.fn().mockImplementation(async () => ({
+	        id: state.lead.providerId,
+	        active: true,
+	        verified: true,
+	        status: 'ACTIVE',
+	        kycStatus: 'VERIFIED',
+	        suspendedUntil: null,
+	      })),
+	    },
+	    providerIdentityVerification: {
+	      findFirst: vi.fn().mockResolvedValue({
+	        id: 'verification-c13',
+	        providerId: 'provider-c13',
+	      }),
+	    },
+	    providerWallet: {
       findUnique: vi.fn().mockImplementation(async () => state.wallet),
     },
     auditLog: {

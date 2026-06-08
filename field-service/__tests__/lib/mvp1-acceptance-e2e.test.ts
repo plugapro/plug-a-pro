@@ -49,15 +49,17 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     isTestLead: false,
     cohortName: null,
     unlock: null,
-    provider: {
-      id: 'provider-e2e-1',
-      name: 'E2E Electrical',
-      phone: '+27110000000',
-      active: true,
-      verified: true,
-      status: 'ACTIVE',
-      isTestUser: false,
-    },
+	    provider: {
+	      id: 'provider-e2e-1',
+	      name: 'E2E Electrical',
+	      phone: '+27110000000',
+	      active: true,
+	      verified: true,
+	      status: 'ACTIVE',
+	      kycStatus: 'VERIFIED',
+	      suspendedUntil: null,
+	      isTestUser: false,
+	    },
     providerResponses: [
       {
         response: 'INTERESTED',
@@ -97,7 +99,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
 
 function makeTx() {
   return {
-    lead: {
+	    lead: {
       findUnique: vi.fn().mockImplementation(async () => state.lead),
       updateMany: vi.fn().mockImplementation(async (args: any) => {
         if (args?.where?.id === state.lead.id && args?.data?.status) {
@@ -120,8 +122,24 @@ function makeTx() {
         }
         return { count: 0 }
       }),
-    },
-    jobRequest: {
+	    },
+	    provider: {
+	      findUnique: vi.fn().mockImplementation(async () => ({
+	        id: state.lead.providerId,
+	        active: true,
+	        verified: true,
+	        status: 'ACTIVE',
+	        kycStatus: 'VERIFIED',
+	        suspendedUntil: null,
+	      })),
+	    },
+	    providerIdentityVerification: {
+	      findFirst: vi.fn().mockResolvedValue({
+	        id: 'verification-e2e-1',
+	        providerId: 'provider-e2e-1',
+	      }),
+	    },
+	    jobRequest: {
       updateMany: vi.fn().mockImplementation(async (args: any) => {
         if (
           args?.where?.id === state.lead.jobRequestId &&

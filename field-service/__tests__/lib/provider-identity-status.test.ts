@@ -28,13 +28,13 @@ describe('provider status display labels', () => {
     const identityStatus = providerIdentityVerificationStatus('VERIFIED')
     const creditGateStatus = providerCreditGateStatus(identityStatus, true)
 
-    expect(creditGateStatus).toMatchObject({
-      title: 'Secure liveness needed',
-      tone: 'warning',
-    })
-    expect(creditGateStatus.description).toContain('secure PWA verification')
-    expect(creditGateStatus.description).not.toContain('unlocked')
-  })
+	  expect(creditGateStatus).toMatchObject({
+	    title: 'Top-ups are locked until your identity is verified.',
+	    description: 'We need to verify your profile before you can buy credits and accept paid job leads.',
+	    tone: 'success',
+	  })
+	  expect(creditGateStatus.description).not.toContain('unlocked')
+	})
 
   it('uses unlocked credit copy only when the paid-credit gate is actually open', () => {
     const identityStatus = providerIdentityVerificationStatus('VERIFIED')

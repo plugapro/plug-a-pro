@@ -30,7 +30,10 @@ const { mockDb, mockNotifications, state } = vi.hoisted(() => {
 
   const mockDb = {
     $transaction: vi.fn(),
-    provider: { findUnique: vi.fn() },
+	    provider: { findUnique: vi.fn() },
+	    providerIdentityVerification: {
+	      findFirst: vi.fn(),
+	    },
     providerWallet: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -198,7 +201,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
 
     state.providers = new Map([[
       'provider-1',
-      { id: 'provider-1', phone: '+27821234567', kycStatus: 'VERIFIED', active: true, verified: true, status: 'ACTIVE' },
+	      { id: 'provider-1', phone: '+27821234567', kycStatus: 'VERIFIED', active: true, verified: true, status: 'ACTIVE', suspendedUntil: null },
     ]])
     state.wallets = new Map()
     state.leads = new Map([
@@ -217,11 +220,15 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       callback(mockDb as any)
     )
 
-    mockDb.provider.findUnique.mockImplementation(async (args: any) => {
+	    mockDb.provider.findUnique.mockImplementation(async (args: any) => {
       const provider = state.providers.get(args.where.id)
       if (!provider) return null
       return { ...provider, wallet: state.wallets.get(provider.id) ?? null }
-    })
+	    })
+	    mockDb.providerIdentityVerification.findFirst.mockResolvedValue({
+	      id: 'verification-1',
+	      providerId: 'provider-1',
+	    })
 
     mockDb.providerWallet.findUnique.mockImplementation(async (args: any) => state.wallets.get(args.where.providerId) ?? null)
     mockDb.providerWallet.upsert.mockImplementation(async (args: any) => wallet(args.create.providerId))

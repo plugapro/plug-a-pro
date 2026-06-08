@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { KycStatus } from '@prisma/client'
+import { KycStatus, ProviderStatus } from '@prisma/client'
 import { isProviderEligibleForCredits } from '../../lib/identity-verification/credit-gate'
 import { invalidateFlagCache } from '../../lib/flags'
 
@@ -30,6 +30,23 @@ function makeVerification(overrides: Partial<{ expiresAt: Date | null }> = {}) {
   }
 }
 
+function makeProvider(overrides: Partial<{
+  active: boolean
+  verified: boolean
+  status: ProviderStatus
+  kycStatus: KycStatus
+  suspendedUntil: Date | null
+}> = {}) {
+  return {
+    active: true,
+    verified: true,
+    status: ProviderStatus.ACTIVE,
+    kycStatus: KycStatus.VERIFIED,
+    suspendedUntil: null,
+    ...overrides,
+  }
+}
+
 // Tests
 
 describe('isProviderEligibleForCredits', () => {
@@ -48,10 +65,13 @@ describe('isProviderEligibleForCredits', () => {
       vi.stubEnv('FEATURE_FLAGS', JSON.stringify({ 'provider.identity.verification': false }))
     })
 
-    it('returns true without querying the DB', async () => {
+    it('still rejects providers that are not identity verified', async () => {
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ kycStatus: KycStatus.NOT_STARTED }))
       const result = await isProviderEligibleForCredits('provider-1', mockDb)
-      expect(result).toBe(true)
-      expect(mockDb.provider.findUnique).not.toHaveBeenCalled()
+      expect(result).toBe(false)
+      expect(mockDb.provider.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'provider-1' } }),
+      )
       expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
     })
   })
@@ -69,39 +89,72 @@ describe('isProviderEligibleForCredits', () => {
     })
 
     it('returns false when kycStatus is NOT_STARTED', async () => {
-      mockDb.provider.findUnique.mockResolvedValue({ kycStatus: KycStatus.NOT_STARTED })
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ kycStatus: KycStatus.NOT_STARTED }))
       const result = await isProviderEligibleForCredits('provider-1', mockDb)
       expect(result).toBe(false)
       expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
     })
 
     it('returns false when kycStatus is IN_PROGRESS', async () => {
-      mockDb.provider.findUnique.mockResolvedValue({ kycStatus: KycStatus.IN_PROGRESS })
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ kycStatus: KycStatus.IN_PROGRESS }))
       const result = await isProviderEligibleForCredits('provider-1', mockDb)
       expect(result).toBe(false)
     })
 
     it('returns false when kycStatus is SUBMITTED', async () => {
-      mockDb.provider.findUnique.mockResolvedValue({ kycStatus: KycStatus.SUBMITTED })
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ kycStatus: KycStatus.SUBMITTED }))
       const result = await isProviderEligibleForCredits('provider-1', mockDb)
       expect(result).toBe(false)
     })
 
     it('returns false when kycStatus is REJECTED', async () => {
-      mockDb.provider.findUnique.mockResolvedValue({ kycStatus: KycStatus.REJECTED })
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ kycStatus: KycStatus.REJECTED }))
       const result = await isProviderEligibleForCredits('provider-1', mockDb)
       expect(result).toBe(false)
     })
 
     it('returns false when kycStatus is EXPIRED', async () => {
-      mockDb.provider.findUnique.mockResolvedValue({ kycStatus: KycStatus.EXPIRED })
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ kycStatus: KycStatus.EXPIRED }))
       const result = await isProviderEligibleForCredits('provider-1', mockDb)
       expect(result).toBe(false)
     })
 
+    it('returns false when the provider profile is inactive', async () => {
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ active: false }))
+      const result = await isProviderEligibleForCredits('provider-1', mockDb)
+      expect(result).toBe(false)
+      expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('returns false when the provider profile is not marketplace approved', async () => {
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ verified: false }))
+      const result = await isProviderEligibleForCredits('provider-1', mockDb)
+      expect(result).toBe(false)
+      expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
+    })
+
+    it.each([ProviderStatus.APPLICATION_PENDING, ProviderStatus.UNDER_REVIEW, ProviderStatus.SUSPENDED, ProviderStatus.BANNED])(
+      'returns false when provider status is %s',
+      async (status) => {
+        mockDb.provider.findUnique.mockResolvedValue(makeProvider({ status }))
+        const result = await isProviderEligibleForCredits('provider-1', mockDb)
+        expect(result).toBe(false)
+        expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
+      },
+    )
+
+    it('returns false when the provider has a current suspension window', async () => {
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({
+        suspendedUntil: new Date(Date.now() + 60_000),
+      }))
+      const result = await isProviderEligibleForCredits('provider-1', mockDb)
+      expect(result).toBe(false)
+      expect(mockDb.providerIdentityVerification.findFirst).not.toHaveBeenCalled()
+    })
+
     describe('when kycStatus is VERIFIED', () => {
       beforeEach(() => {
-        mockDb.provider.findUnique.mockResolvedValue({ kycStatus: KycStatus.VERIFIED })
+        mockDb.provider.findUnique.mockResolvedValue(makeProvider())
       })
 
       it('returns false when no high-assurance verification record exists', async () => {
@@ -142,11 +195,11 @@ describe('isProviderEligibleForCredits', () => {
   })
 
   describe('flag absent (defaults to false)', () => {
-    it('returns true when flag is not set (default false → flag-off path)', async () => {
-      // No FEATURE_FLAGS env set; isEnabled defaults to false, so the gate is off.
+    it('fails closed instead of treating missing config as top-up approval', async () => {
+      mockDb.provider.findUnique.mockResolvedValue(makeProvider({ kycStatus: KycStatus.NOT_STARTED }))
       const result = await isProviderEligibleForCredits('provider-1', mockDb)
-      expect(result).toBe(true)
-      expect(mockDb.provider.findUnique).not.toHaveBeenCalled()
+      expect(result).toBe(false)
+      expect(mockDb.provider.findUnique).toHaveBeenCalled()
     })
   })
 })

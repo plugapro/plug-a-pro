@@ -1,12 +1,12 @@
 import { randomBytes, randomInt } from 'crypto'
-import { KycStatus, Prisma, type PaymentIntent } from '@prisma/client'
+import { KycStatus, Prisma, ProviderStatus, type PaymentIntent } from '@prisma/client'
 import { db } from './db'
 import {
   IdentityCreditGateError,
   type IdentityVerificationLookupClient,
   assertIdentityVerifiedForCredits as assertHighAssuranceIdentityVerifiedForCredits,
+  providerCreditProfileBlockReason,
 } from './identity-verification/credit-gate'
-import { isEnabled } from './flags'
 import { PLUG_A_PRO_CREDIT_VALUE_CENTS } from './provider-wallet'
 import {
   buildCheckoutPayload,
@@ -67,6 +67,7 @@ export type CreateManualEftTopUpIntentInput = {
   providerId: string
   amountCents: number
   providerCellphone?: string | null
+  actorUserId?: string | null
   metadata?: Record<string, unknown>
   now?: Date
   referenceGenerator?: () => string
@@ -107,22 +108,64 @@ function creditsForAmount(amountCents: number) {
   return amountCents / PLUG_A_PRO_CREDIT_VALUE_CENTS
 }
 
+type PaidTopUpProvider = {
+  id: string
+  active: boolean
+  verified: boolean
+  status: ProviderStatus
+  kycStatus: KycStatus
+  suspendedUntil: Date | null
+}
+
+type BlockedTopUpLogInput = {
+  providerId: string | null
+  userId?: string | null
+  verificationStatus?: KycStatus | string | null
+  providerStatus?: ProviderStatus | string | null
+  attemptedAction: string
+}
+
+export function logBlockedProviderCreditTopUpAttempt(input: BlockedTopUpLogInput) {
+  console.warn('[provider-wallet] topup_blocked_identity_not_verified', {
+    provider_id: input.providerId,
+    user_id: input.userId ?? null,
+    verification_status: input.verificationStatus ?? null,
+    provider_status: input.providerStatus ?? null,
+    attempted_action: input.attemptedAction,
+    timestamp: new Date().toISOString(),
+  })
+}
+
 async function assertProviderVerifiedForPaidTopUp(
-  provider: { id: string; kycStatus: KycStatus },
+  provider: PaidTopUpProvider,
   client: IdentityVerificationLookupClient = db,
+  opts: { actorUserId?: string | null; attemptedAction: string },
 ) {
-  // Short-circuit when the feature is disabled - allows rollback without a deploy.
-  if (!(await isEnabled('provider.identity.verification'))) return
-  if (provider.kycStatus !== KycStatus.VERIFIED) {
+  const profileBlockReason = providerCreditProfileBlockReason(provider)
+  if (profileBlockReason) {
+    logBlockedProviderCreditTopUpAttempt({
+      providerId: provider.id,
+      userId: opts.actorUserId,
+      verificationStatus: provider.kycStatus,
+      providerStatus: provider.status,
+      attemptedAction: opts.attemptedAction,
+    })
     throw new ProviderCreditPaymentIntentError(
       'IDENTITY_NOT_VERIFIED',
-      'Identity verification is required before creating a paid top-up. Complete verification first.',
+      `Identity verification is required before creating a paid top-up. Reason: ${profileBlockReason}.`,
     )
   }
   try {
     await assertHighAssuranceIdentityVerifiedForCredits(provider.id, client)
   } catch (err) {
     if (err instanceof IdentityCreditGateError) {
+      logBlockedProviderCreditTopUpAttempt({
+        providerId: provider.id,
+        userId: opts.actorUserId,
+        verificationStatus: provider.kycStatus,
+        providerStatus: provider.status,
+        attemptedAction: opts.attemptedAction,
+      })
       throw new ProviderCreditPaymentIntentError(
         'IDENTITY_NOT_VERIFIED',
         err.message,
@@ -135,7 +178,14 @@ async function assertProviderVerifiedForPaidTopUp(
 export async function assertIdentityVerifiedForCredits(providerId: string): Promise<{ id: string }> {
   const provider = await db.provider.findUnique({
     where: { id: providerId },
-    select: { id: true, kycStatus: true },
+    select: {
+      id: true,
+      active: true,
+      verified: true,
+      status: true,
+      kycStatus: true,
+      suspendedUntil: true,
+    },
   })
   if (!provider) {
     throw new ProviderCreditPaymentIntentError(
@@ -143,7 +193,10 @@ export async function assertIdentityVerifiedForCredits(providerId: string): Prom
       'Provider account not found.',
     )
   }
-  await assertProviderVerifiedForPaidTopUp(provider)
+  await assertProviderVerifiedForPaidTopUp(provider, db, {
+    actorUserId: null,
+    attemptedAction: 'credit_top_up_identity_assertion',
+  })
   return { id: provider.id }
 }
 
@@ -260,7 +313,15 @@ export async function createManualEftTopUpIntent(
   const result = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
-      select: { id: true, phone: true, kycStatus: true },
+      select: {
+        id: true,
+        phone: true,
+        active: true,
+        verified: true,
+        status: true,
+        kycStatus: true,
+        suspendedUntil: true,
+      },
     })
 
     if (!provider) {
@@ -269,7 +330,10 @@ export async function createManualEftTopUpIntent(
         'Provider account not found.',
       )
     }
-    await assertProviderVerifiedForPaidTopUp(provider, tx)
+    await assertProviderVerifiedForPaidTopUp(provider, tx, {
+      actorUserId: input.actorUserId,
+      attemptedAction: 'manual_eft_top_up_intent_create',
+    })
 
     const paymentReference = await createUniquePaymentReference(tx, referenceGenerator)
 
@@ -348,6 +412,7 @@ export type CreatePayfastTopUpIntentInput = {
   providerName?: string | null
   providerEmail?: string | null
   providerCellphone?: string | null
+  actorUserId?: string | null
   metadata?: Record<string, unknown>
   /** Injectable for deterministic tests. Defaults to `new Date()`. */
   now?: Date
@@ -364,6 +429,7 @@ export type CreatePayatTopUpIntentInput = {
   /** Counter service fee to add on top of the credit amount for the Pay@ barcode. */
   feeAmountCents?: number
   providerCellphone?: string | null
+  actorUserId?: string | null
   metadata?: Record<string, unknown>
   /** Injectable clock for deterministic tests. Defaults to `new Date()`. */
   now?: Date
@@ -415,7 +481,17 @@ export async function createPayatTopUpIntent(
   const { intent, provider, resolvedPhone } = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
-      select: { id: true, phone: true, name: true, email: true, kycStatus: true },
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        email: true,
+        active: true,
+        verified: true,
+        status: true,
+        kycStatus: true,
+        suspendedUntil: true,
+      },
     })
 
     if (!provider) {
@@ -430,7 +506,10 @@ export async function createPayatTopUpIntent(
         'Provider account not found.',
       )
     }
-    await assertProviderVerifiedForPaidTopUp(provider, tx)
+    await assertProviderVerifiedForPaidTopUp(provider, tx, {
+      actorUserId: input.actorUserId,
+      attemptedAction: 'payat_top_up_intent_create',
+    })
 
     console.info(JSON.stringify({
       event: 'payat.provider_resolved',
@@ -664,7 +743,17 @@ export async function createPayfastTopUpIntent(
   const intent = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
-      select: { id: true, phone: true, name: true, email: true, kycStatus: true },
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        email: true,
+        active: true,
+        verified: true,
+        status: true,
+        kycStatus: true,
+        suspendedUntil: true,
+      },
     })
 
     if (!provider) {
@@ -673,7 +762,10 @@ export async function createPayfastTopUpIntent(
         'Provider account not found.',
       )
     }
-    await assertProviderVerifiedForPaidTopUp(provider, tx)
+    await assertProviderVerifiedForPaidTopUp(provider, tx, {
+      actorUserId: input.actorUserId,
+      attemptedAction: 'payfast_top_up_intent_create',
+    })
 
     // Use the intent ID as the Payfast m_payment_id and as the internal
     // payment reference. For Payfast there is no human-readable bank

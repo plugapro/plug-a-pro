@@ -1,10 +1,17 @@
 export const dynamic = 'force-dynamic'
 
 import { PendingIntentList } from '@/components/provider/credits'
-import { getProviderPendingIntents } from '../actions'
+import { getProviderCreditPurchaseGate, getProviderPendingIntents } from '../actions'
 
 export default async function ProviderCreditsPendingPage() {
-  const intents = await getProviderPendingIntents()
+  const gate = await getProviderCreditPurchaseGate()
+  const intents = gate.creditPurchaseLocked ? [] : await getProviderPendingIntents()
 
-  return <PendingIntentList intents={intents} />
+  return (
+    <PendingIntentList
+      intents={intents}
+      creditPurchaseLocked={gate.creditPurchaseLocked}
+      creditGateStatus={gate.creditGateStatus}
+    />
+  )
 }

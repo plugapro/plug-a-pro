@@ -14,6 +14,7 @@ const {
   mockSendButtons,
   mockSendCtaUrl,
   mockIssueVerificationLink,
+  mockIsProviderEligibleForCredits,
   mockBuildAcceptedLeadContactUrlForProvider,
 } = vi.hoisted(() => ({
   mockDb: {
@@ -45,6 +46,7 @@ const {
   mockSendButtons: vi.fn(),
   mockSendCtaUrl: vi.fn(),
   mockIssueVerificationLink: vi.fn(),
+  mockIsProviderEligibleForCredits: vi.fn(),
   mockBuildAcceptedLeadContactUrlForProvider: vi.fn(),
 }))
 
@@ -81,6 +83,9 @@ vi.mock('@/lib/selected-provider-acceptance', () => ({
 }))
 vi.mock('@/lib/identity-verification/link', () => ({
   issueProviderIdentityVerificationLink: mockIssueVerificationLink,
+}))
+vi.mock('@/lib/identity-verification/credit-gate', () => ({
+  isProviderEligibleForCredits: mockIsProviderEligibleForCredits,
 }))
 vi.mock('@/lib/customer-shortlists', () => ({
   declineSelectedProviderJob: mockDeclineSelectedProviderJob,
@@ -224,6 +229,10 @@ describe('processInboundMessage stateless notification replies', () => {
     mockSendText.mockResolvedValue('msg-text')
     mockSendButtons.mockResolvedValue('msg-buttons')
     mockSendCtaUrl.mockResolvedValue('msg-cta')
+    mockIssueVerificationLink.mockResolvedValue({
+      verificationUrl: 'https://app.plugapro.co.za/provider/verify/secure-token',
+    })
+    mockIsProviderEligibleForCredits.mockResolvedValue(true)
     mockSendJourneyRecovery.mockResolvedValue(undefined)
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
@@ -340,6 +349,33 @@ describe('processInboundMessage stateless notification replies', () => {
         expect.objectContaining({ id: 'accept:hold-1', title: 'View lead' }),
         expect.objectContaining({ id: 'back_home', title: 'Main Menu' }),
       ]),
+    )
+  })
+
+  it('blocks stateless top-up package buttons when provider identity is not verified', async () => {
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1' })
+    mockIsProviderEligibleForCredits.mockResolvedValue(false)
+
+    await processInboundMessage(buttonMessage('provider_top_up_credits'))
+
+    expect(mockIsProviderEligibleForCredits).toHaveBeenCalledWith('provider-1')
+    expect(mockSendButtons).not.toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Choose a top-up amount'),
+      expect.any(Array),
+    )
+    expect(mockSendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Identity check required'),
+      expect.any(String),
+      'https://app.plugapro.co.za/provider/verify/secure-token',
     )
   })
 

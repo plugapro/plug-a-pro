@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
         providerName: provider.name,
         providerEmail: provider.email,
         providerCellphone: session.phone ?? provider.phone,
+        actorUserId: session.id,
         metadata: parseMetadata(body),
       })
       return NextResponse.json(result, { status: 201 })
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
         providerId: provider.id,
         amountCents,
         providerCellphone: session.phone ?? provider.phone,
+        actorUserId: session.id,
         metadata: parseMetadata(body),
       })
       return NextResponse.json(result, { status: 201 })
@@ -135,6 +137,7 @@ export async function POST(request: NextRequest) {
       providerId: provider.id,
       amountCents,
       providerCellphone: session.phone ?? provider.phone,
+      actorUserId: session.id,
       metadata: parseMetadata(body),
     })
     return NextResponse.json(result, { status: 201 })
