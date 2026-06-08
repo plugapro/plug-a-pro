@@ -290,6 +290,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.identity.verification.channel_aware_completion': {
+    description: 'Render the identity verification completion CTA based on the verification.channel (PWA / WHATSAPP / ADMIN / VENDOR) instead of the legacy WhatsApp-only deeplink. Disable to roll back to the pre-fix behaviour without a deploy.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'admin.crud.verifications': {
     description: 'Enable admin identity-verification review queue: view docs, approve/reject/request-retry. Requires TRUST or higher.',
     owner: 'ops',
@@ -378,6 +383,12 @@ export const FEATURE_FLAGS_REGISTRY = {
   'whatsapp.registration.web_resume': {
     description: 'Enable the anonymous /provider/signup?t=… page that resumes a registration from a ProviderResumeToken.',
     owner: 'prod',
+    defaultValue: false,
+  },
+  // ─── Operational digests ─────────────────────────────────────────────────────
+  'ops.daily_snapshot_whatsapp_digest': {
+    description: 'Send the daily provider snapshot as a WhatsApp digest to ADMIN_WHATSAPP_NUMBER after the cron persists the snapshot row. Default off until Meta approves the admin_daily_provider_snapshot Utility template. Send failures are caught and logged — they do not affect snapshot persistence.',
+    owner: 'ops',
     defaultValue: false,
   },
 } as const

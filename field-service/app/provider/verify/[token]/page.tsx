@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import type { VerificationChannel } from '@prisma/client'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata, siteConfig } from '@/lib/metadata'
 import {
   resolveVerificationCompletionAction,
@@ -168,7 +169,15 @@ export default async function ProviderIdentityVerifyPage({
   const { token } = await params
   const feedback = buildFeedback(searchParams ? await searchParams : undefined)
   const verification = await resolveForPage(token)
-  if (!verification) return <ExpiredLink />
+  // Channel-aware completion is flag-gated for phased rollout. When the flag
+  // is off we render the pre-fix legacy WhatsApp-only CTA so production
+  // behaviour is preserved; flipping the DB flag swaps in the resolver
+  // without a deploy.
+  const channelAwareCompletion = await isEnabled(
+    'provider.identity.verification.channel_aware_completion',
+    verification?.providerId ? { userId: verification.providerId } : undefined,
+  )
+  if (!verification) return <ExpiredLink channelAware={channelAwareCompletion} />
   const consentVendor = ['NOT_STARTED', 'STARTED'].includes(verification.status)
     ? await resolveIdentityVerificationConsentVendor(verification.id)
     : null
@@ -450,7 +459,11 @@ export default async function ProviderIdentityVerifyPage({
       ) : null}
 
       {['NEEDS_MANUAL_REVIEW', 'PASSED', 'FAILED'].includes(verification.status) ? (
-        <TerminalHandoff status={verification.status} channel={verification.channel} />
+        <TerminalHandoff
+          status={verification.status}
+          channel={verification.channel}
+          channelAware={channelAwareCompletion}
+        />
       ) : null}
     </main>
   )
@@ -504,10 +517,30 @@ async function resolveForPage(token: string) {
   }
 }
 
-function ExpiredLink() {
-  // The token is invalid/expired so we have no channel context. Use the
-  // neutral fallback so PWA-initiated providers are never funnelled into
-  // WhatsApp as their only recovery path.
+function ExpiredLink({ channelAware }: { channelAware: boolean }) {
+  // Flag OFF: legacy WhatsApp-only recovery path (the pre-fix behaviour).
+  // Flag ON: neutral fallback (no channel context — the token is invalid).
+  if (!channelAware) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 px-4 py-10">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plug A Pro verification</p>
+        <h1 className="text-2xl font-semibold tracking-normal">Verification link unavailable</h1>
+        <p className="text-sm leading-6 text-muted-foreground">
+          This secure link is invalid, expired or already complete. Return to WhatsApp and reply{' '}
+          <span className="font-semibold">VERIFY</span> to request a new link.
+        </p>
+        <a
+          href={whatsappReturnUrl()}
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          Back to WhatsApp
+        </a>
+        <Link href="/provider/verification" className="text-center text-sm font-medium underline underline-offset-4">
+          Open verification help
+        </Link>
+      </main>
+    )
+  }
   const action = resolveVerificationCompletionAction({
     channel: null,
     whatsappDeeplink: whatsappReturnUrl(),
@@ -527,10 +560,37 @@ function ExpiredLink() {
 function TerminalHandoff({
   status,
   channel,
+  channelAware,
 }: {
   status: string
   channel: VerificationChannel | null | undefined
+  channelAware: boolean
 }) {
+  // Flag OFF: legacy WhatsApp-only CTA (the pre-fix behaviour every channel saw).
+  // Flag ON: resolver-driven, channel-aware CTA.
+  if (!channelAware) {
+    return (
+      <section className="space-y-3 rounded-lg border bg-card p-4 text-sm leading-6">
+        <h2 className="text-base font-semibold">{terminalTitle(status)}</h2>
+        <p className="text-muted-foreground">{terminalCopy(status)}</p>
+        <p className="text-muted-foreground">
+          Plug A Pro will message you in WhatsApp when there&apos;s an update. You can close this page.
+        </p>
+        <a
+          href={whatsappReturnUrl()}
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          Back to WhatsApp
+        </a>
+        <Link
+          href="/provider/verification"
+          className="block text-center text-sm font-medium underline underline-offset-4"
+        >
+          Verification help
+        </Link>
+      </section>
+    )
+  }
   const action = resolveVerificationCompletionAction({
     channel,
     whatsappDeeplink: whatsappReturnUrl(),
