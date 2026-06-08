@@ -299,10 +299,64 @@ describe('selected provider final acceptance', () => {
     )
   })
 
-  it('returns failure (not success) and spends no credit when accepted provider has no credits', async () => {
+  it('rejects acceptance when the provider has zero credits and leaves CUSTOMER_SELECTED untouched', async () => {
     state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
-    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' })
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    // Pre-gate: with the lead still in CUSTOMER_SELECTED, an insufficient
+    // wallet is caught before any state change is made at all.
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
+    expect(state.tx.auditLog.create).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
+    expect(mockNotifyAcceptedLeadLocked).not.toHaveBeenCalled()
+  })
+
+  it('rejects acceptance when the provider wallet is missing', async () => {
+    state.wallet = null
+
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+  })
+
+  it('rejects acceptance when the provider wallet is suspended', async () => {
+    state.wallet = { paidCreditBalance: 5, promoCreditBalance: 0, status: 'SUSPENDED' }
+
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 5,
+    })
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+  })
+
+  it('returns failure (not success) and spends no credit when accepted provider has no credits', async () => {
+    // Lead was already accepted in a prior call (PROVIDER_ACCEPTED), so the
+    // CUSTOMER_SELECTED pre-gate does not apply here; this exercises the later
+    // checkProviderLeadCreditBalanceInTransaction recheck path instead.
+    state.lead = makeLead({ status: 'PROVIDER_ACCEPTED' })
+    state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
+
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
 
     // SECURITY (66b2eee9): a failed credit check must NOT report success — the
     // lead stays in CREDIT_REQUIRED with no credit spent, so the outer accept
