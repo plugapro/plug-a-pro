@@ -1,7 +1,12 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import type { VerificationChannel } from '@prisma/client'
 import { db } from '@/lib/db'
 import { buildMetadata, siteConfig } from '@/lib/metadata'
+import {
+  resolveVerificationCompletionAction,
+  type CompletionAction,
+} from '@/lib/identity-verification/completion-action'
 import { renderIdentityConsentText } from '@/lib/identity-verification/consent-service'
 import { resolveIdentityVerificationConsentVendor } from '@/lib/identity-verification/orchestrator'
 import { getRequiredDocumentKinds, isIdentityBasis, type IdentityBasis } from '@/lib/identity-verification/types'
@@ -445,7 +450,7 @@ export default async function ProviderIdentityVerifyPage({
       ) : null}
 
       {['NEEDS_MANUAL_REVIEW', 'PASSED', 'FAILED'].includes(verification.status) ? (
-        <TerminalHandoff status={verification.status} />
+        <TerminalHandoff status={verification.status} channel={verification.channel} />
       ) : null}
     </main>
   )
@@ -500,47 +505,80 @@ async function resolveForPage(token: string) {
 }
 
 function ExpiredLink() {
+  // The token is invalid/expired so we have no channel context. Use the
+  // neutral fallback so PWA-initiated providers are never funnelled into
+  // WhatsApp as their only recovery path.
+  const action = resolveVerificationCompletionAction({
+    channel: null,
+    whatsappDeeplink: whatsappReturnUrl(),
+  })
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 px-4 py-10">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plug A Pro verification</p>
       <h1 className="text-2xl font-semibold tracking-normal">Verification link unavailable</h1>
       <p className="text-sm leading-6 text-muted-foreground">
-        This secure link is invalid, expired or already complete. Return to WhatsApp and reply <span className="font-semibold">VERIFY</span> to request a new link.
+        This secure link is invalid, expired or already complete. Request a new link from Plug A Pro to continue.
       </p>
-      <a
-        href={whatsappReturnUrl()}
-        className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-      >
-        Back to WhatsApp
-      </a>
-      <Link href="/provider/verification" className="text-center text-sm font-medium underline underline-offset-4">
-        Open verification help
-      </Link>
+      <CompletionCtaButtons action={action} />
     </main>
   )
 }
 
-function TerminalHandoff({ status }: { status: string }) {
+function TerminalHandoff({
+  status,
+  channel,
+}: {
+  status: string
+  channel: VerificationChannel | null | undefined
+}) {
+  const action = resolveVerificationCompletionAction({
+    channel,
+    whatsappDeeplink: whatsappReturnUrl(),
+  })
   return (
     <section className="space-y-3 rounded-lg border bg-card p-4 text-sm leading-6">
       <h2 className="text-base font-semibold">{terminalTitle(status)}</h2>
       <p className="text-muted-foreground">{terminalCopy(status)}</p>
-      <p className="text-muted-foreground">
-        Plug A Pro will message you in WhatsApp when there&apos;s an update. You can close this page.
-      </p>
-      <a
-        href={whatsappReturnUrl()}
-        className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-      >
-        Back to WhatsApp
-      </a>
-      <Link
-        href="/provider/verification"
-        className="block text-center text-sm font-medium underline underline-offset-4"
-      >
-        Verification help
-      </Link>
+      <p className="text-muted-foreground">{action.followUpCopy}</p>
+      <CompletionCtaButtons action={action} />
     </section>
+  )
+}
+
+function CompletionCtaButtons({ action }: { action: CompletionAction }) {
+  return (
+    <>
+      {action.primary.external ? (
+        <a
+          href={action.primary.href}
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          {action.primary.label}
+        </a>
+      ) : (
+        <Link
+          href={action.primary.href}
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          {action.primary.label}
+        </Link>
+      )}
+      {action.secondary.external ? (
+        <a
+          href={action.secondary.href}
+          className="block text-center text-sm font-medium underline underline-offset-4"
+        >
+          {action.secondary.label}
+        </a>
+      ) : (
+        <Link
+          href={action.secondary.href}
+          className="block text-center text-sm font-medium underline underline-offset-4"
+        >
+          {action.secondary.label}
+        </Link>
+      )}
+    </>
   )
 }
 
