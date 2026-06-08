@@ -527,6 +527,7 @@ function makeClient(options: {
       }),
     },
     provider: {
+      findUnique: vi.fn(async () => ({ kycStatus: 'NOT_STARTED' as const })),
       update: vi.fn(async () => ({ id: 'prov_1' })),
     },
     providerSensitiveDataAccessLog: {

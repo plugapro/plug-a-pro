@@ -10,6 +10,7 @@ import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { providerIdentityVerificationStatus } from '@/lib/provider-identity-status'
 import { getHighRiskServiceRequirements } from '@/lib/service-category-policy'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -393,8 +394,10 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                 <p className="font-medium">{provider.status.replace(/_/g, ' ')}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">KYC status</p>
-                <p className="font-medium">{provider.kycStatus.replace(/_/g, ' ')}</p>
+                <p className="text-muted-foreground">Identity status</p>
+                <p className="font-medium" title={providerIdentityVerificationStatus(provider.kycStatus).description}>
+                  {providerIdentityVerificationStatus(provider.kycStatus).label}
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Experience</p>

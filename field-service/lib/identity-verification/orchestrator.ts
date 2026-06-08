@@ -5,6 +5,7 @@ import { getPublicAppUrl } from '../provider-credit-copy'
 import { issueProviderVerificationToken } from '../provider-verification-token'
 import { sendText } from '../whatsapp-interactive'
 import { decryptIdentifier, encryptIdentifier } from './crypto'
+import { kycStatusForVerificationStatus, resolveKycStatusUpdate } from './kyc-status'
 import { logIdentityVerificationError, logIdentityVerificationEvent } from './log'
 import type { VerificationDecision, VerificationStatus } from './types'
 import { getAdapter, toVendorKey } from './vendors/registry'
@@ -69,6 +70,10 @@ type IdentityVerificationClient = {
     create(args: { data: Prisma.ProviderVerificationEventUncheckedCreateInput }): Promise<unknown>
   }
   provider: {
+    findUnique(args: {
+      where: { id: string }
+      select: { kycStatus: true }
+    }): Promise<{ kycStatus: KycStatus } | null>
     update(args: { where: { id: string }; data: { kycStatus: KycStatus } }): Promise<unknown>
   }
 }
@@ -465,12 +470,47 @@ export async function transitionIdentityVerification(
   })
 
   if (current.providerId) {
-    const kycStatus = kycStatusForTransition(input.toStatus, input.decision)
-    if (kycStatus) {
-      await client.provider.update({
-        where: { id: current.providerId },
-        data: { kycStatus },
-      })
+    // Legacy: terminal verdicts (PASSED+PASS / FAILED / EXPIRED) have always
+    // written Provider.kycStatus. Preserve that unconditionally so flipping
+    // the new propagation flag off cannot regress historic behaviour.
+    // Mid-flow propagation (STARTED, SUBMITTED, etc.) is opt-in via flag.
+    const isLegacyTerminal =
+      (input.toStatus === 'PASSED' && input.decision === 'PASS') ||
+      input.toStatus === 'FAILED' ||
+      input.toStatus === 'EXPIRED'
+    const midFlowEnabled = !isLegacyTerminal
+      && (await isEnabled(
+        'provider.identity.verification.kyc_propagation',
+        { userId: current.providerId },
+      ))
+    if (isLegacyTerminal || midFlowEnabled) {
+      const target = kycStatusForVerificationStatus(input.toStatus, input.decision)
+      if (target) {
+        const provider = await client.provider.findUnique({
+          where: { id: current.providerId },
+          select: { kycStatus: true },
+        })
+        const next = provider ? resolveKycStatusUpdate(provider.kycStatus, target) : null
+        if (provider && next) {
+          await client.provider.update({
+            where: { id: current.providerId },
+            data: { kycStatus: next },
+          })
+          // Audit trail: log the propagation so we can reconstruct the badge
+          // state for any provider from the structured log stream. Provider
+          // ID + statuses only — no PII, document keys, or identifiers.
+          logIdentityVerificationEvent('verify.kyc_status.propagated', {
+            verificationId: input.verificationId,
+            providerId: current.providerId,
+            verificationStatus: input.toStatus,
+            decision: input.decision,
+            kycStatusFrom: provider.kycStatus,
+            kycStatusTo: next,
+            actorRole: input.actorRole,
+            source: isLegacyTerminal ? 'legacy_terminal' : 'mid_flow_flag',
+          })
+        }
+      }
     }
   }
 
@@ -530,16 +570,6 @@ export async function notifyTerminalVerificationStatus(
       toStatus,
     })
   }
-}
-
-function kycStatusForTransition(
-  status: VerificationStatus,
-  decision?: VerificationDecision,
-): KycStatus | null {
-  if (status === 'PASSED' && decision === 'PASS') return 'VERIFIED'
-  if (status === 'FAILED') return 'REJECTED'
-  if (status === 'EXPIRED') return 'EXPIRED'
-  return null
 }
 
 async function transitionToManualReview(

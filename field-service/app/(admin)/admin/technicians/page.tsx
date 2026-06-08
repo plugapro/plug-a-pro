@@ -9,6 +9,7 @@ import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { providerIdentityVerificationStatus, type ProviderStatusTone } from '@/lib/provider-identity-status'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,6 +30,14 @@ const STATUS_BADGE: Record<ProviderStatus, 'default' | 'secondary' | 'outline' |
   SUSPENDED: 'destructive',
   ARCHIVED: 'outline',
   BANNED: 'destructive',
+}
+
+const KYC_BADGE: Record<ProviderStatusTone, 'default' | 'secondary' | 'outline' | 'destructive'> = {
+  success: 'default',
+  info: 'secondary',
+  warning: 'outline',
+  danger: 'destructive',
+  neutral: 'outline',
 }
 
 const KYC_OPTIONS = Object.values(KycStatus)
@@ -250,9 +259,18 @@ export default async function ProvidersPage({ searchParams }: ProvidersPageProps
                   </Badge>
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  <Badge variant="outline" className="rounded-full text-xs">
-                    {provider.kycStatus.replace(/_/g, ' ')}
-                  </Badge>
+                  {(() => {
+                    const identity = providerIdentityVerificationStatus(provider.kycStatus)
+                    return (
+                      <Badge
+                        variant={KYC_BADGE[identity.tone] ?? 'outline'}
+                        className="rounded-full text-xs"
+                        title={identity.description}
+                      >
+                        {identity.shortLabel}
+                      </Badge>
+                    )
+                  })()}
                 </TableCell>
                 <TableCell className="text-right font-medium">
                   {provider._count.jobs}

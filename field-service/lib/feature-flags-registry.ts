@@ -275,6 +275,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.identity.verification.kyc_propagation': {
+    description: 'Propagate intermediate ProviderIdentityVerification states (STARTED, SUBMITTED, AWAITING_LIVENESS, NEEDS_MANUAL_REVIEW, etc.) to Provider.kycStatus so admin and provider PWA badges reflect the real journey stage. Terminal verdicts (PASSED+PASS / FAILED / EXPIRED) propagate regardless of this flag (legacy behaviour preserved).',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.identity.verification.pilot_allowlist_required': {
     description: 'When ON (default), only providers in provider_identity_verification_pilot_allowlist get the active identity-verification vendor; others fall through to manual review. Flip to OFF to remove the pilot gate and route every provider that matches the automation + vendor gates to the active vendor (general availability).',
     owner: 'eng',
