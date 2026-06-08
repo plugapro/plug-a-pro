@@ -114,6 +114,9 @@ export type FilteredCandidate = {
   providerId: string
   providerName: string
   filteredReasonCodes: string[]
+  // Populated when OUTSIDE_SERVICE_AREA appears in filteredReasonCodes; lets
+  // dispatch UI distinguish "missed by structured node" from "no coverage at all".
+  coverageTier?: CoverageTier
 }
 
 export type ScoreBreakdown = {

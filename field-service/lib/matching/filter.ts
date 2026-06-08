@@ -57,6 +57,9 @@ export type FilteredCandidate = {
   providerId: string
   providerName?: string
   filteredReasonCodes: string[]
+  // Populated when OUTSIDE_SERVICE_AREA appears in filteredReasonCodes; lets
+  // dispatch UI distinguish "missed by structured node" from "no coverage at all".
+  coverageTier?: CoverageTier
 }
 
 /**
@@ -602,7 +605,12 @@ export async function filterEligibleProviders(
     }
 
     if (filteredReasonCodes.length > 0) {
-      filteredOut.push({ providerId: candidate.id, providerName: candidate.name, filteredReasonCodes })
+      filteredOut.push({
+        providerId: candidate.id,
+        providerName: candidate.name,
+        filteredReasonCodes,
+        coverageTier: areaCoverage.tier,
+      })
 
       // Near-miss: passed every hard filter but failed ONLY on schedule/window fit.
       // These providers are preserved so the orchestrator can probe alternative slots.

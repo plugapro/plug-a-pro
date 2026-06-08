@@ -79,6 +79,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
 
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled('admin.crud.providers', { userId: admin.id })
+  const legacyTsaWarningEnabled = await isEnabled('admin.providers.legacy_tsa_warning', { userId: admin.id })
 
   const provider = await db.provider.findFirst({
     where: { id },
@@ -292,6 +293,25 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
           {provider.suspendedReason && (
             <p className="mt-1">{provider.suspendedReason}</p>
           )}
+        </div>
+      )}
+
+      {legacyTsaWarningEnabled
+        && provider.serviceAreas.length > 0
+        && provider.technicianServiceAreas.filter((t) => t.active).length === 0 && (
+        <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
+          <p className="font-medium">Legacy service-area data — provider is invisible to structured matching</p>
+          <p className="mt-1">
+            This provider lists {provider.serviceAreas.length} suburb{provider.serviceAreas.length === 1 ? '' : 's'} in the legacy
+            string field but has no active <code className="rounded bg-background/60 px-1">TechnicianServiceArea</code> rows.
+            The matching engine only reads the structured table when a customer address resolves to a LocationNode,
+            so this provider will be filtered out with <code className="rounded bg-background/60 px-1">OUTSIDE_SERVICE_AREA</code> on
+            any structured request and never appear on the customer shortlist for those areas.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Fix: run <code className="rounded bg-background/60 px-1">pnpm tsx scripts/backfill-tsa-from-legacy-service-areas.ts --providers {provider.id} --prefer-majority-region --commit</code>
+            {' '}or rebuild coverage manually from the Service Areas admin form.
+          </p>
         </div>
       )}
 
