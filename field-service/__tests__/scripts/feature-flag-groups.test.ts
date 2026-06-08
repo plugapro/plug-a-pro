@@ -23,6 +23,7 @@ const IMPLEMENTED_OPS_CRUD_FLAGS = [
   'admin.crud.messages',
   'admin.crud.verifications',
   'admin.users.v2',
+  'admin.applications.redesign_v2',
   'admin.quotes.send',
   'admin.invoices.actions',
   'admin.messages.outbound',

@@ -30,6 +30,27 @@ export function getApplicationsAdminMessage(code?: string | null) {
         tone: 'error' as const,
         text: 'Approval could not be completed - Supabase user creation failed. Check the auth configuration and retry.',
       }
+    case 'application_approved':
+      return { tone: 'success' as const, text: 'Application approved. Provider is now eligible for marketplace leads.' }
+    case 'application_rejected':
+      return { tone: 'success' as const, text: 'Application rejected. Provider has been notified on WhatsApp.' }
+    case 'application_rejection_failed':
+      return {
+        tone: 'error' as const,
+        text: 'Application could not be rejected right now. Check the AdminAuditEvent for details and retry.',
+      }
+    case 'application_reject_reason_required':
+      return {
+        tone: 'error' as const,
+        text: 'A rejection reason of at least 5 characters is required. Add a reason and try again.',
+      }
+    case 'application_more_info_sent':
+      return { tone: 'success' as const, text: 'More-info request sent to the provider on WhatsApp.' }
+    case 'application_more_info_failed':
+      return {
+        tone: 'error' as const,
+        text: 'More-info request could not be saved or sent. Refresh and retry.',
+      }
     case 'recovery_sent':
       return { tone: 'success' as const, text: 'WhatsApp recovery message sent.' }
     case 'recovery_sent_template':

@@ -25,6 +25,7 @@ export const OPS_CRUD_FEATURE_FLAGS = [
   'admin.crud.messages',
   'admin.crud.verifications',
   'admin.users.v2',
+  'admin.applications.redesign_v2',
   'admin.quotes.send',
   'admin.invoices.actions',
   'admin.messages.outbound',

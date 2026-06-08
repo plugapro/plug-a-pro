@@ -55,6 +55,7 @@ import {
 import type { ApplicationStatus } from '@prisma/client'
 import { getApplicationsAdminMessage } from '@/lib/admin-action-messages'
 import { readRecoveryErrorMessage } from '@/lib/recovery-error-message'
+import { ApplicationsV2View } from './applications-v2-view'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
 
@@ -78,7 +79,7 @@ const ApplicationActionSchema = z.object({
 })
 
 const RejectApplicationSchema = ApplicationActionSchema.extend({
-  reason: z.string().optional(),
+  reason: z.string().min(5),
 })
 
 const CategoryApprovalSchema = z.object({
@@ -386,6 +387,9 @@ async function approveApplication(formData: FormData) {
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
+  if (approvedNow) {
+    redirect('/admin/applications?message=application_approved')
+  }
 }
 
 async function requestMoreInfo(formData: FormData) {
@@ -401,43 +405,54 @@ async function requestMoreInfo(formData: FormData) {
   })
   if (!app || app.status !== 'PENDING') return
 
-  await crudAction({
-    entity: 'ProviderApplication',
-    entityId: app.id,
-    action: 'provider_application.request_more_info',
-    requiredRole: [...APPLICATION_ROLES],
-    requiredFlag: FLAG,
-    schema: MoreInfoApplicationSchema,
-    input: { id, reason },
-    before: {
-      status: app.status,
-      providerId: app.providerId,
-      reviewedById: app.reviewedById,
-    },
-    run: async (_data, tx) => {
-      await tx.providerApplication.update({
-        where: { id },
-        data: {
+  try {
+    await crudAction({
+      entity: 'ProviderApplication',
+      entityId: app.id,
+      action: 'provider_application.request_more_info',
+      requiredRole: [...APPLICATION_ROLES],
+      requiredFlag: FLAG,
+      schema: MoreInfoApplicationSchema,
+      input: { id, reason },
+      before: {
+        status: app.status,
+        providerId: app.providerId,
+        reviewedById: app.reviewedById,
+      },
+      run: async (_data, tx) => {
+        await tx.providerApplication.update({
+          where: { id },
+          data: {
+            status: 'MORE_INFO_REQUIRED',
+            reviewedAt: new Date(),
+            reviewedById: session.id,
+            notes: reason,
+          },
+        })
+
+        await releaseOpsQueueItem(tx as typeof db, {
+          queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+          entityId: app.id,
+        })
+
+        return {
+          id: app.id,
           status: 'MORE_INFO_REQUIRED',
-          reviewedAt: new Date(),
           reviewedById: session.id,
           notes: reason,
-        },
-      })
-
-      await releaseOpsQueueItem(tx as typeof db, {
-        queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
-        entityId: app.id,
-      })
-
-      return {
-        id: app.id,
-        status: 'MORE_INFO_REQUIRED',
-        reviewedById: session.id,
-        notes: reason,
-      }
-    },
-  })
+        }
+      },
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] requestMoreInfo failed:', error)
+    revalidatePath('/admin/applications')
+    redirect('/admin/applications?message=application_more_info_failed')
+  }
 
   const { sendText } = await import('@/lib/whatsapp-interactive')
   await sendText(
@@ -465,6 +480,7 @@ async function requestMoreInfo(formData: FormData) {
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
+  redirect('/admin/applications?message=application_more_info_sent')
 }
 
 async function updateCategoryApproval(formData: FormData) {
@@ -506,8 +522,12 @@ async function rejectApplication(formData: FormData) {
   'use server'
   const id = String(formData.get('id') ?? '')
   if (!id) return
-  const reason = (formData.get('reason') as string) || undefined
+  const reason = String(formData.get('reason') ?? '').trim()
   const session = await requireAdmin()
+
+  if (reason.length < 5) {
+    redirect('/admin/applications?message=application_reject_reason_required')
+  }
 
   const app = await db.providerApplication.findUnique({
     where: { id },
@@ -515,53 +535,64 @@ async function rejectApplication(formData: FormData) {
   })
   if (!app || app.status !== 'PENDING') return
 
-  await crudAction({
-    entity: 'ProviderApplication',
-    entityId: app.id,
-    action: 'provider_application.reject',
-    requiredRole: [...APPLICATION_ROLES],
-    requiredFlag: FLAG,
-    schema: RejectApplicationSchema,
-    input: { id, reason },
-    before: {
-      status: app.status,
-      providerId: app.providerId,
-      reviewedById: app.reviewedById,
-    },
-    run: async (_data, tx) => {
-      await tx.providerApplication.update({
-        where: { id },
-        data: {
+  try {
+    await crudAction({
+      entity: 'ProviderApplication',
+      entityId: app.id,
+      action: 'provider_application.reject',
+      requiredRole: [...APPLICATION_ROLES],
+      requiredFlag: FLAG,
+      schema: RejectApplicationSchema,
+      input: { id, reason },
+      before: {
+        status: app.status,
+        providerId: app.providerId,
+        reviewedById: app.reviewedById,
+      },
+      run: async (_data, tx) => {
+        await tx.providerApplication.update({
+          where: { id },
+          data: {
+            status: 'REJECTED',
+            provider: app.providerId
+              ? {
+                  update: {
+                    active: false,
+                    availableNow: false,
+                    verified: false,
+                  },
+                }
+              : undefined,
+            reviewedAt: new Date(),
+            reviewedById: session.id,
+            notes: reason,
+          },
+        })
+
+        await releaseOpsQueueItem(tx as typeof db, {
+          queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+          entityId: app.id,
+        })
+
+        return {
+          id: app.id,
           status: 'REJECTED',
-          provider: app.providerId
-            ? {
-                update: {
-                  active: false,
-                  availableNow: false,
-                  verified: false,
-                },
-              }
-            : undefined,
-          reviewedAt: new Date(),
+          providerId: app.providerId,
           reviewedById: session.id,
           notes: reason,
-        },
-      })
-
-      await releaseOpsQueueItem(tx as typeof db, {
-        queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
-        entityId: app.id,
-      })
-
-      return {
-        id: app.id,
-        status: 'REJECTED',
-        providerId: app.providerId,
-        reviewedById: session.id,
-        notes: reason ?? null,
-      }
-    },
-  })
+        }
+      },
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] rejectApplication failed:', error)
+    revalidatePath('/admin/applications')
+    redirect('/admin/applications?message=application_rejection_failed')
+  }
 
   const { notifyTechnicianApplicationResult } = await import('@/lib/whatsapp-bot')
   await notifyTechnicianApplicationResult({
@@ -573,6 +604,7 @@ async function rejectApplication(formData: FormData) {
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
+  redirect('/admin/applications?message=application_rejected')
 }
 
 async function claimApplication(formData: FormData) {
@@ -804,12 +836,14 @@ function getCategoryStatusVariant(status: string): 'success' | 'danger' | 'warni
 export default async function ApplicationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
   const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send', { userId: admin.id })
-  const { message } = await searchParams
+  const v2Enabled = await isEnabled('admin.applications.redesign_v2', { userId: admin.id })
+  const resolvedSearchParams = await searchParams
+  const message = typeof resolvedSearchParams.message === 'string' ? resolvedSearchParams.message : undefined
   const banner = getApplicationsAdminMessage(message)
   const now = new Date()
 
@@ -825,6 +859,45 @@ export default async function ApplicationsPage({
     OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
     applications.map((application) => application.id),
   )
+
+  if (v2Enabled) {
+    const bannerNode = banner ? (
+      <div
+        className={`rounded-xl border px-4 py-3 text-sm ${
+          banner.tone === 'error'
+            ? 'border-destructive/30 bg-destructive/5 text-destructive'
+            : 'tone-success'
+        }`}
+      >
+        {banner.text}
+      </div>
+    ) : null
+
+    return (
+      <ApplicationsV2View
+        applications={applications}
+        recoveryRows={onboardingRecoveryRows}
+        assignments={assignments}
+        conflictingApplicationIds={conflictingApplicationIds}
+        adminId={admin.id}
+        crudEnabled={crudEnabled}
+        templateFlagEnabled={templateFlagEnabled}
+        bannerNode={bannerNode}
+        flag={FLAG}
+        searchParams={resolvedSearchParams}
+        actions={{
+          approve: approveApplication,
+          reject: rejectApplication,
+          requestMoreInfo,
+          claim: claimApplication,
+          release: releaseApplication,
+          updateCategoryApproval,
+          sendRecoveryNudge: sendRecoveryNudgeForRow,
+          sendAllDueRecoveries: sendAllDueRecoveryNudges,
+        }}
+      />
+    )
+  }
 
   const pending = applications.filter((a) => a.status === 'PENDING')
   const approved = applications.filter((a) => a.status === 'APPROVED')
