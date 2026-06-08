@@ -391,6 +391,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'admin.applications.redesign_v2': {
+    description: 'Render the redesigned /admin/applications worklist (queue strip, priority buckets, compact rows, side drawer) instead of the legacy section-based layout. Read-only UI change — all mutations continue to flow through the existing crudAction() server actions.',
+    owner: 'ops',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY
