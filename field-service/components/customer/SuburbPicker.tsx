@@ -25,20 +25,44 @@ export type Selection = {
 type Props = {
   provinceKey: string
   onSelect: (selection: Selection | null) => void
+  initialSelection?: Selection | null
 }
 
-export function SuburbPicker({ provinceKey, onSelect }: Props) {
-  const [query, setQuery] = useState('')
+function optionFromSelection(selection: Selection): SuburbOption {
+  return {
+    id: selection.locationNodeId,
+    slug: '',
+    label: selection.suburb,
+    regionLabel: selection.region,
+    cityLabel: selection.city,
+    provinceLabel: selection.province,
+    postalCode: selection.postalCode,
+    provinceKey: '',
+    cityKey: '',
+    regionKey: '',
+    lat: null,
+    lng: null,
+  }
+}
+
+export function SuburbPicker({ provinceKey, onSelect, initialSelection = null }: Props) {
+  const initialOption = initialSelection ? optionFromSelection(initialSelection) : null
+  const [query, setQuery] = useState(initialOption?.label ?? '')
   const [results, setResults] = useState<SuburbOption[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<SuburbOption | null>(null)
+  const [selected, setSelected] = useState<SuburbOption | null>(initialOption)
   const [open, setOpen] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const listRef = useRef<HTMLUListElement | null>(null)
+  const mountedRef = useRef(false)
 
   // Clear selection when province changes
   useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true
+      return
+    }
     setQuery('')
     setResults([])
     setSelected(null)
@@ -46,6 +70,15 @@ export function SuburbPicker({ provinceKey, onSelect }: Props) {
     onSelect(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provinceKey])
+
+  useEffect(() => {
+    if (!initialSelection) return
+    const option = optionFromSelection(initialSelection)
+    setQuery(option.label)
+    setSelected(option)
+    setResults([])
+    setOpen(false)
+  }, [initialSelection])
 
   async function fetchResults(q: string) {
     if (q.length < 2) {

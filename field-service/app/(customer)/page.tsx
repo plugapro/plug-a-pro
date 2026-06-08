@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import {
-  Droplets, Hammer, Zap, Paintbrush, Sparkles, Wrench,
+  Droplets, Hammer, Paintbrush, Sparkles, Wrench,
   Tv2, Grid3x3, Layers, PaintRoller, Leaf, Drill,
   Bell, ShieldCheck, Search,
   Check, Star, MapPin,
@@ -15,6 +15,7 @@ import { AppLogo } from '@/components/shared/app-logo'
 import { Wordmark } from '@/components/shared/wordmark'
 import { SectionLabel } from '@/components/ui/section-label'
 import { AreaSelector } from '@/components/customer/AreaSelector'
+import { CustomerRequestSearchForm } from '@/components/customer/CustomerRequestSearchForm'
 
 export const metadata = buildMetadata({
   title: 'Skilled help near you - book local service providers',
@@ -144,32 +145,7 @@ export default async function CustomerHomePage({
         </p>
 
         {/* Search bar */}
-        <form action="/providers" method="get">
-          {area && <input type="hidden" name="area" value={area} />}
-          <div
-            className="flex items-center h-14 rounded-[18px] px-1.5 pl-4 gap-0"
-            style={{
-              background: 'var(--card)',
-              boxShadow: '0 1px 0 var(--border), 0 10px 30px rgba(15,15,30,0.05)',
-            }}
-          >
-            <Search size={18} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-            <input
-              name="q"
-              placeholder="Handyman, tiler, plumber…"
-              className="flex-1 min-w-0 h-full border-none outline-none bg-transparent px-3 text-[15px] font-medium placeholder:text-[var(--ink-soft)]"
-              style={{ color: 'var(--ink)' }}
-            />
-            <button
-              type="submit"
-              className="flex items-center gap-1.5 h-11 px-[14px] rounded-[14px] brand-gradient text-white font-bold text-[13px] tracking-[-0.01em] shrink-0"
-              style={{ boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset, 0 8px 24px #8B3FE833' }}
-            >
-              <Zap size={14} />
-              Request
-            </button>
-          </div>
-        </form>
+        <CustomerRequestSearchForm currentArea={area ?? null} />
 
         {/* Location chip */}
         <div className="mt-3">

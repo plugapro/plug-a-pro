@@ -57,6 +57,14 @@ describe('resolveServiceCategoryTag', () => {
     expect(resolveServiceCategoryTag('DIY & Assembly')).toBe('diy')
   })
 
+  it('resolves common customer search aliases to pilot service tags', () => {
+    expect(resolveServiceCategoryTag('Tiler')).toBe('tiling')
+    expect(resolveServiceCategoryTag('Plumber')).toBe('plumbing')
+    expect(resolveServiceCategoryTag('Handyman')).toBe('handyman')
+    expect(resolveServiceCategoryTag('Painter')).toBe('painting')
+    expect(resolveServiceCategoryTag('Carpenter')).toBe('carpentry')
+  })
+
   it('returns null for unknown strings', () => {
     expect(resolveServiceCategoryTag('unknown_xyz')).toBeNull()
   })

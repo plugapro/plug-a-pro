@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import CustomerHomePage from '@/app/(customer)/page'
 
@@ -26,6 +27,16 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/components/customer/AreaSelector', () => ({
   AreaSelector: () => null,
+}))
+
+vi.mock('@/components/customer/CustomerRequestSearchForm', () => ({
+  CustomerRequestSearchForm: ({ currentArea }: { currentArea?: string | null }) =>
+    createElement(
+      'form',
+      { 'data-customer-request-search': true },
+      currentArea ? createElement('input', { type: 'hidden', name: 'area', value: currentArea }) : null,
+      createElement('button', null, 'Request'),
+    ),
 }))
 
 vi.mock('@/lib/customer-session', () => ({

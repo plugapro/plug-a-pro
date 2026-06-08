@@ -6,6 +6,12 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { getPilotServiceCategories } from '@/lib/service-categories'
+import {
+  buildCustomerRequestUrl,
+  formatAreaSearchLabel,
+  resolveCustomerSearchCategoryTag,
+  resolvePilotServiceCategoryTag,
+} from '@/lib/customer-search-routing'
 import { ProviderSearchInput } from '@/components/customer/ProviderSearchInput'
 import { buildMetadata } from '@/lib/metadata'
 import { Prisma } from '@prisma/client'
@@ -89,17 +95,24 @@ export default async function ProviderCataloguePage({
 }) {
   const session = await getSession()
   const isSignedIn = Boolean(session)
+  const { category, area, q, availability, maxCallOut } = await searchParams
+  const requestUrl = buildCustomerRequestUrl({ category, searchTerm: q, area })
 
   const flagEnabled = await isEnabled('feature.customer.provider_browse')
-  if (!flagEnabled) redirect('/')
+  if (!flagEnabled) redirect(requestUrl ?? '/')
 
-  const { category, area, q, availability, maxCallOut } = await searchParams
   const now = new Date()
-  const normalizedCategory = category?.trim().toLowerCase() ?? ''
+  const queryResolvedCategory = resolvePilotServiceCategoryTag(q)
+  const normalizedCategory =
+    resolveCustomerSearchCategoryTag({ category, searchTerm: q }) ??
+    category?.trim().toLowerCase() ??
+    ''
   const normalizedArea = area?.trim() ?? ''
   const normalizedQuery = q?.trim().toLowerCase() ?? ''
+  const providerTextQuery = queryResolvedCategory ? '' : normalizedQuery
   const availableOnly = availability === 'available_now'
   const maxCallOutFee = maxCallOut && Number.isFinite(Number(maxCallOut)) ? Number(maxCallOut) : null
+  const areaLabel = formatAreaSearchLabel(normalizedArea)
 
   const providers = await db.provider.findMany({
     where: {
@@ -138,21 +151,21 @@ export default async function ProviderCataloguePage({
         ...(maxCallOutFee != null
           ? [{ providerRates: { some: { callOutFee: { lte: maxCallOutFee } } } }]
           : []),
-        ...(normalizedQuery
+        ...(providerTextQuery
           ? [
               {
                 OR: [
-                  { name: { contains: normalizedQuery, mode: 'insensitive' as const } },
-                  { bio: { contains: normalizedQuery, mode: 'insensitive' as const } },
+                  { name: { contains: providerTextQuery, mode: 'insensitive' as const } },
+                  { bio: { contains: providerTextQuery, mode: 'insensitive' as const } },
                   {
                     providerCategories: {
                       some: {
-                        categorySlug: { contains: normalizedQuery, mode: 'insensitive' as const },
+                        categorySlug: { contains: providerTextQuery, mode: 'insensitive' as const },
                         approvalStatus: 'APPROVED',
                       },
                     },
                   },
-                  { serviceAreas: { has: normalizedQuery } },
+                  { serviceAreas: { has: providerTextQuery } },
                 ],
               },
             ]
@@ -278,9 +291,37 @@ export default async function ProviderCataloguePage({
       {/* Provider list */}
       {rankedProviders.length === 0 ? (
         <div className="px-[18px] mt-4">
-          <div className="rounded-[20px] p-8 text-center" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
-            <p className="text-[15px] font-bold mb-1" style={{ color: 'var(--ink)' }}>No providers found</p>
-            <p className="text-[13px]" style={{ color: 'var(--ink-mute)' }}>Try a different category or request a service.</p>
+          <div className="rounded-[20px] p-6 text-center" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <p className="text-[15px] font-bold mb-1" style={{ color: 'var(--ink)' }}>
+              We could not find an exact match in {areaLabel} yet.
+            </p>
+            <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ink-mute)' }}>
+              You can still send the request and we&apos;ll try to match you with nearby providers.
+            </p>
+            <div className="mt-4 grid gap-2">
+              {requestUrl && (
+                <Link
+                  href={requestUrl}
+                  className="inline-flex h-11 items-center justify-center rounded-[14px] brand-gradient px-4 text-[13px] font-bold text-white"
+                >
+                  Continue with request
+                </Link>
+              )}
+              <Link
+                href={normalizedCategory ? `/providers?category=${encodeURIComponent(normalizedCategory)}` : '/providers'}
+                className="inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-[13px] font-semibold"
+                style={{ background: 'var(--card-alt)', color: 'var(--ink)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+              >
+                Broaden nearby area
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-[13px] font-semibold"
+                style={{ color: 'var(--brand-purple)' }}
+              >
+                Choose another category
+              </Link>
+            </div>
           </div>
         </div>
       ) : (
