@@ -5,6 +5,8 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
+import { apiError } from '@/lib/api-response'
+import { checkPilotGate, resolveAreaScopeByNodeId } from '@/lib/customer-serviceability'
 import { db } from '@/lib/db'
 import { processQuoteDecision } from '@/lib/quotes'
 import { getPublicQuoteDecisionError } from '@/lib/route-action-errors'
@@ -104,10 +106,25 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   }
 
-  // Resolve quoteId from approval token
+  // Resolve quoteId from approval token. On approve, also pull category and
+  // suburb node so we can re-check the West Rand pilot gate — a quote may have
+  // been issued before the gate flipped on, and we must not approve a booking
+  // for a category that is no longer pilot-allowed.
   const quoteRow = await db.quote.findUnique({
     where: { approvalToken: token },
-    select: { id: true },
+    select: {
+      id: true,
+      match: {
+        select: {
+          jobRequest: {
+            select: {
+              category: true,
+              address: { select: { locationNodeId: true } },
+            },
+          },
+        },
+      },
+    },
   })
   if (!quoteRow) {
     console.warn('[quotes/deep-link] quote decision rejected', {
@@ -124,6 +141,35 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     })
     const response = getPublicQuoteDecisionError({ code: 'NOT_FOUND' })
     return NextResponse.json({ error: response.message }, { status: response.status })
+  }
+
+  // West Rand pilot re-check: only on approve. If the category fell off the
+  // pilot allowlist between quote issue and approval, return 409 so the
+  // customer sees a clear conflict rather than a silent failure.
+  if (body.action === 'approve') {
+    const jobRequest = quoteRow.match?.jobRequest
+    const candidateLocationNodeId = jobRequest?.address?.locationNodeId ?? null
+    const areaScope = candidateLocationNodeId
+      ? await resolveAreaScopeByNodeId(candidateLocationNodeId).catch(() => null)
+      : null
+    const pilotGate = await checkPilotGate({
+      suburbSlug: areaScope?.node.slug ?? null,
+      rawCategory: jobRequest?.category ?? null,
+    })
+    if (!pilotGate.ok) {
+      return apiError(
+        'pilot.category_no_longer_supported',
+        'This category is no longer available in the West Rand pilot. Please contact support.',
+        409,
+        undefined,
+        {
+          category: 'conflict',
+          retryable: false,
+          suggestedActions: ['contact_support'],
+          context: { quoteId: quoteRow.id, category: jobRequest?.category ?? null },
+        },
+      )
+    }
   }
 
   const result = await processQuoteDecision(quoteRow.id, body.action as 'approve' | 'decline', {

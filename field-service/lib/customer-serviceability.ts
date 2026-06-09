@@ -22,6 +22,10 @@
 // All public functions are pure reads. No writes, no side effects.
 
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
+import { getElectricalReadiness } from '@/lib/launch/electrical-readiness'
+import { isPilotCategorySlug, isPilotSuburbSlug } from '@/lib/launch/west-rand-pilot'
+import { canonicalizeServiceCategoryValue } from '@/lib/service-category-canonicalization'
 import { PILOT_SKILL_TAGS, SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 import type { LocationNode, Prisma } from '@prisma/client'
 
@@ -283,3 +287,53 @@ export async function isAreaCategoryServiceable(params: {
 }
 
 export { COUNT_BOUND as SERVICEABILITY_COUNT_BOUND }
+
+// ─── West Rand pilot gate ────────────────────────────────────────────────────
+// Layered defence on top of the existing isAreaCategoryServiceable check.
+// Single source of truth used by the customer serviceability route, the
+// bookings POST handler, the create-job-request persistence seam, and the
+// quote-approve handler. Returns a discriminated union so callers can map to
+// specific error codes (pilot.suburb_not_supported, pilot.category_not_supported,
+// pilot.electrical_disabled) and return the standard API error envelope.
+
+export type PilotGateResult =
+  | { ok: true }
+  | {
+      ok: false
+      code:
+        | 'pilot.suburb_not_supported'
+        | 'pilot.category_not_supported'
+        | 'pilot.electrical_disabled'
+    }
+
+export async function checkPilotGate(params: {
+  suburbSlug: string | null | undefined
+  rawCategory: string | null | undefined
+}): Promise<PilotGateResult> {
+  const masterOn = await isEnabled('launch.west_rand_pilot.enabled')
+  if (!masterOn) return { ok: true }
+
+  if (!isPilotSuburbSlug(params.suburbSlug)) {
+    return { ok: false, code: 'pilot.suburb_not_supported' }
+  }
+
+  const canonical = canonicalizeServiceCategoryValue(params.rawCategory).canonical
+  if (!canonical || !isPilotCategorySlug(canonical)) {
+    return { ok: false, code: 'pilot.category_not_supported' }
+  }
+
+  // Dead path in v1 — electrical is not in allowedCategorySlugs, so we never
+  // reach here with canonical === 'electrical'. The branch is kept for when
+  // electrical is re-introduced behind the readiness gate.
+  if (canonical === 'electrical') {
+    const electricalGateOn = await isEnabled('launch.west_rand_pilot.electrical_gate')
+    if (electricalGateOn) {
+      const readiness = await getElectricalReadiness()
+      if (!readiness.ready) {
+        return { ok: false, code: 'pilot.electrical_disabled' }
+      }
+    }
+  }
+
+  return { ok: true }
+}

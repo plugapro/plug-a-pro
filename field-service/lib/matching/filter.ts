@@ -8,6 +8,8 @@
 
 import { db } from '@/lib/db'
 import { resolveCategoryRequirements } from '@/lib/category-config'
+import { isEnabled } from '@/lib/flags'
+import { isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { MATCHING_CONFIG } from './config'
 import { pointFallsWithinRadius } from './geography'
@@ -291,6 +293,24 @@ export async function filterEligibleProviders(
   const address = jobRequest.address
   const requestWindow = deriveRequestWindow(jobRequest)
   const normalizedCategory = jobRequest.category.trim().toLowerCase()
+
+  // ── West Rand pilot gate ──────────────────────────────────────────────────
+  // When the master flag is ON and the job's category is not in the pilot
+  // allowlist, drop the entire pool with reason CATEGORY_GATED_BY_PILOT.
+  // This prevents Electrical (and other non-pilot categories) from being
+  // auto-routed during the pilot launch.
+  const pilotOn = await isEnabled('launch.west_rand_pilot.enabled')
+  if (pilotOn && !isPilotCategorySlug(normalizedCategory)) {
+    return {
+      eligible: [],
+      filteredOut: rawCandidates.map((c) => ({
+        providerId: c.id,
+        providerName: c.name,
+        filteredReasonCodes: ['CATEGORY_GATED_BY_PILOT'],
+      })),
+      nearMiss: [],
+    }
+  }
 
   // ── Batch-fetch all detail tables in parallel ─────────────────────────────
   // NOTE: No .catch() here - a DB failure must surface as an error so the

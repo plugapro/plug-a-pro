@@ -9,6 +9,9 @@
 // 3. Set PSP_PROVIDER env var
 
 import { db } from './db'
+import { recordAuditLog } from './audit'
+import { checkPilotGate, resolveAreaScopeByNodeId } from './customer-serviceability'
+import { CategoryGatedByPilotError } from './launch/errors'
 import { OPS_QUEUE_TYPES, claimOpsQueueItem } from './ops-queue'
 import { notifyCustomerPaymentFailed } from './client-pwa-submission-notifications'
 import { createPayAtGoBookingPaymentRequest } from './payat-go'
@@ -486,6 +489,51 @@ export async function initializeBookingPayment(params: {
   customerPhone?: string | null
   description: string
 }): Promise<BookingPaymentSetup> {
+  // West Rand pilot gate. Look up the booking's category + suburb so we never
+  // open a payable session for a category the pilot is suppressing (e.g. an
+  // electrical job created before the gate flipped on). When the master flag
+  // is OFF, checkPilotGate is a no-op.
+  const bookingForGate = await db.booking.findUnique({
+    where: { id: params.bookingId },
+    select: {
+      id: true,
+      match: {
+        select: {
+          jobRequest: {
+            select: {
+              category: true,
+              address: { select: { locationNodeId: true } },
+            },
+          },
+        },
+      },
+    },
+  })
+  const jobRequestForGate = bookingForGate?.match?.jobRequest
+  const locationNodeIdForGate = jobRequestForGate?.address?.locationNodeId ?? null
+  const areaScopeForGate = locationNodeIdForGate
+    ? await resolveAreaScopeByNodeId(locationNodeIdForGate).catch(() => null)
+    : null
+  const pilotGate = await checkPilotGate({
+    suburbSlug: areaScopeForGate?.node.slug ?? null,
+    rawCategory: jobRequestForGate?.category ?? null,
+  })
+  if (!pilotGate.ok) {
+    await recordAuditLog({
+      actorId: 'system',
+      actorRole: 'system',
+      action: 'pilot.payment.blocked',
+      entityType: 'Booking',
+      entityId: params.bookingId,
+      after: {
+        category: jobRequestForGate?.category ?? null,
+        suburbSlug: areaScopeForGate?.node.slug ?? null,
+        gateCode: pilotGate.code,
+      },
+    }).catch(() => undefined)
+    throw new CategoryGatedByPilotError(jobRequestForGate?.category ?? 'unknown')
+  }
+
   const mode = getPaymentCollectionMode()
 
   if (mode === 'bypass') {

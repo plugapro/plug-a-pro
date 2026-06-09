@@ -257,6 +257,18 @@ export const FEATURE_FLAGS_REGISTRY = {
   },
 
 
+  // ─── Launch - West Rand pilot rollout ───────────────────────────────────────
+  'launch.west_rand_pilot.enabled': {
+    description: 'Master toggle for the West Rand pilot. When ON, customer serviceability + bookings + dispatch are gated to the pilot suburb / category allowlists in lib/launch/west-rand-pilot.ts. When OFF, legacy behaviour is preserved.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'launch.west_rand_pilot.electrical_gate': {
+    description: 'Independent gate for the electrical-readiness check. Dead path in v1 (electrical is not in the pilot allowlist); reserved for the future re-introduction of Electrical once threshold approved providers exist.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+
   // ─── Pilot - post-job review flow ────────────────────────────────────────────
   'pilot.completion-check': {
     description: 'Enable cron-driven completion-check WhatsApp flow for AUTO_ASSIGN cash-pilot jobs. Sends completion check 2 days after job window; fires review nudges on Yes.',
