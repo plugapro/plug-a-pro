@@ -1891,6 +1891,7 @@ model Conversation {
   data              Json      @default("{}") // accumulated session data
   expiresAt         DateTime // TTL: reset to welcome after 30min inactivity
   timeoutNotifiedAt DateTime? // set once when the inactivity timeout message is sent — deduplication guard
+  recoveryClaimedAt DateTime? // provider-onboarding recovery claim lock (epoch=in-flight, real ts=sent). Separate from timeoutNotifiedAt so the inactivity-timeout cron's dedup guard doesn't block manual recovery — see provider-onboarding-recovery.ts
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

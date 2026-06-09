@@ -19,7 +19,7 @@ function conversation(overrides: Record<string, unknown>) {
     step: 'reg_collect_name',
     data: {},
     updatedAt: new Date('2026-06-04T09:20:00.000Z'),
-    timeoutNotifiedAt: null,
+    recoveryClaimedAt: null,
     ...overrides,
   }
 }
@@ -410,12 +410,12 @@ describe('provider onboarding recovery', () => {
       }),
     )
     expect(client.conversation.updateMany).toHaveBeenCalledWith({
-      where: { id: 'conv-name', timeoutNotifiedAt: null },
-      data: { timeoutNotifiedAt: new Date(0) },
+      where: { id: 'conv-name', recoveryClaimedAt: null },
+      data: { recoveryClaimedAt: new Date(0) },
     })
     expect(client.conversation.updateMany).toHaveBeenCalledWith({
-      where: { id: 'conv-name', timeoutNotifiedAt: new Date(0) },
-      data: { timeoutNotifiedAt: now },
+      where: { id: 'conv-name', recoveryClaimedAt: new Date(0) },
+      data: { recoveryClaimedAt: now },
     })
     expect(client.auditLog.create).toHaveBeenCalledTimes(1)
     const call = client.auditLog.create.mock.calls[0][0]
@@ -462,8 +462,8 @@ describe('provider onboarding recovery', () => {
     expect(sendText).not.toHaveBeenCalled()
     expect(sendTemplate).not.toHaveBeenCalled()
     expect(client.conversation.updateMany).not.toHaveBeenCalledWith({
-      where: { id: 'conv-27820000001', timeoutNotifiedAt: null },
-      data: { timeoutNotifiedAt: new Date(0) },
+      where: { id: 'conv-27820000001', recoveryClaimedAt: null },
+      data: { recoveryClaimedAt: new Date(0) },
     })
   })
 
@@ -538,12 +538,12 @@ describe('provider onboarding recovery', () => {
     expect(sendText).not.toHaveBeenCalled()
     expect(client.conversation.updateMany).toHaveBeenCalledTimes(2)
     expect(client.conversation.updateMany).toHaveBeenCalledWith({
-      where: { id: 'conv-27820000001', timeoutNotifiedAt: null },
-      data: { timeoutNotifiedAt: new Date(0) },
+      where: { id: 'conv-27820000001', recoveryClaimedAt: null },
+      data: { recoveryClaimedAt: new Date(0) },
     })
     expect(client.conversation.updateMany).toHaveBeenCalledWith({
-      where: { id: 'conv-27820000001', timeoutNotifiedAt: new Date(0) },
-      data: { timeoutNotifiedAt: null },
+      where: { id: 'conv-27820000001', recoveryClaimedAt: new Date(0) },
+      data: { recoveryClaimedAt: null },
     })
   })
 

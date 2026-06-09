@@ -107,7 +107,7 @@ type ConversationSnapshot = {
   step: string
   data: unknown
   updatedAt: Date
-  timeoutNotifiedAt?: Date | null
+  recoveryClaimedAt?: Date | null
 }
 
 type ApplicationSnapshot = {
@@ -628,7 +628,7 @@ export async function listProviderOnboardingRecoveryRows(
         step: true,
         data: true,
         updatedAt: true,
-        timeoutNotifiedAt: true,
+        recoveryClaimedAt: true,
       },
       orderBy: { updatedAt: 'desc' },
     }),
@@ -738,8 +738,8 @@ async function claimRegistrationConversationForRecovery(
 ) {
   if (row.source !== 'conversation' || row.flow !== 'registration') return true
   const claimed = await client.conversation.updateMany({
-    where: { id: row.id, timeoutNotifiedAt: null },
-    data: { timeoutNotifiedAt: CONVERSATION_RECOVERY_LOCK },
+    where: { id: row.id, recoveryClaimedAt: null },
+    data: { recoveryClaimedAt: CONVERSATION_RECOVERY_LOCK },
   })
   return claimed.count > 0
 }
@@ -751,8 +751,8 @@ async function markRegistrationConversationRecovered(
 ) {
   if (row.source !== 'conversation' || row.flow !== 'registration') return
   await client.conversation.updateMany({
-    where: { id: row.id, timeoutNotifiedAt: CONVERSATION_RECOVERY_LOCK },
-    data: { timeoutNotifiedAt: now },
+    where: { id: row.id, recoveryClaimedAt: CONVERSATION_RECOVERY_LOCK },
+    data: { recoveryClaimedAt: now },
   })
 }
 
@@ -762,8 +762,8 @@ async function releaseRegistrationConversationRecoveryClaim(
 ) {
   if (row.source !== 'conversation' || row.flow !== 'registration') return
   await client.conversation.updateMany({
-    where: { id: row.id, timeoutNotifiedAt: CONVERSATION_RECOVERY_LOCK },
-    data: { timeoutNotifiedAt: null },
+    where: { id: row.id, recoveryClaimedAt: CONVERSATION_RECOVERY_LOCK },
+    data: { recoveryClaimedAt: null },
   }).catch(() => {})
 }
 
