@@ -268,6 +268,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'launch.west_rand_pilot.readiness_report': {
+    description: 'Shows /admin/launch-readiness. Can be enabled to ops independently of the customer-facing master flag so counts can be validated before customer activation.',
+    owner: 'eng',
+    defaultValue: false,
+  },
 
   // ─── Pilot - post-job review flow ────────────────────────────────────────────
   'pilot.completion-check': {
