@@ -279,6 +279,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'launch.west_rand_pilot.nudge_console': {
+    description: 'Shows /admin/nudges (ordered candidate queue + per-row preview + CSV export + mark-batch-sent). No outbound Meta WhatsApp API in this scope; ops sends externally and marks the batch sent for audit purposes.',
+    owner: 'eng',
+    defaultValue: false,
+  },
 
   // ─── Pilot - post-job review flow ────────────────────────────────────────────
   'pilot.completion-check': {
