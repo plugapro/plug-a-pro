@@ -353,6 +353,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.kyc_selfie_as_avatar': {
+    description: 'When ON, approving a KYC identity verification will copy the provider\'s KYC selfie to Provider.avatarUrl when no avatar exists. Enable only after adding a provider consent step to the KYC flow. Default OFF to prevent publishing biometric data as public profile photos without explicit consent.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.identity.vendor.didit.persist_documents': {
     description: 'Persist Didit decision fields and private document images after terminal vendor verdicts or admin backfills.',
     owner: 'eng',
