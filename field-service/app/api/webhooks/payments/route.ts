@@ -42,15 +42,35 @@ export async function POST(request: NextRequest) {
 
   try {
     if (event.type === 'payment.success') {
-      // Idempotency guard: check payment status BEFORE applying the handler.
-      // If already PAID, the confirmation was sent on a prior delivery - skip.
+      // Idempotency guard + amount validation (SECURITY 7a1438d):
+      // Load the stored Payment record to verify:
+      //   a) m_payment_id maps to a known Payment (reject unknown references)
+      //   b) event.amount matches Payment.amount within ±0.01 rand tolerance
+      //   c) payment is not already PAID (idempotency)
       const existingPayment = await db.payment.findUnique({
         where: { bookingId: event.bookingId },
-        select: { status: true },
+        select: { status: true, amount: true },
       })
 
+      if (!existingPayment) {
+        console.warn(`[webhook/payments:${reqId}] Unknown bookingId ${event.bookingId}`)
+        return NextResponse.json({ error: 'Not found' }, { status: 400 })
+      }
+
+      // Amount validation: compare event amount (cents) against stored amount (rand).
+      // Tolerance: ±1 cent (0.01 rand) to account for floating-point rounding.
+      const storedAmountCents = Math.round(Number(existingPayment.amount) * 100)
+      const tolerance = 1 // cent
+      if (Math.abs(event.amount - storedAmountCents) > tolerance) {
+        console.error(`[webhook/payments:${reqId}] Amount mismatch for ${event.bookingId}`, {
+          storedCents: storedAmountCents,
+          receivedCents: event.amount,
+        })
+        return NextResponse.json({ error: 'Amount mismatch' }, { status: 400 })
+      }
+
       // Early-return BEFORE handlePaymentSuccess to prevent any duplicate DB writes.
-      if (existingPayment?.status === 'PAID') {
+      if (existingPayment.status === 'PAID') {
         console.info(
           `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
         )
