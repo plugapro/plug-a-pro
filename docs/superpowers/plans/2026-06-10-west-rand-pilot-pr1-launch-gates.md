@@ -1,5 +1,7 @@
 # West Rand Pilot — PR1: Launch Config + Customer Gates Implementation Plan
 
+> **Status:** RETROSPECTIVE. PR1 shipped as `6e84b0587 feat(launch): West Rand pilot gates (PR1 of 3) (#61)` on `main` before this plan reached execution. Kept for the documentation trail alongside the PR2/PR3 retrospective plans. The shipped commit follows this plan's shape (same files, same flags, same gate sites); consult the commit itself as the source of truth for as-built details. Flag-helper naming in this doc was corrected post-hoc to the repo's real `isEnabled()` API.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Land the pilot-launch foundation — a TypeScript constant module describing the West Rand pilot footprint, an electrical-readiness helper, four feature flags, and pilot gates wired into customer serviceability, booking creation, quote approval, payment initialisation, and the matching filter. All gates are flag-conditional; with `launch.west_rand_pilot.enabled` OFF the customer surface is identical to baseline.
@@ -45,7 +47,7 @@
 - Path alias `@/` resolves to `field-service/`.
 - Tests run from `field-service/` with `pnpm test <path>` (Vitest) or `pnpm exec playwright test <path>` (Playwright).
 - `db` Prisma singleton imported from `@/lib/db`.
-- Flag lookup helper is `getFlag(key)` from `@/lib/flags` (existing).
+- Flag lookup helper is `isEnabled(key)` from `@/lib/flags` (existing).
 - Canonical category slug helper is `canonicalSlug(input)` from `@/lib/category-config`.
 - All new code is additive. No deletions, no schema changes.
 
@@ -459,7 +461,7 @@ Create `field-service/__tests__/lib/customer-serviceability.pilot.test.ts`:
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/flags', () => ({
-  getFlag: vi.fn(),
+  isEnabled: vi.fn(),
 }))
 vi.mock('@/lib/db', () => ({
   db: {
@@ -468,7 +470,7 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-const { getFlag } = await import('@/lib/flags')
+const { isEnabled } = await import('@/lib/flags')
 const { db } = await import('@/lib/db')
 const { isAreaCategoryServiceable } = await import('@/lib/customer-serviceability')
 
@@ -492,14 +494,14 @@ const sandtonNode = {
 
 describe('isAreaCategoryServiceable — pilot gate', () => {
   beforeEach(() => {
-    vi.mocked(getFlag).mockReset()
+    vi.mocked(isEnabled).mockReset()
     vi.mocked(db.locationNode.findUnique).mockReset()
     vi.mocked(db.provider.count).mockReset()
   })
 
   describe('flag OFF — legacy behaviour preserved', () => {
     beforeEach(() => {
-      vi.mocked(getFlag).mockImplementation(async (k: string) => false)
+      vi.mocked(isEnabled).mockImplementation(async (k: string) => false)
     })
 
     it('allows a Sandton suburb + plumbing tuple when providers exist (baseline)', async () => {
@@ -523,7 +525,7 @@ describe('isAreaCategoryServiceable — pilot gate', () => {
 
   describe('master flag ON', () => {
     beforeEach(() => {
-      vi.mocked(getFlag).mockImplementation(async (k: string) =>
+      vi.mocked(isEnabled).mockImplementation(async (k: string) =>
         k === 'launch.west_rand_pilot.enabled' ? true : false,
       )
     })
@@ -580,7 +582,7 @@ Open `field-service/lib/customer-serviceability.ts`. Add imports at the top (aft
 ```ts
 import { isPilotSuburbSlug, isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { getElectricalReadiness } from '@/lib/launch/electrical-readiness'
-import { getFlag } from '@/lib/flags'
+import { isEnabled } from '@/lib/flags'
 import { canonicalSlug } from '@/lib/category-config'
 ```
 
@@ -597,12 +599,12 @@ export async function isAreaCategoryServiceable(params: {
   if (!categoryTag) return false
   const categorySlug = canonicalSlug(categoryTag) ?? categoryTag
 
-  const pilotEnabled = await getFlag('launch.west_rand_pilot.enabled')
+  const pilotEnabled = await isEnabled('launch.west_rand_pilot.enabled')
   if (pilotEnabled) {
     if (!isPilotSuburbSlug(areaSlug)) return false
     if (!isPilotCategorySlug(categorySlug)) return false
     if (categorySlug === 'electrical') {
-      const electricalGateOn = await getFlag('launch.west_rand_pilot.electrical_gate')
+      const electricalGateOn = await isEnabled('launch.west_rand_pilot.electrical_gate')
       if (electricalGateOn) {
         const readiness = await getElectricalReadiness()
         if (!readiness.ready) return false
@@ -651,12 +653,12 @@ Open `field-service/app/api/customer/serviceability/route.ts`. Identify where `l
 After `listServiceableCategoriesForArea(...)` returns, before returning the JSON response, insert:
 
 ```ts
-import { getFlag } from '@/lib/flags'
+import { isEnabled } from '@/lib/flags'
 import { isPilotSuburbSlug, isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 // (add to existing imports at top of file)
 
 // inside GET handler, after categories are loaded and after we have `area`:
-const pilotEnabled = await getFlag('launch.west_rand_pilot.enabled')
+const pilotEnabled = await isEnabled('launch.west_rand_pilot.enabled')
 if (pilotEnabled) {
   if (!isPilotSuburbSlug(area?.slug ?? null)) {
     return NextResponse.json(
@@ -717,12 +719,12 @@ Create `field-service/__tests__/api/customer-bookings-pilot-gate.test.ts`:
 ```ts
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/flags', () => ({ getFlag: vi.fn() }))
+vi.mock('@/lib/flags', () => ({ isEnabled: vi.fn() }))
 vi.mock('@/lib/customer-serviceability', async () => ({
   isAreaCategoryServiceable: vi.fn(),
 }))
 
-const { getFlag } = await import('@/lib/flags')
+const { isEnabled } = await import('@/lib/flags')
 const { isAreaCategoryServiceable } = await import('@/lib/customer-serviceability')
 const { POST } = await import('@/app/api/customer/bookings/route')
 
@@ -736,12 +738,12 @@ function buildReq(body: Record<string, unknown>) {
 
 describe('POST /api/customer/bookings — pilot gate', () => {
   beforeEach(() => {
-    vi.mocked(getFlag).mockReset()
+    vi.mocked(isEnabled).mockReset()
     vi.mocked(isAreaCategoryServiceable).mockReset()
   })
 
   it('returns 422 with pilot.suburb_not_supported when gate rejects (flag ON, non-pilot suburb)', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     vi.mocked(isAreaCategoryServiceable).mockResolvedValue(false)
     const res = await POST(
       buildReq({ areaSlug: 'gauteng__johannesburg__sandton__morningside', categoryTag: 'plumbing' }) as never,
@@ -752,7 +754,7 @@ describe('POST /api/customer/bookings — pilot gate', () => {
   })
 
   it('passes through when gate accepts', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     vi.mocked(isAreaCategoryServiceable).mockResolvedValue(true)
     // The handler's downstream call will hit other mocks; assert it didn't 422.
     const res = await POST(
@@ -773,13 +775,13 @@ Expected: FAIL — the route either ignores the gate or rejects with a different
 Open `field-service/app/api/customer/bookings/route.ts`. At the top of the `POST` handler, after parsing the body and before any other validation, insert:
 
 ```ts
-import { getFlag } from '@/lib/flags'
+import { isEnabled } from '@/lib/flags'
 import { isAreaCategoryServiceable } from '@/lib/customer-serviceability'
 import { isPilotSuburbSlug, isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { canonicalSlug } from '@/lib/category-config'
 
 // inside POST handler, after parsing body into { areaSlug, categoryTag, ...rest }:
-const pilotEnabled = await getFlag('launch.west_rand_pilot.enabled')
+const pilotEnabled = await isEnabled('launch.west_rand_pilot.enabled')
 if (pilotEnabled) {
   const canonical = canonicalSlug(categoryTag) ?? categoryTag
   if (!isPilotSuburbSlug(areaSlug)) {
@@ -834,12 +836,12 @@ Create `field-service/__tests__/lib/job-requests/create-job-request.pilot.test.t
 ```ts
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/flags', () => ({ getFlag: vi.fn() }))
+vi.mock('@/lib/flags', () => ({ isEnabled: vi.fn() }))
 vi.mock('@/lib/db', () => ({
   db: { jobRequest: { create: vi.fn() } },
 }))
 
-const { getFlag } = await import('@/lib/flags')
+const { isEnabled } = await import('@/lib/flags')
 const { createJobRequest } = await import('@/lib/job-requests/create-job-request')
 
 const honeydewArgs = {
@@ -852,25 +854,25 @@ const honeydewArgs = {
 
 describe('createJobRequest — pilot gate', () => {
   beforeEach(() => {
-    vi.mocked(getFlag).mockReset()
+    vi.mocked(isEnabled).mockReset()
   })
 
   it('throws PilotCategoryNotSupportedError when category is electrical (master flag ON)', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     await expect(
       createJobRequest({ ...honeydewArgs, categoryTag: 'electrical' }),
     ).rejects.toMatchObject({ name: 'PilotCategoryNotSupportedError' })
   })
 
   it('throws PilotSuburbNotSupportedError for a non-pilot suburb (master flag ON)', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     await expect(
       createJobRequest({ ...honeydewArgs, areaSlug: 'gauteng__johannesburg__sandton__morningside' }),
     ).rejects.toMatchObject({ name: 'PilotSuburbNotSupportedError' })
   })
 
   it('does not throw when flag OFF (legacy behavior)', async () => {
-    vi.mocked(getFlag).mockResolvedValue(false)
+    vi.mocked(isEnabled).mockResolvedValue(false)
     // We mock the DB so createJobRequest can complete without persisting.
     // The assertion here is that the pilot gate didn't throw.
     await expect(
@@ -890,7 +892,7 @@ Expected: FAIL — error classes don't exist yet.
 Open `field-service/lib/job-requests/create-job-request.ts`. Add at the top of the file (after existing imports):
 
 ```ts
-import { getFlag } from '@/lib/flags'
+import { isEnabled } from '@/lib/flags'
 import { isPilotSuburbSlug, isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { canonicalSlug } from '@/lib/category-config'
 
@@ -912,7 +914,7 @@ export class PilotCategoryNotSupportedError extends Error {
 Inside `createJobRequest` (line 144), at the very top of the function body before any other logic:
 
 ```ts
-const pilotEnabled = await getFlag('launch.west_rand_pilot.enabled')
+const pilotEnabled = await isEnabled('launch.west_rand_pilot.enabled')
 if (pilotEnabled) {
   const canonical = canonicalSlug(args.categoryTag) ?? args.categoryTag
   if (!isPilotSuburbSlug(args.areaSlug)) {
@@ -951,14 +953,14 @@ Create `field-service/__tests__/api/quotes-token-approve-pilot.test.ts`:
 ```ts
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/flags', () => ({ getFlag: vi.fn() }))
+vi.mock('@/lib/flags', () => ({ isEnabled: vi.fn() }))
 vi.mock('@/lib/db', () => ({
   db: {
     quote: { findUnique: vi.fn() },
   },
 }))
 
-const { getFlag } = await import('@/lib/flags')
+const { isEnabled } = await import('@/lib/flags')
 const { db } = await import('@/lib/db')
 const { PATCH } = await import('@/app/api/quotes/[token]/route')
 
@@ -982,12 +984,12 @@ function buildReq(body: Record<string, unknown>) {
 
 describe('PATCH /api/quotes/[token] — pilot re-check on approve', () => {
   beforeEach(() => {
-    vi.mocked(getFlag).mockReset()
+    vi.mocked(isEnabled).mockReset()
     vi.mocked(db.quote.findUnique).mockReset()
   })
 
   it('returns 409 pilot.category_no_longer_supported when approving a quote whose category is now gated', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     vi.mocked(db.quote.findUnique).mockResolvedValue(quoteWithElectricalJob as never)
     const res = await PATCH(buildReq({ action: 'approve' }) as never, { params: { token: 'tok-1' } } as never)
     expect(res.status).toBe(409)
@@ -996,7 +998,7 @@ describe('PATCH /api/quotes/[token] — pilot re-check on approve', () => {
   })
 
   it('allows approval when flag OFF (legacy behaviour)', async () => {
-    vi.mocked(getFlag).mockResolvedValue(false)
+    vi.mocked(isEnabled).mockResolvedValue(false)
     vi.mocked(db.quote.findUnique).mockResolvedValue(quoteWithElectricalJob as never)
     const res = await PATCH(buildReq({ action: 'approve' }) as never, { params: { token: 'tok-1' } } as never)
     expect(res.status).not.toBe(409)
@@ -1014,13 +1016,13 @@ Expected: FAIL — the re-check isn't there.
 Open `field-service/app/api/quotes/[token]/route.ts`. In the PATCH handler (line 82), after the quote is loaded and `body.action === 'approve'` is confirmed, before calling `processQuoteDecision`, insert:
 
 ```ts
-import { getFlag } from '@/lib/flags'
+import { isEnabled } from '@/lib/flags'
 import { isPilotSuburbSlug, isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { canonicalSlug } from '@/lib/category-config'
 
 // inside PATCH handler, after `body.action === 'approve'` confirmed and the quote loaded:
 if (body.action === 'approve') {
-  const pilotEnabled = await getFlag('launch.west_rand_pilot.enabled')
+  const pilotEnabled = await isEnabled('launch.west_rand_pilot.enabled')
   if (pilotEnabled) {
     const jobReq = quoteRow.match?.jobRequest
     const canonical = jobReq?.category ? (canonicalSlug(jobReq.category) ?? jobReq.category) : null
@@ -1064,7 +1066,7 @@ Create `field-service/__tests__/lib/payments-category-gate.test.ts`:
 ```ts
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/flags', () => ({ getFlag: vi.fn() }))
+vi.mock('@/lib/flags', () => ({ isEnabled: vi.fn() }))
 vi.mock('@/lib/db', () => ({
   db: {
     booking: {
@@ -1073,7 +1075,7 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-const { getFlag } = await import('@/lib/flags')
+const { isEnabled } = await import('@/lib/flags')
 const { db } = await import('@/lib/db')
 const { initializeBookingPayment, CategoryGatedByPilotError } = await import('@/lib/payments')
 
@@ -1084,19 +1086,19 @@ const electricalBooking = {
 
 describe('initializeBookingPayment — pilot category gate', () => {
   beforeEach(() => {
-    vi.mocked(getFlag).mockReset()
+    vi.mocked(isEnabled).mockReset()
     vi.mocked(db.booking.findUnique).mockReset()
   })
 
   it('throws CategoryGatedByPilotError when flag ON and booking is in a gated category', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     vi.mocked(db.booking.findUnique).mockResolvedValue(electricalBooking as never)
     await expect(initializeBookingPayment({ bookingId: 'b1', amount: 100, currency: 'ZAR' } as never))
       .rejects.toBeInstanceOf(CategoryGatedByPilotError)
   })
 
   it('does not throw when flag OFF', async () => {
-    vi.mocked(getFlag).mockResolvedValue(false)
+    vi.mocked(isEnabled).mockResolvedValue(false)
     vi.mocked(db.booking.findUnique).mockResolvedValue(electricalBooking as never)
     await expect(initializeBookingPayment({ bookingId: 'b1', amount: 100, currency: 'ZAR' } as never))
       .resolves.not.toBeInstanceOf(CategoryGatedByPilotError)
@@ -1114,7 +1116,7 @@ Expected: FAIL — `CategoryGatedByPilotError` not exported.
 Open `field-service/lib/payments.ts`. Near the top with other exports, add:
 
 ```ts
-import { getFlag } from '@/lib/flags'
+import { isEnabled } from '@/lib/flags'
 import { isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { canonicalSlug } from '@/lib/category-config'
 
@@ -1129,7 +1131,7 @@ export class CategoryGatedByPilotError extends Error {
 Inside `initializeBookingPayment` (line 482), at the top of the function before any payment-provider call:
 
 ```ts
-const pilotEnabled = await getFlag('launch.west_rand_pilot.enabled')
+const pilotEnabled = await isEnabled('launch.west_rand_pilot.enabled')
 if (pilotEnabled) {
   const booking = await db.booking.findUnique({
     where: { id: params.bookingId },
@@ -1170,9 +1172,9 @@ Create `field-service/__tests__/lib/matching-filter-pilot.test.ts`:
 ```ts
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/flags', () => ({ getFlag: vi.fn() }))
+vi.mock('@/lib/flags', () => ({ isEnabled: vi.fn() }))
 
-const { getFlag } = await import('@/lib/flags')
+const { isEnabled } = await import('@/lib/flags')
 const { filterEligibleProviders } = await import('@/lib/matching/filter')
 
 const baseCandidate = {
@@ -1182,11 +1184,11 @@ const baseCandidate = {
 
 describe('filterEligibleProviders — pilot category gate', () => {
   beforeEach(() => {
-    vi.mocked(getFlag).mockReset()
+    vi.mocked(isEnabled).mockReset()
   })
 
   it('drops all candidates with reason CATEGORY_GATED_BY_PILOT when job category is gated and flag ON', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     const result = await filterEligibleProviders({
       jobRequest: { id: 'jr1', category: 'electrical' } as never,
       candidates: [baseCandidate, baseCandidate],
@@ -1197,7 +1199,7 @@ describe('filterEligibleProviders — pilot category gate', () => {
   })
 
   it('does not drop when category is allowed', async () => {
-    vi.mocked(getFlag).mockResolvedValue(true)
+    vi.mocked(isEnabled).mockResolvedValue(true)
     const result = await filterEligibleProviders({
       jobRequest: { id: 'jr1', category: 'plumbing' } as never,
       candidates: [baseCandidate],
@@ -1206,7 +1208,7 @@ describe('filterEligibleProviders — pilot category gate', () => {
   })
 
   it('does not drop when flag OFF', async () => {
-    vi.mocked(getFlag).mockResolvedValue(false)
+    vi.mocked(isEnabled).mockResolvedValue(false)
     const result = await filterEligibleProviders({
       jobRequest: { id: 'jr1', category: 'electrical' } as never,
       candidates: [baseCandidate],
@@ -1230,12 +1232,12 @@ Open `field-service/lib/matching/filter.ts`. Near the top (around the existing r
 Inside `filterEligibleProviders` (line 282), at the very top of the function:
 
 ```ts
-import { getFlag } from '@/lib/flags'
+import { isEnabled } from '@/lib/flags'
 import { isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { canonicalSlug } from '@/lib/category-config'
 
 // inside filterEligibleProviders, right after function entry:
-const pilotEnabled = await getFlag('launch.west_rand_pilot.enabled')
+const pilotEnabled = await isEnabled('launch.west_rand_pilot.enabled')
 if (pilotEnabled) {
   const raw = args.jobRequest.category ?? null
   const canonical = raw ? (canonicalSlug(raw) ?? raw) : null
