@@ -58,6 +58,7 @@ type LeadRejected = {
     | 'INSUFFICIENT_CREDITS'
     | 'IDENTITY_NOT_VERIFIED'
     | 'PROVIDER_NOT_APPROVED'
+    | 'CUSTOMER_SELECTION_REQUIRED'
     | 'WALLET_SUSPENDED'
     | 'CONCURRENT_UNLOCK'
     | 'LEAD_ACCEPTANCE_FAILED'
@@ -185,9 +186,12 @@ export async function acceptLead(params: {
     return { ok: false, reason: 'NOT_FOUND' }
   }
 
-  // OPS_REVIEW: ops dispatched directly - no customer-selection step. Atomically
-  // claim PROVIDER_CONFIRMATION_PENDING for this provider so the standard
-  // acceptSelectedProviderJob path can proceed unchanged.
+  // OPS_REVIEW direct-claim: a customer-selected provider may claim
+  // PROVIDER_CONFIRMATION_PENDING so the standard acceptSelectedProviderJob path
+  // can proceed unchanged. This is NOT a self-service path: the customer must have
+  // already chosen this exact provider. Without the selectedProviderId guard below,
+  // any merely shortlisted/invited provider holding a lead could self-select and
+  // claim the job before the customer picked them.
   let opsReviewDirectClaim = false
   if (selectedLead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING') {
     if (
@@ -195,10 +199,25 @@ export async function acceptLead(params: {
       selectedLead.jobRequest.status === 'MATCHING' &&
       selectedLead.providerId === params.providerId
     ) {
+      // The customer must have already selected this provider. Shortlisted/invited
+      // providers wait for the customer to choose them; they cannot self-select.
+      if (
+        !selectedLead.jobRequest.selectedProviderId ||
+        selectedLead.jobRequest.selectedProviderId !== selectedLead.providerId
+      ) {
+        return { ok: false, reason: 'CUSTOMER_SELECTION_REQUIRED' }
+      }
       const now = new Date()
       const claimed = await db.$transaction(async (tx) => {
+        // Re-assert the customer selection inside the transaction so a concurrent
+        // change to selectedProviderId between the read above and this write cannot
+        // let a non-selected provider claim the job (TOCTOU).
         const jrUpdate = await tx.jobRequest.updateMany({
-          where: { id: selectedLead.jobRequestId, status: 'MATCHING' },
+          where: {
+            id: selectedLead.jobRequestId,
+            status: 'MATCHING',
+            selectedProviderId: params.providerId,
+          },
           data: {
             status: 'PROVIDER_CONFIRMATION_PENDING',
             selectedProviderId: params.providerId,

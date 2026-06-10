@@ -568,6 +568,20 @@ export async function markJobComplete(params: {
     return { ok: false as const, reason: 'UNAVAILABLE' }
   }
 
+  // Bind the lead token to the lead being completed. Without this, a valid token
+  // for lead A could be replayed against params.leadId = lead B (the booking load
+  // below trusts params.leadId directly). resolveProviderLeadAccessToken enforces
+  // token.leadId === params.leadId and that the token resolves to an active lead;
+  // mirror that guard here so token binding is checked before the privileged load.
+  const resolvedFromToken = await resolveProviderLeadAccessToken(params.token)
+  if (
+    resolvedFromToken.status !== 'active' ||
+    !resolvedFromToken.lead ||
+    resolvedFromToken.lead.id !== params.leadId
+  ) {
+    return { ok: false as const, reason: 'UNAVAILABLE' }
+  }
+
   const lead = await loadAcceptedLeadWithBooking(params.leadId)
   if (!lead) return { ok: false as const, reason: 'UNAVAILABLE' }
 

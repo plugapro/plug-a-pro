@@ -5,7 +5,7 @@ import {
   debitCreditsForLeadUnlockInTransaction,
   type WalletMutationResult,
 } from './provider-wallet'
-import { checkPhaseOneLeadDetailEligibility } from './provider-lead-eligibility'
+import { checkProviderCanUnlockLead } from './provider-lead-eligibility'
 
 export const LEAD_UNLOCK_COST_CREDITS = 1
 
@@ -14,6 +14,8 @@ type LeadUnlockErrorCode =
   | 'FORBIDDEN'
   | 'PROVIDER_NOT_APPROVED'
   | 'PROVIDER_NOT_ACTIVE'
+  | 'KYC_REQUIRED'
+  | 'CONFIRMATION_REQUIRED'
   | 'LEAD_NOT_AVAILABLE'
   | 'INSUFFICIENT_CREDITS'
   | 'WALLET_SUSPENDED'
@@ -40,6 +42,21 @@ type LeadUnlockContext = {
   source?: 'whatsapp' | 'pwa' | 'api'
   traceId?: string
   idempotencyKey?: string
+  // Explicit provider confirmation that they intend to spend a credit to unlock.
+  // A lead magic-link token by itself must NOT spend credits: anyone holding a
+  // forwarded/shared WhatsApp lead URL could otherwise drain the provider's
+  // balance on the first page load. Callers must surface a "Confirm unlock
+  // (1 credit will be deducted)" step and only then call with confirmed: true.
+  confirmed?: boolean
+}
+
+function assertUnlockConfirmed(context: LeadUnlockContext) {
+  if (!context.confirmed) {
+    throw new LeadUnlockError(
+      'CONFIRMATION_REQUIRED',
+      'Please confirm you want to spend 1 Plug A Pro provider credit to unlock this lead.',
+    )
+  }
 }
 
 function creditBreakdown(ledgerEntries: WalletLedgerEntry[]) {
@@ -78,14 +95,22 @@ function assertProviderCanUnlock(provider: {
   active: boolean
   verified: boolean
   status: string
+  kycStatus: string
 }) {
-  const eligibility = checkPhaseOneLeadDetailEligibility(provider)
+  const eligibility = checkProviderCanUnlockLead(provider)
   if (eligibility.ok) return
 
   if (eligibility.code === 'PROVIDER_NOT_ACTIVE') {
     throw new LeadUnlockError(
       'PROVIDER_NOT_ACTIVE',
       'Your provider profile is not active, so you cannot unlock leads right now.',
+    )
+  }
+
+  if (eligibility.code === 'KYC_REQUIRED') {
+    throw new LeadUnlockError(
+      'KYC_REQUIRED',
+      'Verify your identity before you can unlock leads. This protects customers by confirming who is being sent their contact details.',
     )
   }
 
@@ -141,6 +166,10 @@ export async function unlockLeadForProvider(
     }
   }
 
+  // No prior unlock exists: this call will spend a credit, so require an explicit
+  // provider confirmation. A bare magic-link token must not auto-spend credits.
+  assertUnlockConfirmed(context)
+
   try {
     const result = await db.$transaction(async (tx) => {
       const lead = await tx.lead.findUnique({
@@ -152,6 +181,7 @@ export async function unlockLeadForProvider(
               active: true,
               verified: true,
               status: true,
+              kycStatus: true,
               isTestUser: true,
             },
           },
@@ -344,6 +374,10 @@ export async function unlockLeadForProviderInTransaction(
     }
   }
 
+  // No prior unlock exists: this call will spend a credit, so require an explicit
+  // provider confirmation. A bare magic-link token must not auto-spend credits.
+  assertUnlockConfirmed(context)
+
   const lead = await tx.lead.findUnique({
     where: { id: leadId },
     include: {
@@ -353,6 +387,7 @@ export async function unlockLeadForProviderInTransaction(
           active: true,
           verified: true,
           status: true,
+          kycStatus: true,
           isTestUser: true,
         },
       },

@@ -725,7 +725,12 @@ export default async function ProviderLeadAccessPage({
   // an expiry signal so we show ClosedLeadMessage instead of a generic error.
   const treatAsExpired = isExpired || resolvedSearchParams.errorCode === 'LEAD_EXPIRED'
 
-  if (((treatAsExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired && !isCreditApplied) || isDeclined) && !resolvedSearchParams.declined) {
+  // The lead closure check must apply regardless of URL query parameters. Do NOT
+  // gate it on resolvedSearchParams.declined: an attacker who appends ?declined=1
+  // to a forwarded link could otherwise bypass the closed/expired/declined guard.
+  // The authoritative "declined" state is read from the DB (lead.status === 'DECLINED'
+  // -> isDeclined) below, which still renders the closed message.
+  if ((treatAsExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired && !isCreditApplied) || isDeclined) {
     const code: DiagnosticCode = treatAsExpired ? 'JOB_LINK_EXPIRED' : 'JOB_LINK_INVALID'
     console.warn('[leads/access] signed lead link closed', {
       traceId,
@@ -741,9 +746,15 @@ export default async function ProviderLeadAccessPage({
         title={
           treatAsExpired
             ? 'This lead is no longer available.'
-            : 'You already responded to this lead.'
+            : isDeclined
+              ? 'Lead declined.'
+              : 'You already responded to this lead.'
         }
-        reason="This lead is closed and can no longer be changed from this link."
+        reason={
+          isDeclined
+            ? 'You declined this lead. We will send it to another provider. New leads will be sent to you on WhatsApp as they become available.'
+            : 'This lead is closed and can no longer be changed from this link.'
+        }
         diagnostics={{
           code,
           action: 'View Lead',

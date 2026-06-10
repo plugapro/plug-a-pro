@@ -271,6 +271,53 @@ describe('matching-engine compatibility wrappers', () => {
     expect(mockAcceptAssignmentOffer).not.toHaveBeenCalled()
   })
 
+  it('acceptLead blocks OPS_REVIEW self-select when the customer has not chosen the provider', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      jobRequestId: 'jr-1',
+      providerId: 'provider-1',
+      customerSelectedAt: null,
+      jobRequest: {
+        status: 'MATCHING',
+        assignmentMode: 'OPS_REVIEW',
+        selectedProviderId: null,
+        selectedLeadInviteId: null,
+      },
+    })
+
+    const result = await acceptLead({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'CUSTOMER_SELECTION_REQUIRED',
+    })
+    expect(mockDb.jobRequest.updateMany).not.toHaveBeenCalled()
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+  })
+
+  it('acceptLead blocks OPS_REVIEW self-select when the customer chose a different provider', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      jobRequestId: 'jr-1',
+      providerId: 'provider-1',
+      customerSelectedAt: null,
+      jobRequest: {
+        status: 'MATCHING',
+        assignmentMode: 'OPS_REVIEW',
+        selectedProviderId: 'provider-2',
+        selectedLeadInviteId: 'lead-2',
+      },
+    })
+
+    const result = await acceptLead({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'CUSTOMER_SELECTION_REQUIRED',
+    })
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+  })
+
   it('dispatchLeads propagates non-schema errors from the assignment service', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue({ id: 'jr-1', status: 'OPEN' })
     mockRunAssignmentForJobRequest.mockRejectedValue(new Error('Service unavailable'))
