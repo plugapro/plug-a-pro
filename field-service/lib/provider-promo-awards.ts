@@ -136,6 +136,18 @@ export async function awardPromoCreditsForMilestoneInTransaction(
   })
   if (existingAward) return emptyResult('DUPLICATE', existingAward)
 
+  // Guard: never award milestone credits to a provider who already holds a
+  // non-zero promo balance. Credits must be seeded once via the activation
+  // voucher path; any subsequent top-up must go through a deliberate admin
+  // adjustment so it is auditable and intentional.
+  const existingWallet = await tx.providerWallet.findUnique({
+    where: { providerId },
+    select: { promoCreditBalance: true },
+  })
+  if (existingWallet && existingWallet.promoCreditBalance > 0) {
+    return emptyResult('CONDITION_NOT_MET')
+  }
+
   const awardId = crypto.randomUUID()
   const created = await tx.providerPromoAward.createMany({
     data: [{
