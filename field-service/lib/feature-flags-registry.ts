@@ -261,13 +261,6 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
-  'matching.relax_kyc_gate': {
-    description: 'When ON, removes the kycStatus=VERIFIED requirement from the provider matching filter. Providers that are active, verified, and status=ACTIVE are eligible regardless of KYC status. Temporary measure while KYC adoption ramps up — flip back OFF once the verified provider base is sufficient.',
-    owner: 'ops',
-    defaultValue: false,
-  },
-
-
   // ─── Launch - West Rand pilot rollout ───────────────────────────────────────
   'launch.west_rand_pilot.enabled': {
     description: 'Master toggle for the West Rand pilot. When ON, customer serviceability + bookings + dispatch are gated to the pilot suburb / category allowlists in lib/launch/west-rand-pilot.ts. When OFF, legacy behaviour is preserved.',

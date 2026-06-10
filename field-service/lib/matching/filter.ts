@@ -340,31 +340,31 @@ export async function filterEligibleProviders(
       adminEquipRows,
       categoryApprovalRows,
     ] = await Promise.all([
-      isEnabled('matching.relax_kyc_gate').then((relaxKyc) =>
-        db.provider.findMany({
-          where: {
-            id: { in: providerIds },
-            active: true,
-            verified: true,
-            ...(relaxKyc ? {} : { kycStatus: 'VERIFIED' }),
-            status: 'ACTIVE',
-            isTestUser: Boolean(jobRequest.isTestRequest),
-          },
-          select: {
-            id: true,
-            completedJobsCount: true,
-            onTimeRate: true,
-            acceptanceRate: true,
-            complaintCount: true,
-            complaintRate: true,
-            cancellationRate: true,
-            punctualityScore: true,
-            lastKnownLocationAt: true,
-            equipmentTags: true,
-            vehicleTypes: true,
-          },
-        })
-      ) as Promise<MetricsRow[]>,
+      db.provider.findMany({
+        where: {
+          id: { in: providerIds },
+          active: true,
+          verified: true,
+          // KYC (kycStatus VERIFIED) is the identity boundary for matching and must
+          // never be bypassed by a feature flag. Non-KYC providers are not surfaced.
+          kycStatus: 'VERIFIED',
+          status: 'ACTIVE',
+          isTestUser: Boolean(jobRequest.isTestRequest),
+        },
+        select: {
+          id: true,
+          completedJobsCount: true,
+          onTimeRate: true,
+          acceptanceRate: true,
+          complaintCount: true,
+          complaintRate: true,
+          cancellationRate: true,
+          punctualityScore: true,
+          lastKnownLocationAt: true,
+          equipmentTags: true,
+          vehicleTypes: true,
+        },
+      }) as Promise<MetricsRow[]>,
       db.technicianSkill.findMany({
         where: { providerId: { in: providerIds } },
         select: { providerId: true, skillTag: true },
