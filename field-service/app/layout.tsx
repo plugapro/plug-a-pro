@@ -19,6 +19,7 @@ const dmMono = DM_Mono({
   display: 'swap',
 })
 import { MobileGate } from '@/components/shared/mobile-gate'
+import { MetaPixel } from '@/components/meta-pixel'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -79,6 +80,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-background font-sans antialiased">
+        <MetaPixel />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
