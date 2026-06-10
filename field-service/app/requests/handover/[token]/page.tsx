@@ -68,12 +68,6 @@ export default async function CustomerProviderHandoverPage({
     evidenceNote: provider.evidenceNote,
   })
   const ref = jobRequest.id.slice(-8).toUpperCase()
-  const customerTokenActive =
-    jobRequest.customerAccessToken &&
-    jobRequest.customerAccessTokenRevokedAt == null &&
-    jobRequest.customerAccessTokenExpiresAt != null &&
-    jobRequest.customerAccessTokenExpiresAt > new Date()
-  const customerAccessToken = customerTokenActive ? jobRequest.customerAccessToken : null
   const providerContactHref = whatsappHref(provider.phone, jobRequest.customer.name, jobRequest.category)
 
   return (
@@ -165,14 +159,15 @@ export default async function CustomerProviderHandoverPage({
             <p className="font-medium">{jobRequest.title}</p>
             <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{jobRequest.description}</p>
           </div>
-          {customerAccessToken && jobRequest.attachments.length > 0 && (
+          {jobRequest.attachments.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Uploaded photos
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {jobRequest.attachments.map((photo) => {
-                  const src = `/api/attachments/${photo.id}?token=${encodeURIComponent(customerAccessToken)}`
+                  // Use the scoped handover token — never the customer bearer token
+                  const src = `/api/attachments/${photo.id}?handoverToken=${encodeURIComponent(token)}`
                   return (
                     <AttachmentThumbnail
                       key={photo.id}

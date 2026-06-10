@@ -696,8 +696,13 @@ export async function POST(request: NextRequest) {
       providerPortalAccessOk = access.ok
 
       if (!access.ok) {
+        // SECURITY: providers that are inactive / not-approved / suspended must
+        // not be able to request an OTP and regain API access. We do NOT call
+        // signInWithOtp for them, and we return the SAME generic start payload
+        // as the "phone not found" branch so the response does not reveal that a
+        // provider account exists for this number but is currently ineligible.
         providerLookupResult = access.code === 'WORKER_NOT_APPROVED' ? 'found_not_approved' : 'found_inactive'
-        console.warn('[provider-send-code] provider account state deferred until OTP verification', {
+        console.warn('[provider-send-code] provider ineligible — OTP suppressed, uniform start response returned', {
           trace_id: traceId,
           phoneMasked: maskPhone(phone),
           countryCode,
@@ -706,10 +711,11 @@ export async function POST(request: NextRequest) {
           active: provider.active,
           providerStatus: provider.status,
           otpProviderCalled,
-          deferredCode: access.code,
+          blockedCode: access.code,
           timestamp: timestamp(),
           step: STEP,
         })
+        return otpStartPayload({ traceId, phone })
       }
     } else {
       return otpStartPayload({ traceId, phone })

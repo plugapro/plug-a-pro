@@ -11,11 +11,13 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { head } from '@vercel/blob'
+import type { Role } from '@prisma/client'
 import { getAdminActor, getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { resolveJobRequestAccessScope } from '@/lib/job-request-access'
 import { resolveProviderLeadAttachmentScope } from '@/lib/provider-lead-access'
+import { verifyCustomerProviderHandoverToken } from '@/lib/customer-provider-handover-access'
 
 type ImageErrorCode =
   | 'ATTACHMENT_RECORD_MISSING'
@@ -26,6 +28,18 @@ type ImageErrorCode =
   | 'IMAGE_TOO_LARGE'
 
 const MAX_PROXY_BYTES = 15 * 1024 * 1024
+
+const ROLE_LEVEL: Record<Role, number> = {
+  OPS: 1,
+  FINANCE: 2,
+  TRUST: 3,
+  ADMIN: 4,
+  OWNER: 5,
+}
+
+function roleAtLeast(role: Role, required: Role): boolean {
+  return ROLE_LEVEL[role] >= ROLE_LEVEL[required]
+}
 
 function isAllowedBlobHost(url: URL): boolean {
   return url.protocol === 'https:' && url.hostname.endsWith('.vercel-storage.com')
@@ -70,6 +84,7 @@ export async function GET(
   const reqId = crypto.randomUUID().slice(0, 8)
   const token = request.nextUrl.searchParams.get('token')?.trim() || null
   const leadToken = request.nextUrl.searchParams.get('leadToken')?.trim() || null
+  const handoverToken = request.nextUrl.searchParams.get('handoverToken')?.trim() || null
 
   const session = await getSession()
 
@@ -119,6 +134,16 @@ export async function GET(
 
   const tokenScope = token ? await resolveJobRequestAccessScope(token) : null
   const leadTokenScope = leadToken ? await resolveProviderLeadAttachmentScope(leadToken) : null
+
+  // Resolve handover token scope: validates the HMAC-signed token and extracts the jobRequestId
+  const handoverTokenPayload = handoverToken
+    ? verifyCustomerProviderHandoverToken(handoverToken)
+    : null
+  const handoverTokenJobRequestId =
+    handoverTokenPayload?.status === 'active' && handoverTokenPayload.payload
+      ? handoverTokenPayload.payload.jobRequestId
+      : null
+
   const attachmentJobRequestId =
     attachment.jobRequest?.id ??
     attachment.job?.booking?.match?.jobRequest?.id ??
@@ -144,10 +169,44 @@ export async function GET(
     leadTokenScope.jobRequestId === attachmentJobRequestId &&
     (isJobAttachment || leadTokenIsAccepted || attachment?.safeForPreview !== false)
 
+  // Handover tokens (customer-facing provider handover links) allow access to
+  // request-level attachments scoped to the same jobRequest. Job-level attachments
+  // (work evidence) are not served via handover tokens.
+  const handoverTokenAllowsAttachment =
+    handoverTokenPayload?.status === 'active' &&
+    handoverTokenJobRequestId != null &&
+    attachmentJobRequestId != null &&
+    handoverTokenJobRequestId === attachmentJobRequestId &&
+    !isJobAttachment
+
   let sessionAllowsAttachment = false
 
   const adminActor = session ? await getAdminActor() : null
   if (adminActor) {
+    // SECURITY: provider identity documents (ID front/back, selfie, liveness
+    // frame, passport/visa pages) are sensitive PII. They are persisted both as
+    // Attachment rows (label provider_id_document / provider_id_selfie) and as
+    // ProviderIdentityDocument rows keyed by blobKey. Only TRUST+ admins may
+    // retrieve them, regardless of the broad admin-can-see-anything default.
+    const isIdentityLabel =
+      attachment.label === 'provider_id_document' ||
+      attachment.label === 'provider_id_selfie'
+    const identityDoc = isIdentityLabel
+      ? await db.providerIdentityDocument.findFirst({
+          where: { blobKey: attachment.blobKey },
+          select: { documentKind: true },
+        })
+      : null
+    const isSensitiveIdentityDoc = isIdentityLabel || identityDoc != null
+    if (isSensitiveIdentityDoc && !roleAtLeast(adminActor.adminRole, 'TRUST')) {
+      console.warn(
+        `[attachments:${reqId}] Identity doc denied: admin=${adminActor.adminUserId ?? session?.id} role=${adminActor.adminRole} attachment=${id}`,
+      )
+      return NextResponse.json(
+        { error: 'Forbidden', traceId: reqId },
+        { status: 403, headers: { 'X-Trace-Id': reqId } },
+      )
+    }
     sessionAllowsAttachment = true
   } else if (session) {
     // For provider role we need the Provider.id (DB row) to compare against job.providerId.
@@ -217,7 +276,7 @@ export async function GET(
     sessionAllowsAttachment = sessionAllowsAttachment || allowed
   }
 
-  if (!sessionAllowsAttachment && !tokenAllowsAttachment && !leadTokenAllowsAttachment) {
+  if (!sessionAllowsAttachment && !tokenAllowsAttachment && !leadTokenAllowsAttachment && !handoverTokenAllowsAttachment) {
     if (!session && leadTokenScope?.status) {
       const error = leadTokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired lead token'
       const status = leadTokenScope.status === 'active' ? 403 : 401
@@ -362,7 +421,9 @@ export async function GET(
   }
 
   const servedTo = session?.id ??
-    (leadTokenScope?.jobRequestId ? `lead-token:${leadTokenScope.leadId ?? 'unknown'}` : `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`)
+    (leadTokenScope?.jobRequestId ? `lead-token:${leadTokenScope.leadId ?? 'unknown'}` :
+     handoverTokenJobRequestId ? `handover-token:${handoverTokenJobRequestId}` :
+     `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`)
   console.info(`[attachments:${reqId}] Served ${id} to ${servedTo}`)
 
   const headers = new Headers()

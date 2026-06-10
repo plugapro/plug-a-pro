@@ -129,7 +129,18 @@ export function getPayfastConfig(): PayfastConfig {
   if (!notifyUrl) throw new Error('Missing required env var: PAYFAST_NOTIFY_URL')
   if (!returnUrl) throw new Error('Missing required env var: PAYFAST_RETURN_URL')
   if (!cancelUrl) throw new Error('Missing required env var: PAYFAST_CANCEL_URL')
-  if (!sandbox && !passphrase) throw new Error('Missing required env var: PAYFAST_PASSPHRASE')
+
+  // SECURITY (106344): An empty passphrase makes the MD5 MAC trivially
+  // forgeable — any party who knows merchant_id (visible in checkout URLs) can
+  // compute a valid ITN signature. Require a non-empty passphrase whenever
+  // sandbox mode is OFF (i.e. all non-sandbox environments including production).
+  // Sandbox accounts may omit the passphrase (Payfast sandbox does not enforce it).
+  if (!sandbox && !passphrase) {
+    throw new Error(
+      'PAYFAST_PASSPHRASE must be set in live (non-sandbox) mode. ' +
+        'An empty passphrase makes ITN signatures trivially forgeable.',
+    )
+  }
 
   return { merchantId, merchantKey, passphrase, sandbox, notifyUrl, returnUrl, cancelUrl }
 }
@@ -253,10 +264,15 @@ export function buildCheckoutPayload(
  * Validation sequence:
  *   1. Source IP must be in the known Payfast notify IP allowlist.
  *      (In sandbox mode, IP validation is skipped.)
- *   2. Signature must match a freshly computed MD5 over the received parameters.
- *   3. payment_status must equal "COMPLETE" for a successful payment.
+ *      NOTE (106344): x-forwarded-for is attacker-controllable when the app
+ *      runs behind a multi-hop proxy chain. In production, prefer a trusted
+ *      single-IP header such as CF-Connecting-IP (Cloudflare) or
+ *      x-vercel-forwarded-for over the raw x-forwarded-for chain.
+ *   2. merchant_id in the payload must match our own merchantId from config.
+ *   3. Signature must match a freshly computed MD5 over the received parameters.
+ *   4. payment_status must equal "COMPLETE" for a successful payment.
  *
- * Returns { valid: true } only if all three checks pass.
+ * Returns { valid: true } only if all checks pass.
  * Returns { valid: false, reason } on any failure - callers should log the
  * reason internally but always return HTTP 200 to Payfast.
  */
@@ -265,11 +281,15 @@ export function verifyItn(
   remoteIp: string | null | undefined,
   config: PayfastConfig,
 ): PayfastVerificationResult {
+  // Fail closed if passphrase is absent in a non-sandbox context.
   if (!config.sandbox && !config.passphrase.trim()) {
     return { valid: false, reason: 'PAYFAST_PASSPHRASE is required for live ITN verification' }
   }
 
   // 1. IP validation - fail closed if IP cannot be determined.
+  // NOTE: x-forwarded-for is attacker-controllable. In production, use a
+  // single-hop trusted header (CF-Connecting-IP, x-vercel-forwarded-for)
+  // instead of parsing the leftmost value of the forwarded chain.
   if (!config.sandbox) {
     if (!remoteIp?.trim()) {
       return { valid: false, reason: 'remote IP could not be determined' }
@@ -279,7 +299,17 @@ export function verifyItn(
     }
   }
 
-  // 2. Signature verification.
+  // 2. merchant_id validation (SECURITY 106344): reject payloads that claim a
+  // different merchant_id. This prevents a payload crafted for another
+  // merchant's account from being replayed against our endpoint.
+  if (payload.merchant_id && payload.merchant_id !== config.merchantId) {
+    return {
+      valid: false,
+      reason: `merchant_id mismatch: expected ${config.merchantId}, got ${payload.merchant_id}`,
+    }
+  }
+
+  // 3. Signature verification.
   const { signature: receivedSignature, ...rest } = payload
   if (!receivedSignature) {
     return { valid: false, reason: 'signature field missing from ITN payload' }
@@ -305,7 +335,7 @@ export function verifyItn(
     return { valid: false, reason: 'signature mismatch' }
   }
 
-  // 3. Payment status check.
+  // 4. Payment status check.
   if (payload.payment_status !== 'COMPLETE') {
     return { valid: false, reason: `payment_status is not COMPLETE: ${payload.payment_status}` }
   }

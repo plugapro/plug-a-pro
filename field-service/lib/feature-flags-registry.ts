@@ -249,6 +249,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.auto_approve.enabled': {
+    description: 'Kill switch enforced inside autoApproveProviderApplications(): when disabled (default), the function returns early and never sets provider active/verified/ACTIVE. Field-completeness checks alone must never promote a provider without this flag — manual admin review is unaffected.',
+    owner: 'ops',
+    defaultValue: false,
+  },
   // ─── Matching engine ─────────────────────────────────────────────────────────
   'matching.v2.candidate_pool': {
     description: 'Use precomputed candidate pool in the matching orchestrator instead of a live DB scan. Speeds up dispatch and reduces query load.',
@@ -350,6 +355,11 @@ export const FEATURE_FLAGS_REGISTRY = {
   },
   'provider.identity.vendor.didit': {
     description: 'Enable Didit as a hosted-flow identity verification vendor (KYC + liveness + AML + optional SA DHA). Default workflow is KYC_AUTHORITATIVE for provider onboarding.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'provider.kyc_selfie_as_avatar': {
+    description: 'When ON, approving a KYC identity verification will copy the provider\'s KYC selfie to Provider.avatarUrl when no avatar exists. Enable only after adding a provider consent step to the KYC flow. Default OFF to prevent publishing biometric data as public profile photos without explicit consent.',
     owner: 'eng',
     defaultValue: false,
   },

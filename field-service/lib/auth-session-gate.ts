@@ -14,6 +14,7 @@ const SECURITY_STATE_LOOKUP_TIMEOUT_MS = 1500
 export type AuthSessionGateSourceRoute =
   | '/api/auth/session'
   | '/api/auth/provider/verify-code'
+  | '/api/provider/registration/verify-code'
 
 export type IssueAuthSessionResult =
   | { ok: true; setCookie: string }

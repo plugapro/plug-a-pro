@@ -24,7 +24,8 @@ export default function TrackPage() {
     setLoading(true)
 
     try {
-      const res = await fetch(`/api/track?ref=${encodeURIComponent(normalized)}`)
+      // The API issues a server-side redirect; we follow it and push the final URL.
+      const res = await fetch(`/api/track?ref=${encodeURIComponent(normalized)}`, { redirect: 'follow' })
       if (res.status === 404) {
         setError('No request found with that reference. Check the number and try again.')
         return
@@ -33,11 +34,10 @@ export default function TrackPage() {
         setError('Could not look up your request right now. Please try again.')
         return
       }
-      const data = await res.json()
-      if (data.token) {
-        router.push(`/requests/access/${encodeURIComponent(data.token)}`)
-      } else if (data.bookingId) {
-        router.push(`/bookings/${data.bookingId}`)
+      // After following the redirect, navigate to the resolved URL.
+      const resolvedPath = new URL(res.url).pathname + new URL(res.url).search
+      if (resolvedPath && resolvedPath !== '/api/track') {
+        router.push(resolvedPath)
       } else {
         setError('No request found with that reference. Check the number and try again.')
       }

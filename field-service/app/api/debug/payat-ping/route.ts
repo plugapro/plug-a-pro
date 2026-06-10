@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
+import { requireAdminApi } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -128,6 +129,12 @@ async function createRtp(params: {
 }
 
 export async function GET(request: NextRequest) {
+  // This diagnostic creates real Pay@ RTPs, so it must be admin-gated. The
+  // hard-coded DIAG_KEY check below is kept as defence-in-depth only; the
+  // primary gate is a valid admin session.
+  const adminGate = await requireAdminApi()
+  if (adminGate) return adminGate
+
   const diagKey = process.env.PAYAT_DIAG_KEY?.trim()
   if (!diagKey || request.headers.get('x-payat-diag-key') !== diagKey) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })

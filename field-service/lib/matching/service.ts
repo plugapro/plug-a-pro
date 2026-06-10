@@ -2339,6 +2339,10 @@ export async function acceptAssignmentOffer(params: {
       source: params.source ?? 'api',
       traceId,
       idempotencyKey: `${params.source ?? 'api'}:${params.providerId}:${lead.id}:unlock_accept_lead`,
+      // acceptAssignmentOffer is only invoked from explicit provider accept actions
+      // (the "Confirm accept" tap on the lead page or the WhatsApp accept button),
+      // never from a bare lead-link page load - so the credit spend is confirmed.
+      confirmed: true,
     })
     const alreadyUnlocked = unlockResult.alreadyUnlocked
     const remainingCreditBalance = remainingBalanceFromUnlock(
@@ -2551,13 +2555,13 @@ export async function acceptAssignmentOffer(params: {
         ? 'EXPIRED'
         : error.code === 'INSUFFICIENT_CREDITS'
           ? 'INSUFFICIENT_CREDITS'
-          : error.code === 'PROVIDER_NOT_APPROVED' || error.code === 'PROVIDER_NOT_ACTIVE'
+          : error.code === 'PROVIDER_NOT_APPROVED' || error.code === 'PROVIDER_NOT_ACTIVE' || error.code === 'KYC_REQUIRED'
             ? 'PROVIDER_NOT_APPROVED'
             : error.code === 'WALLET_SUSPENDED'
               ? 'WALLET_SUSPENDED'
               : error.code === 'CONCURRENT_UNLOCK'
                 ? 'CONCURRENT_UNLOCK'
-                : error.code === 'FORBIDDEN'
+                : error.code === 'FORBIDDEN' || error.code === 'CONFIRMATION_REQUIRED'
                   ? 'FORBIDDEN'
                   : 'TAKEN'
       console.info('[matching] lead unlock/accept blocked', {

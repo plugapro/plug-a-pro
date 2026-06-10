@@ -112,11 +112,13 @@ describe('generateInvoicePdf()', () => {
     // renderToBuffer called once
     expect(mockRenderToBuffer).toHaveBeenCalledTimes(1)
 
-    // blob put called with correct key prefix, buffer and content type
+    // blob put called with correct key prefix, buffer and content type.
+    // Security (0a4a95d): addRandomSuffix must be true so invoice URLs are not
+    // enumerable by booking id.
     expect(mockBlobPut).toHaveBeenCalledWith(
       expect.stringMatching(/^invoices\/bkg-abc12345\//),
       expect.any(Buffer),
-      expect.objectContaining({ contentType: 'application/pdf' }),
+      expect.objectContaining({ contentType: 'application/pdf', addRandomSuffix: true }),
     )
 
     // upsert called with bookingId and pdfUrl in both create and update

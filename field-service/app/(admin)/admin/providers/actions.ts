@@ -250,6 +250,10 @@ export async function setProviderStatusAction(input: SetStatusInput) {
         ? 'provider.ban'
         : 'provider.set_status',
     requiredRole: isOwnerOnlyStatus ? ['OWNER'] : [...OPS_ROLES],
+    // SECURITY: provider trust/status is a TRUST-domain responsibility. Use
+    // exact role matching so FINANCE (hierarchy level 2) does not inherit the
+    // OPS-floor permission via the role hierarchy. OWNER is always allowed.
+    roleExact: true,
     requiredFlag: FLAG,
     schema: SetProviderStatusSchema,
     input,
@@ -304,6 +308,9 @@ export async function verifyProviderAction(providerId: string) {
     entityId: providerId,
     action: 'provider.verify',
     requiredRole: [...OPS_ROLES],
+    // SECURITY: verification is a TRUST-domain action. Exact role match keeps
+    // FINANCE from inheriting it via the hierarchy. OWNER is always allowed.
+    roleExact: true,
     requiredFlag: FLAG,
     schema: VerifyProviderSchema,
     input: { providerId },
@@ -338,6 +345,9 @@ export async function reactivateProviderAction(providerId: string) {
     entityId: providerId,
     action: 'provider.reactivate',
     requiredRole: [...OPS_ROLES],
+    // SECURITY: reactivation restores provider trust status — TRUST-domain.
+    // Exact role match keeps FINANCE from inheriting it. OWNER is always allowed.
+    roleExact: true,
     requiredFlag: FLAG,
     schema: VerifyProviderSchema,
     input: { providerId },

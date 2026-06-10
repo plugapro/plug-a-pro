@@ -110,7 +110,10 @@ export async function approveIdentityVerificationAction(input: ReviewInput) {
   revalidateVerificationPaths(input.verificationId)
   let notification: IdentityApprovalNotificationResult = 'skipped'
   if (result.ok && !result.data.alreadyApproved) {
-    await backfillProviderAvatarFromKyc(input.verificationId)
+    const kycSelfieAvatarEnabled = await isEnabled('provider.kyc_selfie_as_avatar')
+    if (kycSelfieAvatarEnabled) {
+      await backfillProviderAvatarFromKyc(input.verificationId)
+    }
     notification = await notifyProviderIdentityApproval(input.verificationId)
   }
   return { ok: result.ok, notification }

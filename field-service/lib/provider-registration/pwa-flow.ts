@@ -106,7 +106,16 @@ type SubmitTransactionClient = {
     create: (...args: any[]) => Promise<{ id: string }>
   }
   providerApplicationDraft: { update: (...args: any[]) => Promise<unknown> }
-  registrationResumeToken: { updateMany: (...args: any[]) => Promise<unknown> }
+  registrationResumeToken: {
+    findUnique: (...args: any[]) => Promise<{
+      draftId: string
+      purpose: string
+      expiresAt: Date
+      consumedAt: Date | null
+      draft?: { id: string; phone: string } | null
+    } | null>
+    updateMany: (...args: any[]) => Promise<unknown>
+  }
   providerCategory?: { createMany: (...args: any[]) => Promise<unknown> }
   providerRate?: { createMany: (...args: any[]) => Promise<unknown> }
 }
@@ -494,9 +503,58 @@ export async function submitProviderRegistrationApplication(
     throw new ProviderRegistrationValidationError('Accept the provider terms before submitting.', 'CONSENT_REQUIRED')
   }
 
+  if (!input.resumeToken || !input.draftId) {
+    throw new ProviderRegistrationValidationError(
+      'Could not verify this registration. Please restart and try again.',
+      'INVALID_RESUME_TOKEN',
+      400,
+    )
+  }
+
   const tokenHash = await hashRegistrationResumeToken(input.resumeToken)
 
   return client.$transaction(async (tx) => {
+    // SECURITY: validate the resume token FIRST, before any DB write or any
+    // enumeration-risk response (PHONE_REGISTERED_AS_CUSTOMER / existing_*). The
+    // token must exist, be of the registration-resume purpose, be unexpired and
+    // unconsumed, and belong to the submitted draft. The draft's verified phone
+    // must also match the submitted phone. All failures return a single generic
+    // 400 so unauthenticated callers cannot probe which numbers are registered.
+    const genericTokenError = new ProviderRegistrationValidationError(
+      'Could not verify this registration. Please restart and try again.',
+      'INVALID_RESUME_TOKEN',
+      400,
+    )
+
+    const resumeToken = await tx.registrationResumeToken.findUnique({
+      where: { tokenHash },
+      select: {
+        draftId: true,
+        purpose: true,
+        expiresAt: true,
+        consumedAt: true,
+        draft: { select: { id: true, phone: true } },
+      },
+    })
+
+    if (
+      !resumeToken ||
+      resumeToken.purpose !== RESUME_TOKEN_PURPOSE ||
+      resumeToken.consumedAt ||
+      resumeToken.expiresAt.getTime() <= Date.now() ||
+      resumeToken.draftId !== input.draftId
+    ) {
+      throw genericTokenError
+    }
+
+    const tokenDraftPhone = resumeToken.draft?.phone
+    if (
+      !tokenDraftPhone ||
+      normalizeProviderApplicationPhone(tokenDraftPhone) !== normalizeProviderApplicationPhone(baseData.phone)
+    ) {
+      throw genericTokenError
+    }
+
     const location = await resolveCanonicalServiceAreas(
       tx,
       input,

@@ -47,6 +47,13 @@ async function updateProfile(formData: FormData) {
   const customer = await resolveCustomer(dbServer, session)
   if (!customer) return
 
+  // Account profile mutations are OWNER-only. A delegated BOOKER member may operate
+  // bookings under the principal account but must not rename it or change its email.
+  // Direct account holders resolve to memberRole === 'OWNER'.
+  if (customer.memberRole !== 'OWNER') {
+    redirect('/profile')
+  }
+
   await dbServer.customer.update({
     where: { id: customer.id },
     data: {

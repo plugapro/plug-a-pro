@@ -9,6 +9,7 @@
 
 import { type Prisma as PrismaTypes } from '@prisma/client'
 import { db } from './db'
+import { isEnabled } from './flags'
 import { assessProviderApplicationForOpsReview } from './provider-application-review-support'
 import { syncProviderRecord } from './provider-record'
 import { awardPromoCreditsForMilestone } from './provider-promo-awards'
@@ -661,10 +662,41 @@ export async function reconcileAutoApproveSideEffects(
   return reconcilePendingSideEffects(client, params.runId ?? Math.random().toString(36).slice(2), params.limit)
 }
 
+function emptyAutoApproveResult(skippedReason: string): AutoApproveResult {
+  return {
+    attempted: 0,
+    approved: 0,
+    skipped: 0,
+    errors: 0,
+    txAborts: 0,
+    reconciliation: { scanned: 0, replayed: 0, skipped: 0, hardFailed: 0 },
+    sideEffectSummary: {
+      promoAwarded: 0,
+      promoFailed: 0,
+      notifyQueued: 0,
+      queueReleased: 0,
+      enrichmentQueued: 0,
+    },
+    skippedReasons: [skippedReason],
+  }
+}
+
 export async function autoApproveProviderApplications(
   client: AutoApproveDb = db,
   params: AutoApproveParams = {},
 ): Promise<AutoApproveResult> {
+  // Defense-in-depth kill switch. Field-completeness checks alone must never promote a
+  // provider to active/verified/ACTIVE without an explicit operator opt-in. This guard
+  // lives inside the function (not just the cron route) so no caller - tests, future
+  // routes, manual scripts - can bypass it. Disabled by default; manual admin approval
+  // is a separate path and is unaffected.
+  if (!(await isEnabled('provider.auto_approve.enabled'))) {
+    console.warn(
+      '[auto-approve] skipped: feature flag provider.auto_approve.enabled is disabled; no applications were auto-approved (manual admin review required)',
+    )
+    return emptyAutoApproveResult('AUTO_APPROVE_FLAG_DISABLED')
+  }
+
   // Read a bounded batch of PENDING applications to keep cron runtime predictable.
   const applications = await client.providerApplication.findMany({
     where: { status: 'PENDING' },

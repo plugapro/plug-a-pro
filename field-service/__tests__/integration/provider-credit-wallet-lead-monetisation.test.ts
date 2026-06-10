@@ -465,7 +465,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
     expect(JSON.stringify(preview)).not.toContain('+27821234567')
     expect(JSON.stringify(preview)).not.toContain('12 Exact Street')
 
-    await unlockLeadForProvider('lead-1', 'provider-1')
+    await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
     expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 2 })
     expect(state.ledgerEntries).toContainEqual(expect.objectContaining({
       entryType: 'LEAD_UNLOCK_DEBIT',
@@ -504,7 +504,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
     // Promo-first debit is intentional. This simulates prior promo exhaustion so
     // the second unlock validates the paid-credit path after the confirmed top-up.
     state.wallets.set('provider-1', { ...wallet('provider-1'), promoCreditBalance: 0 })
-    await unlockLeadForProvider('lead-2', 'provider-1')
+    await unlockLeadForProvider('lead-2', 'provider-1', { confirmed: true })
     expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 1, promoCreditBalance: 0 })
     expect(state.ledgerEntries).toContainEqual(expect.objectContaining({
       entryType: 'LEAD_UNLOCK_DEBIT',

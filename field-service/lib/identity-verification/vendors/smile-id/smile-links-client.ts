@@ -39,6 +39,11 @@ function validateBaseUrl(url: string): void {
       `SMILE_ID_BASE_URL must be one of ${[...KNOWN_SMILE_HOSTS].join(', ')} in production; got ${url}`,
     )
   }
+  if (normalized.includes('testapi')) {
+    throw new Error(
+      'Sandbox Smile ID URL not allowed in production. Set SMILE_ID_BASE_URL to https://api.smileidentity.com',
+    )
+  }
 }
 
 export class SmileApiError extends Error {

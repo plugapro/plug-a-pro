@@ -1,8 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createApiReferenceId } from '@/lib/api-response'
-import { buildSessionCookieHeader, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import {
+  buildSessionCookieHeader,
+  resolveSessionMaxAge,
+  SESSION_COOKIE_NAME,
+} from '@/lib/auth-session-cookie'
+import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import { findLatestProviderRegistrationApplicationByPhone } from '@/lib/provider-applications'
 import { checkOtpVerifyLimit } from '@/lib/rate-limit'
@@ -61,6 +67,11 @@ function jsonError(params: {
     },
     { status: params.status },
   )
+}
+
+function clearSessionCookieHeader(): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`
 }
 
 export async function POST(request: NextRequest) {
@@ -142,15 +153,66 @@ export async function POST(request: NextRequest) {
 
     const application = await findLatestProviderRegistrationApplicationByPhone(db, normalized.e164).catch(() => null)
     const maxAge = resolveSessionMaxAge(data.session.expires_in)
-    const response = NextResponse.json({
-      ok: true,
-      nextStep: application ? 'status' : 'profile',
-      redirectTo: application ? '/provider/register/status' : '/provider/register/profile',
-      state: application ? registrationState(application.status) : null,
-      phone: normalized.e164,
-      traceId,
+
+    const buildSuccessResponse = () =>
+      NextResponse.json({
+        ok: true,
+        nextStep: application ? 'status' : 'profile',
+        redirectTo: application ? '/provider/register/status' : '/provider/register/profile',
+        state: application ? registrationState(application.status) : null,
+        phone: normalized.e164,
+        traceId,
+      })
+
+    // SECURITY: this endpoint must honour the same OTP security gate as
+    // /api/auth/provider/verify-code. When the gate is enabled it can lock the
+    // account, force a step-up, or fail closed; we must not blindly persist the
+    // session cookie. When the flag is off we keep the legacy direct-cookie path.
+    const otpSecurityEnabled = await isEnabled('security.otp.report', { userId: data.user.id })
+
+    if (!otpSecurityEnabled) {
+      const response = buildSuccessResponse()
+      response.headers.set('Set-Cookie', buildSessionCookieHeader(data.session.access_token, maxAge))
+      return response
+    }
+
+    const gated = await issueAuthSessionWithSecurityGate({
+      accessToken: data.session.access_token,
+      phoneE164: normalized.e164,
+      userId: data.user.id,
+      maxAge,
+      sourceRoute: '/api/provider/registration/verify-code',
     })
-    response.headers.set('Set-Cookie', buildSessionCookieHeader(data.session.access_token, maxAge))
+
+    if (!gated.ok && gated.reason === 'LOCKED') {
+      const response = jsonError({
+        code: 'ACCOUNT_LOCKED',
+        message: "This account is temporarily locked. Please try again later or contact support.",
+        status: 423,
+        traceId,
+        retryable: false,
+        context: { surface: SURFACE, phoneMasked: maskPhone(normalized.e164) },
+      })
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      return response
+    }
+
+    if (!gated.ok && gated.reason === 'STEP_UP_REQUIRED') {
+      const response = NextResponse.json({
+        ok: true,
+        code: 'STEP_UP_REQUIRED',
+        nextStep: 'security_checkpoint',
+        redirectTo: '/security/checkpoint',
+        phone: normalized.e164,
+        traceId,
+      })
+      response.headers.set('Set-Cookie', clearSessionCookieHeader())
+      response.headers.append('Set-Cookie', gated.pendingStepUpCookie)
+      return response
+    }
+
+    const response = buildSuccessResponse()
+    response.headers.set('Set-Cookie', gated.setCookie)
     return response
   } catch (error) {
     console.error('[provider-registration-verify-code] unexpected error', {

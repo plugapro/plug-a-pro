@@ -289,15 +289,34 @@ class PayFastProvider implements PspProvider {
   }
 
   verifyWebhook(rawBody: string, _signature: string): boolean {
+    // SECURITY (7a1438d): Fail closed in non-sandbox mode if passphrase is absent.
+    // An empty passphrase lets any caller who knows merchant_id (visible in
+    // checkout URLs) compute a valid MD5 signature and forge an ITN.
+    const isSandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
+    if (!isSandbox && !this.passphrase) {
+      console.error('[PayFastProvider.verifyWebhook] PAYFAST_PASSPHRASE required in live mode')
+      return false
+    }
+
     // PayFast sends ITN data as a POST body (application/x-www-form-urlencoded)
     // Signature is included as a field in the body itself, not a header
     const params = Object.fromEntries(new URLSearchParams(rawBody))
     const { signature, ...rest } = params
 
+    // Reject if signature field is absent.
+    if (!signature) return false
+
+    // Reject before signature check if payment_status is not COMPLETE — avoids
+    // processing incomplete/cancelled notifications as successes.
+    if (params.payment_status !== 'COMPLETE') return false
+
     const computed = this.buildSignature(rest as Record<string, string>)
     const crypto = require('crypto')
     try {
-      return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature ?? ''))
+      const a = Buffer.from(computed, 'utf8')
+      const b = Buffer.from(signature, 'utf8')
+      if (a.length !== b.length) return false
+      return crypto.timingSafeEqual(a, b)
     } catch {
       return false
     }
