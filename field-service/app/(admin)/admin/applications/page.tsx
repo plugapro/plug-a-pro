@@ -27,6 +27,7 @@ import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
 import {
   listProviderOnboardingRecoveryRows,
+  filterAdminActionableRecoveryRows,
   WHATSAPP_RECOVERY_SESSION_WINDOW_MS,
   providerOnboardingStageLabel,
   sendProviderOnboardingRecoveryFollowUpForRef,
@@ -852,7 +853,8 @@ export default async function ApplicationsPage({
     orderBy: { submittedAt: 'desc' },
     take: 100,
   })
-  const onboardingRecoveryRows = await listProviderOnboardingRecoveryRows(db)
+  const onboardingRecoveryRowsAll = await listProviderOnboardingRecoveryRows(db)
+  const onboardingRecoveryRows = filterAdminActionableRecoveryRows(onboardingRecoveryRowsAll, now)
   const conflictingApplicationIds = getConflictingActiveProviderApplicationIds(applications)
   const assignments = await listOpsQueueAssignments(
     db,

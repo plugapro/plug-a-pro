@@ -714,6 +714,29 @@ export function summarizeProviderOnboardingRecoveryRows(rows: ProviderOnboarding
   }
 }
 
+/**
+ * Trim a recovery-row list to the rows an admin can act on right now:
+ *  - the admin has not yet nudged this lead (`lastOutcomeStatus === 'not_contacted'`),
+ *  - the lead is still inside the 23h WhatsApp session window so a free-form
+ *    text message will actually land, and
+ *  - the stage has a real recommended action (excludes `submitted_no_recovery`).
+ *
+ * Pure: caller passes `now` for deterministic tests; defaults to `new Date()`.
+ * Order of input rows is preserved.
+ */
+export function filterAdminActionableRecoveryRows(
+  rows: ProviderOnboardingRecoveryRow[],
+  now: Date = new Date(),
+): ProviderOnboardingRecoveryRow[] {
+  const nowMs = now.getTime()
+  return rows.filter((row) => {
+    if (row.lastOutcomeStatus !== 'not_contacted') return false
+    if (row.messageTemplateKey === 'submitted_no_recovery') return false
+    const ageMs = nowMs - row.lastInteractionAt.getTime()
+    return ageMs <= WHATSAPP_RECOVERY_SESSION_WINDOW_MS
+  })
+}
+
 async function buildPhoneMapForRecoveryRows(
   client: RecoveryClient,
   options: { since: Date; take?: number },
