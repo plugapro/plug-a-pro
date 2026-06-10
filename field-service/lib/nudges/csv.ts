@@ -25,6 +25,17 @@ function escapeCell(value: string | null | undefined): string {
   return s
 }
 
+// Slugs are hierarchical (province__city__region__suburb); ops only need the suburb.
+export function humanizeSuburbSlug(slug: string | null | undefined): string {
+  if (!slug) return ''
+  const segment = slug.split('__').pop() ?? slug
+  return segment
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 function rowFor(c: NudgeCandidate): string[] {
   return [
     c.providerId,
@@ -33,7 +44,7 @@ function rowFor(c: NudgeCandidate): string[] {
     c.tier,
     c.skills.join('|'),
     c.missingItems.join('|'),
-    c.serviceAreas[0] ?? '',
+    humanizeSuburbSlug(c.serviceAreas[0]),
     c.applicationStatus ?? '',
     c.renderedMessage,
   ]
