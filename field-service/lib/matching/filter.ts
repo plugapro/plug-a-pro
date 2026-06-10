@@ -340,29 +340,31 @@ export async function filterEligibleProviders(
       adminEquipRows,
       categoryApprovalRows,
     ] = await Promise.all([
-      db.provider.findMany({
-        where: {
-          id: { in: providerIds },
-          active: true,
-          verified: true,
-          kycStatus: 'VERIFIED',
-          status: 'ACTIVE',
-          isTestUser: Boolean(jobRequest.isTestRequest),
-        },
-        select: {
-          id: true,
-          completedJobsCount: true,
-          onTimeRate: true,
-          acceptanceRate: true,
-          complaintCount: true,
-          complaintRate: true,
-          cancellationRate: true,
-          punctualityScore: true,
-          lastKnownLocationAt: true,
-          equipmentTags: true,
-          vehicleTypes: true,
-        },
-      }) as Promise<MetricsRow[]>,
+      isEnabled('matching.relax_kyc_gate').then((relaxKyc) =>
+        db.provider.findMany({
+          where: {
+            id: { in: providerIds },
+            active: true,
+            verified: true,
+            ...(relaxKyc ? {} : { kycStatus: 'VERIFIED' }),
+            status: 'ACTIVE',
+            isTestUser: Boolean(jobRequest.isTestRequest),
+          },
+          select: {
+            id: true,
+            completedJobsCount: true,
+            onTimeRate: true,
+            acceptanceRate: true,
+            complaintCount: true,
+            complaintRate: true,
+            cancellationRate: true,
+            punctualityScore: true,
+            lastKnownLocationAt: true,
+            equipmentTags: true,
+            vehicleTypes: true,
+          },
+        })
+      ) as Promise<MetricsRow[]>,
       db.technicianSkill.findMany({
         where: { providerId: { in: providerIds } },
         select: { providerId: true, skillTag: true },

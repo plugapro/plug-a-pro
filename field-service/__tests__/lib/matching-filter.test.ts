@@ -6,7 +6,8 @@ import type { CandidatePoolEntry } from '../../lib/matching/candidate-pool'
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
-const { mockDb } = vi.hoisted(() => ({
+const { mockDb, mockIsEnabled } = vi.hoisted(() => ({
+  mockIsEnabled: vi.fn().mockResolvedValue(false),
   mockDb: {
     $queryRaw: vi.fn(),
     provider: { findMany: vi.fn() },
@@ -23,6 +24,8 @@ const { mockDb } = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
+vi.mock('../../lib/flags', () => ({ isEnabled: mockIsEnabled }))
+vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
 vi.mock('../../lib/category-config', () => ({
   resolveCategoryRequirements: vi.fn().mockResolvedValue({
     requiredCertificationCodes: [],
@@ -703,5 +706,49 @@ describe('filterEligibleProviders - category slug normalisation', () => {
     )
 
     expect(eligible).toHaveLength(1)
+  })
+})
+
+describe('filterEligibleProviders - matching.relax_kyc_gate flag', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockIsEnabled.mockResolvedValue(false)
+    setupDefaultBatchMocks()
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])  // timedOutRows
+      .mockResolvedValueOnce([])  // declinedLeadRows
+      .mockResolvedValueOnce([])  // dailyJobRows
+  })
+
+  it('enforces kycStatus=VERIFIED in the DB query when flag is OFF', async () => {
+    await filterEligibleProviders([makeCandidate()], makeJobRequest())
+
+    expect(mockDb.provider.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ kycStatus: 'VERIFIED' }),
+      }),
+    )
+  })
+
+  it('omits kycStatus from the DB query when matching.relax_kyc_gate is ON', async () => {
+    mockIsEnabled.mockImplementation((flag: string) =>
+      Promise.resolve(flag === 'matching.relax_kyc_gate'),
+    )
+
+    await filterEligibleProviders([makeCandidate()], makeJobRequest())
+
+    const call = mockDb.provider.findMany.mock.calls[0]?.[0]
+    expect(call?.where).not.toHaveProperty('kycStatus')
+  })
+
+  it('still includes the provider in eligible set when kycStatus gate is relaxed', async () => {
+    mockIsEnabled.mockImplementation((flag: string) =>
+      Promise.resolve(flag === 'matching.relax_kyc_gate'),
+    )
+
+    const { eligible } = await filterEligibleProviders([makeCandidate()], makeJobRequest())
+
+    expect(eligible).toHaveLength(1)
+    expect(eligible[0].id).toBe('p1')
   })
 })
