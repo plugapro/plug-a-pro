@@ -1,13 +1,12 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { getSession, providerAuthWhere } from '@/lib/auth'
+import { requireProvider } from '@/lib/auth'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { syncProviderSkills } from '@/lib/provider-skills'
+import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
 
 type ActionResult = { ok: true; message: string } | { ok: false; error: string }
-
-type ProviderSession = { id: string; phone: string | null }
 
 const SCHEDULE_DAYS = [0, 1, 2, 3, 4, 5, 6] as const
 
@@ -32,33 +31,25 @@ function toUserSafeError(error: unknown): string {
   return 'Could not save your changes. Please try again.'
 }
 
-async function resolveProviderSession(): Promise<ProviderSession | null> {
-  const session = await getSession()
-  if (!session || session.role !== 'provider') return null
-
-  return {
-    id: session.id,
-    phone: session.phone,
-  }
-}
-
 export async function updateProviderProfileFromFormAction(formData: FormData): Promise<ActionResult> {
-  const session = await resolveProviderSession()
-  if (!session) {
+  // requireProvider() validates session role, DB-backed portal eligibility, and
+  // active/verified/status. It redirects (throws) when ineligible, so a null
+  // return here always means an unexpected error — surface it as a session error.
+  let session: Awaited<ReturnType<typeof requireProvider>>
+  try {
+    session = await requireProvider()
+  } catch {
     return { ok: false, error: 'Your session expired. Sign in again to continue.' }
   }
 
+  // Bind exclusively to userId — never fall back to metadata providerId.
   const provider = await db.provider.findFirst({
-    where: providerAuthWhere(session),
+    where: { userId: session.id },
     select: { id: true, active: true, status: true },
   })
 
   if (!provider) {
     return { ok: false, error: 'Your session expired. Sign in again to continue.' }
-  }
-
-  if (!provider.active || (provider.status !== 'ACTIVE' && provider.status !== null)) {
-    return { ok: false, error: 'Your account is not currently active. Contact support for help.' }
   }
 
   const name = (formData.get('name') as string | null)?.trim() ?? null
@@ -79,6 +70,13 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
 
   if (skillTags.length === 0) {
     return { ok: false, error: 'Select at least one skill before saving your profile.' }
+  }
+
+  // Reject any skill tag not in the pilot allowed list to prevent self-authorization
+  // of matching eligibility with out-of-pilot or fabricated tags.
+  const invalidSkillTags = skillTags.filter((tag) => !PILOT_SKILL_TAGS.has(tag))
+  if (invalidSkillTags.length > 0) {
+    return { ok: false, error: 'One or more selected skills are not available in the current pilot. Please refresh and try again.' }
   }
 
   try {
@@ -114,8 +112,17 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
         if (locationNodeIds.length > 0) {
           const nodes = await tx.locationNode.findMany({
             where: { id: { in: locationNodeIds }, active: true },
-            select: { id: true, slug: true, label: true, provinceKey: true, cityKey: true, regionKey: true },
+            select: { id: true, slug: true, label: true, nodeType: true, provinceKey: true, cityKey: true, regionKey: true },
           })
+
+          // Reject any node that is not a SUBURB — REGION nodes must not be written
+          // directly to technicianServiceArea as they bypass granular area matching.
+          const nonSuburbNodes = nodes.filter((node) => node.nodeType !== 'SUBURB')
+          if (nonSuburbNodes.length > 0) {
+            throw new Error(
+              `Invalid service area selection: only SUBURB nodes are permitted. Rejected node types: ${nonSuburbNodes.map((n) => `${n.id}(${n.nodeType})`).join(', ')}`,
+            )
+          }
 
           const existingAreas = await tx.technicianServiceArea.findMany({
             where: {

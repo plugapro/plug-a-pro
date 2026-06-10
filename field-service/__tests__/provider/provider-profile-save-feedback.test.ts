@@ -13,6 +13,10 @@ const tx = {
 
 vi.mock('../../lib/auth', () => ({
   getSession: vi.fn(),
+  // requireProvider() now gates every action: it validates the session role and
+  // DB-backed portal eligibility, then returns the session (AuthUser). Tests drive
+  // its outcome via getSession — null session ⇒ thrown redirect ⇒ session error.
+  requireProvider: vi.fn(),
   providerAuthWhere: (session: { id: string; phone: string | null }) => ({
     OR: [
       { userId: session.id },
@@ -46,8 +50,9 @@ describe('provider profile save feedback action', () => {
   })
 
   it('returns a sign-in message when the provider session is missing', async () => {
-    const { getSession } = await import('../../lib/auth')
-    ;(getSession as any).mockResolvedValue(null)
+    const { requireProvider } = await import('../../lib/auth')
+    // requireProvider() throws (redirects) when there is no eligible provider session.
+    ;(requireProvider as any).mockRejectedValue(new Error('NEXT_REDIRECT'))
 
     const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
     const result = await updateProviderProfileFromFormAction(new FormData())
@@ -59,9 +64,9 @@ describe('provider profile save feedback action', () => {
   })
 
   it('returns a plain validation error when no skills are selected', async () => {
-    const { getSession } = await import('../../lib/auth')
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
     ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
 
     const formData = new FormData()
@@ -76,10 +81,12 @@ describe('provider profile save feedback action', () => {
     })
   })
 
-  it('resolves the provider by authenticated user or phone, never metadata providerId', async () => {
-    const { getSession } = await import('../../lib/auth')
+  it('binds the provider lookup to the authenticated userId, never metadata providerId', async () => {
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({
+    // The session may carry a forged providerId; the action must ignore it and
+    // bind the provider lookup exclusively to the authenticated session.id (userId).
+    ;(requireProvider as any).mockResolvedValue({
       id: 'auth-user-1',
       role: 'provider',
       phone: '+27820000000',
@@ -98,27 +105,23 @@ describe('provider profile save feedback action', () => {
       error: 'Select at least one skill before saving your profile.',
     })
     expect(db.provider.findFirst).toHaveBeenCalledWith({
-      where: {
-        OR: [
-          { userId: 'auth-user-1' },
-          { phone: '+27820000000', userId: null },
-        ],
-      },
+      where: { userId: 'auth-user-1' },
       select: { id: true, active: true, status: true },
     })
   })
 
   it('returns success when profile save completes', async () => {
-    const { getSession } = await import('../../lib/auth')
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
     const { syncProviderSkills } = await import('../../lib/provider-skills')
-    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
     ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
     ;(syncProviderSkills as any).mockResolvedValue(undefined)
 
     const formData = new FormData()
     formData.set('name', 'Lovemore Dube')
-    formData.append('skillTags', 'Plumbing')
+    // Must be an allowed pilot skill tag (lowercase) to pass server-side validation.
+    formData.append('skillTags', 'plumbing')
 
     const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
     const result = await updateProviderProfileFromFormAction(formData)
@@ -128,16 +131,38 @@ describe('provider profile save feedback action', () => {
     expect(tx.providerSchedule.upsert).toHaveBeenCalledTimes(7)
   })
 
-  it('maps unique email errors to a user-safe message', async () => {
-    const { getSession } = await import('../../lib/auth')
+  it('rejects skill tags outside the pilot allowed list', async () => {
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
+
+    const formData = new FormData()
+    formData.set('name', 'Lovemore Dube')
+    // 'electrical' is a restricted (non-pilot) skill — the action must reject it.
+    formData.append('skillTags', 'electrical')
+
+    const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
+    const result = await updateProviderProfileFromFormAction(formData)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'One or more selected skills are not available in the current pilot. Please refresh and try again.',
+    })
+    expect(tx.provider.update).not.toHaveBeenCalled()
+  })
+
+  it('maps unique email errors to a user-safe message', async () => {
+    const { requireProvider } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
     ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
     tx.provider.update.mockRejectedValueOnce(new Error('Unique constraint failed on the fields: (`email`)'))
 
     const formData = new FormData()
     formData.set('email', 'duplicate@example.com')
-    formData.append('skillTags', 'Electrical')
+    // Use an allowed pilot skill so we reach the persistence step under test.
+    formData.append('skillTags', 'plumbing')
 
     const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
     const result = await updateProviderProfileFromFormAction(formData)

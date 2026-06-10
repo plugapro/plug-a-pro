@@ -134,6 +134,21 @@ import { resolveWhatsAppUserContext } from '@/lib/whatsapp-identity'
 
 const PHONE = '+27821234567'
 
+// Provider fixture that satisfies checkWorkerPortalAccess (portal-eligibility
+// guard on the confirm_accept path): active + verified + status === 'ACTIVE'.
+// Accept-path tests must use this so the security guard in
+// handleSelectedProviderConfirmation does not short-circuit the flow.
+function activeProvider(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'provider-1',
+    name: 'Sipho Dlamini',
+    active: true,
+    verified: true,
+    status: 'ACTIVE',
+    ...overrides,
+  }
+}
+
 function expiredMidFlowConversation() {
   mockDb.conversation.upsert.mockResolvedValue({
     phone: PHONE,
@@ -432,7 +447,7 @@ describe('processInboundMessage stateless notification replies', () => {
   })
 
   it('uses journey recovery when selected-provider confirmation fails unexpectedly', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: false,
       reason: 'UNSUPPORTED_STATE',
@@ -460,7 +475,7 @@ describe('processInboundMessage stateless notification replies', () => {
   })
 
   it('routes typed accept to the latest notified selected-provider lead', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockDb.lead.findFirst.mockResolvedValueOnce({ id: 'lead-selected-1' })
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
@@ -597,7 +612,7 @@ describe('processInboundMessage stateless notification replies', () => {
   })
 
   it('sends job-unavailable message with no-deduction confirmation when LEAD_EXPIRED on confirm_accept', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: false,
       reason: 'LEAD_EXPIRED',
@@ -616,7 +631,7 @@ describe('processInboundMessage stateless notification replies', () => {
   })
 
   it('sends job-unavailable message with no-deduction confirmation when REQUEST_NOT_AWAITING_CONFIRMATION on confirm_accept', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: false,
       reason: 'REQUEST_NOT_AWAITING_CONFIRMATION',
@@ -635,7 +650,7 @@ describe('processInboundMessage stateless notification replies', () => {
   })
 
   it('sends insufficient-credits message with no-deduction confirmation on confirm_accept', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
       creditCheck: {
@@ -667,7 +682,7 @@ describe('processInboundMessage stateless notification replies', () => {
   })
 
   it('uses MVP1 pilot-complete fallback copy when accepted-lock confirmation send fails', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
       creditApplied: true,
@@ -2127,7 +2142,7 @@ describe('handleSelectedProviderConfirmation - new failure branches', () => {
   })
 
   it('sends support contact message when CREDIT_APPLICATION_FAILED on confirm_accept', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: false,
       reason: 'CREDIT_APPLICATION_FAILED',
@@ -2145,7 +2160,7 @@ describe('handleSelectedProviderConfirmation - new failure branches', () => {
   })
 
   it('sends credit-deducted warning with support contact when JOB_ASSIGNMENT_FAILED on confirm_accept', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: false,
       reason: 'JOB_ASSIGNMENT_FAILED',
@@ -2162,7 +2177,7 @@ describe('handleSelectedProviderConfirmation - new failure branches', () => {
   })
 
   it('sends identity verification CTA when IDENTITY_NOT_VERIFIED blocks confirm_accept', async () => {
-    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.provider.findUnique.mockResolvedValue(activeProvider())
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: false,
       reason: 'IDENTITY_NOT_VERIFIED',
@@ -2195,5 +2210,23 @@ describe('handleSelectedProviderConfirmation - new failure branches', () => {
     await processInboundMessage(buttonMessage('confirm_decline:lead-nf-1'))
 
     expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('could not be found'))
+  })
+
+  it('blocks confirm_accept and passes the job on when the provider is not portal-eligible', async () => {
+    // Security guard: a provider whose account was suspended/deactivated after
+    // receiving the WhatsApp invite must not be able to accept a lead and gain
+    // access to customer PII. checkWorkerPortalAccess fails this fixture because
+    // active=false (and status !== 'ACTIVE').
+    mockDb.provider.findUnique.mockResolvedValue(
+      activeProvider({ active: false, status: 'SUSPENDED' }),
+    )
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-suspended-1'))
+
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('account is not currently active'),
+    )
   })
 })

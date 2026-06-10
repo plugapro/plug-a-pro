@@ -8,6 +8,10 @@ const tx = {
 
 vi.mock('../../lib/auth', () => ({
   getSession: vi.fn(),
+  // requireProvider() now gates the action: it validates the session role and
+  // DB-backed portal eligibility, then returns the session (AuthUser). Tests drive
+  // its outcome directly — a rejection ⇒ thrown redirect ⇒ session error.
+  requireProvider: vi.fn(),
   providerAuthWhere: (session: { id: string; phone: string | null }) => ({
     OR: [
       { userId: session.id },
@@ -38,8 +42,9 @@ describe('provider availability save feedback action', () => {
   })
 
   it('returns a sign-in message when the provider session is missing', async () => {
-    const { getSession } = await import('../../lib/auth')
-    ;(getSession as any).mockResolvedValue(null)
+    const { requireProvider } = await import('../../lib/auth')
+    // requireProvider() throws (redirects) when there is no eligible provider session.
+    ;(requireProvider as any).mockRejectedValue(new Error('NEXT_REDIRECT'))
 
     const { saveProviderAvailabilityFromFormAction } = await import('../../app/(provider)/provider/availability/actions')
     const result = await saveProviderAvailabilityFromFormAction(new FormData())
@@ -51,9 +56,9 @@ describe('provider availability save feedback action', () => {
   })
 
   it('returns a validation error for an invalid pause-until value', async () => {
-    const { getSession } = await import('../../lib/auth')
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
       active: true,
@@ -75,10 +80,12 @@ describe('provider availability save feedback action', () => {
     })
   })
 
-  it('resolves the provider by authenticated user or phone, never metadata providerId', async () => {
-    const { getSession } = await import('../../lib/auth')
+  it('binds the provider lookup to the authenticated userId, never metadata providerId', async () => {
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({
+    // The session may carry a forged providerId; the action must ignore it and
+    // bind the provider lookup exclusively to the authenticated session.id (userId).
+    ;(requireProvider as any).mockResolvedValue({
       id: 'auth-user-1',
       role: 'provider',
       phone: '+27820000000',
@@ -104,20 +111,15 @@ describe('provider availability save feedback action', () => {
       error: 'Enter a valid pause-until date and time.',
     })
     expect(db.provider.findFirst).toHaveBeenCalledWith({
-      where: {
-        OR: [
-          { userId: 'auth-user-1' },
-          { phone: '+27820000000', userId: null },
-        ],
-      },
+      where: { userId: 'auth-user-1' },
       include: { technicianAvailability: true },
     })
   })
 
   it('returns a validation error when active working hours are invalid', async () => {
-    const { getSession } = await import('../../lib/auth')
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
       active: true,
@@ -141,9 +143,9 @@ describe('provider availability save feedback action', () => {
   })
 
   it('returns success when availability save completes', async () => {
-    const { getSession } = await import('../../lib/auth')
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
       active: true,
@@ -174,9 +176,9 @@ describe('provider availability save feedback action', () => {
   })
 
   it('returns a user-safe failure message when persistence fails', async () => {
-    const { getSession } = await import('../../lib/auth')
+    const { requireProvider } = await import('../../lib/auth')
     const { db } = await import('../../lib/db')
-    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider', providerId: 'provider-1' })
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
     ;(db.provider.findFirst as any).mockResolvedValue({
       id: 'provider-1',
       active: true,
