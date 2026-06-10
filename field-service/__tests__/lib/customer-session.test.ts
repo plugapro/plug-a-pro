@@ -42,7 +42,7 @@ function makeClient(
   overrides: {
     findUniqueResults?: Array<ReturnType<typeof makeCustomerRecord> | null>
     updateResult?: ReturnType<typeof makeCustomerRecord>
-    memberResult?: { principalCustomerId: string } | null
+    memberResult?: { principalCustomerId: string; role?: string | null } | null
   } = {}
 ) {
   const { findUniqueResults = [null], updateResult = null, memberResult = null } = overrides
@@ -284,5 +284,82 @@ describe('resolveCustomerForSession - operator member delegation (flag on)', () 
 
     // Despite the delegation error, the member's own customer record is returned
     expect(result?.id).toBe('cust_1')
+  })
+})
+
+// ─── memberRole scoping (security finding 6cef3df) ───────────────────────────
+
+describe('resolveCustomerForSession - memberRole scoping', () => {
+  it('stamps OWNER on a direct account holder (flag off)', async () => {
+    const rec = makeCustomerRecord({ userId: 'user_1' })
+    const client = makeClient({ findUniqueResults: [rec] })
+
+    const result = await resolveCustomerForSession(client as never, makeSession())
+
+    expect(result?.memberRole).toBe('OWNER')
+  })
+
+  it('requests the membership role from customerMember', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    const principalRec = makeCustomerRecord({ id: 'cust_principal', userId: 'user_org' })
+    const client = makeClient({
+      findUniqueResults: [null, principalRec],
+      memberResult: { principalCustomerId: 'cust_principal', role: 'OWNER' },
+    })
+
+    await resolveCustomerForSession(client as never, makeSession({ phone: null }))
+
+    expect(client.customerMember.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ select: { principalCustomerId: true, role: true } }),
+    )
+  })
+
+  it('resolves an OWNER member to OWNER scope', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    const principalRec = makeCustomerRecord({ id: 'cust_principal', userId: 'user_org' })
+    const client = makeClient({
+      findUniqueResults: [null, principalRec],
+      memberResult: { principalCustomerId: 'cust_principal', role: 'OWNER' },
+    })
+
+    const result = await resolveCustomerForSession(
+      client as never,
+      makeSession({ phone: null }),
+    )
+
+    expect(result?.id).toBe('cust_principal')
+    expect(result?.memberRole).toBe('OWNER')
+  })
+
+  it('resolves a BOOKER member to BOOKER scope', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    const principalRec = makeCustomerRecord({ id: 'cust_principal', userId: 'user_org' })
+    const client = makeClient({
+      findUniqueResults: [null, principalRec],
+      memberResult: { principalCustomerId: 'cust_principal', role: 'BOOKER' },
+    })
+
+    const result = await resolveCustomerForSession(
+      client as never,
+      makeSession({ phone: null }),
+    )
+
+    expect(result?.memberRole).toBe('BOOKER')
+  })
+
+  it('defaults a member with a missing/unknown role to least-privileged BOOKER', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    const principalRec = makeCustomerRecord({ id: 'cust_principal', userId: 'user_org' })
+    const client = makeClient({
+      findUniqueResults: [null, principalRec],
+      memberResult: { principalCustomerId: 'cust_principal', role: null },
+    })
+
+    const result = await resolveCustomerForSession(
+      client as never,
+      makeSession({ phone: null }),
+    )
+
+    expect(result?.memberRole).toBe('BOOKER')
   })
 })

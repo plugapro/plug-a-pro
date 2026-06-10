@@ -4,6 +4,7 @@ const {
   mockAwardPromoCreditsForMilestone,
   mockCheckJobsForNewProviderAvailability,
   mockFindConflictingActiveProviderApplications,
+  mockIsEnabled,
   mockNotifyProviderApplicationApprovedOnce,
   mockRecordAuditLog,
   mockReleaseOpsQueueItem,
@@ -13,6 +14,7 @@ const {
   mockAwardPromoCreditsForMilestone: vi.fn(),
   mockCheckJobsForNewProviderAvailability: vi.fn(),
   mockFindConflictingActiveProviderApplications: vi.fn(),
+  mockIsEnabled: vi.fn(),
   mockNotifyProviderApplicationApprovedOnce: vi.fn(),
   mockRecordAuditLog: vi.fn(),
   mockReleaseOpsQueueItem: vi.fn(),
@@ -20,6 +22,9 @@ const {
   mockSyncProviderRecord: vi.fn(),
 }))
 
+// Default: kill switch ON so the existing approval-path assertions exercise the logic.
+// The disabled-flag behaviour is covered by its own test.
+vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
 vi.mock('@/lib/provider-record', () => ({ syncProviderRecord: mockSyncProviderRecord }))
 vi.mock('@/lib/provider-promo-awards', () => ({ awardPromoCreditsForMilestone: mockAwardPromoCreditsForMilestone }))
 vi.mock('@/lib/ops-queue', () => ({ OPS_QUEUE_TYPES: { PROVIDER_ONBOARDING: 'PROVIDER_ONBOARDING' }, releaseOpsQueueItem: mockReleaseOpsQueueItem }))
@@ -76,6 +81,28 @@ describe('provider auto-approval', () => {
     mockFindConflictingActiveProviderApplications.mockReset().mockResolvedValue([])
     mockResolveServiceCategoryTag.mockReset().mockReturnValue(undefined)
     mockRecordAuditLog.mockReset().mockResolvedValue(undefined)
+    mockIsEnabled.mockReset().mockResolvedValue(true)
+  })
+
+  it('returns early and approves nothing when provider.auto_approve.enabled is disabled', async () => {
+    mockIsEnabled.mockResolvedValue(false)
+
+    const findMany = vi.fn().mockResolvedValue([standardApplication])
+    const transaction = vi.fn()
+    const client: any = {
+      providerApplication: { findMany },
+      $transaction: transaction,
+    }
+
+    const result = await autoApproveProviderApplications(client)
+
+    expect(mockIsEnabled).toHaveBeenCalledWith('provider.auto_approve.enabled')
+    expect(result).toMatchObject({ attempted: 0, approved: 0 })
+    expect(result.skippedReasons).toContain('AUTO_APPROVE_FLAG_DISABLED')
+    // No DB reads or writes occur when the kill switch is off.
+    expect(findMany).not.toHaveBeenCalled()
+    expect(transaction).not.toHaveBeenCalled()
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
   })
 
   it('does not auto-approve high-risk applications before manual certification review', async () => {
