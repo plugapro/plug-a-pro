@@ -105,9 +105,14 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
       ? rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`
       : null
 
-    // Role and providerId are stored in user_metadata for new users, but older
-    // OTP identities may only be linked in the Provider table after first login.
-    let role = (user.user_metadata?.role ?? 'customer') as UserRole
+    // SECURITY: user_metadata is client-writable, so it must NEVER grant admin
+    // access. The session role is only ever 'customer' or 'provider'; admin
+    // authority is resolved exclusively from the AdminUser DB table via
+    // getAdminActor(). Any 'admin'/'owner' value in metadata is ignored here and
+    // downgraded to 'customer' so a forged metadata role cannot satisfy a
+    // string `role === 'admin'` check anywhere downstream.
+    const metaRole = user.user_metadata?.role
+    let role: UserRole = metaRole === 'provider' ? 'provider' : 'customer'
     let providerId = user.user_metadata?.providerId as string | undefined
 
     const { db } = await import('./db')

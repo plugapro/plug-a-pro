@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { getAdminActor, getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkPayAtGoLimit } from '@/lib/rate-limit'
 import {
@@ -18,7 +18,12 @@ function toStatusMessage(status: InternalPayAtGoStatus): string {
 }
 
 async function canAccessBooking(bookingId: string, userId: string, role: string) {
-  if (role === 'admin') return true
+  // SECURITY: admin access must be DB-backed (AdminUser row), never derived from
+  // the client-writable user_metadata role. getAdminActor() returns null when no
+  // active AdminUser exists, so a forged 'admin' session falls through to the
+  // customer-ownership check below.
+  const adminActor = await getAdminActor()
+  if (adminActor) return true
   if (role !== 'customer') return false
 
   const booking = await db.booking.findUnique({

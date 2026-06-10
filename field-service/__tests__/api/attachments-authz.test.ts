@@ -22,6 +22,7 @@ const {
     provider: { findUnique: vi.fn() },
     customer: { findUnique: vi.fn(), update: vi.fn() },
     lead: { findUnique: vi.fn() },
+    providerIdentityDocument: { findFirst: vi.fn() },
   },
   mockFetch: vi.fn(),
   mockHead: vi.fn(),
@@ -95,6 +96,7 @@ describe('GET /api/attachments/[id] - provider job ownership check', () => {
       jobRequestId: null,
     })
     mockDb.lead.findUnique.mockResolvedValue(null)
+    mockDb.providerIdentityDocument.findFirst.mockResolvedValue(null)
     mockGetAdminActor.mockResolvedValue(null)
   })
 
@@ -751,5 +753,91 @@ describe('GET /api/attachments/[id] - safeForPreview enforcement with lead token
 
     // Job attachments (work evidence) are always accessible via lead tokens
     expect(res.status).toBe(200)
+  })
+})
+
+// ─── SECURITY: provider identity document access is gated to TRUST+ ───────────
+// Identity documents (ID front/back, selfie, liveness) are sensitive PII. Even a
+// DB-backed admin must be TRUST or higher to retrieve them via the attachment
+// proxy. They are stored both as labelled Attachment rows and as
+// ProviderIdentityDocument rows keyed by blobKey.
+describe('GET /api/attachments/[id] - provider identity document TRUST gate', () => {
+  const ID_DOC_ATTACHMENT = {
+    id: 'att-1',
+    url: 'https://store.public.blob.vercel-storage.com/att-1',
+    mimeType: 'image/jpeg',
+    blobKey: 'identity/provider-1/selfie.jpg',
+    label: 'provider_id_selfie',
+    uploadedBy: 'system:identity',
+    job: null,
+    jobRequest: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockHead.mockResolvedValue({ downloadUrl: 'https://store.public.blob.vercel-storage.com/download/att-1' })
+    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200, headers: new Headers() })
+    mockResolveJobRequestAccessScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
+    mockDb.lead.findUnique.mockResolvedValue(null)
+    mockDb.providerIdentityDocument.findFirst.mockResolvedValue({ documentKind: 'SELFIE' })
+    mockGetSession.mockResolvedValue({ id: 'admin-uid', role: 'admin' })
+    mockDb.attachment.findUnique.mockResolvedValue(ID_DOC_ATTACHMENT)
+  })
+
+  it('denies an OPS admin access to a provider identity document', async () => {
+    mockGetAdminActor.mockResolvedValue({ id: 'admin-1', adminUserId: 'admin-1', adminRole: 'OPS' })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(403)
+    expect(mockHead).not.toHaveBeenCalled()
+  })
+
+  it('denies a FINANCE admin access to a provider identity document', async () => {
+    mockGetAdminActor.mockResolvedValue({ id: 'admin-1', adminUserId: 'admin-1', adminRole: 'FINANCE' })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(403)
+    expect(mockHead).not.toHaveBeenCalled()
+  })
+
+  it('allows a TRUST admin access to a provider identity document', async () => {
+    mockGetAdminActor.mockResolvedValue({ id: 'admin-1', adminUserId: 'admin-1', adminRole: 'TRUST' })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    expect(mockHead).toHaveBeenCalledWith('https://store.public.blob.vercel-storage.com/att-1')
+  })
+
+  it('allows an OWNER admin access to a provider identity document', async () => {
+    mockGetAdminActor.mockResolvedValue({ id: 'admin-1', adminUserId: 'admin-1', adminRole: 'OWNER' })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('still allows an OPS admin to access a non-identity attachment', async () => {
+    mockGetAdminActor.mockResolvedValue({ id: 'admin-1', adminUserId: 'admin-1', adminRole: 'OPS' })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ID_DOC_ATTACHMENT,
+      label: 'evidence',
+      blobKey: 'jobs/att-1.jpg',
+    })
+    mockDb.providerIdentityDocument.findFirst.mockResolvedValue(null)
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    // Non-identity labels must not trigger an identity-document lookup
+    expect(mockDb.providerIdentityDocument.findFirst).not.toHaveBeenCalled()
   })
 })

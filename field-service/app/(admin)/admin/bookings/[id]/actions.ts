@@ -74,7 +74,9 @@ export async function cancelBookingAction(input: CancelInput) {
     entity: AUDIT_ENTITY.BOOKING,
     entityId: input.bookingId,
     action: 'booking.cancel',
-    requiredRole: ['OPS', 'ADMIN', 'OWNER'],
+    // SECURITY: cancelling a booking carries financial/refund implications.
+    // OPS removed so a level-1 OPS admin cannot cancel; requires FINANCE+.
+    requiredRole: ['FINANCE', 'ADMIN', 'OWNER'],
     requiredFlag: FLAG,
     schema: CancelBookingSchema,
     input,
@@ -126,7 +128,9 @@ export async function cancelBookingFromFormAction(formData: FormData) {
       entity: 'Booking',
       entityId: bookingId,
       action: 'booking.cancel',
-      requiredRole: ['OPS', 'ADMIN', 'OWNER'],
+      // SECURITY: cancelling a booking carries financial/refund implications.
+      // OPS removed so a level-1 OPS admin cannot cancel; requires FINANCE+.
+      requiredRole: ['FINANCE', 'ADMIN', 'OWNER'],
       requiredFlag: FLAG,
       schema: z.object({ bookingId: z.string().min(1) }),
       input: { bookingId },
@@ -159,7 +163,10 @@ export async function markPaidFromFormAction(formData: FormData) {
       entity: 'Booking',
       entityId: bookingId,
       action: 'payment.mark_paid',
-      requiredRole: ['OPS', 'FINANCE', 'ADMIN', 'OWNER'],
+      // SECURITY: payment status is a financial action. OPS removed so an OPS
+      // admin (hierarchy level 1) cannot mark a booking as paid; requires
+      // FINANCE or higher.
+      requiredRole: ['FINANCE', 'ADMIN', 'OWNER'],
       requiredFlag: FLAG,
       schema: z.object({ bookingId: z.string().min(1) }),
       input: { bookingId },

@@ -41,6 +41,22 @@ export function meetsRoleRequirement(
   return required.some((r) => level >= ROLE_HIERARCHY[r])
 }
 
+/**
+ * Exact-match role check (no hierarchy). The actor's role must be one of
+ * `required`. OWNER is always allowed as a break-glass super-admin. Use when a
+ * higher-tier role must NOT inherit a lower-tier permission via the hierarchy
+ * (e.g. FINANCE inheriting OPS-level provider trust mutations).
+ */
+export function meetsExactRoleRequirement(
+  actorRole: Role,
+  required: Role[],
+  excluded: Role[] = [],
+): boolean {
+  if (excluded.includes(actorRole)) return false
+  if (actorRole === 'OWNER') return true
+  return new Set(required).has(actorRole)
+}
+
 function toAuditJson(
   value: unknown
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined {
@@ -71,6 +87,15 @@ interface CrudActionOptions<TInput, TOutput> {
   requiredRole: Role[]
   /** Roles explicitly denied even when they satisfy the hierarchy floor. */
   excludedRole?: Role[]
+  /**
+   * When true, the actor's role must be EXACTLY one of `requiredRole`
+   * (Set membership), bypassing the role hierarchy entirely. Use for
+   * scoped responsibilities where a higher-tier role (e.g. FINANCE) must
+   * NOT inherit a lower-tier permission (e.g. OPS) just because it sits
+   * above it in the hierarchy. OWNER is always permitted as a break-glass
+   * super-admin even under exact matching.
+   */
+  roleExact?: boolean
   /** Feature flag key that must be enabled before the action runs. */
   requiredFlag?: string
   /** Zod schema to validate raw input. Required when input is provided. */
@@ -122,13 +147,16 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
     })
     .catch(() => null)
 
-  if (
-    !adminUser?.active ||
-    !meetsRoleRequirement(adminUser.role, opts.requiredRole, opts.excludedRole)
-  ) {
+  const roleSatisfied =
+    adminUser?.active === true &&
+    (opts.roleExact
+      ? meetsExactRoleRequirement(adminUser.role, opts.requiredRole, opts.excludedRole)
+      : meetsRoleRequirement(adminUser.role, opts.requiredRole, opts.excludedRole))
+
+  if (!adminUser || !roleSatisfied) {
     throw new CrudActionError(
       'UNAUTHORIZED',
-      `Requires one of [${opts.requiredRole.join(', ')}]. Actor has: ${adminUser?.role ?? 'none'}.`
+      `Requires ${opts.roleExact ? 'exactly' : 'one of'} [${opts.requiredRole.join(', ')}]. Actor has: ${adminUser?.role ?? 'none'}.`
     )
   }
 
