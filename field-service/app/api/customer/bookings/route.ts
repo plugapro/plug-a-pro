@@ -21,9 +21,11 @@ import { uploadJobRequestPhoto } from '@/lib/storage'
 import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-notifications'
 import { canonicalizeServiceCategoryValue } from '@/lib/service-category-canonicalization'
 import {
+  checkPilotGate,
   countActiveProvidersFor,
   resolveAreaScopeByNodeId,
 } from '@/lib/customer-serviceability'
+import { apiError } from '@/lib/api-response'
 import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
 
 const MAX_REQUEST_PHOTOS = 5
@@ -232,6 +234,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
     }
 
+    // Resolve the area scope once; used by both the serviceability_v2 guard and
+    // the West Rand pilot gate below. Cheap indexed lookup; null when the
+    // locationNodeId doesn't resolve.
+    const areaScope = await resolveAreaScopeByNodeId(resolvedAddress.locationNodeId).catch(() => null)
+
+    // West Rand pilot gate (launch.west_rand_pilot.enabled):
+    // Layered defence on top of the legacy serviceability check below — when the
+    // master flag is OFF, checkPilotGate is a no-op. When ON, rejects non-pilot
+    // suburbs and non-pilot categories with the standard API error envelope.
+    const pilotGate = await checkPilotGate({
+      suburbSlug: areaScope?.node.slug ?? null,
+      rawCategory: canonicalCategory,
+    })
+    if (!pilotGate.ok) {
+      return apiError(
+        pilotGate.code,
+        pilotGate.code === 'pilot.suburb_not_supported'
+          ? 'We are not active in this area yet.'
+          : pilotGate.code === 'pilot.category_not_supported'
+            ? 'We do not have this service active in the West Rand pilot.'
+            : 'Electrical is not yet available in the West Rand pilot.',
+        422,
+        undefined,
+        {
+          category: 'validation',
+          retryable: false,
+          suggestedActions:
+            pilotGate.code === 'pilot.suburb_not_supported'
+              ? ['join_waitlist', 'contact_support']
+              : ['choose_supported_category', 'join_waitlist'],
+          context: { category: canonicalCategory, areaSlug: areaScope?.node.slug ?? null },
+        },
+      )
+    }
+
     // Serviceability v2 backend guard (customer.home.serviceability_v2):
     // Reject unsupported (area, category) tuples here so a client bypassing the
     // home-page constrained input still cannot create a request for a service
@@ -252,7 +289,6 @@ export async function POST(req: NextRequest) {
           { status: 422 },
         )
       }
-      const areaScope = await resolveAreaScopeByNodeId(resolvedAddress.locationNodeId).catch(() => null)
       if (!areaScope) {
         return NextResponse.json(
           {

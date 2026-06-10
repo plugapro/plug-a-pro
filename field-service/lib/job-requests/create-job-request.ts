@@ -7,6 +7,8 @@
 
 import { db } from '../db'
 import { resolveCategoryRequirements } from '../category-config'
+import { checkPilotGate, resolveAreaScopeByNodeId } from '../customer-serviceability'
+import { PilotGateError } from '../launch/errors'
 import { geocodeAddress } from '../geocoding'
 import { resolveSuburbNodeId } from '../location-nodes'
 import { getJobRequestAccessUrl } from '../job-request-access'
@@ -165,6 +167,33 @@ export async function createJobRequest(
   }) ?? null
   if (providerForPhone) {
     throw new Error('PHONE_ROLE_CONFLICT_PROVIDER')
+  }
+
+  // West Rand pilot gate (defence-in-depth). When master flag is OFF this is
+  // a no-op. When ON, rejects non-pilot suburbs / categories before any DB
+  // write so internal callers (WhatsApp flow, rebook, admin tools) cannot
+  // bypass the customer-facing API gate.
+  if (params.locationNodeId) {
+    const areaScope = await resolveAreaScopeByNodeId(params.locationNodeId).catch(() => null)
+    const pilotGate = await checkPilotGate({
+      suburbSlug: areaScope?.node.slug ?? null,
+      rawCategory: params.category,
+    })
+    if (!pilotGate.ok) {
+      throw new PilotGateError(pilotGate.code)
+    }
+  } else {
+    // No locationNodeId: still run the gate so a non-pilot category is rejected
+    // even when the caller didn't supply structured location data.
+    const pilotGate = await checkPilotGate({
+      suburbSlug: null,
+      rawCategory: params.category,
+    })
+    if (!pilotGate.ok && pilotGate.code === 'pilot.category_not_supported') {
+      throw new PilotGateError(pilotGate.code)
+    }
+    // suburb_not_supported when locationNodeId is null is too eager — leave it
+    // to the caller-side checks (booking API has already enforced suburb).
   }
 
   const categoryRequirements = await resolveCategoryRequirements({

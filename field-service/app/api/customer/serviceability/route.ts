@@ -24,6 +24,10 @@ import {
   listServiceableCategoriesForArea,
   resolveAreaScope,
 } from '@/lib/customer-serviceability'
+import {
+  isPilotCategorySlug,
+  isPilotSuburbSlug,
+} from '@/lib/launch/west-rand-pilot'
 import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
 
 export const dynamic = 'force-dynamic'
@@ -38,9 +42,21 @@ export async function GET(req: NextRequest) {
   const areaSlug = searchParams.get('area')
   const categoryTag = searchParams.get('category')?.trim().toLowerCase() ?? null
 
+  const pilotOn = await isEnabled('launch.west_rand_pilot.enabled')
   const area = await resolveAreaScope(areaSlug)
-  const categories = await listServiceableCategoriesForArea(area)
-  const totalActive = await countActiveProvidersFor({ area })
+
+  // West Rand pilot: when master flag ON and the area is not a pilot suburb,
+  // return the existing empty-state shape (categories: [], totalActive: 0) so
+  // the customer home renders the unsupported-area branch without any new UX.
+  const areaInPilot = !pilotOn || (area ? isPilotSuburbSlug(area.node.slug) : true)
+
+  const categoriesRaw = areaInPilot ? await listServiceableCategoriesForArea(area) : []
+  const totalActive = areaInPilot ? await countActiveProvidersFor({ area }) : 0
+
+  // When master flag ON, narrow the response to the 6 pilot-allowed categories.
+  const categories = pilotOn
+    ? categoriesRaw.filter((c) => isPilotCategorySlug(c.tag))
+    : categoriesRaw
 
   const payload: {
     area: { slug: string; label: string } | null
@@ -54,7 +70,8 @@ export async function GET(req: NextRequest) {
   }
 
   if (categoryTag) {
-    if (!PILOT_SKILL_TAGS.has(categoryTag)) {
+    const pilotCategoryAllowed = !pilotOn || isPilotCategorySlug(categoryTag)
+    if (!PILOT_SKILL_TAGS.has(categoryTag) || !pilotCategoryAllowed || !areaInPilot) {
       payload.selected = { tag: categoryTag, label: categoryTag, count: 0, serviceable: false }
     } else {
       const count = await countActiveProvidersFor({ area, categoryTag })
