@@ -56,6 +56,12 @@ export interface CreateJobRequestParams {
   customerAcceptedAmount?: number | null
   customerAcceptedScope?: string | null
 
+  // Paid campaign attribution (first-touch UTM from web landing; null for WhatsApp path)
+  utmSource?: string | null
+  utmMedium?: string | null
+  utmCampaign?: string | null
+  utmContent?: string | null
+
   // Requirements (merged with category policy defaults inside service)
   requiredSkillTags?: string[]
   requiredCertificationCodes?: string[]
@@ -449,6 +455,10 @@ export async function createJobRequest(
             ? params.customerAcceptedAmount
             : undefined,
         customerAcceptedScope: params.customerAcceptedScope?.trim() || undefined,
+        utmSource: params.utmSource?.trim() || undefined,
+        utmMedium: params.utmMedium?.trim() || undefined,
+        utmCampaign: params.utmCampaign?.trim() || undefined,
+        utmContent: params.utmContent?.trim() || undefined,
         autoCreateBookingOnAssignment,
         // Read from the resolved Customer row (DB is authoritative). The
         // phone-based `cohort` is only used to seed brand-new customer rows above.
