@@ -485,6 +485,42 @@ describe('admin identity verification actions', () => {
     expect(html).toContain('Approval recorded, but no provider phone was available')
   })
 
+  it('sends WhatsApp to providerApplication.phone when Provider.phone is null', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      decision: null,
+      provider: { id: 'provider-1', name: 'Prince Provider', phone: null },
+      providerApplication: { phone: '+27831234567' },
+    })
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await expect(
+      approveIdentityVerificationAction({ verificationId: 'ver-1' }),
+    ).resolves.toEqual({ ok: true, notification: 'sent' })
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '+27831234567' }),
+    )
+  })
+
+  it('skips notification when both Provider.phone and providerApplication.phone are null', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      decision: null,
+      provider: { id: 'provider-1', name: 'Prince Provider', phone: null },
+      providerApplication: { phone: null },
+    })
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await expect(
+      approveIdentityVerificationAction({ verificationId: 'ver-1' }),
+    ).resolves.toEqual({ ok: true, notification: 'skipped' })
+
+    expect(mockSendText).not.toHaveBeenCalled()
+  })
+
   it('copies KYC selfie to Provider.avatarUrl on approval when provider has no avatar and SELFIE exists', async () => {
     mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
       id: 'ver-1',
