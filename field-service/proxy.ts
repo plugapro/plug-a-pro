@@ -68,7 +68,9 @@ const PUBLIC_PATHS = [
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
   '/api/track',                     // public tracking API; handler validates tracking identifiers
   '/api/locations',                 // public canonical location taxonomy used before booking/provider registration auth
-  '/api/debug',                     // key-protected diagnostic endpoints — handlers enforce their own key check
+  // '/api/debug' is intentionally NOT public: diagnostic handlers (e.g. payat-ping)
+  // can trigger real side-effects, so they enforce requireAdminApi() and must sit
+  // behind the session gate. In production they are additionally 403'd outright.
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard
   '/r',                             // short WhatsApp handoff alias — server redirects via token resolver
@@ -77,9 +79,10 @@ const PUBLIC_PATHS = [
   '/confirm-completion',            // HMAC-token job sign-off — no session needed; page verifies token
   '/review',                        // HMAC-token provider review — no session needed; page verifies token
   '/quotes',                        // token-gated quote approval — no session needed; page verifies approvalToken
-  '/requests',                      // WhatsApp match-found links land here; page redirects unauthenticated visitors
-                                    // to /requests/access/{token} (if a valid token exists) or to /sign-in.
-                                    // Must remain public so the page-level token-redirect logic can execute.
+  // '/requests' (the raw-ID detail route) is intentionally NOT public. Only the
+  // signed single-ticket links under '/requests/access' (declared above) are
+  // public. Anonymous visitors to '/requests/{id}' are redirected to sign-in by
+  // the proxy; the page-level token redirect only runs for authenticated owners.
 ]
 
 const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update|execute|complete)$/

@@ -616,10 +616,24 @@ describe('proxy admin access', () => {
 
   // ─── WhatsApp deep-link public paths (added in the deep-link auth fix) ────────
 
-  it('allows unauthenticated access to /requests/* so the page can redirect WhatsApp visitors to the tokenized route', async () => {
+  it('requires a session for the raw /requests/{id} detail route (no token-exchange oracle)', async () => {
     const { proxy } = await import('../proxy')
 
     const res = await proxy(new NextRequest('http://localhost/requests/clnrz9kg10000qyvl7qox9w1m'))
+
+    // The raw-ID route is no longer public: anonymous visitors are redirected to
+    // sign-in instead of being able to exchange the request ID for a ticket token.
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/sign-in?callbackUrl=%2Frequests%2Fclnrz9kg10000qyvl7qox9w1m&next=%2Frequests%2Fclnrz9kg10000qyvl7qox9w1m',
+    )
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps signed /requests/access/{token} ticket links public', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/requests/access/signed-ticket-token'))
 
     expect(res.status).toBe(200)
     expect(res.headers.get('location')).toBeNull()

@@ -51,26 +51,13 @@ export default async function RequestDetailPage({
   )
   const session = await getSession()
   if (!session || session.role !== 'customer') {
-    // WhatsApp match-found links land on this route with a raw job request ID.
-    // If a valid customerAccessToken exists for this request, redirect to the
-    // tokenized /requests/access/{token} route so the visitor never hits sign-in.
-    const existing = await db.jobRequest.findUnique({
-      where: { id },
-      select: {
-        customerAccessToken: true,
-        customerAccessTokenExpiresAt: true,
-        customerAccessTokenRevokedAt: true,
-      },
-    }).catch(() => null)
-    const now = new Date()
-    if (
-      existing?.customerAccessToken &&
-      !existing.customerAccessTokenRevokedAt &&
-      existing.customerAccessTokenExpiresAt &&
-      existing.customerAccessTokenExpiresAt > now
-    ) {
-      redirect(`/requests/access/${existing.customerAccessToken}`)
-    }
+    // SECURITY: the raw job-request ID must never be exchangeable for a ticket
+    // token by an anonymous visitor. Unauthenticated visitors are sent to
+    // sign-in only — we do NOT look up the request or redirect to the tokenized
+    // /requests/access/{token} route here. The signed WhatsApp deep-links land
+    // directly on /requests/access/{token} (a public route), so legitimate
+    // tokenized access never depends on this raw-ID page. Ownership is verified
+    // below once a customer session is present.
     redirect(`/sign-in?next=${encodeURIComponent(`/requests/${id}`)}`)
   }
 
