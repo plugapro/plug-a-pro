@@ -7,7 +7,6 @@ import 'dotenv/config'
 import { db } from '../lib/db'
 import { syncProviderRecord } from '../lib/provider-record'
 import { syncProviderSkills } from '../lib/provider-skills'
-import { awardMobileVerifiedPromoCreditsInTransaction } from '../lib/provider-promo-awards'
 import { notifyProviderApplicationApprovedOnce } from '../lib/provider-application-notifications'
 
 const APPLICATION_ID = process.argv[2]
@@ -57,14 +56,6 @@ async function main() {
     })
     approved = update.count > 0
 
-    if (approved && providerId) {
-      await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
-        referenceType: 'provider_application',
-        referenceId: app.id,
-        createdBy: 'system:manual-approve',
-      })
-      console.log(`✓ Promo credits awarded (MOBILE_VERIFIED) to provider ${providerId}`)
-    }
   }, { maxWait: 10_000, timeout: 20_000 })
 
   if (!approved) {

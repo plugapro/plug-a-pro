@@ -23,6 +23,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker, type Selection as SuburbSelection } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
+import { trackJobRequestSubmitted } from '@/lib/meta-pixel'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
 import { getPilotServiceCategories } from '@/lib/service-categories'
 import {
@@ -213,6 +214,7 @@ export function BookingFlow({
       authState: 'authenticated',
       source: 'pwa',
     })
+    trackJobRequestSubmitted(jobRequestId)
   }, [hasProviderResponses, jobRequestId, preferredProviderId, selectedMatchingMode, step, ticketUrl])
 
   useEffect(() => {
