@@ -28,6 +28,7 @@ const { mockDb, state } = vi.hoisted(() => {
       findUnique: vi.fn(),
     },
     providerWallet: {
+      findUnique: vi.fn(),
       upsert: vi.fn(),
       update: vi.fn(),
     },
@@ -112,6 +113,9 @@ describe('provider promo award service', () => {
       return { count: 1 }
     })
 
+    // No pre-existing positive promo balance by default, so the duplicate-award
+    // guard (added in the wallet promo-award-guard change) allows the award path.
+    mockDb.providerWallet.findUnique.mockImplementation(async () => null)
     mockDb.providerWallet.upsert.mockImplementation(async () => state.wallet)
     mockDb.providerWallet.update.mockImplementation(async (args: any) => {
       const promoIncrement = args.data.promoCreditBalance?.increment ?? 0

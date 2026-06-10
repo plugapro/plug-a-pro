@@ -709,7 +709,7 @@ describe('filterEligibleProviders - category slug normalisation', () => {
   })
 })
 
-describe('filterEligibleProviders - matching.relax_kyc_gate flag', () => {
+describe('filterEligibleProviders - KYC gate is mandatory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockIsEnabled.mockResolvedValue(false)
@@ -720,7 +720,7 @@ describe('filterEligibleProviders - matching.relax_kyc_gate flag', () => {
       .mockResolvedValueOnce([])  // dailyJobRows
   })
 
-  it('enforces kycStatus=VERIFIED in the DB query when flag is OFF', async () => {
+  it('always enforces kycStatus=VERIFIED in the DB query', async () => {
     await filterEligibleProviders([makeCandidate()], makeJobRequest())
 
     expect(mockDb.provider.findMany).toHaveBeenCalledWith(
@@ -730,7 +730,9 @@ describe('filterEligibleProviders - matching.relax_kyc_gate flag', () => {
     )
   })
 
-  it('omits kycStatus from the DB query when matching.relax_kyc_gate is ON', async () => {
+  it('keeps kycStatus=VERIFIED even when matching.relax_kyc_gate is ON (flag is a no-op)', async () => {
+    // The relax flag has been removed; even if some caller flips it on, the KYC
+    // boundary must remain in the query.
     mockIsEnabled.mockImplementation((flag: string) =>
       Promise.resolve(flag === 'matching.relax_kyc_gate'),
     )
@@ -738,17 +740,6 @@ describe('filterEligibleProviders - matching.relax_kyc_gate flag', () => {
     await filterEligibleProviders([makeCandidate()], makeJobRequest())
 
     const call = mockDb.provider.findMany.mock.calls[0]?.[0]
-    expect(call?.where).not.toHaveProperty('kycStatus')
-  })
-
-  it('still includes the provider in eligible set when kycStatus gate is relaxed', async () => {
-    mockIsEnabled.mockImplementation((flag: string) =>
-      Promise.resolve(flag === 'matching.relax_kyc_gate'),
-    )
-
-    const { eligible } = await filterEligibleProviders([makeCandidate()], makeJobRequest())
-
-    expect(eligible).toHaveLength(1)
-    expect(eligible[0].id).toBe('p1')
+    expect(call?.where).toHaveProperty('kycStatus', 'VERIFIED')
   })
 })
