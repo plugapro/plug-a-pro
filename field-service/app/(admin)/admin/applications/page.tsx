@@ -1118,7 +1118,7 @@ export default async function ApplicationsPage({
                         {app.attachments.map((attachment) => (
                           <li key={attachment.id}>
                             <a
-                              href={attachment.url}
+                              href={`/api/attachments/${attachment.id}`}
                               target="_blank"
                               rel="noreferrer"
                               className="text-blue-600 hover:underline"

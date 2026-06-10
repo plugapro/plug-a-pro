@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { head } from '@vercel/blob'
 import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
@@ -21,6 +22,13 @@ export async function GET(
   const customer = await resolveCustomerForSession(db, session)
   if (!customer) {
     return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+  }
+
+  // Invoices are financial records. BOOKER-level operator members may browse bookings
+  // but must not pull account-level financial documents - only the account OWNER (or a
+  // direct account holder, which resolves to OWNER) may download an invoice.
+  if (customer.memberRole !== 'OWNER') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const { id: bookingId } = await params
@@ -51,7 +59,20 @@ export async function GET(
   }
 
   const pdfUrl = await generateInvoicePdf(bookingId)
-  const pdfResponse = await fetch(pdfUrl)
+
+  // Never hand the stored blob URL to the client. Resolve a short-lived signed download
+  // URL server-side (head() returns a time-limited downloadUrl) and stream the bytes back
+  // through this authenticated route, so the underlying blob location stays opaque.
+  let fetchUrl = pdfUrl
+  try {
+    const meta = await head(pdfUrl)
+    const downloadUrl = (meta as { downloadUrl?: string | null }).downloadUrl
+    if (downloadUrl) fetchUrl = downloadUrl
+  } catch (err) {
+    console.warn('[invoice] head() lookup failed, falling back to stored URL', err)
+  }
+
+  const pdfResponse = await fetch(fetchUrl)
   if (!pdfResponse.ok) {
     return NextResponse.json({ error: 'Could not load invoice PDF' }, { status: 502 })
   }

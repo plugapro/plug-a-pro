@@ -249,6 +249,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.auto_approve.enabled': {
+    description: 'Kill switch enforced inside autoApproveProviderApplications(): when disabled (default), the function returns early and never sets provider active/verified/ACTIVE. Field-completeness checks alone must never promote a provider without this flag — manual admin review is unaffected.',
+    owner: 'ops',
+    defaultValue: false,
+  },
   // ─── Matching engine ─────────────────────────────────────────────────────────
   'matching.v2.candidate_pool': {
     description: 'Use precomputed candidate pool in the matching orchestrator instead of a live DB scan. Speeds up dispatch and reduces query load.',

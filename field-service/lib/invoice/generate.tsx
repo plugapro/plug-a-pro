@@ -76,10 +76,14 @@ export async function generateInvoicePdf(bookingId: string): Promise<string> {
   )
 
   // ── Upload to Blob ──────────────────────────────────────────────────────────
+  // Security: invoices must not be enumerable by booking id. A deterministic path
+  // (`invoices/<bookingId>/invoice-<number>.pdf`) let anyone who guessed a booking id
+  // fetch another customer's invoice. addRandomSuffix injects an unguessable token into
+  // the pathname so the stored URL can only be obtained through an authenticated route.
   const key = `invoices/${bookingId}/invoice-${invoiceNumber}.pdf`
   const blob = await put(key, buffer, {
     access: 'public',
-    addRandomSuffix: false,
+    addRandomSuffix: true,
     contentType: 'application/pdf',
   })
 

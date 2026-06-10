@@ -1,6 +1,11 @@
 import type { AuthUser } from './auth'
 import { isEnabled } from './flags'
 
+// Operator delegation roles (CustomerMember.role is a free-form String column with a
+// "BOOKER" default). OWNER members and the principal account holder have full access;
+// BOOKER members are read-only and must be blocked from account mutations.
+export type CustomerMemberRole = 'OWNER' | 'BOOKER'
+
 type CustomerRecord = {
   id: string
   userId: string | null
@@ -8,17 +13,26 @@ type CustomerRecord = {
   name: string
   email: string | null
   isBlocked: boolean
+  // The effective role of the session principal against the resolved customer account.
+  // - Direct account holders resolve to 'OWNER' (they own the account).
+  // - Delegated CustomerMembers resolve to their stored membership role.
+  // Routes that mutate account data MUST require memberRole === 'OWNER'.
+  memberRole: CustomerMemberRole
 }
 
+// Shape returned directly by the DB (customerSessionSelect). memberRole is derived in
+// application code, not selected, so the raw row omits it.
+type CustomerRow = Omit<CustomerRecord, 'memberRole'>
+
 type CustomerMemberClient = {
-  findFirst: (...args: any[]) => Promise<{ principalCustomerId: string } | null>
+  findFirst: (...args: any[]) => Promise<{ principalCustomerId: string; role: string | null } | null>
 }
 
 type CustomerClient = {
   customer: {
-    findUnique: (...args: any[]) => Promise<CustomerRecord | null>
-    findFirst: (...args: any[]) => Promise<CustomerRecord | null>
-    update: (...args: any[]) => Promise<CustomerRecord>
+    findUnique: (...args: any[]) => Promise<CustomerRow | null>
+    findFirst: (...args: any[]) => Promise<CustomerRow | null>
+    update: (...args: any[]) => Promise<CustomerRow>
   }
   // Optional so existing test mocks that pre-date M1-T8 don't need updating.
   // When db is passed as the client (all production callers) this is always present.
@@ -33,6 +47,21 @@ const customerSessionSelect = {
   email: true,
   isBlocked: true,
 } as const
+
+// Customer.findUnique/findFirst select customerSessionSelect, which does not include a
+// memberRole column (it lives on CustomerMember, not Customer). This stamps the effective
+// role onto the resolved record so callers get a uniform shape.
+function withMemberRole(
+  customer: Omit<CustomerRecord, 'memberRole'> | null,
+  role: CustomerMemberRole,
+): CustomerRecord | null {
+  if (!customer) return null
+  return { ...customer, memberRole: role }
+}
+
+function normaliseMemberRole(role: string | null | undefined): CustomerMemberRole {
+  return role?.toUpperCase() === 'OWNER' ? 'OWNER' : 'BOOKER'
+}
 
 export async function resolveCustomerForSession(
   client: CustomerClient,
@@ -77,7 +106,8 @@ export async function resolveCustomerForSession(
     })
   }
 
-  return customer
+  // Direct account holders own the account: full (OWNER) access.
+  return withMemberRole(customer, 'OWNER')
 }
 
 async function resolveMemberDelegation(
@@ -93,13 +123,18 @@ async function resolveMemberDelegation(
   // lookup key. Phone-based matching is omitted to prevent SIM-swap privilege escalation.
   const membership = await memberClient.findFirst({
     where: { memberUserId: session.id, active: true },
-    select: { principalCustomerId: true },
+    select: { principalCustomerId: true, role: true },
   })
 
   if (!membership) return null
 
-  return customerClient.findUnique({
+  // Carry the membership role through to the resolved session so sensitive routes can
+  // enforce OWNER-only access. Defaults to the least-privileged BOOKER role - a member
+  // with a missing/unknown role must NOT inherit full account control.
+  const principal = await customerClient.findUnique({
     where: { id: membership.principalCustomerId },
     select: customerSessionSelect,
   })
+
+  return withMemberRole(principal, normaliseMemberRole(membership.role))
 }

@@ -899,7 +899,7 @@ function DrawerEvidence({ app }: { app: ApplicationInput }) {
                 <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
               )}
               <a
-                href={att.url}
+                href={`/api/attachments/${att.id}`}
                 target="_blank"
                 rel="noreferrer"
                 className="truncate text-xs underline-offset-4 hover:underline"
