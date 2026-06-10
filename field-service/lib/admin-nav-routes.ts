@@ -28,11 +28,35 @@ export const ADMIN_NAV_ITEMS = [
   { href: '/admin/settings', label: 'Settings', icon: 'settings' as const },
   { href: '/admin/otp-security', label: 'OTP Security', icon: 'workflow' as const },
   { href: '/admin/audit-log', label: 'Audit Log', icon: 'workflow' as const },
+  // Flag-gated launch routes: the page 404s while its flag is off, so the sidebar
+  // (app/(admin)/layout.tsx) hides these until the flag is on, and they are excluded
+  // from the unconditional smoke list below (covered by ADMIN_FLAGGED_SMOKE_ROUTES).
+  {
+    href: '/admin/launch-readiness',
+    label: 'Launch Readiness',
+    icon: 'reports' as const,
+    flag: 'launch.west_rand_pilot.readiness_report' as const,
+  },
+  {
+    href: '/admin/nudges',
+    label: 'Nudges',
+    icon: 'messages' as const,
+    flag: 'launch.west_rand_pilot.nudge_console' as const,
+  },
 ] as const
 
 // Smoke suite route targets are derived from the sidebar source to prevent
-// stale route strings from drifting into tests.
-export const ADMIN_SMOKE_ROUTES = ADMIN_NAV_ITEMS.map((item) => item.href)
+// stale route strings from drifting into tests. Flag-gated routes are excluded
+// because they intentionally 404 while their flag is off.
+export const ADMIN_SMOKE_ROUTES = ADMIN_NAV_ITEMS.filter((item) => !('flag' in item)).map(
+  (item) => item.href,
+)
+
+// Flag-gated routes get a lenient smoke check instead: no 5xx and no error shell,
+// but a 404 (flag off) is acceptable.
+export const ADMIN_FLAGGED_SMOKE_ROUTES = ADMIN_NAV_ITEMS.filter((item) => 'flag' in item).map(
+  (item) => item.href,
+)
 
 // Public client routes that must stay reachable after deploy.
 export const CLIENT_PUBLIC_SMOKE_ROUTES = [

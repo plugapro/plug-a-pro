@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/auth'
 import { AppLogo } from '@/components/shared/app-logo'
 import { AppNavLink } from '@/components/shared/app-nav-link'
 import { ADMIN_NAV_ITEMS } from '@/lib/admin-nav-routes'
+import { isEnabled } from '@/lib/flags'
 import { headers } from 'next/headers'
 import { shouldRestrictAdminDomainToDesktop } from '@/lib/admin-desktop-policy'
 import { Button } from '@/components/ui/button'
@@ -41,6 +42,12 @@ export default async function AdminLayout({
   // Auth guard - redirects if not admin or owner
   const user = await requireAdmin()
 
+  // Flag-gated routes 404 while their flag is off; hide them from the sidebar too.
+  const navVisibility = await Promise.all(
+    ADMIN_NAV_ITEMS.map((item) => ('flag' in item ? isEnabled(item.flag) : Promise.resolve(true))),
+  )
+  const visibleNavItems = ADMIN_NAV_ITEMS.filter((_, index) => navVisibility[index])
+
   return (
     <div className="app-shell flex min-h-screen bg-background">
       <aside className="app-shell-panel hidden w-72 shrink-0 border-r border-r-border/70 md:sticky md:top-0 md:flex md:h-screen md:flex-col md:rounded-none md:border-y-0 md:border-l-0">
@@ -52,7 +59,7 @@ export default async function AdminLayout({
         </div>
         <nav className="flex-1 overflow-y-auto p-3">
           <ul className="space-y-0.5">
-            {ADMIN_NAV_ITEMS.map((item) => (
+            {visibleNavItems.map((item) => (
               <li key={item.href}>
                 <AppNavLink
                   href={item.href}
