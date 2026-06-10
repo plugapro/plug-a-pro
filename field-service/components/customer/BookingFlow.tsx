@@ -24,6 +24,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker, type Selection as SuburbSelection } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { trackJobRequestSubmitted } from '@/lib/meta-pixel'
+import { getStoredUtm } from '@/lib/utm'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
 import { getPilotServiceCategories } from '@/lib/service-categories'
 import {
@@ -519,6 +520,12 @@ export function BookingFlow({
       if (preferredProviderId) formData.set('preferredProviderId', preferredProviderId)
       if (accessNotes.trim()) formData.set('accessNotes', accessNotes.trim())
       if (maxCallOutFee.trim()) formData.set('maxCallOutFee', maxCallOutFee.trim())
+
+      const utm = getStoredUtm()
+      if (utm?.utm_source) formData.set('utmSource', utm.utm_source)
+      if (utm?.utm_medium) formData.set('utmMedium', utm.utm_medium)
+      if (utm?.utm_campaign) formData.set('utmCampaign', utm.utm_campaign)
+      if (utm?.utm_content) formData.set('utmContent', utm.utm_content)
 
       // Urgency → timing window fields (extracted by the bookings API route)
       if (timing.requestedWindowStart) formData.set('requestedWindowStart', timing.requestedWindowStart.toISOString())

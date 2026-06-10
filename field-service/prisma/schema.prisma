@@ -499,6 +499,11 @@ model JobRequest {
   customerAddressId               String?
   isTestRequest                   Boolean          @default(false)
   cohortName                      String?
+  // Paid campaign attribution — first-touch UTM captured on landing, persisted at submission
+  utmSource                       String?
+  utmMedium                       String?
+  utmCampaign                     String?
+  utmContent                      String?
   status                          JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt                       DateTime? // if no match within window, mark EXPIRED
   customerNoMatchNotifiedAt       DateTime?
