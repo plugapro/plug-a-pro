@@ -4222,10 +4222,26 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
     return
   }
 
-  const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true })
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true, active: true, verified: true, status: true })
   if (!provider) {
     await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
     return
+  }
+
+  // Guard: do not process acceptances for suspended / inactive providers.
+  // The checkWorkerPortalAccess check mirrors the portal eligibility gate so
+  // that a provider whose account was suspended after receiving the WhatsApp
+  // invite cannot use that window to accept a lead and receive customer PII.
+  if (isAccept) {
+    const { checkWorkerPortalAccess } = await import('./worker-provider-auth')
+    const portalAccess = checkWorkerPortalAccess(provider)
+    if (!portalAccess.ok) {
+      await sendText(
+        phone,
+        "⚠️ Your provider account is not currently active. This job has been passed to another provider. No credit was deducted.\n\nContact support if you believe this is an error.",
+      )
+      return
+    }
   }
 
   if (isAccept) {

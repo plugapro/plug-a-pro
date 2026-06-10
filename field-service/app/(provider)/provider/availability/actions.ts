@@ -1,7 +1,7 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { getSession, providerAuthWhere } from '@/lib/auth'
+import { requireProvider } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
 import { AUDIT_ENTITY } from '@/lib/audit-entities'
 
@@ -35,22 +35,23 @@ function isStartBeforeEnd(startTime: string, endTime: string): boolean {
 }
 
 export async function saveProviderAvailabilityFromFormAction(formData: FormData): Promise<ActionResult> {
-  const session = await getSession()
-  if (!session || session.role !== 'provider') {
+  // requireProvider() validates session role, DB-backed portal eligibility, and
+  // active/verified/status. It redirects (throws) when ineligible.
+  let session: Awaited<ReturnType<typeof requireProvider>>
+  try {
+    session = await requireProvider()
+  } catch {
     return { ok: false, error: 'Your session expired. Sign in again to continue.' }
   }
 
+  // Bind exclusively to userId — never fall back to metadata providerId.
   const provider = await db.provider.findFirst({
-    where: providerAuthWhere(session),
+    where: { userId: session.id },
     include: { technicianAvailability: true },
   })
 
   if (!provider) {
     return { ok: false, error: 'Your session expired. Sign in again to continue.' }
-  }
-
-  if (!provider.active || (provider.status !== 'ACTIVE' && provider.status !== null)) {
-    return { ok: false, error: 'Your account is not currently active. Contact support for help.' }
   }
 
   const availabilityMode = parseAvailabilityMode(formData.get('availabilityMode'))
