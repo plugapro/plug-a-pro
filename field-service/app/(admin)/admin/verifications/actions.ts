@@ -23,6 +23,7 @@ import {
 } from '@/lib/identity-verification/vendors/didit/config'
 import { refreshDiditSession } from '@/lib/identity-verification/vendors/didit/decision'
 import { persistDiditDecision } from '@/lib/identity-verification/vendors/didit/persist'
+import { copyKycSelfieToProviderAvatar } from '@/lib/storage'
 import { sendText } from '@/lib/whatsapp'
 
 const FLAG = 'admin.crud.verifications'
@@ -109,6 +110,7 @@ export async function approveIdentityVerificationAction(input: ReviewInput) {
   revalidateVerificationPaths(input.verificationId)
   let notification: IdentityApprovalNotificationResult = 'skipped'
   if (result.ok && !result.data.alreadyApproved) {
+    await backfillProviderAvatarFromKyc(input.verificationId)
     notification = await notifyProviderIdentityApproval(input.verificationId)
   }
   return { ok: result.ok, notification }
@@ -544,6 +546,46 @@ function diditRefreshFailureMessage(error: RefreshDiditFailure) {
 
 type IdentityApprovalNotificationResult = 'sent' | 'failed' | 'skipped'
 
+async function backfillProviderAvatarFromKyc(verificationId: string): Promise<void> {
+  try {
+    const verification = await db.providerIdentityVerification.findUnique({
+      where: { id: verificationId },
+      select: {
+        id: true,
+        provider: { select: { id: true, avatarUrl: true } },
+        documents: {
+          where: { documentKind: 'SELFIE', status: 'UPLOADED' },
+          select: { blobKey: true, mimeType: true },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    })
+
+    const provider = verification?.provider
+    if (!provider || provider.avatarUrl) return
+
+    const selfieDoc = verification?.documents?.[0]
+    if (!selfieDoc?.blobKey) return
+
+    const avatarUrl = await copyKycSelfieToProviderAvatar({
+      blobKey: selfieDoc.blobKey,
+      mimeType: selfieDoc.mimeType ?? 'image/jpeg',
+      providerId: provider.id,
+    })
+
+    await db.provider.update({
+      where: { id: provider.id },
+      data: { avatarUrl },
+    })
+  } catch (error) {
+    console.warn('[admin/verifications] failed to backfill provider avatar from KYC selfie', {
+      verificationId,
+      error: errorMessage(error),
+    })
+  }
+}
+
 function revalidateVerificationPaths(verificationId: string) {
   revalidatePath('/admin/verifications')
   revalidatePath(`/admin/verifications/${verificationId}`)
@@ -557,11 +599,13 @@ async function notifyProviderIdentityApproval(
     select: {
       id: true,
       provider: { select: { id: true, name: true, phone: true } },
+      providerApplication: { select: { phone: true } },
     },
   })
 
-  const providerPhone = verification?.provider?.phone
-  if (!providerPhone) return 'skipped'
+  const providerPhone =
+    verification?.provider?.phone ?? verification?.providerApplication?.phone
+  if (!verification || !providerPhone) return 'skipped'
 
   const body = 'Your identity verification is complete. Your profile has been updated.'
   const metadata = {

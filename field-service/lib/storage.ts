@@ -252,6 +252,37 @@ export async function getIdentityDocument(blobKeyOrUrl: string) {
   })
 }
 
+export async function copyKycSelfieToProviderAvatar(params: {
+  blobKey: string
+  mimeType: string
+  providerId: string
+}): Promise<string> {
+  const supabaseRef = parseSupabaseIdentityReference(params.blobKey)
+  if (!supabaseRef) {
+    throw new Error(`copyKycSelfieToProviderAvatar: unsupported reference format: ${params.blobKey}`)
+  }
+
+  const supabase = createSupabaseStorageClient()
+  const { data, error } = await supabase.storage
+    .from(supabaseRef.bucket)
+    .download(supabaseRef.path)
+
+  if (error || !data) {
+    throw new Error(`KYC selfie download failed: ${safeStorageErrorMessage(error)}`)
+  }
+
+  const ext = params.mimeType === 'image/png' ? 'png' : 'jpg'
+  const key = `avatars/providers/${params.providerId}/avatar.${ext}`
+
+  const result = await put(key, data, {
+    access: 'public',
+    addRandomSuffix: false,
+    contentType: params.mimeType,
+  })
+
+  return result.url
+}
+
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
 export type IdentityDocumentDeleteResult = {
