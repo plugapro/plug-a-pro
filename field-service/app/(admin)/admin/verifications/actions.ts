@@ -557,11 +557,13 @@ async function notifyProviderIdentityApproval(
     select: {
       id: true,
       provider: { select: { id: true, name: true, phone: true } },
+      providerApplication: { select: { phone: true } },
     },
   })
 
-  const providerPhone = verification?.provider?.phone
-  if (!providerPhone) return 'skipped'
+  const providerPhone =
+    verification?.provider?.phone ?? verification?.providerApplication?.phone
+  if (!verification || !providerPhone) return 'skipped'
 
   const body = 'Your identity verification is complete. Your profile has been updated.'
   const metadata = {

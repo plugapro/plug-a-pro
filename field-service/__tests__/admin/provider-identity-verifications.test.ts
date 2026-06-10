@@ -1,12 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb, mockSendText, mockIsEnabled } = vi.hoisted(() => ({
+const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb, mockSendText, mockIsEnabled, mockCopyKycSelfie } = vi.hoisted(() => ({
   mockCrudAction: vi.fn(),
   mockTransition: vi.fn(),
   mockRequireAdmin: vi.fn(),
   mockSendText: vi.fn(),
   mockIsEnabled: vi.fn(),
+  mockCopyKycSelfie: vi.fn(),
   mockDb: {
     providerIdentityVerification: {
       findUnique: vi.fn(),
@@ -21,9 +22,14 @@ const { mockCrudAction, mockTransition, mockRequireAdmin, mockDb, mockSendText, 
     messageEvent: {
       create: vi.fn(),
     },
+    provider: {
+      update: vi.fn(),
+    },
   },
 }))
 
+vi.mock('../../lib/storage', () => ({ copyKycSelfieToProviderAvatar: mockCopyKycSelfie }))
+vi.mock('@/lib/storage', () => ({ copyKycSelfieToProviderAvatar: mockCopyKycSelfie }))
 vi.mock('../../lib/crud-action', () => ({ crudAction: mockCrudAction }))
 vi.mock('../../lib/auth', () => ({ requireAdmin: mockRequireAdmin }))
 vi.mock('../../lib/flags', () => ({ isEnabled: mockIsEnabled }))
@@ -85,6 +91,8 @@ describe('admin identity verification actions', () => {
       webhookEvents: [],
       reviews: [],
     })
+    mockDb.provider.update.mockResolvedValue({ id: 'provider-1' })
+    mockCopyKycSelfie.mockResolvedValue('https://public.blob.vercel-storage.com/avatars/providers/provider-1/avatar.jpg')
     mockCrudAction.mockImplementation(async (opts) => {
       const tx = {
         providerIdentityVerification: mockDb.providerIdentityVerification,
@@ -475,6 +483,142 @@ describe('admin identity verification actions', () => {
     )
 
     expect(html).toContain('Approval recorded, but no provider phone was available')
+  })
+
+  it('copies KYC selfie to Provider.avatarUrl on approval when provider has no avatar and SELFIE exists', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      decision: null,
+      provider: {
+        id: 'provider-1',
+        name: 'Sarah Provider',
+        phone: '+27820000000',
+        email: 'sarah@example.test',
+        kycStatus: 'SUBMITTED',
+        status: 'ACTIVE',
+        avatarUrl: null,
+      },
+      providerApplication: null,
+      documents: [
+        {
+          id: 'doc-selfie',
+          documentKind: 'SELFIE',
+          status: 'UPLOADED',
+          blobKey: 'supabase://identity-documents/identity/ver-1/SELFIE-12345.jpg',
+          mimeType: 'image/jpeg',
+          createdAt: new Date(),
+        },
+      ],
+    })
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await approveIdentityVerificationAction({ verificationId: 'ver-1' })
+
+    expect(mockCopyKycSelfie).toHaveBeenCalledWith({
+      blobKey: 'supabase://identity-documents/identity/ver-1/SELFIE-12345.jpg',
+      mimeType: 'image/jpeg',
+      providerId: 'provider-1',
+    })
+    expect(mockDb.provider.update).toHaveBeenCalledWith({
+      where: { id: 'provider-1' },
+      data: { avatarUrl: 'https://public.blob.vercel-storage.com/avatars/providers/provider-1/avatar.jpg' },
+    })
+  })
+
+  it('skips avatar copy on approval when provider already has an avatarUrl', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      decision: null,
+      provider: {
+        id: 'provider-1',
+        name: 'Sarah Provider',
+        phone: '+27820000000',
+        email: 'sarah@example.test',
+        kycStatus: 'SUBMITTED',
+        status: 'ACTIVE',
+        avatarUrl: 'https://existing-photo.example.com/photo.jpg',
+      },
+      providerApplication: null,
+      documents: [
+        {
+          id: 'doc-selfie',
+          documentKind: 'SELFIE',
+          status: 'UPLOADED',
+          blobKey: 'supabase://identity-documents/identity/ver-1/SELFIE-12345.jpg',
+          mimeType: 'image/jpeg',
+          createdAt: new Date(),
+        },
+      ],
+    })
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await approveIdentityVerificationAction({ verificationId: 'ver-1' })
+
+    expect(mockCopyKycSelfie).not.toHaveBeenCalled()
+    expect(mockDb.provider.update).not.toHaveBeenCalled()
+  })
+
+  it('skips avatar copy on approval when no SELFIE document is stored', async () => {
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      decision: null,
+      provider: {
+        id: 'provider-1',
+        name: 'Sarah Provider',
+        phone: '+27820000000',
+        email: 'sarah@example.test',
+        kycStatus: 'SUBMITTED',
+        status: 'ACTIVE',
+        avatarUrl: null,
+      },
+      providerApplication: null,
+      documents: [],
+    })
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await approveIdentityVerificationAction({ verificationId: 'ver-1' })
+
+    expect(mockCopyKycSelfie).not.toHaveBeenCalled()
+    expect(mockDb.provider.update).not.toHaveBeenCalled()
+  })
+
+  it('approval succeeds and notification is sent even when selfie-to-avatar copy throws', async () => {
+    mockCopyKycSelfie.mockRejectedValueOnce(new Error('Supabase download failed'))
+    mockDb.providerIdentityVerification.findUnique.mockResolvedValue({
+      id: 'ver-1',
+      status: 'NEEDS_MANUAL_REVIEW',
+      decision: null,
+      provider: {
+        id: 'provider-1',
+        name: 'Sarah Provider',
+        phone: '+27820000000',
+        email: 'sarah@example.test',
+        kycStatus: 'SUBMITTED',
+        status: 'ACTIVE',
+        avatarUrl: null,
+      },
+      providerApplication: null,
+      documents: [
+        {
+          id: 'doc-selfie',
+          documentKind: 'SELFIE',
+          status: 'UPLOADED',
+          blobKey: 'supabase://identity-documents/identity/ver-1/SELFIE-12345.jpg',
+          mimeType: 'image/jpeg',
+          createdAt: new Date(),
+        },
+      ],
+    })
+    const { approveIdentityVerificationAction } = await import('../../app/(admin)/admin/verifications/actions')
+
+    await expect(
+      approveIdentityVerificationAction({ verificationId: 'ver-1' }),
+    ).resolves.toEqual({ ok: true, notification: 'sent' })
+
+    expect(mockDb.provider.update).not.toHaveBeenCalled()
   })
 
   it('defaults the identity verification list to manual-review work', async () => {
