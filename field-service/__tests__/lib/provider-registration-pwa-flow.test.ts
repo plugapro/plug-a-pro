@@ -67,6 +67,13 @@ function createSubmitClient() {
       update: vi.fn().mockResolvedValue({ id: 'draft-1' }),
     },
     registrationResumeToken: {
+      findUnique: vi.fn().mockResolvedValue({
+        draftId: 'draft-1',
+        purpose: 'provider_registration_resume',
+        expiresAt: new Date(Date.now() + 60_000),
+        consumedAt: null,
+        draft: { id: 'draft-1', phone: '+27823035070' },
+      }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     locationNode: {
@@ -323,6 +330,90 @@ describe('provider registration PWA flow', () => {
     })
 
     expect(tx.providerApplication.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects submit when the resume token is missing/invalid before any enumeration', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.registrationResumeToken.findUnique = vi.fn().mockResolvedValue(null)
+
+    await expect(submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+    })).rejects.toMatchObject({ code: 'INVALID_RESUME_TOKEN', status: 400 })
+
+    // No enumeration-risk lookups or writes happened before token validation.
+    expect(tx.customer.findFirst).not.toHaveBeenCalled()
+    expect(tx.providerApplication.findFirst).not.toHaveBeenCalled()
+    expect(tx.providerApplication.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects submit when the resume token belongs to a different draft', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.registrationResumeToken.findUnique = vi.fn().mockResolvedValue({
+      draftId: 'some-other-draft',
+      purpose: 'provider_registration_resume',
+      expiresAt: new Date(Date.now() + 60_000),
+      consumedAt: null,
+      draft: { id: 'some-other-draft', phone: '+27823035070' },
+    })
+
+    await expect(submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+    })).rejects.toMatchObject({ code: 'INVALID_RESUME_TOKEN', status: 400 })
+
+    expect(tx.customer.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('rejects submit when the submitted phone does not match the token draft phone', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.registrationResumeToken.findUnique = vi.fn().mockResolvedValue({
+      draftId: 'draft-1',
+      purpose: 'provider_registration_resume',
+      expiresAt: new Date(Date.now() + 60_000),
+      consumedAt: null,
+      draft: { id: 'draft-1', phone: '+27820000000' },
+    })
+
+    await expect(submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+    })).rejects.toMatchObject({ code: 'INVALID_RESUME_TOKEN', status: 400 })
+
+    expect(tx.customer.findFirst).not.toHaveBeenCalled()
   })
 
   it('drops untrusted external profile photo URLs before persistence', async () => {

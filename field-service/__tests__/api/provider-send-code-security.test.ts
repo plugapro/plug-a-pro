@@ -142,6 +142,9 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
       shouldSendOtp: false,
     },
     {
+      // Inactive / not-approved providers must NOT receive an OTP. The response
+      // is identical to the not-found case so the endpoint never reveals that a
+      // provider account exists for this number but is currently ineligible.
       name: 'not approved',
       traceId: 'provider_security_not_approved',
       provider: {
@@ -153,7 +156,7 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
         status: 'UNDER_REVIEW',
       },
       expectedCode: 'WORKER_NOT_APPROVED',
-      shouldSendOtp: true,
+      shouldSendOtp: false,
     },
     {
       name: 'inactive',
@@ -167,7 +170,7 @@ describe('POST /api/auth/provider/send-code security hardening', () => {
         status: 'ACTIVE',
       },
       expectedCode: 'WORKER_INACTIVE',
-      shouldSendOtp: true,
+      shouldSendOtp: false,
     },
   ])('returns a uniform OTP-start response and masked logs for $name providers', async (scenario) => {
     const signInWithOtp = vi.fn().mockResolvedValue({ error: null })
