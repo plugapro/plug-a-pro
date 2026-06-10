@@ -67,7 +67,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
       active: true,
       verified: true,
       status: 'ACTIVE',
-      kycStatus: 'NOT_STARTED',
+      kycStatus: 'VERIFIED',
       isTestUser: false,
     },
     jobRequest: {
@@ -173,7 +173,7 @@ describe('lead unlock service', () => {
   })
 
   it('charges exactly 1 credit, creates a lead unlock and writes a debit ledger entry', async () => {
-    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+    const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
 
     expect(result.alreadyUnlocked).toBe(false)
     expect(result.unlock).toMatchObject({
@@ -203,11 +203,21 @@ describe('lead unlock service', () => {
     expect(mockNotifyLowBalance).toHaveBeenCalledWith('provider-1', 'entry-1')
   })
 
+  it('refuses to spend credits without an explicit confirmation', async () => {
+    await expect(unlockLeadForProvider('lead-1', 'provider-1')).rejects.toMatchObject({
+      code: 'CONFIRMATION_REQUIRED',
+    } satisfies Partial<LeadUnlockError>)
+
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+  })
+
   it('keeps the confirmed unlock when WhatsApp notifications fail', async () => {
     mockNotifyLeadUnlocked.mockRejectedValue(new Error('WhatsApp unavailable'))
     mockNotifyLowBalance.mockRejectedValue(new Error('WhatsApp unavailable'))
 
-    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+    const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
 
     expect(result.alreadyUnlocked).toBe(false)
     expect(result.unlock).toMatchObject({
@@ -230,7 +240,7 @@ describe('lead unlock service', () => {
       status: 'UNLOCKED',
     }
 
-    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+    const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
 
     expect(result.alreadyUnlocked).toBe(true)
     expect(result.ledgerEntries).toEqual([])
@@ -256,7 +266,7 @@ describe('lead unlock service', () => {
       )
     })
 
-    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+    const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
 
     expect(result.alreadyUnlocked).toBe(true)
     expect(result.ledgerEntries).toEqual([])
@@ -264,7 +274,7 @@ describe('lead unlock service', () => {
     expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
   })
 
-  it('allows approved providers to unlock without KYC approval', async () => {
+  it('blocks approved providers who have not passed KYC verification', async () => {
     state.lead = makeLead({
       provider: {
         id: 'provider-1',
@@ -276,10 +286,11 @@ describe('lead unlock service', () => {
       },
     })
 
-    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+    await expect(unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })).rejects.toMatchObject({
+      code: 'KYC_REQUIRED',
+    } satisfies Partial<LeadUnlockError>)
 
-    expect(result.alreadyUnlocked).toBe(false)
-    expect(mockDb.providerWallet.updateMany).toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
   })
 
   it('blocks providers whose application is not approved', async () => {
@@ -294,7 +305,7 @@ describe('lead unlock service', () => {
       },
     })
 
-    await expect(unlockLeadForProvider('lead-1', 'provider-1')).rejects.toMatchObject({
+    await expect(unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })).rejects.toMatchObject({
       code: 'PROVIDER_NOT_APPROVED',
     } satisfies Partial<LeadUnlockError>)
 
@@ -313,7 +324,7 @@ describe('lead unlock service', () => {
       },
     })
 
-    await expect(unlockLeadForProvider('lead-1', 'provider-1')).rejects.toMatchObject({
+    await expect(unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })).rejects.toMatchObject({
       code: 'PROVIDER_NOT_ACTIVE',
     } satisfies Partial<LeadUnlockError>)
 
@@ -324,7 +335,7 @@ describe('lead unlock service', () => {
     state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 0 })
 
     await expect(
-      unlockLeadForProvider('lead-1', 'provider-1'),
+      unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true }),
     ).rejects.toMatchObject({
       code: 'INSUFFICIENT_CREDITS',
     } satisfies Partial<LeadUnlockError>)
@@ -338,6 +349,7 @@ describe('lead unlock service', () => {
         active: true,
         verified: true,
         status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
         isTestUser: true,
       },
       jobRequest: {
@@ -349,7 +361,7 @@ describe('lead unlock service', () => {
       },
     })
 
-    await expect(unlockLeadForProvider('lead-1', 'provider-1')).rejects.toMatchObject({
+    await expect(unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })).rejects.toMatchObject({
       code: 'INSUFFICIENT_CREDITS',
       currentCreditBalance: 0,
     } satisfies Partial<LeadUnlockError>)
@@ -366,6 +378,7 @@ describe('lead unlock service', () => {
         active: true,
         verified: true,
         status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
         isTestUser: true,
       },
       jobRequest: {
@@ -377,7 +390,7 @@ describe('lead unlock service', () => {
       },
     })
 
-    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+    const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
 
     expect(result.alreadyUnlocked).toBe(false)
     expect(mockDb.providerWallet.updateMany).toHaveBeenCalled()
@@ -400,7 +413,7 @@ describe('lead unlock service', () => {
 
   it('blocks leads assigned to another provider', async () => {
     await expect(
-      unlockLeadForProvider('lead-1', 'provider-2'),
+      unlockLeadForProvider('lead-1', 'provider-2', { confirmed: true }),
     ).rejects.toMatchObject({
       code: 'FORBIDDEN',
     } satisfies Partial<LeadUnlockError>)

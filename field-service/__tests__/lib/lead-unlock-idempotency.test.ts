@@ -66,7 +66,7 @@ const VALID_LEAD = {
   jobRequestId: 'jr-1',
   status: 'SENT',
   expiresAt: new Date(Date.now() + 3600_000),
-  provider: { id: 'prov-1', active: true, verified: true, status: 'ACTIVE', isTestUser: false },
+  provider: { id: 'prov-1', active: true, verified: true, status: 'ACTIVE', kycStatus: 'VERIFIED', isTestUser: false },
   jobRequest: {
     id: 'jr-1',
     status: 'OPEN',
@@ -114,8 +114,8 @@ describe('unlockLeadForProvider - idempotency (duplicate webhook / double-tap)',
 
     const { unlockLeadForProvider } = await import('@/lib/lead-unlocks')
 
-    const result1 = await unlockLeadForProvider('lead-1', 'prov-1')
-    const result2 = await unlockLeadForProvider('lead-1', 'prov-1')
+    const result1 = await unlockLeadForProvider('lead-1', 'prov-1', { confirmed: true })
+    const result2 = await unlockLeadForProvider('lead-1', 'prov-1', { confirmed: true })
 
     expect(result1.alreadyUnlocked).toBe(false)
     expect(result2.alreadyUnlocked).toBe(true)
