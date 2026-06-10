@@ -526,6 +526,9 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
       await tx.$executeRawUnsafe(
         `CREATE TABLE "${PROVIDER_WALLET_BACKUP}" (LIKE "${WALLETS}" INCLUDING ALL)`,
       )
+      await tx.$executeRawUnsafe(`ALTER TABLE "${PROVIDER_WALLET_BACKUP}" ENABLE ROW LEVEL SECURITY`)
+      await tx.$executeRawUnsafe(`ALTER TABLE "${PROVIDER_WALLET_BACKUP}" FORCE ROW LEVEL SECURITY`)
+      await tx.$executeRawUnsafe(`CREATE POLICY "deny_all" ON "${PROVIDER_WALLET_BACKUP}" AS RESTRICTIVE FOR ALL TO PUBLIC USING (false)`)
       await tx.$executeRawUnsafe(
         `INSERT INTO "${PROVIDER_WALLET_BACKUP}" SELECT * FROM "${WALLETS}"`,
       )
@@ -536,6 +539,9 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
       await tx.$executeRawUnsafe(
         `CREATE TABLE "${LEDGER_BACKUP}" (LIKE "${LEDGER}" INCLUDING ALL)`,
       )
+      await tx.$executeRawUnsafe(`ALTER TABLE "${LEDGER_BACKUP}" ENABLE ROW LEVEL SECURITY`)
+      await tx.$executeRawUnsafe(`ALTER TABLE "${LEDGER_BACKUP}" FORCE ROW LEVEL SECURITY`)
+      await tx.$executeRawUnsafe(`CREATE POLICY "deny_all" ON "${LEDGER_BACKUP}" AS RESTRICTIVE FOR ALL TO PUBLIC USING (false)`)
       await tx.$executeRawUnsafe(
         `INSERT INTO "${LEDGER_BACKUP}" SELECT * FROM "${LEDGER}"`,
       )
@@ -545,6 +551,15 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
     await tx.$executeRawUnsafe(`DROP TABLE IF EXISTS "${LEDGER}" CASCADE`)
     await tx.$executeRawUnsafe(`DROP TABLE IF EXISTS "${WALLETS}" CASCADE`)
     await ensureCanonicalWalletSchema(tx)
+    // Security: enable RLS on rebuilt canonical wallet tables so the service_role
+    // bypass path is required for all application access (matching the policy
+    // applied to all other public tables in this schema).
+    await tx.$executeRawUnsafe(`ALTER TABLE "${WALLETS}" ENABLE ROW LEVEL SECURITY`)
+    await tx.$executeRawUnsafe(`ALTER TABLE "${WALLETS}" FORCE ROW LEVEL SECURITY`)
+    await tx.$executeRawUnsafe(`CREATE POLICY "deny_all" ON "${WALLETS}" AS RESTRICTIVE FOR ALL TO PUBLIC USING (false)`)
+    await tx.$executeRawUnsafe(`ALTER TABLE "${LEDGER}" ENABLE ROW LEVEL SECURITY`)
+    await tx.$executeRawUnsafe(`ALTER TABLE "${LEDGER}" FORCE ROW LEVEL SECURITY`)
+    await tx.$executeRawUnsafe(`CREATE POLICY "deny_all" ON "${LEDGER}" AS RESTRICTIVE FOR ALL TO PUBLIC USING (false)`)
 
     const restoredWalletColumns = await readLegacyColumns(PROVIDER_WALLET_BACKUP).catch(() => new Set<string>())
     const restoredLedgerColumns = await readLegacyColumns(LEDGER_BACKUP).catch(() => new Set<string>())

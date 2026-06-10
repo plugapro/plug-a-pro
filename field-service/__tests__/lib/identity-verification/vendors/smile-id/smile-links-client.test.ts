@@ -195,9 +195,9 @@ describe('Smile Links client', () => {
         .rejects.toThrow(/SMILE_ID_BASE_URL must be one of/)
     })
 
-    it('accepts known Smile hosts in production (trailing slash tolerated)', async () => {
+    it('accepts live Smile host in production (trailing slash tolerated)', async () => {
       vi.stubEnv('NODE_ENV', 'production')
-      vi.stubEnv('SMILE_ID_BASE_URL', 'https://testapi.smileidentity.com/')
+      vi.stubEnv('SMILE_ID_BASE_URL', 'https://api.smileidentity.com/')
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -212,6 +212,20 @@ describe('Smile Links client', () => {
         expiresAt: new Date('2026-05-26T13:00:00.000Z'),
       })
       expect(result.refId).toBe('r')
+    })
+
+    it('rejects sandbox Smile host in production', async () => {
+      vi.stubEnv('NODE_ENV', 'production')
+      vi.stubEnv('SMILE_ID_BASE_URL', 'https://testapi.smileidentity.com/')
+      await expect(createSmileLink({
+        verificationId: 'ver-1',
+        providerId: 'prov-1',
+        partnerJobId: 'pap-uuid-1',
+        callbackUrl: 'https://plug.test/api/webhooks/verification/smile_id',
+        expiresAt: new Date('2026-05-26T13:00:00.000Z'),
+      })).rejects.toThrow(/Sandbox Smile ID URL not allowed in production/)
+      await expect(disableSmileLink('link-ref-1'))
+        .rejects.toThrow(/Sandbox Smile ID URL not allowed in production/)
     })
 
     it('does NOT validate when NODE_ENV is not production', async () => {
