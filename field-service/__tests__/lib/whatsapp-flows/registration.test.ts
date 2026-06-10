@@ -74,6 +74,7 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: vi.fn().mockResolvedValue(undefined),
   sendButtons: vi.fn().mockResolvedValue(undefined),
   sendList: vi.fn().mockResolvedValue(undefined),
+  sendCtaUrl: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/whatsapp', () => ({
