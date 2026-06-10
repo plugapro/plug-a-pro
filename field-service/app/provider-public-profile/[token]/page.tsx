@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveReviewProviderProfileToken } from '@/lib/review-provider-profile-access'
-import { getJobRequestAccessUrl } from '@/lib/job-request-access'
 
 export const metadata = buildMetadata({ title: 'Provider Profile', noIndex: true })
 
@@ -55,7 +54,6 @@ export default async function ProviderPublicProfilePage({
   const profileMessage = resolvedSearchParams.shortlisted === '1'
     ? 'Provider added to shortlist.'
     : null
-  const requestAccessUrl = await getJobRequestAccessUrl(resolved.request.id, 'request_submitted').catch(() => null)
 
   return (
     <div className="mx-auto max-w-lg space-y-4 px-4 py-6">
@@ -118,7 +116,7 @@ export default async function ProviderPublicProfilePage({
         </form>
       )}
       <Button asChild variant="outline" className="w-full">
-        <Link href={requestAccessUrl ?? `/requests/${resolved.request.id}`}>Back to request</Link>
+        <Link href="/sign-in">Sign in to view your requests</Link>
       </Button>
     </div>
   )

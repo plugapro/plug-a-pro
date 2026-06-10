@@ -17,6 +17,7 @@ import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { resolveJobRequestAccessScope } from '@/lib/job-request-access'
 import { resolveProviderLeadAttachmentScope } from '@/lib/provider-lead-access'
+import { verifyCustomerProviderHandoverToken } from '@/lib/customer-provider-handover-access'
 
 type ImageErrorCode =
   | 'ATTACHMENT_RECORD_MISSING'
@@ -83,6 +84,7 @@ export async function GET(
   const reqId = crypto.randomUUID().slice(0, 8)
   const token = request.nextUrl.searchParams.get('token')?.trim() || null
   const leadToken = request.nextUrl.searchParams.get('leadToken')?.trim() || null
+  const handoverToken = request.nextUrl.searchParams.get('handoverToken')?.trim() || null
 
   const session = await getSession()
 
@@ -132,6 +134,16 @@ export async function GET(
 
   const tokenScope = token ? await resolveJobRequestAccessScope(token) : null
   const leadTokenScope = leadToken ? await resolveProviderLeadAttachmentScope(leadToken) : null
+
+  // Resolve handover token scope: validates the HMAC-signed token and extracts the jobRequestId
+  const handoverTokenPayload = handoverToken
+    ? verifyCustomerProviderHandoverToken(handoverToken)
+    : null
+  const handoverTokenJobRequestId =
+    handoverTokenPayload?.status === 'active' && handoverTokenPayload.payload
+      ? handoverTokenPayload.payload.jobRequestId
+      : null
+
   const attachmentJobRequestId =
     attachment.jobRequest?.id ??
     attachment.job?.booking?.match?.jobRequest?.id ??
@@ -156,6 +168,16 @@ export async function GET(
     attachmentJobRequestId != null &&
     leadTokenScope.jobRequestId === attachmentJobRequestId &&
     (isJobAttachment || leadTokenIsAccepted || attachment?.safeForPreview !== false)
+
+  // Handover tokens (customer-facing provider handover links) allow access to
+  // request-level attachments scoped to the same jobRequest. Job-level attachments
+  // (work evidence) are not served via handover tokens.
+  const handoverTokenAllowsAttachment =
+    handoverTokenPayload?.status === 'active' &&
+    handoverTokenJobRequestId != null &&
+    attachmentJobRequestId != null &&
+    handoverTokenJobRequestId === attachmentJobRequestId &&
+    !isJobAttachment
 
   let sessionAllowsAttachment = false
 
@@ -254,7 +276,7 @@ export async function GET(
     sessionAllowsAttachment = sessionAllowsAttachment || allowed
   }
 
-  if (!sessionAllowsAttachment && !tokenAllowsAttachment && !leadTokenAllowsAttachment) {
+  if (!sessionAllowsAttachment && !tokenAllowsAttachment && !leadTokenAllowsAttachment && !handoverTokenAllowsAttachment) {
     if (!session && leadTokenScope?.status) {
       const error = leadTokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired lead token'
       const status = leadTokenScope.status === 'active' ? 403 : 401
@@ -399,7 +421,9 @@ export async function GET(
   }
 
   const servedTo = session?.id ??
-    (leadTokenScope?.jobRequestId ? `lead-token:${leadTokenScope.leadId ?? 'unknown'}` : `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`)
+    (leadTokenScope?.jobRequestId ? `lead-token:${leadTokenScope.leadId ?? 'unknown'}` :
+     handoverTokenJobRequestId ? `handover-token:${handoverTokenJobRequestId}` :
+     `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`)
   console.info(`[attachments:${reqId}] Served ${id} to ${servedTo}`)
 
   const headers = new Headers()

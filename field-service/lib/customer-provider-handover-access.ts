@@ -129,9 +129,6 @@ export async function resolveCustomerProviderHandoverToken(token: string) {
           category: true,
           title: true,
           description: true,
-          customerAccessToken: true,
-          customerAccessTokenExpiresAt: true,
-          customerAccessTokenRevokedAt: true,
           customer: { select: { id: true, name: true } },
           address: {
             select: {
