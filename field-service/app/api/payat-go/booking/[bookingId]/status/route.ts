@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { getAdminActor, getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkPayAtGoLimit } from '@/lib/rate-limit'
 import {
@@ -28,7 +28,10 @@ function parseMockStatus(value: string | null): InternalPayAtGoStatus | undefine
 }
 
 async function canAccessBooking(bookingId: string, userId: string, role: string) {
-  if (role === 'admin') return true
+  // SECURITY: admin access must be DB-backed (AdminUser row), never the
+  // client-writable user_metadata role. Falls through to customer ownership.
+  const adminActor = await getAdminActor()
+  if (adminActor) return true
   if (role !== 'customer') return false
 
   const booking = await db.booking.findUnique({
@@ -87,7 +90,9 @@ export async function GET(
     if (isProdEnv) {
       return NextResponse.json({ error: 'mockStatus is disabled in production.' }, { status: 403 })
     }
-    if (session.role !== 'admin') {
+    // SECURITY: admin gate must be DB-backed, not the client-writable session role.
+    const adminActor = await getAdminActor()
+    if (!adminActor) {
       return NextResponse.json({ error: 'mockStatus is available to admin users only.' }, { status: 403 })
     }
   }

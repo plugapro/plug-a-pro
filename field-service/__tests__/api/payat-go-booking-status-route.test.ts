@@ -3,11 +3,13 @@ import { NextRequest } from 'next/server'
 
 const {
   mockGetSession,
+  mockGetAdminActor,
   mockDb,
   mockRefreshBookingPaymentStatus,
   mockCheckPayAtGoLimit,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
+  mockGetAdminActor: vi.fn(),
   mockDb: {
     booking: {
       findUnique: vi.fn(),
@@ -19,6 +21,7 @@ const {
 
 vi.mock('@/lib/auth', () => ({
   getSession: mockGetSession,
+  getAdminActor: mockGetAdminActor,
 }))
 
 vi.mock('@/lib/db', () => ({
@@ -40,6 +43,8 @@ describe('GET /api/payat-go/booking/[bookingId]/status', () => {
     vi.resetModules()
     vi.clearAllMocks()
     vi.unstubAllEnvs()
+    // Default: no DB-backed admin actor, so access falls to customer ownership.
+    mockGetAdminActor.mockResolvedValue(null)
     mockCheckPayAtGoLimit.mockResolvedValue({ ok: true })
   })
 
@@ -113,7 +118,9 @@ describe('GET /api/payat-go/booking/[bookingId]/status', () => {
   it('allows admin to use mockStatus in mock mode outside production', async () => {
     vi.stubEnv('PAYAT_GO_MOCK_MODE', 'true')
     vi.stubEnv('NODE_ENV', 'test')
-    mockGetSession.mockResolvedValue({ id: 'admin-1', role: 'admin' })
+    mockGetSession.mockResolvedValue({ id: 'admin-1', role: 'customer' })
+    // DB-backed admin actor grants access; the client-writable session role does not.
+    mockGetAdminActor.mockResolvedValue({ id: 'admin-1', adminUserId: 'admin-1', adminRole: 'ADMIN' })
 
     mockRefreshBookingPaymentStatus.mockResolvedValue({
       bookingId: 'booking-1',

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { getAdminActor, getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkPayAtGoLimit } from '@/lib/rate-limit'
 import {
@@ -9,7 +9,10 @@ import {
 } from '@/lib/payat-go'
 
 async function canAccessBooking(bookingId: string, userId: string, role: string) {
-  if (role === 'admin') return true
+  // SECURITY: admin access must be DB-backed (AdminUser row), never the
+  // client-writable user_metadata role. Falls through to customer ownership.
+  const adminActor = await getAdminActor()
+  if (adminActor) return true
   if (role !== 'customer') return false
 
   const booking = await db.booking.findUnique({

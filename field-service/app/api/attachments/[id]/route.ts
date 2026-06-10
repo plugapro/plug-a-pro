@@ -11,6 +11,7 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { head } from '@vercel/blob'
+import type { Role } from '@prisma/client'
 import { getAdminActor, getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
@@ -26,6 +27,18 @@ type ImageErrorCode =
   | 'IMAGE_TOO_LARGE'
 
 const MAX_PROXY_BYTES = 15 * 1024 * 1024
+
+const ROLE_LEVEL: Record<Role, number> = {
+  OPS: 1,
+  FINANCE: 2,
+  TRUST: 3,
+  ADMIN: 4,
+  OWNER: 5,
+}
+
+function roleAtLeast(role: Role, required: Role): boolean {
+  return ROLE_LEVEL[role] >= ROLE_LEVEL[required]
+}
 
 function isAllowedBlobHost(url: URL): boolean {
   return url.protocol === 'https:' && url.hostname.endsWith('.vercel-storage.com')
@@ -148,6 +161,30 @@ export async function GET(
 
   const adminActor = session ? await getAdminActor() : null
   if (adminActor) {
+    // SECURITY: provider identity documents (ID front/back, selfie, liveness
+    // frame, passport/visa pages) are sensitive PII. They are persisted both as
+    // Attachment rows (label provider_id_document / provider_id_selfie) and as
+    // ProviderIdentityDocument rows keyed by blobKey. Only TRUST+ admins may
+    // retrieve them, regardless of the broad admin-can-see-anything default.
+    const isIdentityLabel =
+      attachment.label === 'provider_id_document' ||
+      attachment.label === 'provider_id_selfie'
+    const identityDoc = isIdentityLabel
+      ? await db.providerIdentityDocument.findFirst({
+          where: { blobKey: attachment.blobKey },
+          select: { documentKind: true },
+        })
+      : null
+    const isSensitiveIdentityDoc = isIdentityLabel || identityDoc != null
+    if (isSensitiveIdentityDoc && !roleAtLeast(adminActor.adminRole, 'TRUST')) {
+      console.warn(
+        `[attachments:${reqId}] Identity doc denied: admin=${adminActor.adminUserId ?? session?.id} role=${adminActor.adminRole} attachment=${id}`,
+      )
+      return NextResponse.json(
+        { error: 'Forbidden', traceId: reqId },
+        { status: 403, headers: { 'X-Trace-Id': reqId } },
+      )
+    }
     sessionAllowsAttachment = true
   } else if (session) {
     // For provider role we need the Provider.id (DB row) to compare against job.providerId.

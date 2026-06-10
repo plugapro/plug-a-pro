@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import type { Role } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
@@ -46,6 +47,19 @@ export const metadata = buildMetadata({ title: 'Provider Profile', noIndex: true
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const ROLE_LEVEL: Record<Role, number> = {
+  OPS: 1,
+  FINANCE: 2,
+  TRUST: 3,
+  ADMIN: 4,
+  OWNER: 5,
+}
+
+// Identity documents are sensitive PII; gate their display to TRUST or higher.
+function roleAtLeast(role: Role, required: Role) {
+  return ROLE_LEVEL[role] >= ROLE_LEVEL[required]
+}
+
 function jobStatusVariant(
   status: string
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -78,6 +92,9 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
   const query = (await searchParams) ?? {}
 
   const admin = await requireAdmin()
+  // SECURITY: identity documents (ID/selfie) are sensitive PII. Only TRUST and
+  // higher may see the Identity verification section; OPS/FINANCE are excluded.
+  const canViewIdentityDocuments = roleAtLeast(admin.adminRole, 'TRUST')
   const crudEnabled = await isEnabled('admin.crud.providers', { userId: admin.id })
   const legacyTsaWarningEnabled = await isEnabled('admin.providers.legacy_tsa_warning', { userId: admin.id })
 
@@ -563,7 +580,8 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
               </>
             )}
 
-            {(idDocAttachments.length > 0 || latestApplication?.idNumber || latestIdentityVerification) && (
+            {canViewIdentityDocuments &&
+              (idDocAttachments.length > 0 || latestApplication?.idNumber || latestIdentityVerification) && (
               <>
                 <Separator />
                 <div>

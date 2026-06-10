@@ -3,12 +3,14 @@ import { NextRequest } from 'next/server'
 
 const {
   mockGetSession,
+  mockGetAdminActor,
   mockDb,
   mockCheckPayAtGoLimit,
   mockCancelPayAtGoBookingPaymentRequest,
   mockMapPayAtGoErrorToHttpStatus,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
+  mockGetAdminActor: vi.fn(),
   mockDb: {
     booking: {
       findUnique: vi.fn(),
@@ -21,6 +23,7 @@ const {
 
 vi.mock('@/lib/auth', () => ({
   getSession: mockGetSession,
+  getAdminActor: mockGetAdminActor,
 }))
 
 vi.mock('@/lib/db', () => ({
@@ -42,6 +45,8 @@ describe('POST /api/payat-go/booking/[bookingId]/cancel', () => {
     vi.resetModules()
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue({ id: 'customer-1', role: 'customer' })
+    // Default: no DB-backed admin actor, so access falls to customer ownership.
+    mockGetAdminActor.mockResolvedValue(null)
     mockCheckPayAtGoLimit.mockResolvedValue({ ok: true })
     mockMapPayAtGoErrorToHttpStatus.mockReturnValue(502)
   })
