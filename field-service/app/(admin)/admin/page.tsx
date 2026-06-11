@@ -214,6 +214,12 @@ export default async function AdminDashboardPage({
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
+              <Link href="/admin/kyc-campaigns">
+                Manage launch KYC campaigns
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </section>

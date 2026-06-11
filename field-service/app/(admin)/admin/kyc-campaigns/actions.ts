@@ -357,9 +357,9 @@ export async function revokeKycSponsorshipAction(input: unknown) {
 
 // ─── Form wrappers (page <form action={…}>) ──────────────────────────────────
 
-export async function createKycCampaignFromFormAction(formData: FormData) {
+export async function createKycCampaignFromFormAction(formData: FormData): Promise<void> {
   try {
-    return await createKycCampaignAction({
+    await createKycCampaignAction({
       name: formData.get('name'),
       campaignCode: formData.get('campaignCode'),
       locationNodeSlug: (formData.get('locationNodeSlug') as string)?.trim() || undefined,
@@ -368,44 +368,44 @@ export async function createKycCampaignFromFormAction(formData: FormData) {
       maxSponsoredCount: formData.get('maxSponsoredCount'),
     })
   } catch (err) {
-    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
-    return { ok: false as const, error: 'Failed to create campaign' }
+    const msg = err instanceof CrudActionError ? err.message : 'Failed to create campaign'
+    console.error('[kyc-campaigns] createKycCampaign error:', msg)
   }
 }
 
-export async function setKycCampaignStatusFromFormAction(formData: FormData) {
+export async function setKycCampaignStatusFromFormAction(formData: FormData): Promise<void> {
   try {
-    return await setKycCampaignStatusAction({
+    await setKycCampaignStatusAction({
       campaignId: formData.get('campaignId'),
       status: formData.get('status'),
     })
   } catch (err) {
-    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
-    return { ok: false as const, error: 'Failed to update campaign status' }
+    const msg = err instanceof CrudActionError ? err.message : 'Failed to update campaign status'
+    console.error('[kyc-campaigns] setKycCampaignStatus error:', msg)
   }
 }
 
-export async function grantKycSponsorshipFromFormAction(formData: FormData) {
+export async function grantKycSponsorshipFromFormAction(formData: FormData): Promise<void> {
   try {
-    return await grantKycSponsorshipAction({
+    await grantKycSponsorshipAction({
       campaignId: formData.get('campaignId'),
       providerId: formData.get('providerId'),
       reason: formData.get('reason'),
     })
   } catch (err) {
-    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
-    return { ok: false as const, error: 'Failed to grant sponsorship' }
+    const msg = err instanceof CrudActionError ? err.message : 'Failed to grant sponsorship'
+    console.error('[kyc-campaigns] grantKycSponsorship error:', msg)
   }
 }
 
-export async function revokeKycSponsorshipFromFormAction(formData: FormData) {
+export async function revokeKycSponsorshipFromFormAction(formData: FormData): Promise<void> {
   try {
-    return await revokeKycSponsorshipAction({
+    await revokeKycSponsorshipAction({
       sponsorshipId: formData.get('sponsorshipId'),
       reason: formData.get('reason'),
     })
   } catch (err) {
-    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
-    return { ok: false as const, error: 'Failed to revoke sponsorship' }
+    const msg = err instanceof CrudActionError ? err.message : 'Failed to revoke sponsorship'
+    console.error('[kyc-campaigns] revokeKycSponsorship error:', msg)
   }
 }
