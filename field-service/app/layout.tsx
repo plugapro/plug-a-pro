@@ -20,6 +20,7 @@ const dmMono = DM_Mono({
 })
 import { MobileGate } from '@/components/shared/mobile-gate'
 import { MetaPixel } from '@/components/meta-pixel'
+import { UtmCapture } from '@/components/utm-capture'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -81,6 +82,7 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-background font-sans antialiased">
         <MetaPixel />
+        <UtmCapture />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

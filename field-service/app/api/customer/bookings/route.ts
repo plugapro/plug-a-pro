@@ -110,6 +110,10 @@ export async function POST(req: NextRequest) {
     budgetPreference?: string
     maxCallOutFee?: number
     verifiedOnly?: boolean
+    utmSource?: string
+    utmMedium?: string
+    utmCampaign?: string
+    utmContent?: string
   }
   let photos: File[] = []
   let photoSafeForPreview: PhotoSafeForPreviewList = []
@@ -140,6 +144,10 @@ export async function POST(req: NextRequest) {
         maxCallOutFee: rawMaxCallOutFee ? Number(rawMaxCallOutFee) : undefined,
         preferredProviderId: formData.get('preferredProviderId') ? String(formData.get('preferredProviderId')) : undefined,
         verifiedOnly: formData.get('verifiedOnly') === 'true',
+        utmSource: formData.get('utmSource') ? String(formData.get('utmSource')).slice(0, 200) : undefined,
+        utmMedium: formData.get('utmMedium') ? String(formData.get('utmMedium')).slice(0, 200) : undefined,
+        utmCampaign: formData.get('utmCampaign') ? String(formData.get('utmCampaign')).slice(0, 200) : undefined,
+        utmContent: formData.get('utmContent') ? String(formData.get('utmContent')).slice(0, 200) : undefined,
         ...(rawWindowStart ? { requestedWindowStart: String(rawWindowStart) } : {}),
         ...(rawWindowEnd ? { requestedWindowEnd: String(rawWindowEnd) } : {}),
         ...(rawArrivalLatest ? { requestedArrivalLatest: String(rawArrivalLatest) } : {}),
@@ -186,6 +194,10 @@ export async function POST(req: NextRequest) {
     budgetPreference,
     maxCallOutFee,
     verifiedOnly,
+    utmSource,
+    utmMedium,
+    utmCampaign,
+    utmContent,
   } = body
   const rawCategory = typeof category === 'string' ? category : ''
   const canonicalCategory = canonicalizeServiceCategoryValue(rawCategory).canonical ?? rawCategory.trim()
@@ -393,6 +405,10 @@ export async function POST(req: NextRequest) {
       budgetPreference: budgetPreference ?? null,
       maxCallOutFee: typeof maxCallOutFee === 'number' ? maxCallOutFee : null,
       verifiedOnly: typeof verifiedOnly === 'boolean' ? verifiedOnly : null,
+      utmSource: utmSource ?? null,
+      utmMedium: utmMedium ?? null,
+      utmCampaign: utmCampaign ?? null,
+      utmContent: utmContent ?? null,
     })
 
     let uploadedPhotoCount = 0
