@@ -3,10 +3,26 @@ import { getRequiredDocumentKinds, isIdentityBasis, type IdentityDocumentKind } 
 import { logIdentityVerificationError, logIdentityVerificationEvent } from '@/lib/identity-verification/log'
 import { storeIdentityDocument } from '@/lib/identity-verification/storage'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
+import { checkIdentityUploadLimit } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
+// Upper bound for a single multipart upload (one document image). Aligned with
+// the storage helper's 10 MB per-file cap plus a small multipart overhead
+// margin. Requests larger than this are rejected via Content-Length BEFORE the
+// body is parsed, so an unauthenticated attacker cannot force the server to
+// buffer huge bodies before token validation (finding 8c2d2393).
+const MAX_UPLOAD_BYTES = 11 * 1024 * 1024
+
 export async function POST(request: NextRequest) {
+  // Reject oversized bodies up front, before any parsing work.
+  const contentLength = Number(request.headers.get('content-length') ?? '')
+  if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
+    return jsonOrRedirect(request, undefined, { ok: false, error: 'File is too large.' }, 413)
+  }
+
+  // The verification token is read from a header/query param FIRST so an invalid
+  // or missing token is rejected before request.formData() buffers the body.
   const preflightToken = tokenFromRequest(request)
   let preflightVerification: Awaited<ReturnType<typeof resolveProviderVerificationToken>> | null = null
   if (preflightToken) {
@@ -15,6 +31,15 @@ export async function POST(request: NextRequest) {
     } catch {
       return jsonOrRedirect(request, undefined, { ok: false, error: 'Verification link is invalid or expired.' }, 401)
     }
+  }
+
+  // Rate-limit before parsing the body so repeated large POSTs from one identity
+  // cannot consume memory/CPU. Keyed by verification id when we already resolved
+  // a token, else by client IP for the still-unauthenticated case.
+  const rateLimitKey = preflightVerification?.id ?? `ip:${clientIp(request)}`
+  const uploadLimit = await checkIdentityUploadLimit({ identifier: rateLimitKey })
+  if (!uploadLimit.ok) {
+    return jsonOrRedirect(request, undefined, { ok: false, error: 'Too many uploads. Please wait and try again.' }, 429)
   }
 
   const formData = await request.formData()
@@ -91,6 +116,14 @@ export async function POST(request: NextRequest) {
     })
     return jsonOrRedirect(request, returnTo, { ok: false, error: 'Could not store this file.' }, 400)
   }
+}
+
+function clientIp(request: NextRequest): string {
+  return (
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip')?.trim() ||
+    'unknown'
+  )
 }
 
 function tokenFromRequest(request: NextRequest): string | null {

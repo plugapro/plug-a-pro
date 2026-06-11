@@ -15,6 +15,7 @@ const {
   mockCheckPilotGate,
   mockResolveAreaScopeByNodeId,
   mockCountActiveProvidersFor,
+  mockResolveCustomerForSession,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockCreateJobRequest: vi.fn(),
@@ -29,9 +30,13 @@ const {
   mockCheckPilotGate: vi.fn(),
   mockResolveAreaScopeByNodeId: vi.fn(),
   mockCountActiveProvidersFor: vi.fn(),
+  mockResolveCustomerForSession: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
+vi.mock('@/lib/customer-session', () => ({
+  resolveCustomerForSession: mockResolveCustomerForSession,
+}))
 vi.mock('@/lib/db', () => ({
   db: {
     provider: { findFirst: mockProviderFindFirst },
@@ -85,6 +90,7 @@ describe('POST /api/customer/bookings — west-rand pilot gate', () => {
       role: 'customer',
       phone: '+27821234567',
     })
+    mockResolveCustomerForSession.mockResolvedValue({ id: 'cust-1', userId: 'customer-user-1' })
     mockResolveStructuredAddressCapture.mockResolvedValue({
       street: '12 Main Road',
       addressLine1: '12 Main Road',

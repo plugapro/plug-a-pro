@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import {
   createJobRequest,
@@ -66,21 +67,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Verified phone required' }, { status: 403 })
   }
 
-  // Rate limit: check for too many active requests
-  const activeRequestCount = await db.jobRequest.count({
-    where: {
-      customerId: session.id,
-      status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING'] },
-    },
-  })
-  if (activeRequestCount >= MAX_CONCURRENT_ACTIVE_REQUESTS) {
-    return NextResponse.json(
-      {
-        error: 'TOO_MANY_ACTIVE_REQUESTS',
-        message: 'You have too many active service requests. Please wait for one to be resolved before submitting a new one.',
+  // Rate limit: check for too many active requests. JobRequest.customerId stores
+  // the internal Customer.id, NOT the Supabase Auth user id on session.id, so we
+  // must resolve the Customer row first or the count is always ~0 and the cap is
+  // bypassable (finding 92a26b92). When no Customer row exists yet the user has
+  // no active requests, so the cap is trivially satisfied.
+  const sessionCustomer = await resolveCustomerForSession(db, session)
+  if (sessionCustomer) {
+    const activeRequestCount = await db.jobRequest.count({
+      where: {
+        customerId: sessionCustomer.id,
+        status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING'] },
       },
-      { status: 429 },
-    )
+    })
+    if (activeRequestCount >= MAX_CONCURRENT_ACTIVE_REQUESTS) {
+      return NextResponse.json(
+        {
+          error: 'TOO_MANY_ACTIVE_REQUESTS',
+          message: 'You have too many active service requests. Please wait for one to be resolved before submitting a new one.',
+        },
+        { status: 429 },
+      )
+    }
   }
 
   let body: {

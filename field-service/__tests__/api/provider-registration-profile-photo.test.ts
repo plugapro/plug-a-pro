@@ -85,7 +85,11 @@ describe('POST /api/provider/registration/profile-photo', () => {
       code: 'PROFILE_PHOTO_UNSUPPORTED_TYPE',
       message: 'Use a JPG, PNG, WEBP, or HEIC photo.',
     })
-    expect(mockCheckProviderRegistrationProfilePhotoLimit).not.toHaveBeenCalled()
+    // Security hardening (finding a729cfab): the per-phone rate limit is now
+    // applied BEFORE the multipart body is parsed, so it is consulted even when
+    // the upload is ultimately rejected as a non-image. Storage is still never
+    // reached for an unsupported type.
+    expect(mockCheckProviderRegistrationProfilePhotoLimit).toHaveBeenCalledTimes(1)
     expect(mockUploadProviderProfilePhoto).not.toHaveBeenCalled()
   })
 

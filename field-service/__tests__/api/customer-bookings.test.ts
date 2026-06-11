@@ -11,6 +11,7 @@ const {
   mockUploadJobRequestPhoto,
   mockProviderFindFirst,
   mockJobRequestCount,
+  mockResolveCustomerForSession,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockCreateJobRequest: vi.fn(),
@@ -21,9 +22,13 @@ const {
   mockUploadJobRequestPhoto: vi.fn(),
   mockProviderFindFirst: vi.fn(),
   mockJobRequestCount: vi.fn().mockResolvedValue(0),
+  mockResolveCustomerForSession: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
+vi.mock('@/lib/customer-session', () => ({
+  resolveCustomerForSession: mockResolveCustomerForSession,
+}))
 vi.mock('@/lib/db', () => ({
   db: {
     provider: {
@@ -74,6 +79,9 @@ describe('POST /api/customer/bookings', () => {
     mockProviderFindFirst.mockResolvedValue(null)
     mockUploadJobRequestPhoto.mockResolvedValue('https://blob.example/photo.png')
     mockNotifyCustomerPwaRequestSubmitted.mockResolvedValue({ sent: true })
+    // JobRequest.customerId stores the internal Customer.id (resolved here),
+    // never the Supabase Auth user id on the session.
+    mockResolveCustomerForSession.mockResolvedValue({ id: 'cust-1', userId: 'customer-user-1' })
   })
 
   it('creates a job request with optional customer photos attached to the request', async () => {

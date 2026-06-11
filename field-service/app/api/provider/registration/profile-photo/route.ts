@@ -90,6 +90,34 @@ export async function POST(request: NextRequest) {
 
   const maskedPhone = maskPhone(session.phone)
 
+  // Reject oversized bodies via Content-Length BEFORE parsing so a phone-authed
+  // attacker cannot force the server to buffer large multipart bodies ahead of
+  // the size/type/rate-limit checks below (finding a729cfab). MAX_FILE_SIZE is
+  // the single image; add a small multipart-overhead margin.
+  const contentLength = Number(request.headers.get('content-length') ?? '')
+  if (Number.isFinite(contentLength) && contentLength > MAX_FILE_SIZE + 64 * 1024) {
+    logUploadEvent('warn', { event: 'too_large', phone: maskedPhone, contentLength })
+    return errorResponse('PROFILE_PHOTO_TOO_LARGE', 'Photo is too large. Use an image under 4 MB.', 413)
+  }
+
+  // Apply the per-phone rate limit BEFORE parsing the multipart body so repeated
+  // uploads cannot consume parse CPU/memory ahead of the limiter decision.
+  const preParseRateLimit = await checkProviderRegistrationProfilePhotoLimit({
+    phone: session.phone,
+    ip: clientIp(request),
+    context: { surface: SURFACE },
+  })
+  if (!preParseRateLimit.ok) {
+    logUploadEvent('warn', { event: 'rate_limited', phone: maskedPhone, code: preParseRateLimit.code })
+    return errorResponse(
+      preParseRateLimit.code === 'limiter_unavailable' ? 'PROFILE_PHOTO_UPLOAD_UNAVAILABLE' : 'RATE_LIMITED',
+      preParseRateLimit.code === 'limiter_unavailable'
+        ? 'Photo upload is temporarily unavailable. Please try again.'
+        : 'Too many photo uploads. Please wait before trying again.',
+      preParseRateLimit.code === 'limiter_unavailable' ? 503 : 429,
+    )
+  }
+
   let formData: FormData
   try {
     formData = await request.formData()
@@ -133,21 +161,7 @@ export async function POST(request: NextRequest) {
     return errorResponse('PROFILE_PHOTO_TOO_LARGE', 'Photo is too large. Use an image under 4 MB.', 413)
   }
 
-  const rateLimit = await checkProviderRegistrationProfilePhotoLimit({
-    phone: session.phone,
-    ip: clientIp(request),
-    context: { surface: SURFACE },
-  })
-  if (!rateLimit.ok) {
-    logUploadEvent('warn', { event: 'rate_limited', phone: maskedPhone, code: rateLimit.code })
-    return errorResponse(
-      rateLimit.code === 'limiter_unavailable' ? 'PROFILE_PHOTO_UPLOAD_UNAVAILABLE' : 'RATE_LIMITED',
-      rateLimit.code === 'limiter_unavailable'
-        ? 'Photo upload is temporarily unavailable. Please try again.'
-        : 'Too many photo uploads. Please wait before trying again.',
-      rateLimit.code === 'limiter_unavailable' ? 503 : 429,
-    )
-  }
+  // Note: the per-phone rate limit is enforced above, before the body is parsed.
 
   try {
     const profilePhotoUrl = await uploadProviderProfilePhoto(upload)

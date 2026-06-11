@@ -68,6 +68,14 @@ const PRESET_DAYS: Record<Exclude<OpsDashboardRangePreset, 'today' | 'custom'>, 
   '30d': 30,
 }
 
+// Operational ceiling for custom ranges. Although the UI only links to fixed
+// presets, `?range=custom&from=...&to=...` is still parseable; an unbounded span
+// would drive huge DB range scans and millions of trend-point allocations
+// (finding a0a23743). Clamp the span and hard-cap the generated point count.
+const MAX_RANGE_DAYS = 90
+const MAX_TREND_POINTS = 365
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
 function normalizeSearchParam(
   searchParams: DashboardSearchParams | undefined,
   key: string,
@@ -112,13 +120,21 @@ export function parseOpsDashboardRange(searchParams?: DashboardSearchParams): Op
 
   if (preset === 'custom' && fromParam && toParam) {
     const from = new Date(fromParam)
-    const to = new Date(toParam)
+    let to = new Date(toParam)
     if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from <= to) {
+      // Clamp the span to MAX_RANGE_DAYS so a crafted custom range (e.g. spanning
+      // thousands of years) cannot drive unbounded range scans / point allocation.
+      const spanDays = Math.floor((endOfDay(to).getTime() - startOfDay(from).getTime()) / MS_PER_DAY) + 1
+      let clampedLabel = `${from.toLocaleDateString('en-ZA')} – ${to.toLocaleDateString('en-ZA')}`
+      if (spanDays > MAX_RANGE_DAYS) {
+        to = new Date(startOfDay(from).getTime() + (MAX_RANGE_DAYS - 1) * MS_PER_DAY)
+        clampedLabel = `${from.toLocaleDateString('en-ZA')} – ${to.toLocaleDateString('en-ZA')} (capped at ${MAX_RANGE_DAYS} days)`
+      }
       return {
         preset,
         from: startOfDay(from),
         to: endOfDay(to),
-        label: `${from.toLocaleDateString('en-ZA')} – ${to.toLocaleDateString('en-ZA')}`,
+        label: clampedLabel,
         isCustom: true,
       }
     }
@@ -694,14 +710,16 @@ function buildDailyPoints(
 ): import('./types').OpsDashboardTrendPoint[] {
   const byDay = new Map(rows.map((r) => [toDayString(r.day), Number(r.count)]))
 
-  // Walk every calendar day in the range so missing days appear as 0
+  // Walk every calendar day in the range so missing days appear as 0. The range
+  // is already span-clamped upstream, but enforce a hard point ceiling here too
+  // so this function can never allocate an unbounded array (finding a0a23743).
   const points: import('./types').OpsDashboardTrendPoint[] = []
   const cursor = new Date(from)
   cursor.setHours(0, 0, 0, 0)
   const end = new Date(to)
   end.setHours(0, 0, 0, 0)
 
-  while (cursor <= end) {
+  while (cursor <= end && points.length < MAX_TREND_POINTS) {
     const date = toDayString(cursor)
     points.push({ date, value: byDay.get(date) ?? 0 })
     cursor.setDate(cursor.getDate() + 1)

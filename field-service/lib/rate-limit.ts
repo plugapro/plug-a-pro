@@ -20,6 +20,8 @@ type LimiterKey =
   | 'payatGoCallbackByReference'
   | 'voucherMalformedByProvider'
   | 'voucherFailedByProvider'
+  | 'healthProbeByIp'
+  | 'identityUploadByIdentity'
 
 type RateLimitDecision =
   | { ok: true }
@@ -27,6 +29,7 @@ type RateLimitDecision =
 
 type LimitConfig = { name: LimiterKey; limit: number; windowSec: number; prefix?: string }
 
+const MINUTE = 60
 const TEN_MINUTES = 10 * 60
 const HOUR = 60 * 60
 
@@ -112,6 +115,18 @@ function configs(): Record<LimiterKey, LimitConfig> {
       windowSec: HOUR,
       prefix: 'rate_limit',
     },
+    healthProbeByIp: {
+      name: 'healthProbeByIp',
+      limit: envInt('HEALTH_PROBE_LIMIT_PER_IP_MINUTE', 10),
+      windowSec: MINUTE,
+      prefix: 'rate_limit',
+    },
+    identityUploadByIdentity: {
+      name: 'identityUploadByIdentity',
+      limit: envInt('IDENTITY_UPLOAD_LIMIT_PER_IDENTITY_HOUR', 30),
+      windowSec: HOUR,
+      prefix: 'rate_limit',
+    },
   }
 }
 
@@ -120,13 +135,28 @@ let _limiters: Partial<Record<LimiterKey, Ratelimit>> = {}
 let _degradedNotice = false
 
 type MemoryWindowEntry = { count: number; windowStart: number }
+// Map iteration order is insertion/most-recently-set order in JS, so we use it
+// as an LRU: re-`set()` on touch moves an entry to the tail, and we evict from
+// the head (oldest) once we exceed the cap. The cap + per-touch TTL sweep keep
+// the fallback store bounded even when attacker-supplied phones/IPs produce an
+// unbounded set of unique keys (see security finding 10e9c247).
 const _memoryStore = new Map<string, MemoryWindowEntry>()
+// Hard ceiling on distinct in-memory keys. Eviction is oldest-first.
+const MEMORY_STORE_MAX_ENTRIES = 10_000
 
 function memoryConsume(key: string, limit: number, windowMs: number): RateLimitDecision {
   const now = Date.now()
+  // Opportunistic sweep of expired windows so idle keys don't linger and the
+  // store trends back toward zero between bursts. Bounded by the cap above so
+  // a single call never walks an unbounded set.
+  sweepExpiredMemoryEntries(now)
+
   const entry = _memoryStore.get(key)
   if (!entry || now - entry.windowStart > windowMs) {
+    // Re-insert at the tail (LRU touch) and enforce the size ceiling.
+    _memoryStore.delete(key)
     _memoryStore.set(key, { count: 1, windowStart: now })
+    evictOldestMemoryEntries()
     return { ok: true }
   }
   if (entry.count >= limit) {
@@ -134,6 +164,26 @@ function memoryConsume(key: string, limit: number, windowMs: number): RateLimitD
   }
   entry.count++
   return { ok: true }
+}
+
+// Drop entries whose window is older than the longest configured window. We
+// don't track per-key windows here, so use the HOUR window as the upper bound;
+// anything older than that can never still be limiting.
+function sweepExpiredMemoryEntries(now: number): void {
+  const maxWindowMs = HOUR * 1000
+  for (const [key, entry] of _memoryStore) {
+    if (now - entry.windowStart > maxWindowMs) {
+      _memoryStore.delete(key)
+    }
+  }
+}
+
+function evictOldestMemoryEntries(): void {
+  while (_memoryStore.size > MEMORY_STORE_MAX_ENTRIES) {
+    const oldestKey = _memoryStore.keys().next().value
+    if (oldestKey === undefined) break
+    _memoryStore.delete(oldestKey)
+  }
 }
 
 function allowMemoryFallback(): boolean {
@@ -417,6 +467,41 @@ export async function checkPayAtGoLimit(params: {
   }
 
   return { ok: true }
+}
+
+export type CheckHealthProbeLimitResult =
+  | { ok: true }
+  | { ok: false; retryAfterMs: number }
+
+// Per-IP limiter for the public /api/health probe. Fails OPEN when the durable
+// limiter is unavailable so monitoring is never blocked by a degraded Redis —
+// the module-level probe cache is the primary DoS control; this is defence in
+// depth against request-amplification from a single source (finding f4a7b4b2).
+export async function checkHealthProbeLimit(params: {
+  ip?: string | null
+}): Promise<CheckHealthProbeLimitResult> {
+  const ip = params.ip?.trim()
+  if (!ip) return { ok: true }
+  const decision = await consume('healthProbeByIp', `ip:${ip}`)
+  if (decision.ok || decision.reason === 'limiter_unavailable') return { ok: true }
+  return { ok: false, retryAfterMs: decision.retryAfterMs }
+}
+
+export type CheckIdentityUploadLimitResult =
+  | { ok: true }
+  | { ok: false; retryAfterMs: number }
+
+// Per-identity (verification id, or IP when still unauthenticated) limiter for
+// the public token-gated identity document upload endpoint. Fails OPEN when the
+// durable limiter is unavailable so a degraded Redis never blocks KYC; the
+// Content-Length check and token preflight remain the primary controls against
+// unauthenticated body-buffering DoS (finding 8c2d2393).
+export async function checkIdentityUploadLimit(params: {
+  identifier: string
+}): Promise<CheckIdentityUploadLimitResult> {
+  const decision = await consume('identityUploadByIdentity', params.identifier)
+  if (decision.ok || decision.reason === 'limiter_unavailable') return { ok: true }
+  return { ok: false, retryAfterMs: decision.retryAfterMs }
 }
 
 export type CheckVoucherRedemptionLimitResult =
