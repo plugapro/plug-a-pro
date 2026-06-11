@@ -72,7 +72,7 @@ function printQueue(rows: Awaited<ReturnType<typeof listProviderOnboardingRecove
   console.log('')
 
   for (const row of rows) {
-    console.log(`P${row.priority} ${row.priorityLabel} | ${row.safeUserRef} | ${row.phoneMasked} | tail ${row.phoneTail}`)
+    console.log(`P${row.priority} ${row.priorityLabel} | ${row.safeUserRef} | ${row.phoneMasked}`)
     console.log(`Stage: ${providerOnboardingStageLabel(row.stage)} | ${row.flow ?? row.source}/${row.step ?? '-'}`)
     console.log(`Last seen: ${formatDateTime(row.lastInteractionAt)} | Follow-up: ${row.followUpStatus} | Due: ${formatDateTime(row.followUpDueAt)}`)
     console.log(`Captured: ${row.providerName ?? '-'} | ${row.serviceCategory ?? 'service not captured'} | ${row.area ?? 'area not captured'} | app ${row.applicationStatus ?? '-'}`)
@@ -103,7 +103,6 @@ async function main() {
     await recordProviderOnboardingRecoveryOutcome(db, {
       safeUserRef: row.safeUserRef,
       phoneMasked: row.phoneMasked,
-      phoneTail: row.phoneTail,
       recoveryStage: row.stage,
       messageTemplateKey: row.messageTemplateKey,
       outcomeStatus: assertOutcomeStatus(argValue('--status')),
@@ -111,7 +110,7 @@ async function main() {
       nextFollowUpAt,
       actorId: argValue('--actor') ?? 'operator:manual',
     })
-    console.log(`Logged outcome for ${row.safeUserRef} (${row.phoneMasked}, tail ${row.phoneTail})`)
+    console.log(`Logged outcome for ${row.safeUserRef} (${row.phoneMasked})`)
     return
   }
 

@@ -155,7 +155,6 @@ describe('provider onboarding recovery', () => {
     expect(rows[0]).toMatchObject({
       priority: 1,
       phoneMasked: '082****002',
-      phoneTail: '0002',
       providerName: 'Naledi Maseko',
       serviceCategory: 'Painting',
       area: 'Roodepoort',
@@ -258,7 +257,6 @@ describe('provider onboarding recovery', () => {
         source: 'conversation',
         stage: 'register_started_no_name',
         phoneMasked: '082****567',
-        phoneTail: '4567',
         lastInteractionAt: new Date('2026-06-04T09:30:00.000Z'),
       }),
       expect.objectContaining({
@@ -628,7 +626,6 @@ describe('provider onboarding recovery', () => {
     await recordProviderOnboardingRecoveryOutcome(client as never, {
       safeUserRef: 'wa_bb735d72261710bac2ea4986e8ae00b2d2ca78f00dc50eef3b20f09fd818b3d8',
       phoneMasked: '082****567',
-      phoneTail: '4567',
       recoveryStage: 'register_started_no_name',
       messageTemplateKey: 'register_started_no_name',
       outcomeStatus: 'message_sent',
@@ -648,5 +645,7 @@ describe('provider onboarding recovery', () => {
     expect(JSON.stringify(call.data)).toContain('082****567')
     expect(JSON.stringify(call.data)).not.toContain('+27821234567')
     expect(JSON.stringify(call.data)).not.toContain('27821234567')
+    // The last-4 phone tail must not be persisted to the audit log either.
+    expect(JSON.stringify(call.data)).not.toContain('phoneTail')
   })
 })

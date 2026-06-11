@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { ApplicationStatus } from '@prisma/client'
-import type { ProviderOnboardingRecoveryRow } from '@/lib/provider-onboarding-recovery'
+import {
+  safeRefForPhone,
+  type ProviderOnboardingRecoveryRow,
+} from '@/lib/provider-onboarding-recovery'
 import {
   applyFilters,
   BUCKET_ORDER,
@@ -59,7 +62,6 @@ function makeRecovery(overrides: Partial<ProviderOnboardingRecoveryRow> = {}): P
     source: overrides.source ?? 'conversation',
     safeUserRef: overrides.safeUserRef ?? 'wa_abc123def0',
     phoneMasked: overrides.phoneMasked ?? '+27 ••• ••• 4567',
-    phoneTail: overrides.phoneTail ?? '4567',
     providerName: overrides.providerName ?? null,
     serviceCategory: overrides.serviceCategory ?? null,
     area: overrides.area ?? null,
@@ -143,7 +145,7 @@ describe('buildUnifiedRows — bucket classification', () => {
 
   it('upgrades a PENDING with missing fields + active recovery row to stuck_mid_flow (P2)', () => {
     const app = makeApp({ id: 'app_stuck', serviceAreas: [], phone: '+27821119999' })
-    const recovery = makeRecovery({ phoneTail: '9999', stage: 'evidence_upload' })
+    const recovery = makeRecovery({ safeUserRef: safeRefForPhone('+27821119999'), stage: 'evidence_upload' })
     const rows = buildUnifiedRows({
       applications: [app],
       recoveryRows: [recovery],
@@ -221,9 +223,9 @@ describe('buildUnifiedRows — bucket classification', () => {
 // ─── Recovery merge ──────────────────────────────────────────────────────────
 
 describe('buildUnifiedRows — recovery merge', () => {
-  it('merges a recovery row into the application row when phoneTail matches (no duplicate visual row)', () => {
+  it('merges a recovery row into the application row when safeUserRef matches (no duplicate visual row)', () => {
     const app = makeApp({ phone: '+27821234567' })
-    const recovery = makeRecovery({ phoneTail: '4567' })
+    const recovery = makeRecovery({ safeUserRef: safeRefForPhone('+27821234567') })
     const rows = buildUnifiedRows({
       applications: [app],
       recoveryRows: [recovery],
@@ -237,7 +239,7 @@ describe('buildUnifiedRows — recovery merge', () => {
   })
 
   it('emits a recovery-only row when no matching application exists', () => {
-    const recovery = makeRecovery({ phoneTail: '8888' })
+    const recovery = makeRecovery({ safeUserRef: 'wa_norecoverymatch' })
     const rows = buildUnifiedRows({
       applications: [],
       recoveryRows: [recovery],
@@ -254,7 +256,7 @@ describe('buildUnifiedRows — recovery merge', () => {
   it('places a recovery-only welcome_idle row into idle (P4)', () => {
     const rows = buildUnifiedRows({
       applications: [],
-      recoveryRows: [makeRecovery({ phoneTail: '0000', stage: 'welcome_idle' })],
+      recoveryRows: [makeRecovery({ safeUserRef: 'wa_idleonly', stage: 'welcome_idle' })],
       assignments: noAssignments(),
       conflictingApplicationIds: new Set(),
       now,
@@ -266,7 +268,7 @@ describe('buildUnifiedRows — recovery merge', () => {
   it('places a recovery-only flow_conflict row into conflict (P3)', () => {
     const rows = buildUnifiedRows({
       applications: [],
-      recoveryRows: [makeRecovery({ phoneTail: '0001', stage: 'flow_conflict' })],
+      recoveryRows: [makeRecovery({ safeUserRef: 'wa_conflictonly', stage: 'flow_conflict' })],
       assignments: noAssignments(),
       conflictingApplicationIds: new Set(),
       now,
@@ -332,7 +334,7 @@ describe('buildUnifiedRows — flags', () => {
       applications: [],
       recoveryRows: [
         makeRecovery({
-          phoneTail: '9999',
+          safeUserRef: 'wa_outsidewindow',
           lastInteractionAt: new Date('2026-06-06T00:00:00Z'),
         }),
       ],
