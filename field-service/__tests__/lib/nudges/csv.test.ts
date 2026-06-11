@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildNudgeCsv } from '@/lib/nudges/csv'
+import { buildNudgeCsv, humanizeSuburbSlug } from '@/lib/nudges/csv'
 import type { NudgeCandidate } from '@/lib/nudges/queue'
 
 const baseCandidate: NudgeCandidate = {
@@ -56,5 +56,31 @@ describe('buildNudgeCsv', () => {
   it('joins skills with a pipe in the primary_skills column', () => {
     const csv = buildNudgeCsv([{ ...baseCandidate, skills: ['plumbing', 'painting'] }])
     expect(csv).toContain('plumbing|painting')
+  })
+
+  it('renders suburb_label as a friendly label, not the raw slug', () => {
+    const csv = buildNudgeCsv([baseCandidate])
+    const dataLine = csv.trim().split('\n')[1]
+    expect(dataLine).toContain('Honeydew')
+    expect(dataLine).not.toContain('gauteng__johannesburg__jhb_west__honeydew')
+  })
+})
+
+describe('humanizeSuburbSlug', () => {
+  it('takes the last segment of a hierarchical slug and title-cases it', () => {
+    expect(humanizeSuburbSlug('gauteng__johannesburg__jhb_west__honeydew')).toBe('Honeydew')
+    expect(humanizeSuburbSlug('gauteng__johannesburg__jhb_west__randpark_ridge')).toBe('Randpark Ridge')
+    expect(humanizeSuburbSlug('gauteng__johannesburg__jhb_west__little_falls')).toBe('Little Falls')
+  })
+
+  it('handles flat slugs without hierarchy separators', () => {
+    expect(humanizeSuburbSlug('honeydew')).toBe('Honeydew')
+    expect(humanizeSuburbSlug('constantia_kloof')).toBe('Constantia Kloof')
+  })
+
+  it('returns empty string for nullish input', () => {
+    expect(humanizeSuburbSlug(null)).toBe('')
+    expect(humanizeSuburbSlug(undefined)).toBe('')
+    expect(humanizeSuburbSlug('')).toBe('')
   })
 })

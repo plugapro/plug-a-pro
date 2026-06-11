@@ -10,7 +10,11 @@
 //   E2E_ADMIN_PASSWORD — password of the test admin account
 
 import { test, expect, type Page } from '@playwright/test'
-import { ADMIN_SMOKE_ROUTES, CLIENT_PUBLIC_SMOKE_ROUTES } from '../lib/admin-nav-routes'
+import {
+  ADMIN_SMOKE_ROUTES,
+  ADMIN_FLAGGED_SMOKE_ROUTES,
+  CLIENT_PUBLIC_SMOKE_ROUTES,
+} from '../lib/admin-nav-routes'
 
 const hasAdminSmokeCredentials = Boolean(process.env.E2E_ADMIN_EMAIL && process.env.E2E_ADMIN_PASSWORD)
 
@@ -64,6 +68,19 @@ test.describe('authenticated', () => {
       const response = await page.goto(route)
       expect(response?.status()).toBeLessThan(400)
       // Must not show the Next error shell or the admin error boundary text
+      await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
+      await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
+    })
+  }
+
+  // ─── Flag-gated launch routes ───────────────────────────────────────────────
+  // These intentionally 404 while their feature flag is off, so the assertion is
+  // lenient: rendered (<400) or clean 404 are both fine; 5xx and error shells fail.
+  for (const route of ADMIN_FLAGGED_SMOKE_ROUTES) {
+    test(`flag-gated route renders or 404s cleanly: ${route}`, async ({ page }) => {
+      const response = await page.goto(route)
+      const status = response?.status() ?? 0
+      expect(status === 404 || status < 400, `expected <400 or 404, got ${status}`).toBe(true)
       await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
       await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
     })
