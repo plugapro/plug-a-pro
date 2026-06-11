@@ -19,6 +19,6 @@ ALTER TABLE "kyc_campaigns" ADD CONSTRAINT "kyc_campaigns_sponsored_count_cap"
 
 -- RLS: financial + identity-hash tables must have row level security enabled
 -- (mirrors 20260610010000_assert_rls_critical_tables).
-ALTER TABLE "kyc_campaigns" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "kyc_sponsorships" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "kyc_fee_ledger_entries" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."kyc_campaigns" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."kyc_sponsorships" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."kyc_fee_ledger_entries" ENABLE ROW LEVEL SECURITY;

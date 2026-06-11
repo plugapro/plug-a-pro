@@ -112,6 +112,15 @@ test.describe('authenticated', () => {
     await expect(page.locator('text=Could not load customer')).toHaveCount(0)
   })
 
+  test('admin kyc campaigns page renders', async ({ page }) => {
+    await page.goto('/admin/kyc-campaigns')
+    await expect(
+      page.getByRole('heading', { name: /Launch KYC campaigns/i }).or(
+        page.getByText(/KYC campaigns feature is not enabled/i),
+      ),
+    ).toBeVisible()
+  })
+
   test.describe('Didit refresh smoke', () => {
     const verificationId = process.env.E2E_DIDIT_VERIFICATION_ID
     // CI needs both E2E_BASE_URL and a real Didit-backed verification id with

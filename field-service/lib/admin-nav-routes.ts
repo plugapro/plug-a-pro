@@ -28,6 +28,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: '/admin/settings', label: 'Settings', icon: 'settings' as const },
   { href: '/admin/otp-security', label: 'OTP Security', icon: 'workflow' as const },
   { href: '/admin/audit-log', label: 'Audit Log', icon: 'workflow' as const },
+  { href: '/admin/kyc-campaigns', label: 'KYC Campaigns', icon: 'workflow' as const },
 ] as const
 
 // Smoke suite route targets are derived from the sidebar source to prevent
