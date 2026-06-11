@@ -51,18 +51,40 @@ if [[ -z "$sha" ]]; then
   decide_proceed
 fi
 
-# Check whether this commit even touched a migration. If it didn't, the
+# Check whether the PUSHED RANGE touched a migration. If it didn't, the
 # migrate-deploy workflow's path filter skipped it and we should proceed
-# immediately. We look at the merged tree to see if any migration file
-# changed in the commit.
+# immediately.
+#
+# IMPORTANT: GitHub Actions evaluates `push` path filters over the ENTIRE pushed
+# range, not just the head commit. A multi-commit / fast-forward push can carry a
+# migration in an EARLIER commit while the head commit touches no migration files.
+# Diffing only ${sha}~1..${sha} would then miss it, let the build proceed ahead of
+# the schema, and recreate the drift class this gate exists to prevent
+# (finding 0764c218). So diff the full pushed range
+# VERCEL_GIT_PREVIOUS_SHA..VERCEL_GIT_COMMIT_SHA, falling back to ${sha}~1..${sha}
+# only when the previous SHA is unavailable (first deploy / shallow clone).
 #
 # We treat git as the source of truth here, not GitHub's API: the API does
 # expose changed-files-per-commit, but we already have the repo cloned in
 # Vercel's build container before this script runs.
 if git rev-parse HEAD >/dev/null 2>&1; then
-  if ! git diff --name-only "${sha}~1" "${sha}" 2>/dev/null | grep -qE '^field-service/prisma/(migrations/|schema\.prisma$)'; then
-    log "commit ${sha:0:8} touched no migration files; proceeding without waiting for migrate-deploy"
-    decide_proceed
+  prev_sha="${VERCEL_GIT_PREVIOUS_SHA:-}"
+  diff_base=""
+  if [[ -n "$prev_sha" ]] && git cat-file -e "${prev_sha}^{commit}" 2>/dev/null; then
+    diff_base="$prev_sha"
+    log "diffing full pushed range ${diff_base:0:8}..${sha:0:8} for migration changes"
+  elif git cat-file -e "${sha}~1^{commit}" 2>/dev/null; then
+    diff_base="${sha}~1"
+    log "VERCEL_GIT_PREVIOUS_SHA unavailable; falling back to ${sha:0:8}~1..${sha:0:8}"
+  fi
+
+  if [[ -n "$diff_base" ]]; then
+    if ! git diff --name-only "$diff_base" "$sha" 2>/dev/null | grep -qE '^field-service/prisma/(migrations/|schema\.prisma$)'; then
+      log "pushed range touched no migration files; proceeding without waiting for migrate-deploy"
+      decide_proceed
+    fi
+  else
+    log "no usable diff base (prev SHA and ${sha:0:8}~1 both unavailable); not short-circuiting — will wait on migrate-deploy"
   fi
 fi
 

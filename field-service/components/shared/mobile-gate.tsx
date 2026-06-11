@@ -51,6 +51,12 @@ function normalizeHost(host: string) {
   return lower.replace(/:\d+$/, '')
 }
 
+// NOTE: The mobile-only access policy is now ALSO enforced server-side in
+// proxy.ts (a desktop-UA check on top-level document navigations) so a desktop
+// request no longer receives the protected page HTML before this client gate
+// hydrates (finding 442c036a). This component remains the primary UX surface;
+// the proxy check is the added enforcement layer.
+
 export function isDesktopAdminBypassPath(params: {
   pathname: string | null
   host: string | null

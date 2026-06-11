@@ -47,9 +47,12 @@ jobs:
     name: Apply pending migrations
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Keep this on repo-level secrets for now. If reviewer approval is added
-    # later via `environment: production`, copy both DATABASE_URL and
-    # DIRECT_URL into that environment before re-enabling the binding.
+    # Bind to the `production` GitHub Environment so deployment approvals,
+    # environment-scoped secrets, wait timers, branch restrictions and the
+    # deployment audit trail apply to production migrations (finding b90f2ee5).
+    # DATABASE_URL and DIRECT_URL must be configured as environment-scoped
+    # secrets on the `production` environment for the steps below to resolve.
+    environment: production
 
     steps:
       - uses: actions/checkout@v4

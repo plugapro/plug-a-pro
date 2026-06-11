@@ -159,6 +159,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  // Server-side enforcement of the mobile-only access policy (finding 442c036a).
+  // The client MobileGate only decides after hydration, so a desktop request
+  // still received the protected page HTML. Here we block genuine desktop
+  // browsers from mobile-only PAGE navigations before any HTML is returned.
+  // Scoped tightly: only top-level document navigations (not API/data/asset
+  // fetches), never admin surfaces, and only for UAs that look like a real
+  // desktop browser. APIs and server actions are NOT UA-gated — real auth/RBAC
+  // already guards them and UA is trivially spoofable.
+  if (isMobileOnlyDocumentRequest(request, pathname, host)) {
+    return mobileOnlyDesktopResponse()
+  }
+
   // Allow public paths (checked against the internal path)
   if (isPublicPath(pathname)) {
     return buildResponse()
@@ -323,6 +335,57 @@ function redirectToSignIn(
   url.searchParams.set('callbackUrl', callbackPath)
   url.searchParams.set('next', callbackPath)
   return NextResponse.redirect(url)
+}
+
+// Server-side mirror of the client MobileGate UA heuristic. Inlined here (rather
+// than imported from the 'use client' mobile-gate component) so the proxy's
+// Node bundle never pulls in client-only React modules. Conservative by design:
+// only genuine desktop browsers are treated as desktop; unknown/empty UAs, bots,
+// crawlers, previews and monitoring agents are NEVER blocked.
+function isDesktopBrowserUserAgent(userAgent: string | null): boolean {
+  if (!userAgent) return false
+  const ua = userAgent.toLowerCase()
+  if (/iphone|ipod|android.*mobile|windows phone|blackberry|bb10|opera mini/.test(ua)) return false
+  if (/ipad|tablet|silk|playbook|kf[a-z]{2}|sm-t|gt-p|nexus 7|nexus 10|xoom/.test(ua)) return false
+  if (/android/.test(ua) && !/mobile/.test(ua)) return false
+  if (/bot|crawl|spider|slurp|preview|monitor|curl|wget|headless|lighthouse|pingdom|uptime/.test(ua)) return false
+  return /windows nt|macintosh|cros|x11|linux x86_64/.test(ua)
+}
+
+function shouldEnforceMobileOnlyForPath(pathname: string, host: string): boolean {
+  if (pathname.startsWith('/api/')) return false
+  if (pathname.startsWith('/_next')) return false
+  // Admin surfaces are always desktop-allowed (dedicated admin domain or /admin).
+  if (host === 'admin.plugapro.co.za') return false
+  if (pathname.startsWith('/admin')) return false
+  // Public status/monitoring surface stays desktop-reachable.
+  if (pathname === '/status' || pathname.startsWith('/status/')) return false
+  return true
+}
+
+function isMobileOnlyDocumentRequest(
+  request: NextRequest,
+  pathname: string,
+  host: string,
+): boolean {
+  // Only gate real top-level document navigations. Sub-resource, data and
+  // prefetch requests (Sec-Fetch-Dest != "document") must pass through so the
+  // app still works on tablets/phones and so RSC/data fetches are never blocked.
+  const fetchDest = request.headers.get('sec-fetch-dest')
+  if (fetchDest && fetchDest !== 'document') return false
+  const accept = request.headers.get('accept') ?? ''
+  if (!fetchDest && !accept.includes('text/html')) return false
+
+  if (!shouldEnforceMobileOnlyForPath(pathname, host)) return false
+  return isDesktopBrowserUserAgent(request.headers.get('user-agent'))
+}
+
+function mobileOnlyDesktopResponse(): NextResponse {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Use mobile for Plug A Pro</title><style>body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0b0d12;color:#e8eaed;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px}.card{max-width:28rem;border:1px solid #2a2f3a;border-radius:16px;padding:32px;text-align:center;background:#12151c}.k{display:inline-block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;background:#1d2532;color:#9bb4ff;border-radius:999px;padding:4px 12px;margin-bottom:12px}h1{font-size:22px;margin:0 0 12px}p{font-size:14px;line-height:1.6;color:#aeb4bf;margin:0 0 8px}</style></head><body><div class="card"><span class="k">Mobile-only platform</span><h1>Please use mobile for Plug A Pro</h1><p>Plug A Pro is designed for phones and tablets. For the best, safer experience, open this link on a mobile device.</p><p>Customer and provider workflows are mobile-only. Use the dedicated admin domain for desktop operations access.</p></div></body></html>`
+  return new NextResponse(html, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+  })
 }
 
 function getPrimaryHostHeader(request: NextRequest): string {
