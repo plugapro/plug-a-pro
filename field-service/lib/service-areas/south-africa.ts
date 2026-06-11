@@ -526,33 +526,116 @@ export const SA_PROVINCES: Record<string, Province> = {
   north_west:    NORTH_WEST,
 }
 
-/** Flat lookup: normalised suburb name → { lat, lng, region, province } */
-const _suburbIndex: Map<string, SuburbCoord & { region: string; province: string }> = new Map()
+export type SuburbMatch = SuburbCoord & {
+  region: string
+  province: string
+  /** Province display name (e.g. "Gauteng"). */
+  provinceName: string
+  /** Region display name (e.g. "JHB North / Sandton"). */
+  regionName: string
+}
+
+/**
+ * Multi-value lookup: normalised suburb name → all matching entries.
+ * A flat single-value map overwrites duplicate suburb names (e.g. "Morningside"
+ * exists in both Gauteng and KwaZulu-Natal), which can misroute private job leads
+ * to the wrong city/province. Keeping every candidate lets the geocoder
+ * disambiguate using the submitted province/city.
+ */
+const _suburbIndex: Map<string, SuburbMatch[]> = new Map()
+
+function indexSuburb(key: string, match: SuburbMatch) {
+  const normalized = key.toLowerCase().trim()
+  const existing = _suburbIndex.get(normalized)
+  if (existing) {
+    existing.push(match)
+  } else {
+    _suburbIndex.set(normalized, [match])
+  }
+}
 
 for (const [provinceKey, province] of Object.entries(SA_PROVINCES)) {
   for (const [regionKey, region] of Object.entries(province.regions)) {
     for (const [suburb, coord] of Object.entries(region.suburbs)) {
-      _suburbIndex.set(suburb.toLowerCase().trim(), {
+      indexSuburb(suburb, {
         ...coord,
         region: regionKey,
         province: provinceKey,
+        provinceName: province.name,
+        regionName: region.name,
       })
     }
     // Also index the region name itself → region center
-    _suburbIndex.set(region.name.toLowerCase().trim(), {
+    indexSuburb(region.name, {
       ...region.center,
       region: regionKey,
       province: provinceKey,
+      provinceName: province.name,
+      regionName: region.name,
     })
   }
 }
 
+function normalizeName(value: string | null | undefined): string {
+  return (value ?? '').toLowerCase().trim()
+}
+
+/**
+ * Returns true when a static match is consistent with the submitted province/city.
+ * City is matched against the region's parent city (via REGION_CITY_MAP) as well
+ * as the region/province display names, since callers may pass a city label that
+ * corresponds to either the metro ("Johannesburg") or the region.
+ */
+function matchHonoursScope(
+  match: SuburbMatch,
+  scope: { province?: string | null; city?: string | null },
+): boolean {
+  const province = normalizeName(scope.province)
+  const city = normalizeName(scope.city)
+
+  if (province) {
+    const provinceMatches =
+      normalizeName(match.provinceName) === province || normalizeName(match.province) === province
+    if (!provinceMatches) return false
+  }
+
+  if (city) {
+    const cityLabel = normalizeName(REGION_CITY_MAP[match.region]?.cityLabel)
+    const cityKey = normalizeName(REGION_CITY_MAP[match.region]?.cityKey)
+    const cityMatches =
+      cityLabel === city ||
+      cityKey === city.replace(/[\s-]+/g, '_') ||
+      normalizeName(match.regionName) === city ||
+      normalizeName(match.provinceName) === city
+    if (!cityMatches) return false
+  }
+
+  return true
+}
+
 /**
  * Look up coordinates for a suburb / city name.
- * Returns null if the suburb is not in the static reference.
+ *
+ * When a province/city scope is supplied, only a match consistent with that scope
+ * is returned. If candidates exist for the name but NONE match the submitted
+ * province/city, this returns null rather than silently returning coordinates for
+ * a different city/province — preventing private job leads being routed to the
+ * wrong area. When no scope is supplied the first indexed entry is returned for
+ * backwards compatibility.
  */
-export function lookupSuburb(suburb: string): (SuburbCoord & { region: string; province: string }) | null {
-  return _suburbIndex.get(suburb.toLowerCase().trim()) ?? null
+export function lookupSuburb(
+  suburb: string,
+  scope?: { province?: string | null; city?: string | null },
+): SuburbMatch | null {
+  const matches = _suburbIndex.get(suburb.toLowerCase().trim())
+  if (!matches || matches.length === 0) return null
+
+  const hasScope = Boolean(normalizeName(scope?.province) || normalizeName(scope?.city))
+  if (!hasScope) {
+    return matches[0]
+  }
+
+  return matches.find((match) => matchHonoursScope(match, scope!)) ?? null
 }
 
 /**

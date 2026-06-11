@@ -117,11 +117,14 @@ export async function findCandidateProviders(input: CandidateInput) {
     const hasStructuredAreas = activeStructuredAreas.length > 0
 
     if (hasStructuredAreas) {
-      // Structured match: check suburbKey or regionKey (SUBURB_EXACT or REGION_FALLBACK)
+      // Structured match: check suburbKey (SUBURB_EXACT) or regionKey (REGION_FALLBACK).
+      // REGION_FALLBACK requires an actual REGION coverage row — a SUBURB row that merely
+      // carries a denormalised regionKey must not confer region-wide coverage, otherwise a
+      // provider configured for one suburb would receive leads across the whole region.
       const normalizedSuburb = suburb.replace(/\s+/g, '_').trim()
       const suburbExact = activeStructuredAreas.some((a) => a.suburbKey === normalizedSuburb)
       const regionMatch = input.regionKey != null
-        ? activeStructuredAreas.some((a) => a.regionKey === input.regionKey)
+        ? activeStructuredAreas.some((a) => a.areaType === 'REGION' && a.regionKey === input.regionKey)
         : false
       return suburbExact || regionMatch
     }

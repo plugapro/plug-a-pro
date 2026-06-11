@@ -463,11 +463,19 @@ describe('expireAssignmentOffer', () => {
   it('temporarily auto-pauses a provider after three consecutive offer timeouts', async () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold({ providerId: 'provider-timeout' }))
     mockDb.assignmentHold.count.mockResolvedValue(3)
-    mockDb.assignmentHold.findMany.mockResolvedValue([
-      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
-      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
-      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
-    ])
+    // First findMany: timeout holds (with distinct customers so the abuse guard passes).
+    // Second findMany: recent resolved holds for the consecutive-timeout check.
+    mockDb.assignmentHold.findMany
+      .mockResolvedValueOnce([
+        { jobRequest: { customerId: 'customer-a' } },
+        { jobRequest: { customerId: 'customer-b' } },
+        { jobRequest: { customerId: 'customer-c' } },
+      ])
+      .mockResolvedValueOnce([
+        { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+        { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+        { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+      ])
     mockDb.matchAttempt.findMany.mockResolvedValue([])
     mockDb.provider.findUnique.mockResolvedValue(null)
     mockDb.provider.update.mockResolvedValue({
@@ -524,11 +532,22 @@ describe('expireAssignmentOffer', () => {
   it('hard-pauses a provider after six recent offer timeouts', async () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold({ providerId: 'provider-hard-timeout' }))
     mockDb.assignmentHold.count.mockResolvedValue(6)
-    mockDb.assignmentHold.findMany.mockResolvedValue([
-      { status: 'REJECTED', outcomeReasonCode: 'TECHNICIAN_REJECTED_OFFER' },
-      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
-      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
-    ])
+    // First findMany: 6 timeout holds across distinct customers (abuse guard passes,
+    // hard-pause threshold met). Second findMany: recent resolved holds (mixed).
+    mockDb.assignmentHold.findMany
+      .mockResolvedValueOnce([
+        { jobRequest: { customerId: 'customer-a' } },
+        { jobRequest: { customerId: 'customer-b' } },
+        { jobRequest: { customerId: 'customer-c' } },
+        { jobRequest: { customerId: 'customer-d' } },
+        { jobRequest: { customerId: 'customer-e' } },
+        { jobRequest: { customerId: 'customer-f' } },
+      ])
+      .mockResolvedValueOnce([
+        { status: 'REJECTED', outcomeReasonCode: 'TECHNICIAN_REJECTED_OFFER' },
+        { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+        { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+      ])
     mockDb.matchAttempt.findMany.mockResolvedValue([])
     mockDb.provider.findUnique.mockResolvedValue(null)
     mockDb.provider.update.mockResolvedValue({

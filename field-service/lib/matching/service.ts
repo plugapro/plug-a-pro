@@ -572,14 +572,29 @@ async function safeOptionalMutation<T>(factory: () => Promise<T>, fallback: T): 
 
 async function pauseProviderAfterRepeatedOfferTimeouts(providerId: string) {
   const since = new Date(Date.now() - OFFER_TIMEOUT_PAUSE_WINDOW_HOURS * 60 * 60 * 1000)
-  const timeoutCount = await db.assignmentHold.count({
+  const timeoutHolds = await db.assignmentHold.findMany({
     where: {
       providerId,
       status: 'EXPIRED',
       outcomeReasonCode: 'OFFER_TIMEOUT',
       respondedAt: { gte: since },
     },
+    select: { jobRequest: { select: { customerId: true } } },
   })
+  const timeoutCount = timeoutHolds.length
+
+  // Abuse guard: a single customer (or competitor) must not be able to force a
+  // provider offline by spamming targeted job requests and letting the offers
+  // expire. Only auto-pause when the timeouts originate from a diverse set of
+  // customers, which is the signal of genuine provider unresponsiveness rather
+  // than a targeted availability attack.
+  const distinctTimeoutCustomers = new Set(
+    timeoutHolds
+      .map((hold) => hold.jobRequest?.customerId)
+      .filter((id): id is string => Boolean(id)),
+  )
+  const MIN_DISTINCT_CUSTOMERS_FOR_PAUSE = 2
+  const hasDiverseCustomers = distinctTimeoutCustomers.size >= MIN_DISTINCT_CUSTOMERS_FOR_PAUSE
 
   const recentResolvedHolds = await db.assignmentHold.findMany({
     where: {
@@ -599,6 +614,13 @@ async function pauseProviderAfterRepeatedOfferTimeouts(providerId: string) {
 
   if (timeoutCount < OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD && !hasConsecutiveTimeouts) {
     return { paused: false, timeoutCount }
+  }
+
+  // Even when thresholds are met, do not pause unless the timeouts came from
+  // multiple distinct customers — prevents a single actor from weaponising the
+  // auto-pause to take a competitor offline.
+  if (!hasDiverseCustomers) {
+    return { paused: false, timeoutCount, reason: 'INSUFFICIENT_CUSTOMER_DIVERSITY' }
   }
 
   const isHardPause = timeoutCount >= OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD
@@ -932,10 +954,14 @@ function getMissingRequiredCertifications(
       .map((cert) => normalizeTag(cert.certificationCode)),
   )
 
-  // WS-B.1 ProviderCertification records - verified (verifiedAt set) certs by name
+  // WS-B.1 ProviderCertification records - verified (verifiedAt set) certs by name.
+  // An expired certification (expiresAt in the past) must NOT satisfy a regulated
+  // requirement, so reject any record whose expiresAt has elapsed.
+  const now = new Date()
   const adminVerifiedCerts = new Set(
     (provider.adminCertifications ?? [])
       .filter((cert) => cert.verifiedAt != null)
+      .filter((cert) => cert.expiresAt == null || cert.expiresAt >= now)
       .map((cert) => normalizeTag(cert.name)),
   )
 
@@ -1011,10 +1037,13 @@ function providerCoversAddress(
     )
     if (exactMatch) return { covers: true, tier: 'SUBURB_EXACT' }
 
-    // Tier 2b - REGION_FALLBACK: provider covers the same region
+    // Tier 2b - REGION_FALLBACK: provider has an actual REGION coverage row for
+    // the same region. A SUBURB row that merely carries a denormalised regionKey
+    // must NOT confer region-wide coverage — otherwise a provider who configured a
+    // single suburb would receive leads across the whole region.
     if (address.regionKey != null) {
       const regionMatch = activeAreas.some(
-        (area) => area.regionKey === address.regionKey,
+        (area) => area.areaType === 'REGION' && area.regionKey === address.regionKey,
       )
       if (regionMatch) return { covers: true, tier: 'REGION_FALLBACK' }
     }
@@ -1404,7 +1433,7 @@ async function loadMatchingContext(jobRequestId: string) {
   }
 
   // WS-B.1 ProviderCertification + ProviderEquipment batch fetch
-  type AdminCertRow = { providerId: string; name: string; verifiedAt: Date | null }
+  type AdminCertRow = { providerId: string; name: string; verifiedAt: Date | null; expiresAt: Date | null }
   type AdminEquipRow = { providerId: string; label: string; category: string | null; active: boolean }
 
   const [adminCertRows, adminEquipRows] = await Promise.all([
@@ -1412,7 +1441,8 @@ async function loadMatchingContext(jobRequestId: string) {
       () =>
         (db as any).providerCertification?.findMany?.({
           where: { providerId: { in: providerIds } },
-          select: { providerId: true, name: true, verifiedAt: true },
+          // expiresAt is required so hasRequiredCertifications can reject expired certs.
+          select: { providerId: true, name: true, verifiedAt: true, expiresAt: true },
         }) ?? Promise.resolve([]),
       [] as AdminCertRow[],
     ),
