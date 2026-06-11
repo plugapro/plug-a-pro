@@ -186,6 +186,10 @@ function errorPayload(params: {
   traceId: string
   phone?: string
   countryCode?: string
+  // `providerId` is accepted by callers for parity with the server-side logging
+  // context, but it is deliberately NOT echoed back in the client response below
+  // (finding b1d8b6de): leaking an internal provider ID to an unauthenticated
+  // caller aids account enumeration. It stays in server logs only.
   providerId?: string
   status: number
 }) {
@@ -214,7 +218,6 @@ function errorPayload(params: {
         time: timestamp(),
         phoneMasked: maskPhone(params.phone),
         countryCode: params.countryCode,
-        providerId: params.providerId,
       },
     },
     { status: params.status },

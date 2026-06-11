@@ -270,7 +270,11 @@ jobs:
           LOCAL_SMOKE_REQUIRE_COMPONENTS='db,auth.supabase_env_complete,whatsapp,payments' \
           pnpm smoke:local
         env:
-          E2E_BASE_URL: ${{ vars.FIELD_SERVICE_E2E_BASE_URL || secrets.E2E_BASE_URL }}
+          # SECURITY (finding 85d4a2cb): prefer the PROTECTED secret over the repo
+          # variable so a less-trusted actor who can edit variables cannot redirect
+          # admin smoke credentials to an attacker-controlled host. playwright.config.ts
+          # additionally enforces a hostname allowlist on the resolved base URL.
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL || vars.FIELD_SERVICE_E2E_BASE_URL }}
 
       - name: Run smoke tests
         run: |
@@ -280,7 +284,10 @@ jobs:
           pnpm exec playwright test e2e/smoke.spec.ts
         working-directory: field-service
         env:
-          E2E_BASE_URL: ${{ vars.FIELD_SERVICE_E2E_BASE_URL || secrets.E2E_BASE_URL }}
+          # SECURITY (finding 85d4a2cb): protected secret takes precedence over the
+          # repo variable so admin smoke credentials cannot be redirected to an
+          # attacker-controlled host via a variable override.
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL || vars.FIELD_SERVICE_E2E_BASE_URL }}
           E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
           E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 

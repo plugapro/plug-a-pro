@@ -2,24 +2,30 @@ import { normalizePhone } from './utils'
 
 export const INTERNAL_TEST_COHORT_NAME = 'internal_staff_test'
 
-// Bootstrap list - seeds Customer.isTestUser / Provider.isTestUser when those
-// rows are first created. The DB flags are authoritative once a row exists;
-// adding/removing test users at runtime should be done by flipping the DB flag,
-// not by editing this list. We still consult the list as a fallback for
-// recipients whose DB row hasn't been loaded into the cohort context yet.
-export const INTERNAL_TEST_PHONE_NUMBERS = [
-  '+27773923802',
-  '+27764010810',
-  '+27823035070',
-  '+27832114183',
-  '+27824978565',
-  '+27827006695',
-  '+27738131154',
-] as const
+// SECURITY (finding ca4b71d2): internal staff phone numbers are POPIA-regulated
+// PII and must NOT be hard-coded in source/build artifacts. The bootstrap list is
+// now sourced from environment variables (comma/whitespace separated, E.164):
+//   INTERNAL_TEST_PHONE_NUMBERS="+27...,+27..."
+//   INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS="+27..."
+// The DB isTestUser flags remain authoritative once a row exists; this list is
+// only a fallback for recipients whose DB row hasn't been loaded into the cohort
+// context yet. Adding/removing test users at runtime should flip the DB flag.
+function parsePhoneListEnv(raw: string | undefined): readonly string[] {
+  if (!raw) return []
+  const seen = new Set<string>()
+  for (const token of raw.split(/[\s,]+/)) {
+    const normalized = normalizePhone(token)
+    if (normalized) seen.add(normalized)
+  }
+  return Object.freeze([...seen])
+}
 
-export const INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS = [
-  '+27764010810',
-] as const
+export const INTERNAL_TEST_PHONE_NUMBERS: readonly string[] = parsePhoneListEnv(
+  process.env.INTERNAL_TEST_PHONE_NUMBERS,
+)
+
+export const INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS: readonly string[] =
+  parsePhoneListEnv(process.env.INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS)
 
 export const INTERNAL_TEST_ONBOARDING_CREDITS = 10
 

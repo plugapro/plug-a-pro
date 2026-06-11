@@ -93,7 +93,12 @@ const PUBLIC_UNSIGNED_LEGACY_LEAD_ROUTE = /^\/leads\/[^/]+$/
 const EXACT_PUBLIC_PATHS = new Set([
   '/api/security/otp/report',
   '/api/security/otp/step-up/ack',
-  '/api/security/otp/verify-failed',
+  // NOTE (finding d3930a40): '/api/security/otp/verify-failed' is intentionally
+  // NOT public. It consumes the shared verifyByPhone rate-limit bucket, so an
+  // unauthenticated caller who knows a provider's phone number could otherwise
+  // exhaust OTP_VERIFY_LIMIT_PER_PHONE_HOUR and lock out legitimate verification.
+  // The route now requires a session cookie or CRON_SECRET before consuming the
+  // bucket; the proxy keeps it behind the session gate as defence in depth.
 ])
 
 // Routes that require provider role

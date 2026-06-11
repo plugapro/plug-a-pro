@@ -948,9 +948,11 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(res.status).toBe(502)
     expect(body.error).toMatchObject({
       code: 'OTP_DELIVERY_FAILED',
-      providerId: 'prov-1',
       step: 'Worker portal send-code',
     })
+    // SECURITY (finding b1d8b6de): the internal provider ID must never be echoed
+    // back to an unauthenticated caller — it aids account enumeration.
+    expect(body.error).not.toHaveProperty('providerId')
     expect(body.error.traceId).toMatch(/^auth_/)
   })
 
@@ -977,7 +979,6 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(res.status).toBe(504)
     expect(body.error).toMatchObject({
       code: 'OTP_PROVIDER_TIMEOUT',
-      providerId: 'prov-1',
       step: 'Worker portal send-code',
     })
   })
@@ -1005,7 +1006,6 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(res.status).toBe(429)
     expect(body.error).toMatchObject({
       code: 'RATE_LIMITED',
-      providerId: 'prov-1',
       step: 'Worker portal send-code',
     })
   })
@@ -1033,7 +1033,6 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(res.status).toBe(401)
     expect(body.error).toMatchObject({
       code: 'OTP_PROVIDER_AUTH_FAILED',
-      providerId: 'prov-1',
       step: 'Worker portal send-code',
     })
   })
@@ -1067,7 +1066,6 @@ describe('POST /api/auth/provider/send-code', () => {
       expect(body.error).toMatchObject({
         code: 'AUTH_CONFIG_MISSING',
         title: "We couldn't send your login code.",
-        providerId: 'prov-1',
         step: 'Worker portal send-code',
       })
     } finally {
@@ -1099,7 +1097,6 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(res.status).toBe(502)
     expect(body.error).toMatchObject({
       code: 'OTP_PROVIDER_BAD_RESPONSE',
-      providerId: 'prov-1',
       step: 'Worker portal send-code',
     })
   })
@@ -1178,7 +1175,6 @@ describe('POST /api/auth/provider/send-code', () => {
     })
     expect(body.error).toMatchObject({
       code: 'AUTH_RESPONSE_INVALID',
-      providerId: 'prov-1',
       step: 'Worker portal send-code',
     })
   })
@@ -1204,7 +1200,6 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(res.status).toBe(503)
     expect(body.error).toMatchObject({
       code: 'AUTH_CONFIG_MISSING',
-      providerId: 'prov-1',
       step: 'Worker portal send-code',
     })
     expect(body.error.code).not.toBe('UNKNOWN_AUTH_ERROR')
@@ -1254,7 +1249,6 @@ describe('POST /api/auth/provider/send-code', () => {
       expect(res.status).toBe(expectedStatus)
       expect(body.error).toMatchObject({
         code: expectedCode,
-        providerId: 'prov-1',
         step: 'Worker portal send-code',
       })
     },

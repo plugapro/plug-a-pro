@@ -168,7 +168,6 @@ describe('proxy admin access', () => {
     '/security/checkpoint',
     '/security/otp/report?token=report-token',
     '/api/security/otp/report',
-    '/api/security/otp/verify-failed',
     '/api/locations/search?q=Roodepoort',
     '/api/locations/provinces',
     '/api/locations/cities?provinceKey=gauteng',
@@ -209,6 +208,19 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBe(
       'http://localhost/sign-in?callbackUrl=%2Fbookings&next=%2Fbookings',
     )
+  })
+
+  it('does not expose OTP verify-failed telemetry as a public route (finding d3930a40)', async () => {
+    // The telemetry endpoint consumes the shared verifyByPhone rate-limit bucket,
+    // so an unauthenticated caller could otherwise exhaust a provider's verify
+    // limit. It must stay behind the session gate; the handler additionally
+    // requires a session or CRON_SECRET before consuming any bucket.
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/security/otp/verify-failed'))
+
+    expect(res.status).toBe(307)
+    expect(mockGetUser).not.toHaveBeenCalled()
   })
 
   it('keeps non-canonical nested legacy lead routes protected by login', async () => {
@@ -517,14 +529,15 @@ describe('proxy admin access', () => {
     const { proxy } = await import('../proxy')
 
     const report = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/report'))
+    // verify-failed is intentionally NOT public (finding d3930a40): it consumes
+    // the shared verify-limit bucket, so unauthenticated callers must be gated.
     const verifyFailed = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/verify-failed'))
     const stepUp = await proxy(new NextRequest('https://admin.plugapro.co.za/api/security/otp/step-up/ack'))
     const stepUpNormalHost = await proxy(new NextRequest('https://app.plugapro.co.za/api/security/otp/step-up/ack'))
 
     expect(report.status).toBe(200)
     expect(report.headers.get('location')).toBeNull()
-    expect(verifyFailed.status).toBe(200)
-    expect(verifyFailed.headers.get('location')).toBeNull()
+    expect(verifyFailed.status).toBe(307)
     expect(stepUp.status).toBe(200)
     expect(stepUp.headers.get('location')).toBeNull()
     expect(stepUpNormalHost.status).toBe(200)

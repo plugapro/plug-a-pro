@@ -61,13 +61,39 @@ if (TEST_ONLY) {
   whereCommon.isTestRequest = true
 }
 
+function databaseUrlHostname(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
 function refuseIfProductionHost() {
   const url = process.env.DATABASE_URL ?? ''
   if (!url) {
     console.error('DATABASE_URL is not set — refusing to run.')
     process.exit(1)
   }
+
+  // Primary guard (finding 817d8454): compare the DATABASE_URL hostname against an
+  // explicit, configurable PRODUCTION_DB_HOST. Supabase pooled production URLs do
+  // not contain "prod"/"live" substrings, so the substring heuristic below is not
+  // sufficient on its own. Setting PRODUCTION_DB_HOST in the production environment
+  // makes this script refuse to run there even with --i-know-what-im-doing.
+  const productionHost = process.env.PRODUCTION_DB_HOST?.trim().toLowerCase()
+  const currentHost = databaseUrlHostname(url)
+  if (productionHost && currentHost && currentHost === productionHost) {
+    console.error(
+      `DATABASE_URL host "${currentHost}" matches PRODUCTION_DB_HOST. Refusing to run — this is a hard block.`,
+    )
+    process.exit(2)
+  }
+
   if (FORCE_PROD) return
+
+  // Secondary best-effort heuristic for environments where PRODUCTION_DB_HOST is
+  // not configured.
   const lowered = url.toLowerCase()
   const productionHints = ['prod', 'production', 'live', 'app.plugapro']
   if (productionHints.some((hint) => lowered.includes(hint))) {
@@ -164,11 +190,30 @@ async function main() {
   }
 
   const ids = candidates.map((jr) => jr.id)
-  const result = await db.jobRequest.deleteMany({
-    where: { id: { in: ids } },
+
+  // SECURITY (finding 817d8454): re-apply the FULL selection predicate (status,
+  // assignmentMode, match:null, test-only) in the same transaction as the delete,
+  // not just the previously collected IDs. A record can change between selection
+  // and deletion (e.g. a match is created, status advances); restricting the
+  // DELETE to `id IN (ids) AND <whereCommon>` ensures we never delete a row that
+  // no longer satisfies the original filter.
+  const result = await db.$transaction(async (tx) => {
+    return tx.jobRequest.deleteMany({
+      where: {
+        AND: [
+          { id: { in: ids } },
+          whereCommon as NonNullable<Parameters<typeof tx.jobRequest.deleteMany>[0]>['where'],
+        ],
+      } as NonNullable<Parameters<typeof tx.jobRequest.deleteMany>[0]>['where'],
+    })
   })
 
   console.log(`\nDeleted ${result.count} job requests.`)
+  if (result.count !== ids.length) {
+    console.log(
+      `Note: ${ids.length - result.count} candidate(s) no longer matched the filter at delete time and were skipped.`,
+    )
+  }
   await db.$disconnect()
 }
 

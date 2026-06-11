@@ -31,6 +31,18 @@ const prisma = new PrismaClient()
 // Appliances | Electrical | DIY & Assembly | Roofing
 
 async function main() {
+  // SECURITY (finding 981b2f79): this seed creates a demo-ready dataset including
+  // verified fake providers and a quote with a hard-coded, publicly guessable
+  // approvalToken ("seed-quote-token-001"). It must NEVER run against production.
+  // Public quote endpoints look up quotes by approvalToken without authentication,
+  // so seeding production would expose a guessable public quote/job and pollute
+  // real data with fake verified providers.
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+    throw new Error(
+      'Seed script must not run in production. Refusing to seed demo data into a production database.',
+    )
+  }
+
   await seedLocationNodes(prisma)
 
   // ── Customers ────────────────────────────────────────────────────────────────
