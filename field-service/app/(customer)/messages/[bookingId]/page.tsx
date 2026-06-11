@@ -64,6 +64,13 @@ export default async function MessageThreadPage({
     const sess = await getSess()
     if (!sess) redirect(`/sign-in?next=/messages/${bookingId}`)
 
+    // Re-check the feature flag at the action layer. Page-level gating is not
+    // sufficient: a stale rendered form or a direct server-action invocation
+    // could otherwise send a WhatsApp message while the feature is disabled.
+    const { isEnabled: isFlagEnabled } = await import('@/lib/flags')
+    const sendFlagEnabled = await isFlagEnabled('customer.messaging.v1', { userId: sess.id })
+    if (!sendFlagEnabled) redirect('/bookings')
+
     const { resolveCustomerForSession: resolveCust } = await import('@/lib/customer-session')
     const { db: database } = await import('@/lib/db')
     const cust = await resolveCust(database, sess)

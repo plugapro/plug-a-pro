@@ -55,7 +55,11 @@ export default async function AdminQuoteQueuePage() {
       amount: true,
       createdAt: true,
       validUntil: true,
-      approvalToken: true,
+      // Quote.approvalToken is a customer bearer secret: holding it lets anyone
+      // accept / request-revision on the customer's behalf via /quotes/{token}.
+      // It must never be surfaced in operational queues. Admins act through
+      // their own session-authorized actions below (claim / approve / decline /
+      // send), so the token is not needed here.
       approvalWhatsappSentAt: true,
       notes: true,
       description: true,
@@ -210,7 +214,6 @@ export default async function AdminQuoteQueuePage() {
           {quotes.map((quote) => {
             const assignment = assignments.get(quote.id)
             const claimedByCurrentUser = assignment?.claimedById === admin.id
-            const quotePageUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/quotes/${quote.approvalToken}`
             const expired = quote.validUntil ? quote.validUntil < now : false
             const customerNotNotified =
               Boolean(quote.approvalWhatsappSentAt) && !quoteIdsWithCustomerNotification.has(quote.id)
@@ -312,11 +315,6 @@ export default async function AdminQuoteQueuePage() {
                       </ActionForm>
                     )}
 
-                    <Button asChild size="sm">
-                      <Link href={quotePageUrl} target="_blank">
-                        Open approval page
-                      </Link>
-                    </Button>
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/admin/customers/${quote.match.jobRequest.customer.id}`}>Open customer</Link>
                     </Button>
