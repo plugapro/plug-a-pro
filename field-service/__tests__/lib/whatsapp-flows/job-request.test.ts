@@ -69,7 +69,18 @@ vi.mock('@/lib/location-nodes', () => ({
   getRegions: vi.fn(),
   getSuburbs: vi.fn(),
   getStructuredAddressSelection: vi.fn(),
+  // Anti-spoof parentage check (finding 3cc92366) - default to true so the happy
+  // path proceeds; individual tests override to false to assert rejection.
+  isSuburbChildOfRegion: vi.fn().mockResolvedValue(true),
   resolveSuburbNodeId: vi.fn(), // should NOT be called by new flow
+}))
+
+vi.mock('@/lib/customer-serviceability', () => ({
+  // Submit-time service-area re-check (finding 3cc92366) resolves the node to its
+  // regionKey; default to an active JHB West region so structured submits proceed.
+  resolveAreaScopeByNodeId: vi.fn().mockResolvedValue({
+    node: { id: 'sub_sandton', slug: '...sandton', label: 'Sandton', nodeType: 'SUBURB', provinceKey: 'gauteng', cityKey: 'johannesburg', regionKey: 'jhb_west' },
+  }),
 }))
 
 vi.mock('@/lib/whatsapp-interactive', () => ({
@@ -188,7 +199,9 @@ describe('WhatsApp job-request flow - structured address', () => {
     ;(locationNodes.getRegions as any).mockResolvedValue(REGIONS_JHB)
     ;(locationNodes.getSuburbs as any).mockResolvedValue(SUBURBS_JHB_NORTH)
     ;(locationNodes.getStructuredAddressSelection as any).mockResolvedValue(SANDTON_SELECTION)
+    ;(locationNodes.isSuburbChildOfRegion as any).mockResolvedValue(true)
     ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(true)
+    ;(serviceAreaGuard.isActiveRegion as any).mockReturnValue(true)
   })
 
   // ── 1. Province selection ──────────────────────────────────────────────────
@@ -389,6 +402,18 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(wa.sendList).toHaveBeenCalledWith(PHONE, expect.stringContaining('Johannesburg'), expect.any(Array), expect.any(Object))
     })
 
+    it('waitlists and does not advance when the selected region is inactive (finding 95726512)', async () => {
+      // Untrusted rgn__ id for an out-of-area region must be gated server-side
+      // even though renderRegionList only displays active regions.
+      ;(serviceAreaGuard.isActiveRegion as any).mockReturnValue(false)
+
+      const result = await handleJobRequestFlow(makeCtx('addr_select_region', 'rgn__rgn_north', undefined, baseData))
+
+      expect(result.nextStep).toBe('done')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalled()
+      expect(locationNodes.getSuburbs).not.toHaveBeenCalled()
+    })
+
     it('transitions to addr_select_suburb on valid region selection', async () => {
       const result = await handleJobRequestFlow(makeCtx('addr_select_region', 'rgn__rgn_north', undefined, baseData))
 
@@ -420,6 +445,19 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(result.nextStep).toBe('addr_select_suburb')
       expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
       expect(wa.sendList).toHaveBeenCalledWith(PHONE, expect.stringContaining('JHB North'), expect.any(Array), expect.any(Object))
+    })
+
+    it('rejects a spoofed suburb id that is not a child of the confirmed region (finding 3cc92366)', async () => {
+      // A crafted/stale sub__ id for an out-of-area suburb must be rejected before
+      // resolution, so getStructuredAddressSelection is never reached.
+      ;(locationNodes.isSuburbChildOfRegion as any).mockResolvedValue(false)
+
+      const result = await handleJobRequestFlow(makeCtx('addr_select_suburb', 'sub__sub_elsewhere', undefined, baseData))
+
+      expect(result.nextStep).toBe('addr_select_suburb')
+      expect(locationNodes.isSuburbChildOfRegion).toHaveBeenCalledWith('sub_elsewhere', 'rgn_north')
+      expect(locationNodes.getStructuredAddressSelection).not.toHaveBeenCalled()
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
     })
 
     it('derives postalCode and locationNodeId from the suburb node, never from typed input', async () => {

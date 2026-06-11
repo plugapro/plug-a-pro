@@ -421,6 +421,29 @@ export async function getStructuredAddressSelection(
   }
 }
 
+/**
+ * Confirms that a SUBURB node is a direct child of the given REGION node.
+ * Used to reject spoofed WhatsApp `sub__<id>` list-row ids that point at a suburb
+ * outside the region the customer previously confirmed (finding 3cc92366).
+ * Returns false when either id is missing, the suburb is inactive, or the suburb's
+ * parentId does not match the expected region id.
+ */
+export async function isSuburbChildOfRegion(
+  suburbNodeId: string | null | undefined,
+  regionNodeId: string | null | undefined,
+): Promise<boolean> {
+  const suburbId = suburbNodeId?.trim()
+  const regionId = regionNodeId?.trim()
+  if (!suburbId || !regionId) return false
+
+  const node = await db.locationNode.findFirst({
+    where: { id: suburbId, nodeType: 'SUBURB', active: true },
+    select: { parentId: true },
+  })
+
+  return node?.parentId === regionId
+}
+
 export async function getStructuredAddressSelectionBySlug(
   slug: string,
 ): Promise<StructuredAddressSelection | null> {

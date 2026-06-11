@@ -30,11 +30,13 @@ import {
   getRegions,
   getSuburbs,
   getStructuredAddressSelection,
+  isSuburbChildOfRegion,
 } from '../location-nodes'
 import {
   resolveStructuredAddressCapture,
   InvalidStructuredAddressError,
 } from '../structured-address'
+import { resolveAreaScopeByNodeId } from '../customer-serviceability'
 import {
   deduplicateWhatsAppSavedAddresses,
   phoneLookupVariants,
@@ -50,6 +52,7 @@ import {
 } from '../client-request-data'
 import { normalizeCustomerName } from '../customer-name'
 import {
+  CustomerBlockedError,
   DuplicateActiveRequestError,
   JobRequestPhotoLinkError,
 } from '../job-requests/create-job-request'
@@ -961,6 +964,29 @@ async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'addr_select_region' }
     }
 
+    // Server-side service-area gate (finding 95726512): renderRegionList only
+    // *displays* active regions, but the inbound list-row id is untrusted. Enforce
+    // isActiveRegion() on the resolved region so a crafted/stale rgn__ id for an
+    // out-of-area region cannot proceed to suburb selection. Waitlist instead.
+    if (!isActiveRegion(selected.regionKey)) {
+      await addToServiceAreaWaitlist({
+        phone: ctx.phone,
+        name: ctx.data.customerName ?? null,
+        category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+        suburb: selected.label,
+        city: cityLabel,
+        province: ctx.data.addrProvinceLabel ?? null,
+        source: 'whatsapp',
+      }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+      await sendText(
+        ctx.phone,
+        `Thanks for your interest! 🙏🏽\n\n` +
+        `We're not active in *${selected.label}* just yet, but we're expanding fast.\n\n` +
+        `We've saved your details and will send you a WhatsApp the moment Plug A Pro goes live in your area. 🚀`,
+      )
+      return { nextStep: 'done' }
+    }
+
     const ok = await renderSuburbList(ctx.phone, selected.id, selected.label, 0)
     if (!ok) {
       await sendText(ctx.phone, `😔 No suburbs available in *${selected.label}* yet. Please choose a different area.`)
@@ -994,6 +1020,22 @@ async function handleAddrSelectSuburb(ctx: FlowContext): Promise<FlowResult> {
 
   if (ctx.reply.id?.startsWith('sub__')) {
     const suburbId = ctx.reply.id.slice(5) // strip 'sub__'
+
+    // Anti-spoof gate (finding 3cc92366): WhatsApp list-row ids are untrusted.
+    // Before resolving the suburb, confirm it is a direct child of the region the
+    // customer previously confirmed (addrRegionId). This blocks a crafted/stale
+    // sub__<id> for an out-of-area suburb from passing the city/region gate.
+    const belongsToConfirmedRegion = await isSuburbChildOfRegion(suburbId, regionId)
+    if (!belongsToConfirmedRegion) {
+      console.warn('[job-request-flow] suburb selection rejected - not a child of confirmed region', {
+        phone: maskedPhone(ctx.phone),
+        regionId,
+      })
+      await sendText(ctx.phone, '❗ Please *choose from the list* above.')
+      await renderSuburbList(ctx.phone, regionId, regionLabel, ctx.data.addrPage ?? 0)
+      return { nextStep: 'addr_select_suburb' }
+    }
+
     const selection = await getStructuredAddressSelection(suburbId)
 
     if (!selection) {
@@ -1450,18 +1492,54 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_photos' }
     }
 
-    if (photoMediaIds.includes(ctx.reply.mediaId)) {
-      if (!ctx.suppressCustomerPhotoProgress) {
-        await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+    // Concurrency mitigation (finding 09336394): WhatsApp webhook processing is
+    // not serialized per phone, so multiple media messages can each see the same
+    // once-loaded ctx.data snapshot and all pass the cap check. Re-read the
+    // authoritative persisted conversation state and merge it with the in-memory
+    // snapshot so the count and dedup converge on shared state across parallel
+    // handlers BEFORE we download/store and create an Attachment row. This narrows
+    // the race window; the fully atomic DB constraint + per-phone advisory lock at
+    // the Attachment-insert boundary is deferred to whatsapp-bot.ts/whatsapp-media.ts.
+    let mergedAttachmentIds = photoAttachmentIds
+    let mergedMediaIds = photoMediaIds
+    try {
+      const persisted = await db.conversation.findUnique({
+        where: { phone: ctx.phone },
+        select: { data: true },
+      })
+      const persistedData = (persisted?.data ?? {}) as {
+        photoAttachmentIds?: unknown[]
+        photoMediaIds?: unknown[]
       }
-      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
+      mergedAttachmentIds = uniqueStrings([
+        ...photoAttachmentIds,
+        ...((persistedData.photoAttachmentIds ?? []) as Array<string | null | undefined>),
+      ])
+      mergedMediaIds = uniqueStrings([
+        ...photoMediaIds,
+        ...((persistedData.photoMediaIds ?? []) as Array<string | null | undefined>),
+      ])
+    } catch (readErr) {
+      // Persisted-state read failed - fall back to the in-memory snapshot. Worst
+      // case the legacy (looser) behaviour applies for this one message.
+      console.warn('[job-request-flow:handleCollectPhotos] persisted photo-state read failed', {
+        phone: maskedPhone(ctx.phone),
+        error: readErr instanceof Error ? readErr.message : String(readErr),
+      })
     }
 
-    if (photoAttachmentIds.length >= MAX_CUSTOMER_PHOTOS) {
+    if (mergedMediaIds.includes(ctx.reply.mediaId)) {
       if (!ctx.suppressCustomerPhotoProgress) {
-        await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+        await sendCustomerPhotoProgress(ctx.phone, mergedAttachmentIds.length)
       }
-      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: mergedAttachmentIds, photoMediaIds: mergedMediaIds } }
+    }
+
+    if (mergedAttachmentIds.length >= MAX_CUSTOMER_PHOTOS) {
+      if (!ctx.suppressCustomerPhotoProgress) {
+        await sendCustomerPhotoProgress(ctx.phone, mergedAttachmentIds.length)
+      }
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: mergedAttachmentIds, photoMediaIds: mergedMediaIds } }
     }
 
     try {
@@ -1471,8 +1549,10 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
         label: 'customer_photo',
         maxSizeBytes: MAX_CUSTOMER_PHOTO_BYTES,
       })
-      const updated = uniqueStrings([...photoAttachmentIds, attachmentId]).slice(0, MAX_CUSTOMER_PHOTOS)
-      const updatedMediaIds = uniqueStrings([...photoMediaIds, ctx.reply.mediaId])
+      // Build on the merged (persisted ∪ in-memory) ids so concurrent handlers do
+      // not each re-add against a stale snapshot and overshoot MAX_CUSTOMER_PHOTOS.
+      const updated = uniqueStrings([...mergedAttachmentIds, attachmentId]).slice(0, MAX_CUSTOMER_PHOTOS)
+      const updatedMediaIds = uniqueStrings([...mergedMediaIds, ctx.reply.mediaId])
 
       if (!ctx.suppressCustomerPhotoProgress) {
         await sendCustomerPhotoProgress(ctx.phone, updated.length)
@@ -1570,6 +1650,33 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
           return { nextStep: 'collect_address_street' }
         }
         throw err
+      }
+
+      // Final service-area re-check (finding 3cc92366): re-derive the region from
+      // the RESOLVED suburb node and confirm it is still active before creating the
+      // request. Defends against a spoofed/stale node id slipping past the earlier
+      // per-step gates. Out-of-area submissions are waitlisted, not created.
+      const submitAreaScope = await resolveAreaScopeByNodeId(resolvedAddr.locationNodeId).catch(() => null)
+      if (
+        !isInActiveServiceArea(resolvedAddr.city) ||
+        !isActiveRegion(submitAreaScope?.node.regionKey ?? '')
+      ) {
+        await addToServiceAreaWaitlist({
+          phone: ctx.phone,
+          name: ctx.data.customerName ?? null,
+          category: ctx.data.selectedCategory ?? ctx.data.category ?? category ?? null,
+          suburb: resolvedAddr.suburb,
+          city: resolvedAddr.city,
+          province: resolvedAddr.province,
+          source: 'whatsapp',
+        }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+        await sendText(
+          ctx.phone,
+          `Thanks for your interest! 🙏🏽\n\n` +
+          `We're not active in *${resolvedAddr.suburb}* just yet, but we're expanding fast.\n\n` +
+          `We've saved your details and will send you a WhatsApp the moment Plug A Pro goes live in your area. 🚀`,
+        )
+        return { nextStep: 'done' }
       }
 
       result = await createJobRequest({
@@ -1731,6 +1838,22 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         )
       }
       return { nextStep: 'done', nextData: { jobRequestId: err.existingId, customerId: err.customerId } }
+    }
+
+    // Blocked / deactivated / suspended customers (finding 776df3b1): surface a
+    // friendly message instead of the generic retry copy so a restricted account
+    // cannot keep retrying request submission through WhatsApp.
+    if (err instanceof CustomerBlockedError) {
+      console.info('[job-request-flow] blocked customer request submission rejected', {
+        customerId: err.customerId,
+        reason: err.reason,
+        phone: maskedPhone(ctx.phone),
+      })
+      await sendText(
+        ctx.phone,
+        'Your account is currently restricted and cannot submit new requests. Please contact support if you believe this is a mistake.',
+      ).catch(() => {})
+      return { nextStep: 'done' }
     }
 
     if (err instanceof JobRequestPhotoLinkError) {

@@ -43,6 +43,11 @@ const BASE_REQUEST = {
   status: 'PENDING_VALIDATION',
   assignmentMode: 'OPS_REVIEW',
   category: 'Plumbing',
+  // Customer-deferred requests created via the self-service flow always carry a
+  // customer-channel source. The ops-validation guard (finding 5dd66cbd) requires
+  // this so a customer cannot self-approve an ops/admin-held PENDING_VALIDATION
+  // request into OPEN.
+  source: 'pwa',
   customer: { phone: '+27821234567' },
 }
 
@@ -136,6 +141,22 @@ describe('selectCustomerRequestMatchingMode', () => {
     await expect(
       selectCustomerRequestMatchingMode({ requestId: 'jr-1', customerId: 'cust-other', mode: 'quick_match' }),
     ).rejects.toThrow(RequestMatchingModeError)
+  })
+
+  it('ops-held PENDING_VALIDATION (non-customer source) cannot be self-approved into OPEN (finding 5dd66cbd)', async () => {
+    // Request was placed in the ops validation queue, not via the customer's own
+    // self-service deferred-consent flow (no pwa/whatsapp source). The customer
+    // must not be able to self-approve it into OPEN and trigger matching.
+    mockJobRequest.findUnique.mockResolvedValue({ ...BASE_REQUEST, source: 'ops_review' })
+
+    const { selectCustomerRequestMatchingMode, RequestMatchingModeError } = await import('@/lib/request-matching-mode')
+
+    await expect(
+      selectCustomerRequestMatchingMode({ requestId: 'jr-1', customerId: 'cust-1', mode: 'quick_match' }),
+    ).rejects.toThrow(RequestMatchingModeError)
+
+    expect(mockJobRequest.update).not.toHaveBeenCalled()
+    expect(mockOrchestrateMatch).not.toHaveBeenCalled()
   })
 
   it('throws REQUEST_NOT_EDITABLE for a MATCHED request', async () => {

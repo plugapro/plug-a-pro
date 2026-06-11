@@ -41,6 +41,7 @@ const BASE_REQUEST = {
   id: 'jr-fast-1',
   customerId: 'cust-1',
   status: 'PENDING_VALIDATION',
+  source: 'pwa',
   assignmentMode: 'OPS_REVIEW',
   category: 'plumbing',
   customer: { phone: '+27821234567' },
