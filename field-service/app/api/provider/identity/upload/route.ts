@@ -127,10 +127,15 @@ function clientIp(request: NextRequest): string {
 }
 
 function tokenFromRequest(request: NextRequest): string | null {
-  const queryToken = new URL(request.url).searchParams.get('token')?.trim()
-  if (queryToken) return queryToken
+  // Prefer the header so JS callers keep the token out of the URL (and access logs).
+  // Fall back to the ?token= query param for the no-JS multipart upload form in
+  // app/provider/verify/[token]/page.tsx, which cannot set request headers. The
+  // verification token is short-lived and scoped, so the bounded URL-log exposure
+  // on the no-JS path is an accepted trade-off for upload reliability on basic devices.
   const headerToken = request.headers.get('x-provider-verification-token')?.trim()
-  return headerToken || null
+  if (headerToken) return headerToken
+  const queryToken = new URL(request.url).searchParams.get('token')?.trim()
+  return queryToken || null
 }
 
 function isIdentityDocumentKind(value: string): value is IdentityDocumentKind {
