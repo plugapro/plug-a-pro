@@ -10,6 +10,17 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    // SECURITY (finding ca4b71d2): the internal-test cohort is sourced from env
+    // at module import time (see lib/internal-test-cohort.ts). Real staff numbers
+    // are NEVER committed. Tests use SYNTHETIC reserved-style numbers, set here so
+    // they are present at process LAUNCH (the module reads env on import, before
+    // any test body runs). Keep these in sync with the synthetic numbers used as
+    // inputs in the cohort-aware test files.
+    env: {
+      INTERNAL_TEST_PHONE_NUMBERS:
+        '+27000000001,+27000000002,+27000000003,+27000000004,+27000000005,+27000000006,+27000000009',
+      INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS: '+27000000009',
+    },
     exclude: ['e2e/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',

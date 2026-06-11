@@ -174,7 +174,7 @@ describe('OTP rate limiting', () => {
       checkPublicProviderSendCodeLimit,
     } = await import('@/lib/rate-limit')
 
-    const phone = '+27823035070'
+    const phone = '+27000000002'
 
     await expect(checkOtpSendLimit({ phone, ip: '203.0.113.30' })).resolves.toEqual({ ok: true })
     await expect(checkOtpSendLimit({ phone, ip: '203.0.113.31' })).resolves.toEqual({ ok: true })
