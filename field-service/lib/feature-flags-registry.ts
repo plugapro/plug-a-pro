@@ -282,6 +282,18 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'kyc.fee_accrual.enabled': {
+    description:
+      'Master switch for the once-off KYC recovery fee. When ON, a KYC_FEE_ACCRUED ledger row is booked when a provider reaches kycStatus VERIFIED, and an active KycCampaign may sponsor it. When OFF, verification transitions book nothing.',
+    owner: 'prod',
+    defaultValue: false,
+  },
+  'admin.kyc_campaigns': {
+    description:
+      'Enable the /admin/kyc-campaigns page and its mutations (create/activate/pause/close campaigns, manual grant/revoke of KYC sponsorships).',
+    owner: 'ops',
+    defaultValue: false,
+  },
 
   // ─── Pilot - post-job review flow ────────────────────────────────────────────
   'pilot.completion-check': {
