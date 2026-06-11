@@ -6,6 +6,7 @@ const {
   mockCreateJobRequest,
   mockResolveStructuredAddressCapture,
   mockIsInActiveServiceArea,
+  mockIsActiveRegion,
   mockAddToServiceAreaWaitlist,
   mockNotifyCustomerPwaRequestSubmitted,
   mockUploadJobRequestPhoto,
@@ -21,6 +22,7 @@ const {
   mockCreateJobRequest: vi.fn(),
   mockResolveStructuredAddressCapture: vi.fn(),
   mockIsInActiveServiceArea: vi.fn(),
+  mockIsActiveRegion: vi.fn(),
   mockAddToServiceAreaWaitlist: vi.fn(),
   mockNotifyCustomerPwaRequestSubmitted: vi.fn(),
   mockUploadJobRequestPhoto: vi.fn(),
@@ -43,13 +45,18 @@ vi.mock('@/lib/db', () => ({
     jobRequest: { count: mockJobRequestCount },
   },
 }))
-vi.mock('@/lib/job-requests/create-job-request', () => ({ createJobRequest: mockCreateJobRequest }))
+vi.mock('@/lib/job-requests/create-job-request', () => ({
+  createJobRequest: mockCreateJobRequest,
+  DuplicateActiveRequestError: class DuplicateActiveRequestError extends Error {},
+  CustomerBlockedError: class CustomerBlockedError extends Error {},
+}))
 vi.mock('@/lib/structured-address', () => ({
   InvalidStructuredAddressError: class InvalidStructuredAddressError extends Error {},
   resolveStructuredAddressCapture: mockResolveStructuredAddressCapture,
 }))
 vi.mock('@/lib/service-area-guard', () => ({
   isInActiveServiceArea: mockIsInActiveServiceArea,
+  isActiveRegion: mockIsActiveRegion,
   addToServiceAreaWaitlist: mockAddToServiceAreaWaitlist,
 }))
 vi.mock('@/lib/client-pwa-submission-notifications', () => ({
@@ -105,6 +112,7 @@ describe('POST /api/customer/bookings — west-rand pilot gate', () => {
       locationNodeId: 'node-1',
     })
     mockIsInActiveServiceArea.mockReturnValue(true)
+    mockIsActiveRegion.mockReturnValue(true)
     mockCreateJobRequest.mockResolvedValue({
       jobRequestId: 'jr-1',
       customerId: 'cust-1',

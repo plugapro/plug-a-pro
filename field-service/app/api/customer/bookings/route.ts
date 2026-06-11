@@ -10,6 +10,7 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import {
   createJobRequest,
+  CustomerBlockedError,
   DuplicateActiveRequestError,
 } from '@/lib/job-requests/create-job-request'
 import {
@@ -17,7 +18,7 @@ import {
   resolveStructuredAddressCapture,
 } from '@/lib/structured-address'
 import { isEnabled } from '@/lib/flags'
-import { isInActiveServiceArea, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
+import { isInActiveServiceArea, isActiveRegion, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 import { uploadJobRequestPhoto } from '@/lib/storage'
 import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-notifications'
 import { canonicalizeServiceCategoryValue } from '@/lib/service-category-canonicalization'
@@ -259,6 +260,26 @@ export async function POST(req: NextRequest) {
     // locationNodeId doesn't resolve.
     const areaScope = await resolveAreaScopeByNodeId(resolvedAddress.locationNodeId).catch(() => null)
 
+    // Server-side region gate (finding 95726512): the city-label check above
+    // passes every Johannesburg suburb, but the active service area is restricted
+    // to specific regionKeys (e.g. jhb_west). Re-derive the region from the
+    // RESOLVED node and enforce isActiveRegion() so out-of-area JHB suburbs are
+    // waitlisted instead of creating a job request. This runs independently of the
+    // pilot flag so it cannot be bypassed by submitting a stale/crafted node id.
+    const resolvedRegionKey = areaScope?.node.regionKey ?? ''
+    if (!isActiveRegion(resolvedRegionKey)) {
+      await addToServiceAreaWaitlist({
+        phone: session.phone!,
+        city: resolvedAddress.city,
+        province: resolvedAddress.province,
+        suburb: resolvedAddress.suburb,
+        category: canonicalCategory,
+        source: 'pwa',
+      }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
+
+      return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
+    }
+
     // West Rand pilot gate (launch.west_rand_pilot.enabled):
     // Layered defence on top of the legacy serviceability check below — when the
     // master flag is OFF, checkPilotGate is a no-op. When ON, rejects non-pilot
@@ -463,6 +484,19 @@ export async function POST(req: NextRequest) {
           existingStatus: err.existingStatus,
         },
         { status: 409 },
+      )
+    }
+    // Blocked / deactivated / suspended customers (finding 776df3b1): surface a
+    // user-friendly 403 rather than a generic 500 so abusive accounts cannot keep
+    // generating operational load and provider notifications.
+    if (err instanceof CustomerBlockedError) {
+      return NextResponse.json(
+        {
+          error: 'ACCOUNT_RESTRICTED',
+          message:
+            'Your account is currently restricted and cannot submit new requests. Please contact support if you believe this is a mistake.',
+        },
+        { status: 403 },
       )
     }
     console.error('[bookings] createJobRequest failed', err)

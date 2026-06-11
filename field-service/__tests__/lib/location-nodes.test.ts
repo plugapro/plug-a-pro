@@ -7,6 +7,7 @@ import {
   resolveStructuredAddressByLabels,
   searchNodes,
   resolveSuburbNodeId,
+  isSuburbChildOfRegion,
   createLocationNode,
   updateLocationNode,
   deactivateLocationNode,
@@ -620,5 +621,39 @@ describe('updateLocationNode', () => {
       where: { id: 'node-1' },
       data: { label: 'Greenstone Hill' },
     })
+  })
+})
+
+describe('isSuburbChildOfRegion (finding 3cc92366 anti-spoof)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns true when the active suburb node is a direct child of the region', async () => {
+    mockDb.locationNode.findFirst.mockResolvedValue({ parentId: 'rgn-1' })
+
+    await expect(isSuburbChildOfRegion('sub-1', 'rgn-1')).resolves.toBe(true)
+    expect(mockDb.locationNode.findFirst).toHaveBeenCalledWith({
+      where: { id: 'sub-1', nodeType: 'SUBURB', active: true },
+      select: { parentId: true },
+    })
+  })
+
+  it('returns false when the suburb parent does not match the expected region', async () => {
+    mockDb.locationNode.findFirst.mockResolvedValue({ parentId: 'rgn-other' })
+
+    await expect(isSuburbChildOfRegion('sub-1', 'rgn-1')).resolves.toBe(false)
+  })
+
+  it('returns false when the suburb node is missing or inactive', async () => {
+    mockDb.locationNode.findFirst.mockResolvedValue(null)
+
+    await expect(isSuburbChildOfRegion('sub-1', 'rgn-1')).resolves.toBe(false)
+  })
+
+  it('returns false (no DB call) when either id is empty', async () => {
+    await expect(isSuburbChildOfRegion('', 'rgn-1')).resolves.toBe(false)
+    await expect(isSuburbChildOfRegion('sub-1', null)).resolves.toBe(false)
+    expect(mockDb.locationNode.findFirst).not.toHaveBeenCalled()
   })
 })

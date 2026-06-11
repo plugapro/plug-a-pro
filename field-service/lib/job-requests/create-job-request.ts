@@ -187,33 +187,6 @@ export async function createJobRequest(
     throw new Error('PHONE_ROLE_CONFLICT_PROVIDER')
   }
 
-  // West Rand pilot gate (defence-in-depth). When master flag is OFF this is
-  // a no-op. When ON, rejects non-pilot suburbs / categories before any DB
-  // write so internal callers (WhatsApp flow, rebook, admin tools) cannot
-  // bypass the customer-facing API gate.
-  if (params.locationNodeId) {
-    const areaScope = await resolveAreaScopeByNodeId(params.locationNodeId).catch(() => null)
-    const pilotGate = await checkPilotGate({
-      suburbSlug: areaScope?.node.slug ?? null,
-      rawCategory: params.category,
-    })
-    if (!pilotGate.ok) {
-      throw new PilotGateError(pilotGate.code)
-    }
-  } else {
-    // No locationNodeId: still run the gate so a non-pilot category is rejected
-    // even when the caller didn't supply structured location data.
-    const pilotGate = await checkPilotGate({
-      suburbSlug: null,
-      rawCategory: params.category,
-    })
-    if (!pilotGate.ok && pilotGate.code === 'pilot.category_not_supported') {
-      throw new PilotGateError(pilotGate.code)
-    }
-    // suburb_not_supported when locationNodeId is null is too eager — leave it
-    // to the caller-side checks (booking API has already enforced suburb).
-  }
-
   const categoryRequirements = await resolveCategoryRequirements({
     category: params.category,
     requiredCertificationCodes: params.requiredCertificationCodes,
@@ -228,8 +201,36 @@ export async function createJobRequest(
     city:     locality.city,
     province: locality.province,
   })
+  // Resolve the SUBURB node up-front. Legacy / WhatsApp paths pass
+  // locationNodeId: null, so fall back to resolving by suburb + city label. The
+  // resolved node is what we gate on below so those paths can't bypass the pilot
+  // suburb restriction (finding 892271a9).
   const resolvedLocationNodeId =
     params.locationNodeId ?? (await resolveSuburbNodeId(locality.suburb, locality.city))
+
+  // West Rand pilot gate (defence-in-depth). When master flag is OFF this is
+  // a no-op. When ON, rejects non-pilot suburbs / categories before any DB
+  // write so internal callers (WhatsApp flow, rebook, admin tools) cannot
+  // bypass the customer-facing API gate.
+  //
+  // ALWAYS run the full gate against the RESOLVED node id (not just when the
+  // caller supplied a structured locationNodeId). Previously the suburb gate was
+  // skipped whenever params.locationNodeId was null, which let legacy /
+  // createDraftRequest / WhatsApp callers create requests in any suburb as long
+  // as the category was allow-listed (finding 892271a9).
+  {
+    const areaScope = resolvedLocationNodeId
+      ? await resolveAreaScopeByNodeId(resolvedLocationNodeId).catch(() => null)
+      : null
+    const pilotGate = await checkPilotGate({
+      suburbSlug: areaScope?.node.slug ?? null,
+      rawCategory: params.category,
+    })
+    if (!pilotGate.ok) {
+      throw new PilotGateError(pilotGate.code)
+    }
+  }
+
   const requestRef = params.requestRef?.trim() || buildRequestRef()
   const initialAssignmentMode =
     params.assignmentMode ?? (params.deferMatchingModeSelection ? 'OPS_REVIEW' : 'AUTO_ASSIGN')

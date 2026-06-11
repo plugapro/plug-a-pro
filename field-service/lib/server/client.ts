@@ -1,6 +1,8 @@
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { createJobRequest } from '@/lib/job-requests/create-job-request'
+import { checkPilotGate } from '@/lib/customer-serviceability'
+import { PilotGateError } from '@/lib/launch/errors'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { getSession } from '@/lib/auth'
 import { processQuoteDecision } from '@/lib/quotes'
@@ -145,6 +147,25 @@ export async function saveDraftRequest(
   const auth = await getAuthenticatedCustomerContext()
   if (!auth || !(await ensureCustomerOwnsRequest(id, auth.customer.id))) {
     throw new Error('Unauthorized')
+  }
+
+  // Re-run the West Rand pilot gate on category changes (finding 892271a9).
+  // createJobRequest gates the category at creation time, but a draft's category
+  // can be patched here afterwards; without this re-check a customer could create
+  // an allowed-category draft and then switch it to a non-pilot category. When the
+  // master pilot flag is OFF, checkPilotGate is a no-op.
+  if (patch.category) {
+    const existingRequest = await db.jobRequest.findFirst({
+      where: requestWithCustomerWhere(id, auth.customer.id),
+      select: { address: { select: { locationNode: { select: { slug: true } } } } },
+    })
+    const pilotGate = await checkPilotGate({
+      suburbSlug: existingRequest?.address?.locationNode?.slug ?? null,
+      rawCategory: patch.category,
+    })
+    if (!pilotGate.ok) {
+      throw new PilotGateError(pilotGate.code)
+    }
   }
 
   const data: Prisma.JobRequestUpdateInput = {}

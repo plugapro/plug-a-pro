@@ -180,6 +180,7 @@ export async function selectCustomerRequestMatchingMode(params: {
       status: true,
       assignmentMode: true,
       category: true,
+      source: true,
       customer: { select: { phone: true } },
     },
   })
@@ -193,6 +194,30 @@ export async function selectCustomerRequestMatchingMode(params: {
 
   if (['MATCHED', 'CANCELLED', 'EXPIRED'].includes(request.status)) {
     throw new RequestMatchingModeError('REQUEST_NOT_EDITABLE', 'Request is no longer editable.')
+  }
+
+  // Ops-validation guard (finding 5dd66cbd): JobRequest.status === PENDING_VALIDATION
+  // is overloaded to mean both (a) the customer-deferred "waiting for matching-mode
+  // selection" state and (b) the ops-review validation queue. A customer must only
+  // be able to self-approve the FORMER. Requests created via the customer's own
+  // self-service deferred-consent flow carry a recognised customer-channel source
+  // (pwa / whatsapp); anything placed in PENDING_VALIDATION without such a source
+  // (e.g. an ops/admin/system hold for genuine review) must stay in the admin
+  // queue and cannot be customer-approved into OPEN here.
+  const CUSTOMER_SELF_SERVICE_SOURCES = new Set(['pwa', 'whatsapp'])
+  const isCustomerDeferredRequest = CUSTOMER_SELF_SERVICE_SOURCES.has(
+    (request.source ?? '').trim().toLowerCase(),
+  )
+  if (request.status === 'PENDING_VALIDATION' && !isCustomerDeferredRequest) {
+    console.info('[matching-mode] rejected - pending_validation not customer-deferred', {
+      requestId: request.id,
+      source: request.source ?? null,
+      mode: params.mode,
+    })
+    throw new RequestMatchingModeError(
+      'REQUEST_NOT_EDITABLE',
+      'This request is under review and cannot be changed right now.',
+    )
   }
 
   const targetAssignmentMode = params.mode === 'quick_match' ? 'AUTO_ASSIGN' : 'OPS_REVIEW'
