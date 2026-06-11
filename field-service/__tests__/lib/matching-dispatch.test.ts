@@ -24,6 +24,14 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 vi.mock('@/lib/whatsapp', () => ({
   sendJobOffer: mockSendJobOffer,
 }))
+// Consent gate: dispatch now routes the MARKETING quick_match_provider_lead_offer
+// template through canSend(). These tests exercise dispatch mechanics, so the
+// policy is mocked to allow; the suppression-on-opt-out behaviour is covered by
+// its own test below.
+const mockCanSend = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/whatsapp-policy', () => ({
+  canSend: mockCanSend,
+}))
 vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderZeroBalanceLeadAvailable: mockNotifyZeroBalance,
 }))
@@ -53,6 +61,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     mockSendJobOffer.mockResolvedValue('wamid-template')
     mockSendButtons.mockResolvedValue('wamid-buttons')
     mockNotifyZeroBalance.mockResolvedValue(undefined)
+    mockCanSend.mockResolvedValue({ allowed: true })
   })
 
   it('sends the approved provider lead template and preserves accept/decline actions', async () => {
@@ -279,5 +288,63 @@ describe('dispatchMatchLead WhatsApp notification', () => {
         }),
       }),
     )
+  })
+
+  it('suppresses the MARKETING quick-match lead when the provider opted out of marketing WhatsApps', async () => {
+    // The quick_match_provider_lead_offer template is MARKETING; a provider who
+    // opted out must not receive the lead notification or its action buttons.
+    mockCanSend.mockResolvedValue({ allowed: false, reason: 'marketing_opted_out' })
+    const { dispatchMatchLead } = await import('@/lib/matching/dispatch')
+
+    await dispatchMatchLead({
+      jobRequest: {
+        id: 'jr-1',
+        category: 'plumbing',
+        title: 'Leaking pipe',
+        description: 'Pipe leaking under the sink',
+        requestedWindowStart: null,
+        requestedWindowEnd: null,
+        requestedArrivalLatest: null,
+        estimatedDurationMinutes: null,
+        requiredSkillTags: [],
+        requiredCertificationCodes: [],
+        requiredEquipmentTags: [],
+        requiredVehicleTypes: [],
+        preferredProviderId: null,
+        assignmentMode: 'AUTO_ASSIGN',
+        customerAcceptedAmount: null,
+        customerAcceptedScope: null,
+        autoCreateBookingOnAssignment: false,
+        status: 'OPEN',
+        expiresAt: new Date('2026-05-05T12:00:00.000Z'),
+        address: { suburb: 'ruimsig' },
+      },
+      hold: { id: 'hold-1', expiresAt: new Date('2026-04-28T12:15:00.000Z') },
+      provider: {
+        id: 'provider-1',
+        name: 'Sipho',
+        phone: '+27820000000',
+        skills: ['plumbing'],
+        serviceAreas: ['Sandton'],
+        maxTravelMinutes: 60,
+        reliabilityScore: 0.8,
+        averageRating: 4.5,
+        active: true,
+        verified: true,
+        availableNow: true,
+        lastKnownLat: null,
+        lastKnownLng: null,
+        isOnline: null,
+        liveLocationLat: null,
+        liveLocationLng: null,
+        lastHeartbeatAt: null,
+        scoreBase: 0.8,
+        fromPool: true,
+      },
+    })
+
+    expect(mockCanSend).toHaveBeenCalledWith('+27820000000', 'quick_match_provider_lead_offer')
+    expect(mockSendJobOffer).not.toHaveBeenCalled()
+    expect(mockSendButtons).not.toHaveBeenCalled()
   })
 })

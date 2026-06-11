@@ -2168,6 +2168,94 @@ export async function runAssignmentForJobRequest(params: {
   }
 }
 
+type RotationEligibilityResult =
+  | { ok: true }
+  | { ok: false; reason: 'PROVIDER_LOCKED' | 'ALREADY_HELD' | 'AT_CAPACITY' | 'JOB_NO_LONGER_OPEN' | 'TRANSACTION_FAILED' }
+
+/**
+ * Atomically re-applies the same eligibility gate as reserveBestProviderAtomically()
+ * before a rotated Quick Match offer is created. The first offer in a Quick Match
+ * queue passes through reserveBestProviderAtomically(); rotated offers (after a
+ * decline/timeout) previously skipped these checks and could leak a signed lead +
+ * safe-preview job details to a provider who had since become unavailable, was
+ * already holding another job, was over capacity, or whose job was no longer OPEN.
+ *
+ * On success the provider's activeHolds counter is incremented inside the same
+ * transaction so capacity accounting stays consistent with the reservation path.
+ * Callers MUST release the capacity (releaseProviderCapacity) if the subsequent
+ * offer write fails, mirroring reserveBestProviderAtomically's contract.
+ */
+async function reserveRotationCandidateAtomically(params: {
+  jobRequestId: string
+  providerId: string
+}): Promise<RotationEligibilityResult> {
+  try {
+    const result = await db.$transaction(
+      async (tx) => {
+        // 1. Lock the provider row (SKIP LOCKED = fail fast, don't queue)
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM "providers"
+          WHERE id = ${params.providerId}
+            AND active = true
+          FOR UPDATE SKIP LOCKED
+        `
+        if (locked.length === 0) return { reason: 'PROVIDER_LOCKED' as const }
+
+        // 2. No active hold created since the queue was ranked
+        const existingHold = await tx.assignmentHold.findFirst({
+          where: {
+            providerId: params.providerId,
+            status: 'ACTIVE',
+            expiresAt: { gt: new Date() },
+          },
+          select: { id: true },
+        })
+        if (existingHold) return { reason: 'ALREADY_HELD' as const }
+
+        // 3. Capacity guard
+        const capacity = await tx.providerCapacity.findUnique({
+          where: { providerId: params.providerId },
+          select: { activeHolds: true, maxConcurrent: true },
+        })
+        if (capacity && capacity.activeHolds >= capacity.maxConcurrent) {
+          return { reason: 'AT_CAPACITY' as const }
+        }
+
+        // 4. Job must still be open for matching (OPEN or MATCHING - the rotation
+        //    runs after a prior hold released, where the job sits in MATCHING).
+        const job = await tx.jobRequest.findUnique({
+          where: { id: params.jobRequestId },
+          select: { status: true },
+        })
+        if (job?.status !== 'OPEN' && job?.status !== 'MATCHING') {
+          return { reason: 'JOB_NO_LONGER_OPEN' as const }
+        }
+
+        // 5. Reserve capacity in the same transaction as the eligibility checks.
+        await tx.providerCapacity.upsert({
+          where: { providerId: params.providerId },
+          create: { providerId: params.providerId, activeHolds: 1, activeJobs: 0, maxConcurrent: 2 },
+          update: { activeHolds: { increment: 1 }, updatedAt: new Date() },
+        })
+
+        return { ok: true as const }
+      },
+      { timeout: 5_000, isolationLevel: 'ReadCommitted' }
+    )
+
+    if ('ok' in result && result.ok) return { ok: true }
+    if ('reason' in result) return { ok: false, reason: result.reason }
+    return { ok: false, reason: 'TRANSACTION_FAILED' }
+  } catch (err) {
+    console.error('[reserveRotationCandidateAtomically] transaction failed', {
+      providerId: params.providerId,
+      jobRequestId: params.jobRequestId,
+      err,
+    })
+    return { ok: false, reason: 'TRANSACTION_FAILED' }
+  }
+}
+
 async function offerNextRankedCandidate(params: {
   jobRequestId: string
   dispatchDecisionId: string
@@ -2181,46 +2269,99 @@ async function offerNextRankedCandidate(params: {
     orderBy: { rankedPosition: 'asc' },
   })
 
-  const nextAttempt = attempts.find((attempt) => attempt.stage === 'RANKED')
-  if (!nextAttempt) {
+  const rankedAttempts = attempts.filter((attempt) => attempt.stage === 'RANKED')
+
+  // Walk the remaining ranked queue, skipping any candidate that no longer
+  // passes the reservation eligibility gate. Rotated offers must enforce the
+  // SAME checks as the first offer (provider lock / active holds / capacity /
+  // job still open) so a provider who became ineligible after the queue was
+  // built never receives a signed lead or safe-preview job details.
+  for (const nextAttempt of rankedAttempts) {
+    const eligibility = await reserveRotationCandidateAtomically({
+      jobRequestId: params.jobRequestId,
+      providerId: nextAttempt.providerId,
+    })
+
+    if (!eligibility.ok) {
+      await db.matchAttempt.update({
+        where: { id: nextAttempt.id },
+        data: { stage: 'SKIPPED', reasonCode: eligibility.reason },
+      }).catch((err) =>
+        console.error('[offerNextRankedCandidate] failed to mark skipped attempt', {
+          jobRequestId: params.jobRequestId,
+          providerId: nextAttempt.providerId,
+          matchAttemptId: nextAttempt.id,
+          err,
+        })
+      )
+      emitMatchEvent({
+        event: 'reservation.failed',
+        jobRequestId: params.jobRequestId,
+        providerId: nextAttempt.providerId,
+        reason: eligibility.reason,
+      })
+      // JOB_NO_LONGER_OPEN means the whole request moved on (assigned/cancelled/
+      // expired) - stop rotating immediately rather than offering later candidates.
+      if (eligibility.reason === 'JOB_NO_LONGER_OPEN') break
+      continue
+    }
+
     await db.dispatchDecision.update({
       where: { id: params.dispatchDecisionId },
-      data: { status: 'NO_MATCH', nextRetryAt: null },
+      data: {
+        retryCount: { increment: 1 },
+        nextRetryAt: new Date(Date.now() + MATCHING_CONFIG.retryDelayMinutes * 60_000),
+      },
     })
-    // Quick Match queue exhausted - terminate the request instead of reopening
-    // it for a fresh ranking loop. Use expireOpenJobRequest for guarded expiry.
-    const { transitioned } = await expireOpenJobRequest(
-      params.jobRequestId,
-      'quick_match_queue_exhausted',
-    )
-    console.info('[offerNextRankedCandidate] queue exhausted', {
-      jobRequestId: params.jobRequestId,
-      dispatchDecisionId: params.dispatchDecisionId,
-      transitioned,
-    })
-    return { nextOfferedProviderId: null, assignmentHoldId: null }
+
+    try {
+      const offer = await createOfferForAttempt({
+        dispatchDecisionId: params.dispatchDecisionId,
+        jobRequestId: params.jobRequestId,
+        matchAttemptId: nextAttempt.id,
+        providerId: nextAttempt.providerId,
+        actor: params.actor ?? { actorId: 'system', actorRole: 'system' },
+      })
+
+      return {
+        nextOfferedProviderId: nextAttempt.providerId,
+        assignmentHoldId: offer.hold.id,
+      }
+    } catch (err) {
+      // The eligibility gate already incremented the capacity counter; release it
+      // so a failed offer does not permanently consume the provider's capacity.
+      await releaseProviderCapacity(nextAttempt.providerId).catch(() => undefined)
+      await db.matchAttempt.update({
+        where: { id: nextAttempt.id },
+        data: { stage: 'SKIPPED', reasonCode: 'OFFER_CREATE_FAILED' },
+      }).catch(() => undefined)
+      console.error('[offerNextRankedCandidate] createOfferForAttempt failed - rotating to next candidate', {
+        jobRequestId: params.jobRequestId,
+        providerId: nextAttempt.providerId,
+        matchAttemptId: nextAttempt.id,
+        err,
+      })
+      // PROVIDER_PREVIOUSLY_DECLINED and similar guards throw - continue rotation.
+      continue
+    }
   }
 
+  // No eligible ranked candidate remained - terminate the request instead of
+  // reopening it for a fresh ranking loop. Use expireOpenJobRequest for guarded expiry.
   await db.dispatchDecision.update({
     where: { id: params.dispatchDecisionId },
-    data: {
-      retryCount: { increment: 1 },
-      nextRetryAt: new Date(Date.now() + MATCHING_CONFIG.retryDelayMinutes * 60_000),
-    },
+    data: { status: 'NO_MATCH', nextRetryAt: null },
   })
-
-  const offer = await createOfferForAttempt({
-    dispatchDecisionId: params.dispatchDecisionId,
+  const { transitioned } = await expireOpenJobRequest(
+    params.jobRequestId,
+    'quick_match_queue_exhausted',
+  )
+  console.info('[offerNextRankedCandidate] queue exhausted', {
     jobRequestId: params.jobRequestId,
-    matchAttemptId: nextAttempt.id,
-    providerId: nextAttempt.providerId,
-    actor: params.actor ?? { actorId: 'system', actorRole: 'system' },
+    dispatchDecisionId: params.dispatchDecisionId,
+    transitioned,
   })
-
-  return {
-    nextOfferedProviderId: nextAttempt.providerId,
-    assignmentHoldId: offer.hold.id,
-  }
+  return { nextOfferedProviderId: null, assignmentHoldId: null }
 }
 
 export async function acceptAssignmentOffer(params: {

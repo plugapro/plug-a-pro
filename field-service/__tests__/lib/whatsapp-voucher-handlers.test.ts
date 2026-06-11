@@ -14,6 +14,7 @@ vi.mock('@/lib/db', () => {
       auditLog: { create: vi.fn().mockResolvedValue({}) },
       lead: { findMany: vi.fn(), findUnique: vi.fn() },
       job: { findMany: vi.fn(), findUnique: vi.fn() },
+      inboundWhatsAppMessage: { findMany: vi.fn().mockResolvedValue([]), update: vi.fn().mockResolvedValue({}) },
       $transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(txClient)),
     },
   }
@@ -327,6 +328,39 @@ describe('WhatsApp voucher redemption handlers', () => {
         expect.stringContaining('PAP-7KQ9-M2XD'),
       )
       expect(result.nextStep).toBe('pj_credits')
+    })
+
+    it('redacts the raw voucher code from the persisted inbound_whatsapp_messages record', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+        makeActiveProvider(),
+      )
+      ;(voucherRedemption.redeemVoucher as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
+        creditsAwarded: 1,
+        ledgerEntryId: 'l_1',
+        canonical: 'PAP-7KQ9-M2XD',
+      })
+      ;(db.inboundWhatsAppMessage.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'inb_1', payload: { from: PHONE, type: 'text', text: { body: 'PAP-7KQ9-M2XD' } } },
+      ])
+
+      await handleProviderJourneyFlow(
+        makeCtx('pj_redeem_voucher_awaiting_code', 'PAP-7KQ9-M2XD'),
+      )
+
+      // The stored plaintext body + payload text must be overwritten with a marker.
+      expect(db.inboundWhatsAppMessage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ phone: PHONE, body: 'PAP-7KQ9-M2XD' }) }),
+      )
+      expect(db.inboundWhatsAppMessage.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'inb_1' },
+          data: expect.objectContaining({
+            body: '[redacted voucher code]',
+            payload: expect.objectContaining({ text: { body: '[redacted voucher code]' } }),
+          }),
+        }),
+      )
     })
 
     it('invalid code, redeemVoucher returns ok:false → sends mapped error message → returns pj_credits', async () => {
