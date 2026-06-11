@@ -195,6 +195,7 @@ model LocationNode {
   addresses              Address[]
   customerAddresses      CustomerAddress[]
   candidatePool          CandidatePool[]
+  kycCampaigns           KycCampaign[]
 
   @@index([nodeType, active])
   @@index([provinceKey, nodeType])
@@ -305,6 +306,8 @@ model Provider {
   voucherRedemptionAttempts            VoucherRedemptionAttempt[]
   identityVerifications                ProviderIdentityVerification[]
   identityVerificationPilotAllowlist   ProviderIdentityVerificationPilotAllowlist[]
+  kycSponsorships                      KycSponsorship[]
+  kycFeeLedgerEntries                  KycFeeLedgerEntry[]
 
   @@index([active, verified])
   @@index([isTestUser])
@@ -1509,6 +1512,107 @@ model VoucherRedemptionAttempt {
   @@map("voucher_redemption_attempts")
 }
 
+// ─── Launch KYC campaigns & fee ledger ───────────────────────────────────────
+// The KYC recovery fee is rand-denominated (cents) and deliberately kept OUT
+// of the integer credit wallet (1 credit = R50; the R20 fee is not a clean
+// credit amount). Outstanding fee = last entry's balanceAfterCents.
+
+enum KycCampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum KycSponsorshipStatus {
+  CONSUMED
+  REVERSED
+}
+
+enum KycFeeLedgerReason {
+  KYC_FEE_ACCRUED
+  KYC_FEE_SPONSORED
+  KYC_FEE_RECOVERED
+  KYC_FEE_WAIVED
+  KYC_FEE_REVERSED
+}
+
+model KycCampaign {
+  id                String            @id @default(cuid())
+  name              String
+  campaignCode      String            @unique
+  status            KycCampaignStatus @default(DRAFT)
+  // Area scope: null = global. Node level (PROVINCE/CITY/REGION/SUBURB) defines match granularity.
+  locationNodeId    String?
+  startsAt          DateTime
+  endsAt            DateTime?
+  maxSponsoredCount Int
+  // Cached counter; authoritative count = KycSponsorship rows with status CONSUMED.
+  sponsoredCount    Int               @default(0)
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  createdBy    AdminUser        @relation(fields: [createdById], references: [id])
+  locationNode LocationNode?    @relation(fields: [locationNodeId], references: [id])
+  sponsorships KycSponsorship[]
+
+  @@index([status, startsAt])
+  @@map("kyc_campaigns")
+}
+
+model KycSponsorship {
+  id             String               @id @default(cuid())
+  campaignId     String
+  providerId     String
+  verificationId String?
+  // SHA-256 identifier hash from the verified ID document — anti-fraud dedup:
+  // one human identity gets at most one sponsorship across all campaigns.
+  identifierHash String?
+  status         KycSponsorshipStatus @default(CONSUMED)
+  source         String // "system" | "admin"
+  feeCents       Int
+  grantedAt      DateTime             @default(now())
+  revokedAt      DateTime?
+  revokedById    String?
+  reason         String?
+
+  campaign KycCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  provider Provider    @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, providerId])
+  @@index([providerId])
+  @@index([identifierHash])
+  @@index([campaignId, status])
+  @@map("kyc_sponsorships")
+}
+
+model KycFeeLedgerEntry {
+  id                String             @id @default(cuid())
+  providerId        String
+  reason            KycFeeLedgerReason
+  // Always a positive cent amount; sign semantics come from `reason`
+  // (ACCRUED/REVERSED increase outstanding; SPONSORED/RECOVERED/WAIVED decrease).
+  amountCents       Int
+  balanceAfterCents Int
+  referenceType     String
+  referenceId       String
+  campaignId        String?
+  description       String?
+  idempotencyKey    String?            @unique
+  source            String? // "system" | "admin"
+  createdBy         String?
+  metadata          Json               @default("{}")
+  createdAt         DateTime           @default(now())
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, createdAt])
+  @@index([reason, createdAt])
+  @@index([campaignId, createdAt])
+  @@map("kyc_fee_ledger_entries")
+}
+
 model ProviderAutoApproveSideEffectMarker {
   id            String                              @id @default(cuid())
   kind          ProviderAutoApproveSideEffectKind
@@ -2658,6 +2762,7 @@ model AdminUser {
   auditEvents                  AdminAuditEvent[]
   voucherBatches               VoucherBatch[]
   issuedProviderResumeTokens   ProviderResumeToken[]
+  kycCampaigns                 KycCampaign[]
 
   @@map("admin_users")
 }
