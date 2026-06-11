@@ -238,7 +238,11 @@ describe('Didit verification admin actions', () => {
     )
   })
 
-  it('runs admin Didit persistence regardless of the new webhook feature flag', async () => {
+  it('skips admin Didit persistence when the persist_documents flag is disabled', async () => {
+    // Honour the operator persistence/backfill control: when
+    // provider.identity.vendor.didit.persist_documents is OFF, the admin
+    // refresh path must not download/store documents or redacted payloads,
+    // matching the webhook gate. The verdict still applies inside crudAction.
     mocks.mockIsEnabled.mockImplementation(async (key: string) => key === 'admin.crud.verifications')
     mocks.mockCrudAction.mockImplementationOnce(async (options) => ({
       ok: true,
@@ -251,6 +255,29 @@ describe('Didit verification admin actions', () => {
         decision: 'PASS',
         sourceCheckProvider: 'didit',
         vendorReference: 'sess-flag-off',
+        vendorWorkflowId: 'wf-auth',
+      })
+      .mockResolvedValueOnce({ id: 'ver-1', status: 'PASSED', decision: 'PASS' })
+
+    const result = await refreshDiditSessionAction({ verificationId: 'ver-1' })
+
+    expect(result).toEqual({ ok: true, status: 'PASSED', decision: 'PASS' })
+    expect(mocks.mockPersistDiditDecision).not.toHaveBeenCalled()
+  })
+
+  it('runs admin Didit persistence when the persist_documents flag is enabled', async () => {
+    mocks.mockIsEnabled.mockResolvedValue(true)
+    mocks.mockCrudAction.mockImplementationOnce(async (options) => ({
+      ok: true,
+      data: await options.run(options.input, {}),
+    }))
+    mocks.mockDb.providerIdentityVerification.findUnique
+      .mockResolvedValueOnce({
+        id: 'ver-1',
+        status: 'PASSED',
+        decision: 'PASS',
+        sourceCheckProvider: 'didit',
+        vendorReference: 'sess-flag-on',
         vendorWorkflowId: 'wf-auth',
       })
       .mockResolvedValueOnce({ id: 'ver-1', status: 'PASSED', decision: 'PASS' })

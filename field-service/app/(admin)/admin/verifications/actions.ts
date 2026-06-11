@@ -249,7 +249,13 @@ export async function retryIdentityVerificationWithVendorAction(input: ReviewInp
 
 export async function revealIdentityIdentifierAction(input: RevealIdentifierInput) {
   const admin = await requireAdmin()
-  const result = await crudAction<RevealIdentifierInput, { identifier: string }>({
+  // Hold the plaintext identifier in the action scope only. crudAction
+  // serializes the run() result into AuditLog.after and AdminAuditEvent.after,
+  // so the result must NOT contain the full POPIA identifier - the
+  // purpose-specific ProviderSensitiveDataAccessLog already records the full
+  // access event. The general audit trail records only that a reveal occurred.
+  let revealedIdentifier: string | null = null
+  const result = await crudAction<RevealIdentifierInput, { revealed: true; identifierLast4: string }>({
     entity: 'ProviderIdentityVerification',
     entityId: input.verificationId,
     action: 'provider_identity_verification.reveal_identifier',
@@ -267,6 +273,7 @@ export async function revealIdentityIdentifierAction(input: RevealIdentifierInpu
       }
 
       const identifier = decryptIdentifier(verification.identifierEncrypted)
+      revealedIdentifier = identifier
       await tx.providerSensitiveDataAccessLog.create({
         data: {
           verificationId: data.verificationId,
@@ -276,11 +283,11 @@ export async function revealIdentityIdentifierAction(input: RevealIdentifierInpu
         },
       })
 
-      return { identifier }
+      return { revealed: true as const, identifierLast4: identifier.slice(-4) }
     },
   })
 
-  return { ok: result.ok, identifier: result.data.identifier }
+  return { ok: result.ok, identifier: revealedIdentifier ?? '' }
 }
 
 export async function approveIdentityVerificationFormAction(formData: FormData) {
@@ -497,16 +504,23 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
   })
   if (!post) return { ok: false as const, error: 'not_found' as const }
 
-  try {
-    await persistDiditDecision(verification.id, refreshed.raw, { source: 'admin_refresh' })
-  } catch (error) {
-    await logDiditPersistFailed({
-      verificationId: verification.id,
-      status: post.status,
-      vendorReference: diditSessionReference,
-      source: 'admin_refresh',
-      error: errorMessage(error),
-    })
+  // Honour the operator persistence/backfill control: persistDiditDecision
+  // stores redacted raw payloads and downloads private identity documents.
+  // The webhook path gates this on provider.identity.vendor.didit.persist_documents
+  // and the admin refresh path must do the same so disabling the flag as a
+  // privacy or incident-response control cannot be bypassed via admin refresh.
+  if (await isEnabled('provider.identity.vendor.didit.persist_documents')) {
+    try {
+      await persistDiditDecision(verification.id, refreshed.raw, { source: 'admin_refresh' })
+    } catch (error) {
+      await logDiditPersistFailed({
+        verificationId: verification.id,
+        status: post.status,
+        vendorReference: diditSessionReference,
+        source: 'admin_refresh',
+        error: errorMessage(error),
+      })
+    }
   }
 
   revalidateVerificationPaths(input.verificationId)

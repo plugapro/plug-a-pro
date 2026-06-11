@@ -6,6 +6,7 @@ describe('cleanup-provider-identity-verifications', () => {
       id: 'ver-failed-1',
       providerId: 'provider-1',
       status: 'FAILED',
+      decision: 'FAIL',
       documents: [
         { id: 'doc-1', blobKey: 'supabase://identity-documents/identity/ver-failed-1/ID_FRONT.pdf' },
       ],
@@ -15,6 +16,7 @@ describe('cleanup-provider-identity-verifications', () => {
       id: 'ver-started-1',
       providerId: 'provider-1',
       status: 'STARTED',
+      decision: null,
       documents: [],
       securityEvents: [{ id: 'sec-1', eventType: 'IDENTITY_VERIFICATION_PILOT_BREACH' }],
     },
@@ -43,7 +45,11 @@ describe('cleanup-provider-identity-verifications', () => {
         providerId: 'provider-1',
         status: { not: 'PASSED' },
       },
-      include: {
+      select: {
+        id: true,
+        providerId: true,
+        status: true,
+        decision: true,
         documents: { select: { id: true, blobKey: true } },
         securityEvents: { select: { id: true, eventType: true, severity: true, status: true } },
       },
@@ -129,6 +135,8 @@ describe('cleanup-provider-identity-verifications', () => {
         action: 'provider_identity_verification.cleanup_delete',
         entityType: 'ProviderIdentityVerification',
         entityId: 'ver-failed-1',
+        // Only non-PII scalars - never the full verification row.
+        before: { id: 'ver-failed-1', status: 'FAILED', decision: 'FAIL' },
       }),
     })
     expect(deleteBlob).toHaveBeenCalledWith('supabase://identity-documents/identity/ver-failed-1/ID_FRONT.pdf')

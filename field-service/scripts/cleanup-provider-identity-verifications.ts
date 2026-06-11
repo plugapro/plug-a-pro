@@ -23,6 +23,7 @@ type CleanupVerificationRow = {
   id: string
   providerId: string | null
   status: string
+  decision: string | null
   documents: CleanupDocument[]
   securityEvents: CleanupSecurityEvent[]
 }
@@ -95,12 +96,21 @@ export async function planCleanup(params: {
   client?: PlanClient
 }): Promise<CleanupPlan> {
   const client = params.client ?? db
+  // Narrow scalar select: ProviderIdentityVerification carries sensitive KYC
+  // PII (identifier hashes/last4, encrypted identifiers, DOB/gender/citizenship
+  // derivations, redacted raw payloads). A bare `include` returns every scalar
+  // column, which executeCleanupPlan would copy verbatim into AuditLog.before.
+  // Select only the non-PII fields needed for the deletion plan + audit record.
   const targetRows = await client.providerIdentityVerification.findMany({
     where: {
       providerId: params.providerId,
       status: { not: params.keepStatus },
     },
-    include: {
+    select: {
+      id: true,
+      providerId: true,
+      status: true,
+      decision: true,
       documents: { select: { id: true, blobKey: true } },
       securityEvents: { select: { id: true, eventType: true, severity: true, status: true } },
     },
@@ -156,7 +166,9 @@ export async function executeCleanupPlan(
           action: 'provider_identity_verification.cleanup_delete',
           entityType: 'ProviderIdentityVerification',
           entityId: row.id,
-          before: row,
+          // Record only non-PII scalars in the general audit log. The full row
+          // (which can carry KYC PII) must never be copied into AuditLog.before.
+          before: { id: row.id, status: row.status, decision: row.decision },
           after: {
             providerId: plan.providerId,
             keptStatus: plan.keepStatus,

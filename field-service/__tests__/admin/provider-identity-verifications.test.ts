@@ -456,6 +456,11 @@ describe('admin identity verification actions', () => {
     expect(html).not.toContain('Refresh from Didit')
     expect(html).not.toContain('Full Didit decision')
     expect(html).toContain('TRUST access required')
+    // Identity-derived PII fields are restricted to TRUST-or-higher reviewers.
+    expect(html).not.toContain('Date of birth')
+    expect(html).not.toContain('Citizenship')
+    expect(html).not.toContain('Selfie match')
+    expect(html).not.toContain('****9087')
   })
 
   it('renders a warning when approval succeeds but provider notification fails', async () => {

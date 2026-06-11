@@ -19,11 +19,18 @@ const PERSISTABLE_STATUSES: ReadonlySet<VerificationStatus> = new Set([
   'NEEDS_MANUAL_REVIEW',
 ])
 const RAW_DOCUMENT_RETENTION_DAYS = 60
+// Keys whose string values are always a URL/token/link to sensitive identity
+// material and must never survive into rawPayloadRedacted. This set is the
+// fast path; isUrlBearingKey() below also catches unlisted/forward-compatible
+// vendor fields (e.g. file_url, download_url, media_url, document_link,
+// callback) via a broad substring/suffix match while preserving non-URL
+// metadata such as file_extension, link_id and *_quality_score.
 const URL_KEYS = new Set([
   'url',
   'uri',
   'href',
   'link',
+  'callback',
   'front_image_url',
   'frontImageUrl',
   'back_image_url',
@@ -565,17 +572,52 @@ function compactUndefined<T extends Record<string, unknown>>(value: T): T {
   ) as T
 }
 
+// Suffix/substring patterns for URL/token/link-bearing keys that are not (or
+// not yet) enumerated in URL_KEYS. Anchored to word boundaries so we redact
+// `file_url`, `download_url`, `media_url`, `document_link`, `selfie_callback`,
+// `*_token`, `*_href`, `*_redirect` etc. without clobbering benign metadata
+// like `file_extension`, `link_id`, `image_quality_score` or `image_count`.
+const URL_KEY_PATTERN = /(?:^|_)(url|uri|href|link|token|callback|redirect)$/i
+// http(s) link literals can carry signed KYC document / selfie / video tokens.
+// Value-based detection catches url-bearing keys we never enumerated (e.g.
+// `files: ["https://...token=..."]`) without misclassifying benign metadata
+// like file_extension:"jpg" or link_id:"didit-link-123".
+const URL_VALUE_PATTERN = /^\s*https?:\/\//i
+
+function isUrlBearingKey(key: string): boolean {
+  return URL_KEYS.has(key) || URL_KEY_PATTERN.test(key)
+}
+
+function looksLikeUrl(value: unknown): value is string {
+  return typeof value === 'string' && URL_VALUE_PATTERN.test(value)
+}
+
 function redactValue(value: unknown, key: string | null): unknown {
-  if (Array.isArray(value)) return value.map(item => redactValue(item, null))
+  if (Array.isArray(value)) {
+    // Preserve the parent key context so an unlisted URL key holding an array
+    // of links (e.g. extra_files / files: ["https://...token=..."]) is redacted
+    // by the same rule that covers the scalar case below.
+    if (key && isUrlBearingKey(key)) {
+      return value.map((item) => (typeof item === 'string' ? '[REDACTED_URL]' : redactValue(item, key)))
+    }
+    if (key && PII_KEYS.has(key)) {
+      return value.map((item) => (typeof item === 'string' ? hashToken(item) : redactValue(item, key)))
+    }
+    return value.map((item) => (looksLikeUrl(item) ? '[REDACTED_URL]' : redactValue(item, key)))
+  }
   if (!value || typeof value !== 'object') {
+    if (typeof value === 'string' && key && isUrlBearingKey(key)) return '[REDACTED_URL]'
+    if (looksLikeUrl(value)) return '[REDACTED_URL]'
     if (typeof value === 'string' && key && PII_KEYS.has(key)) return hashToken(value)
     return value
   }
 
   const out: Record<string, unknown> = {}
   for (const [nestedKey, nestedValue] of Object.entries(value as Record<string, unknown>)) {
-    if (URL_KEYS.has(nestedKey)) {
-      out[nestedKey] = '[REDACTED_URL]'
+    if (isUrlBearingKey(nestedKey)) {
+      out[nestedKey] = Array.isArray(nestedValue)
+        ? redactValue(nestedValue, nestedKey)
+        : '[REDACTED_URL]'
       continue
     }
     if (shouldHashPiiValue(nestedKey, key) && typeof nestedValue === 'string') {

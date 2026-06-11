@@ -59,6 +59,11 @@ export default async function AdminIdentityVerificationDetailPage({
   if (!verification) notFound()
 
   const canPreviewDocuments = roleAtLeast(admin.adminRole, 'TRUST')
+  // Identity-derived PII (DOB, gender, citizenship, document/identifier last4,
+  // biometric and document scores) is restricted to TRUST-or-higher reviewers,
+  // matching the document-preview and manual-review gates below. OPS/FINANCE
+  // see status and operational metadata only.
+  const canViewIdentityPii = roleAtLeast(admin.adminRole, 'TRUST')
   const approveAssurance = verification.channel === 'WHATSAPP' ? 'LOW' : 'HIGH'
   const webhookEvents = verification.webhookEvents ?? []
   const reviewMessage = reviewActionMessage(message)
@@ -116,17 +121,23 @@ export default async function AdminIdentityVerificationDetailPage({
                 value={verification.decisionAt ? formatDate(verification.decisionAt) : 'Not decided'}
               />
               <Field label="Liveness ref" value={verification.livenessSessionReference ?? 'None'} mono />
-              <Field label="Identifier" value={verification.identifierLast4 ? `****${verification.identifierLast4}` : 'Not captured'} mono />
-              <Field label="Document number" value={verification.documentNumberLast4 ? `****${verification.documentNumberLast4}` : 'Not captured'} mono />
-              <Field label="Date of birth" value={verification.dobDerived ? formatDateOnly(verification.dobDerived) : 'Not captured'} />
-              <Field label="Gender" value={verification.genderDerived ?? 'Not captured'} />
-              <Field label="Citizenship" value={verification.citizenshipDerived ?? 'Not captured'} />
-              <Field label="Issuing country" value={verification.issuingCountry ?? 'Not captured'} />
-              <Field label="Nationality" value={verification.nationality ?? 'Not captured'} />
-              <Field label="Document expiry" value={verification.documentExpiryDate ? formatDate(verification.documentExpiryDate) : 'Not captured'} />
-              <Field label="Document confidence" value={formatScore(verification.documentConfidenceScore)} />
-              <Field label="Liveness score" value={formatScore(verification.livenessScore)} />
-              <Field label="Selfie match" value={formatScore(verification.selfieMatchScore)} />
+              {canViewIdentityPii ? (
+                <>
+                  <Field label="Identifier" value={verification.identifierLast4 ? `****${verification.identifierLast4}` : 'Not captured'} mono />
+                  <Field label="Document number" value={verification.documentNumberLast4 ? `****${verification.documentNumberLast4}` : 'Not captured'} mono />
+                  <Field label="Date of birth" value={verification.dobDerived ? formatDateOnly(verification.dobDerived) : 'Not captured'} />
+                  <Field label="Gender" value={verification.genderDerived ?? 'Not captured'} />
+                  <Field label="Citizenship" value={verification.citizenshipDerived ?? 'Not captured'} />
+                  <Field label="Issuing country" value={verification.issuingCountry ?? 'Not captured'} />
+                  <Field label="Nationality" value={verification.nationality ?? 'Not captured'} />
+                  <Field label="Document expiry" value={verification.documentExpiryDate ? formatDate(verification.documentExpiryDate) : 'Not captured'} />
+                  <Field label="Document confidence" value={formatScore(verification.documentConfidenceScore)} />
+                  <Field label="Liveness score" value={formatScore(verification.livenessScore)} />
+                  <Field label="Selfie match" value={formatScore(verification.selfieMatchScore)} />
+                </>
+              ) : (
+                <Field label="Identity details" value="TRUST access required" />
+              )}
               <Field label="Failure reason" value={verification.failureReasonCode ?? 'None'} />
               <Field label="Submitted" value={formatDate(verification.createdAt)} />
             </dl>
