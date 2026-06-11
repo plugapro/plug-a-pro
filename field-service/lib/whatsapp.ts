@@ -924,6 +924,15 @@ export async function sendCustomerMatchFoundNotification(
 ): Promise<void> {
   if (!params.customerPhone) return
 
+  // Consent gate: enforce opt-out/opt-in by template category before sending.
+  const policy = await canSend(params.customerPhone, 'customer_match_found')
+  if (!policy.allowed) {
+    console.warn('[whatsapp] blocked customer_match_found by policy', {
+      phone: maskPhone(params.customerPhone), jobRequestId: params.jobRequestId, reason: policy.reason,
+    })
+    return
+  }
+
   // Atomic idempotency guard - prevents duplicate sends when cron and the
   // fire-and-forget path race through the same job.
   const reserved = await db.jobRequest.updateMany({
@@ -993,6 +1002,15 @@ export interface SendCustomerQuoteReadyParams {
 export async function sendCustomerQuoteReadyNotification(
   params: SendCustomerQuoteReadyParams
 ): Promise<void> {
+  // Consent gate: enforce opt-out/opt-in by template category before sending.
+  const policy = await canSend(params.customerPhone, 'customer_quote_ready')
+  if (!policy.allowed) {
+    console.warn('[whatsapp] blocked customer_quote_ready by policy', {
+      phone: maskPhone(params.customerPhone), quoteId: params.quoteId, reason: policy.reason,
+    })
+    return
+  }
+
   // Idempotency guard
   const quote = await db.quote.findUnique({
     where: { id: params.quoteId },
@@ -1070,6 +1088,15 @@ export async function sendCustomerEnRouteNotification(params: {
   jobSuburb: string
   jobRequestId: string
 }): Promise<void> {
+  // Consent gate: enforce opt-out/opt-in by template category before sending.
+  const policy = await canSend(params.customerPhone, 'customer_provider_en_route')
+  if (!policy.allowed) {
+    console.warn('[whatsapp] blocked customer_provider_en_route by policy', {
+      phone: maskPhone(params.customerPhone), jobRequestId: params.jobRequestId, reason: policy.reason,
+    })
+    return
+  }
+
   // Idempotency guard
   const jobRequest = await db.jobRequest.findUnique({
     where: { id: params.jobRequestId },
@@ -1362,6 +1389,15 @@ export async function sendCustomerRunningLateNotification(params: {
   jobCategory: string
   jobId: string
 }): Promise<void> {
+  // Consent gate: enforce opt-out/opt-in by template category before sending.
+  const policy = await canSend(params.customerPhone, 'customer_provider_running_late')
+  if (!policy.allowed) {
+    console.warn('[whatsapp] blocked customer_provider_running_late by policy', {
+      phone: maskPhone(params.customerPhone), jobId: params.jobId, reason: policy.reason,
+    })
+    return
+  }
+
   // Idempotency guard - owned here so duplicate webhook deliveries are blocked
   // even if the caller's JobStatusEvent write hasn't committed yet.
   const job = await db.job.findUnique({
@@ -1482,6 +1518,16 @@ export async function sendProviderInvoiceTemplate(params: {
   providerFullName: string
   jobId: string
 }): Promise<void> {
+  // Consent gate: invoices carry customer name, amount and booking reference, so
+  // they must respect the customer's WhatsApp service opt-out.
+  const policy = await canSend(params.customerPhone, 'provider_invoice_send')
+  if (!policy.allowed) {
+    console.warn('[whatsapp] blocked provider_invoice_send by policy', {
+      phone: maskPhone(params.customerPhone), jobId: params.jobId, reason: policy.reason,
+    })
+    return
+  }
+
   // Idempotency guard
   const job = await db.job.findUnique({
     where: { id: params.jobId },

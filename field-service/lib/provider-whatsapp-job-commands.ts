@@ -400,6 +400,26 @@ export async function executeProviderJobCommand(params: {
     }
   }
 
+  // Completion-note gate (defense-in-depth): moving a job to
+  // PENDING_COMPLETION_CONFIRMATION triggers customer sign-off. The same
+  // non-empty completion-note requirement enforced by
+  // completeProviderJobFromWhatsApp must hold here too, regardless of whether a
+  // #jobref was supplied. Otherwise a multi-active-job provider could send
+  // "complete #REF" to skip the note/evidence step and short-circuit sign-off.
+  if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
+    const jobWithNote = await db.job.findUnique({
+      where: { id: jobId },
+      select: { completionNote: true },
+    })
+    if (!jobWithNote?.completionNote?.trim()) {
+      return {
+        ok: false,
+        reason: 'INVALID_COMMAND',
+        message: 'Before marking this job ready for sign-off, please send a short completion note. Reply *complete* to add it.',
+      }
+    }
+  }
+
   await transitionJob({
     jobId,
     toStatus,

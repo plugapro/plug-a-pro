@@ -12,7 +12,7 @@ vi.mock('@/lib/db', () => ({
 }))
 
 import { db } from '@/lib/db'
-import { normalizePhone, phoneLookupVariants } from '@/lib/utils'
+import { normalizePhone, phoneLookupVariants, saLocalPhoneToE164 } from '@/lib/utils'
 import { resolveWhatsAppIdentity } from '@/lib/whatsapp-identity'
 
 describe('WhatsApp identity resolution', () => {
@@ -27,7 +27,6 @@ describe('WhatsApp identity resolution', () => {
 
   it.each([
     ['0821234567', '+27821234567'],
-    ['823035070', '+27823035070'],
     ['27821234567', '+27821234567'],
     ['0027821234567', '+27821234567'],
     ['071 234 5678', '+27712345678'],
@@ -36,6 +35,22 @@ describe('WhatsApp identity resolution', () => {
     ['whatsapp:+27821234567', '+27821234567'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizePhone(input)).toBe(expected)
+  })
+
+  // SECURITY: the webhook trust boundary uses normalizePhone(message.from).
+  // A bare 9-digit national number must NOT be coerced to +27 here, otherwise a
+  // spoofed/mis-routed 9-digit sender could alias an existing +27 account.
+  it('keeps a bare 9-digit sender strict (no +27 aliasing at the webhook boundary)', () => {
+    expect(normalizePhone('823035070')).toBe('823035070')
+  })
+
+  // The lenient 9-digit heuristic lives in the SA-local form-input helper only.
+  it.each([
+    ['823035070', '+27823035070'],
+    ['0821234567', '+27821234567'],
+    ['+27821234567', '+27821234567'],
+  ])('saLocalPhoneToE164 normalizes trusted form input %s to %s', (input, expected) => {
+    expect(saLocalPhoneToE164(input)).toBe(expected)
   })
 
   it('builds lookup variants for canonical and legacy stored phone formats', () => {
