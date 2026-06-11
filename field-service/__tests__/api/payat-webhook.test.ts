@@ -146,22 +146,28 @@ describe('POST /api/payat/webhook', () => {
     expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
   })
 
-  it('normalises amount sent in rands (100) to cents (10000) before comparing', async () => {
+  it('rejects an underpaid cent amount instead of treating it as rands (no unit heuristic)', async () => {
     const { POST } = await import('@/app/api/payat/webhook/route')
-    // Pay@ gateway variants may send amount as rands e.g. 100 instead of 10000 cents
+    // A signed webhook reporting amount=100 (cents) against a 10000-cent intent is
+    // an R1 underpayment. The old rand-conversion heuristic would have multiplied
+    // it to 10000 cents and credited a full R100 top-up. Now it must be a mismatch.
     const res = await POST(
       request({ clientReferenceNumber: 'intent-payat-1', status: 'PAID', amount: 100 }),
     )
 
     expect(res.status).toBe(200)
-    expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
-      where: { id: 'intent-payat-1', status: 'PENDING_PAYMENT' },
-      data: expect.objectContaining({
-        status: 'ITN_RECEIVED',
-        itnAmountCents: 10_000,
+    const body = await res.json()
+    expect(body).toMatchObject({ rejected: 'amount_mismatch' })
+
+    // Intent is marked FAILED, the wallet is NOT credited.
+    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'intent-payat-1' },
+        data: expect.objectContaining({ status: 'FAILED', itnAmountCents: 100 }),
       }),
-    })
-    expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
+    )
+    expect(mockDb.paymentIntent.updateMany).not.toHaveBeenCalled()
+    expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
   })
 
   it('falls back to paymentReference lookup when clientReferenceNumber is absent', async () => {

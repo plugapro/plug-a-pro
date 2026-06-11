@@ -330,6 +330,28 @@ function traceId() {
   return `provider-wallet-topup-${randomUUID()}`
 }
 
+// Ledger entry types whose `description` is built from raw admin-supplied reason
+// text (fraud notes, complaint detail, internal workflow notes, PII). These must
+// NOT be surfaced to the provider - we show a generic provider-safe title instead.
+const ADMIN_REASON_ENTRY_TYPES = new Set<WalletLedgerEntryType>([
+  'ADMIN_ADJUSTMENT',
+  'WALLET_SUSPENDED',
+  'WALLET_REACTIVATED',
+])
+
+// Returns a provider-safe description for a ledger entry. For admin-originated
+// entries we deliberately drop the internal `description` (which may contain
+// internal rationale/PII) and return a neutral label.
+function providerSafeLedgerDescription(
+  entryType: WalletLedgerEntryType,
+  description: string | null,
+): string | null {
+  if (ADMIN_REASON_ENTRY_TYPES.has(entryType)) {
+    return ledgerLabel(entryType)
+  }
+  return description ?? null
+}
+
 function providerSafeDetail(referenceType: string, referenceId: string) {
   const ref = referenceId.slice(-8).toUpperCase()
   switch (referenceType) {
@@ -688,12 +710,15 @@ export async function cancelProviderPayatTopUpIntent(
   }
 
   const cancelled = await db.$transaction(async (tx) => {
+    // Read metadata first only so we can preserve it; the authoritative state
+    // transition below is an atomic updateMany guarded by the full predicate set.
     const intent = await tx.paymentIntent.findFirst({
       where: {
         id: intentId,
         providerId: actor.id,
         paymentMethod: 'PAYAT',
         status: 'PENDING_PAYMENT',
+        creditedAt: null,
       },
       select: { metadata: true },
     })
@@ -706,8 +731,20 @@ export async function cancelProviderPayatTopUpIntent(
         ? (intent.metadata as Record<string, unknown>)
         : {}
 
-    await tx.paymentIntent.update({
-      where: { id: intentId },
+    // Atomic, predicate-guarded transition. A concurrent Pay@ webhook may move
+    // this intent to ITN_RECEIVED / CREDITED / FAILED between the read above and
+    // this write. Constraining the WHERE to PENDING_PAYMENT + creditedAt:null
+    // ensures count===0 (failure) instead of overwriting a newer terminal state
+    // back to CANCELLED - which, since CANCELLED is gateway-creditable, could
+    // otherwise reopen a reversed/failed intent for crediting.
+    const updated = await tx.paymentIntent.updateMany({
+      where: {
+        id: intentId,
+        providerId: actor.id,
+        paymentMethod: 'PAYAT',
+        status: 'PENDING_PAYMENT',
+        creditedAt: null,
+      },
       data: {
         status: 'CANCELLED',
         metadata: {
@@ -718,7 +755,7 @@ export async function cancelProviderPayatTopUpIntent(
       },
     })
 
-    return true
+    return updated.count === 1
   })
 
   if (!cancelled) {
@@ -1284,7 +1321,7 @@ export async function getProviderWalletLedgerEntry(
     id: entry.id,
     occurredAt: entry.createdAt.toISOString(),
     title: ledgerLabel(entry.entryType),
-    description: entry.description ?? null,
+    description: providerSafeLedgerDescription(entry.entryType, entry.description),
     entryType: entry.entryType,
     creditType: entry.creditType,
     signedAmountCredits: debit ? -entry.amountCredits : entry.amountCredits,

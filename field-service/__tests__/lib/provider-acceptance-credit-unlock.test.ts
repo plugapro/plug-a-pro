@@ -158,6 +158,10 @@ function makeTx() {
 	      findFirst: vi.fn().mockResolvedValue({
 	        id: 'verification-c13',
 	        providerId: 'provider-c13',
+	        status: 'PASSED',
+	        decision: 'PASS',
+	        assuranceLevel: 'HIGH',
+	        expiresAt: null,
 	      }),
 	    },
 	    providerWallet: {

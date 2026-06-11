@@ -76,10 +76,6 @@ function decodeSignature(signature: string) {
   return null
 }
 
-// Minimum package is R100 = 10000 cents. Amounts below this threshold are
-// assumed to be in rands (Pay@ gateway variants differ) and converted.
-const MIN_PACKAGE_CENTS = 10_000
-
 function normalisePayload(payload: PayatWebhookPayload) {
   // clientReferenceNumber is set to the PaymentIntent UUID in the RTP create call.
   // reference / sourceReference are gateway-specific aliases - used as fallback.
@@ -91,27 +87,19 @@ function normalisePayload(payload: PayatWebhookPayload) {
 
   const status = typeof payload.status === 'string' ? payload.status.trim().toUpperCase() : ''
 
-  // The integrator endpoint sends amounts in cents. Parse as float first because
-  // some Pay@ gateway variants send amounts as strings or in rands.
+  // The Pay@ integrator endpoint always reports amounts in cents - the same unit
+  // we send and store on PaymentIntent. We deliberately do NOT apply any
+  // cent/rand heuristic here: a heuristic that multiplied small values by 100
+  // would let an R1/R2/R5 underpayment (cents 100/200/500) satisfy an
+  // R100/R200/R500 intent. The amount is compared exactly downstream; if Pay@
+  // ever reports rands, the conversion must be made in one dedicated, explicit
+  // place rather than guessed from the magnitude.
   const rawAmount = typeof payload.amount === 'number'
     ? payload.amount
     : typeof payload.amount === 'string'
       ? parseFloat(payload.amount)
       : Number.NaN
-  let amount: number = Number.NaN
-  if (Number.isFinite(rawAmount)) {
-    if (rawAmount < MIN_PACKAGE_CENTS) {
-      // Value is below the minimum package threshold - treat as rands and convert.
-      // Log so gateway config differences can be detected and fixed proactively.
-      console.warn('[payat-webhook] amount below minimum-cents threshold - treating as rands', {
-        rawAmount,
-        convertedCents: Math.round(rawAmount * 100),
-      })
-      amount = Math.round(rawAmount * 100)
-    } else {
-      amount = Math.round(rawAmount)
-    }
-  }
+  const amount: number = Number.isFinite(rawAmount) ? Math.round(rawAmount) : Number.NaN
 
   const gatewayReference = typeof payload.transactionId === 'string'
     ? payload.transactionId

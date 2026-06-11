@@ -137,6 +137,10 @@ function makeTx() {
 	      findFirst: vi.fn().mockResolvedValue({
 	        id: 'verification-e2e-1',
 	        providerId: 'provider-e2e-1',
+	        status: 'PASSED',
+	        decision: 'PASS',
+	        assuranceLevel: 'HIGH',
+	        expiresAt: null,
 	      }),
 	    },
 	    jobRequest: {

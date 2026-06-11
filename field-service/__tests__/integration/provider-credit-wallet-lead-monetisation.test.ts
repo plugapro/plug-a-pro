@@ -228,6 +228,10 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
 	    mockDb.providerIdentityVerification.findFirst.mockResolvedValue({
 	      id: 'verification-1',
 	      providerId: 'provider-1',
+	      status: 'PASSED',
+	      decision: 'PASS',
+	      assuranceLevel: 'HIGH',
+	      expiresAt: null,
 	    })
 
     mockDb.providerWallet.findUnique.mockImplementation(async (args: any) => state.wallets.get(args.where.providerId) ?? null)

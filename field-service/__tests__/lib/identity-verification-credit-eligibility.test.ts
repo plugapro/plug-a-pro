@@ -21,10 +21,20 @@ vi.mock('../../lib/db', () => ({ db: mockDb }))
 
 // Helpers
 
-function makeVerification(overrides: Partial<{ expiresAt: Date | null }> = {}) {
+function makeVerification(
+  overrides: Partial<{
+    status: string
+    decision: string
+    assuranceLevel: string
+    expiresAt: Date | null
+  }> = {},
+) {
   return {
     id: 'verification-1',
     providerId: 'provider-1',
+    status: 'PASSED',
+    decision: 'PASS',
+    assuranceLevel: 'HIGH',
     expiresAt: null,
     ...overrides,
   }
@@ -176,20 +186,36 @@ describe('isProviderEligibleForCredits', () => {
         expect(result).toBe(true)
       })
 
-      it('queries providerIdentityVerification with the correct PASSED/PASS/HIGH where-clause', async () => {
+      it('queries the LATEST verification record and validates the pass predicate in code', async () => {
         mockDb.providerIdentityVerification.findFirst.mockResolvedValue(null)
         await isProviderEligibleForCredits('provider-1', mockDb)
 
+        // The gate fetches the provider's most-recent verification row (any
+        // outcome) ordered by createdAt desc, then enforces PASSED/PASS/HIGH +
+        // unexpired in code - so a newer adverse record supersedes an older PASS.
         expect(mockDb.providerIdentityVerification.findFirst).toHaveBeenCalledWith(
           expect.objectContaining({
-            where: expect.objectContaining({
-              providerId: 'provider-1',
-              status: 'PASSED',
-              decision: 'PASS',
-              assuranceLevel: 'HIGH',
-            }),
+            where: { providerId: 'provider-1' },
+            orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
           }),
         )
+      })
+
+      it('returns false when the latest verification is adverse (newer FAILED supersedes old PASS)', async () => {
+        mockDb.providerIdentityVerification.findFirst.mockResolvedValue(
+          makeVerification({ status: 'FAILED', decision: 'FAIL' }),
+        )
+        const result = await isProviderEligibleForCredits('provider-1', mockDb)
+        expect(result).toBe(false)
+      })
+
+      it('returns false when the latest passing verification has expired', async () => {
+        const past = new Date(Date.now() - 60_000)
+        mockDb.providerIdentityVerification.findFirst.mockResolvedValue(
+          makeVerification({ expiresAt: past }),
+        )
+        const result = await isProviderEligibleForCredits('provider-1', mockDb)
+        expect(result).toBe(false)
       })
     })
   })

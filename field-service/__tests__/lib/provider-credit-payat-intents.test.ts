@@ -13,7 +13,14 @@ const { mockDb, mockCreatePayatPaymentRequest, state } = vi.hoisted(() => {
 	      kycStatus: 'VERIFIED',
 	      suspendedUntil: null,
 	    },
-    highAssuranceVerification: { id: 'verification-1', providerId: 'provider-1' },
+    highAssuranceVerification: {
+      id: 'verification-1',
+      providerId: 'provider-1',
+      status: 'PASSED',
+      decision: 'PASS',
+      assuranceLevel: 'HIGH',
+      expiresAt: null,
+    },
     createdIntent: null as any,
   }
 
@@ -50,6 +57,9 @@ vi.mock('@/lib/payat/payment', () => ({
 describe('Pay@ provider credit payment intents', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Pin the Pay@ counter fee to 0 so these tests can assert "no fee" Pay@
+    // amounts deterministically (the fee is derived centrally from this env var).
+    vi.stubEnv('PAYAT_MERCHANT_FEE_FIXED_CENTS', '0')
     state.createdIntent = null
     mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) =>
       callback(mockDb as any),
@@ -117,6 +127,7 @@ describe('Pay@ provider credit payment intents', () => {
       data: {
         metadata: {
           payAtAmountCents: 10_000, // stored at intent creation, preserved in post-Pay@ merge
+          feeAmountCents: 0, // centrally-derived fee (0 in this test) persisted for reconciliation
           payatReference: 'intent-payat-1',
           paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
         },

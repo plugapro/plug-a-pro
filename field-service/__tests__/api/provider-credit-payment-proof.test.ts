@@ -13,6 +13,7 @@ const { mockGetSession, mockDb, mockUploadProviderPaymentProof, state } = vi.hoi
     paymentIntent: {
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
   }
 
@@ -51,6 +52,11 @@ describe('PATCH /api/provider/wallet/top-up-intents/[id]/proof', () => {
       state.intent = { ...state.intent, ...args.data }
       return state.intent
     })
+    // Atomic, predicate-guarded write: count===1 means the transition applied.
+    mockDb.paymentIntent.updateMany.mockImplementation(async (args: any) => {
+      state.intent = { ...state.intent, ...args.data }
+      return { count: 1 }
+    })
     mockUploadProviderPaymentProof.mockResolvedValue('https://store.private.blob.vercel-storage.com/proof.pdf')
   })
 
@@ -82,8 +88,14 @@ describe('PATCH /api/provider/wallet/top-up-intents/[id]/proof', () => {
         paymentMethod: 'MANUAL_EFT',
       },
     })
-    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'intent-1' },
+    expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 'intent-1',
+        providerId: 'provider-1',
+        paymentMethod: 'MANUAL_EFT',
+        status: { in: expect.arrayContaining(['PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT']) },
+        creditedAt: null,
+      }),
       data: expect.objectContaining({
         proofOfPaymentUrl: 'https://store.private.blob.vercel-storage.com/proof.pdf',
         status: 'PROOF_UPLOADED',

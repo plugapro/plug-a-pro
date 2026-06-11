@@ -1,6 +1,21 @@
 import { Prisma, type PaymentIntent } from '@prisma/client'
 import { db } from './db'
-import { creditPaidCreditsInTransaction, type WalletMutationResult } from './provider-wallet'
+import {
+  creditPaidCreditsInTransaction,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS,
+  type WalletMutationResult,
+} from './provider-wallet'
+
+/**
+ * Credits the paid amount is worth at CURRENT pricing. Mirrors the gateway ITN
+ * path: a pre-price-change intent may carry a stale (higher) creditsToIssue, so
+ * we never issue more than the amount is currently worth.
+ */
+function creditsToIssueForAmount(amountCents: number, storedCreditsToIssue: number): number {
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return 0
+  const recomputed = Math.floor(amountCents / PLUG_A_PRO_CREDIT_VALUE_CENTS)
+  return Math.max(0, Math.min(storedCreditsToIssue, recomputed))
+}
 
 const CREDITABLE_STATUSES = [
   'PENDING_PAYMENT',
@@ -237,10 +252,22 @@ export async function creditPaymentIntentInTransaction(
     )
   }
 
+  const creditsToIssue = creditsToIssueForAmount(intent.amountCents, intent.creditsToIssue)
+  if (creditsToIssue !== intent.creditsToIssue) {
+    console.warn('[provider-credit-reconciliation] stale creditsToIssue recomputed against current pricing', {
+      alert: true,
+      intentId: intent.id,
+      providerId: intent.providerId,
+      amountCents: intent.amountCents,
+      storedCreditsToIssue: intent.creditsToIssue,
+      issuedCreditsToIssue: creditsToIssue,
+    })
+  }
+
   const walletResult: WalletMutationResult = await creditPaidCreditsInTransaction(
     tx,
     intent.providerId,
-    intent.creditsToIssue,
+    creditsToIssue,
     {
       referenceType: 'payment_intent',
       referenceId: intent.id,
@@ -251,6 +278,8 @@ export async function creditPaymentIntentInTransaction(
         paymentReference: intent.paymentReference,
         bankStatementReference: intent.bankStatementReference,
         amountCents: intent.amountCents,
+        creditsToIssue,
+        storedCreditsToIssue: intent.creditsToIssue,
       },
       createdBy: adminUserId,
       isTestTransaction: provider?.isTestUser ?? false,

@@ -10,6 +10,7 @@ const { mockRequireProvider, mockDb, mockRevalidatePath } = vi.hoisted(() => ({
     paymentIntent: {
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
   mockRevalidatePath: vi.fn(),
@@ -79,6 +80,8 @@ describe('cancelProviderPayatTopUpIntent', () => {
     // Default: intent found (PENDING_PAYMENT, owned by provider)
     mockDb.paymentIntent.findFirst.mockResolvedValue(makeIntent())
     mockDb.paymentIntent.update.mockResolvedValue({})
+    // Default: atomic cancel transition succeeds (count === 1).
+    mockDb.paymentIntent.updateMany.mockResolvedValue({ count: 1 })
   })
 
   it('transitions a PENDING_PAYMENT intent to CANCELLED and stamps cancelledAt metadata', async () => {
@@ -101,9 +104,17 @@ describe('cancelProviderPayatTopUpIntent', () => {
       }),
     )
 
-    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(
+    // Atomic, predicate-guarded transition (status PENDING_PAYMENT + creditedAt null)
+    // so a concurrent webhook cannot be clobbered back to CANCELLED.
+    expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: INTENT_ID },
+        where: expect.objectContaining({
+          id: INTENT_ID,
+          providerId: PROVIDER_ID,
+          paymentMethod: 'PAYAT',
+          status: 'PENDING_PAYMENT',
+          creditedAt: null,
+        }),
         data: expect.objectContaining({
           status: 'CANCELLED',
           metadata: expect.objectContaining({
@@ -136,7 +147,7 @@ describe('cancelProviderPayatTopUpIntent', () => {
     )
     await cancelProviderPayatTopUpIntent(INTENT_ID)
 
-    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(
+    expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           metadata: expect.objectContaining({
@@ -223,6 +234,7 @@ describe('cancelProviderPayatTopUpIntent - duplicate guard interaction', () => {
     )
     mockDb.paymentIntent.findFirst.mockResolvedValue(makeIntent())
     mockDb.paymentIntent.update.mockResolvedValue({})
+    mockDb.paymentIntent.updateMany.mockResolvedValue({ count: 1 })
   })
 
   it('succeeds (enabling a fresh intent for the same amount after cancellation)', async () => {
