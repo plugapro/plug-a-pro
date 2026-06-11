@@ -5,6 +5,16 @@ import { KYC_FEE_CENTS, kycFeeAccruedKey, kycFeeSponsoredKey } from './constants
 import { findEligibleCampaign } from './campaign-matching'
 import { writeKycFeeLedgerEntryInTransaction } from './ledger'
 
+export class KycFeeBookingError extends Error {
+  constructor(
+    public readonly code: 'VERIFICATION_NOT_FOUND',
+    message: string,
+  ) {
+    super(message)
+    this.name = 'KycFeeBookingError'
+  }
+}
+
 export type KycFeeBookingClient = Pick<
   Prisma.TransactionClient,
   | 'kycFeeLedgerEntry'
@@ -23,6 +33,7 @@ export type KycFeeBookingResult =
         | 'NO_ELIGIBLE_CAMPAIGN'
         | 'IDENTIFIER_ALREADY_SPONSORED'
         | 'ALLOCATION_EXHAUSTED'
+        | 'ALREADY_SPONSORED_ON_CAMPAIGN'
     }
   | { outcome: 'SPONSORED'; campaignId: string; campaignCode: string; sponsorshipId: string }
 
@@ -36,10 +47,11 @@ export type KycFeeBookingResult =
  * runs transitionIdentityVerification inside crudAction's tx). With no
  * client, the whole booking runs in its own db.$transaction.
  *
- * Idempotent via the provider-scoped accrual idempotency key. A concurrent
- * duplicate beyond the pre-check surfaces as a P2002 from that unique key;
- * the orchestrator hook logs it and scripts/reconcile-kyc-fees.ts repairs
- * any gap.
+ * Idempotent via the provider-scoped accrual idempotency key, plus a
+ * pre-claim check for an existing (campaign, provider) sponsorship. Residual
+ * concurrency duplicates surface as P2002 (accrual key or campaign unique)
+ * and abort the transaction; the orchestrator hook logs them and
+ * scripts/reconcile-kyc-fees.ts re-books any provider left without a fee row.
  */
 export async function bookKycFeeForVerifiedProvider(
   input: { providerId: string; verificationId: string },
@@ -69,6 +81,13 @@ async function bookInTx(
     select: { identifierHash: true },
   })
 
+  if (!verification) {
+    throw new KycFeeBookingError(
+      'VERIFICATION_NOT_FOUND',
+      `Verification ${verificationId} not found while booking KYC fee for provider ${providerId}.`,
+    )
+  }
+
   await writeKycFeeLedgerEntryInTransaction(tx, {
     providerId,
     reason: 'KYC_FEE_ACCRUED',
@@ -78,6 +97,7 @@ async function bookInTx(
     idempotencyKey: kycFeeAccruedKey(providerId),
     source: 'system',
     description: 'Once-off ID verification recovery fee',
+    metadata: { identifierHashPresent: Boolean(verification.identifierHash) },
   })
 
   const campaign = await findEligibleCampaign(tx, providerId)
@@ -85,7 +105,7 @@ async function bookInTx(
     return { outcome: 'ACCRUED', skippedSponsorship: 'NO_ELIGIBLE_CAMPAIGN' }
   }
 
-  if (verification?.identifierHash) {
+  if (verification.identifierHash) {
     const priorSponsorship = await tx.kycSponsorship.findFirst({
       where: { identifierHash: verification.identifierHash, status: 'CONSUMED' },
       select: { id: true },
@@ -93,6 +113,14 @@ async function bookInTx(
     if (priorSponsorship) {
       return { outcome: 'ACCRUED', skippedSponsorship: 'IDENTIFIER_ALREADY_SPONSORED' }
     }
+  }
+
+  const existingOnCampaign = await tx.kycSponsorship.findFirst({
+    where: { campaignId: campaign.id, providerId },
+    select: { id: true },
+  })
+  if (existingOnCampaign) {
+    return { outcome: 'ACCRUED', skippedSponsorship: 'ALREADY_SPONSORED_ON_CAMPAIGN' }
   }
 
   // Atomic allocation claim: WHERE re-evaluates sponsoredCount at write time,
@@ -114,7 +142,7 @@ async function bookInTx(
       campaignId: campaign.id,
       providerId,
       verificationId,
-      identifierHash: verification?.identifierHash ?? null,
+      identifierHash: verification.identifierHash ?? null,
       status: 'CONSUMED',
       source: 'system',
       feeCents: KYC_FEE_CENTS,
