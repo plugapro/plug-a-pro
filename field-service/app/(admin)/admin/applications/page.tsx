@@ -233,6 +233,36 @@ async function approveApplication(formData: FormData) {
         reviewedById: app.reviewedById,
       },
       run: async (_data, tx) => {
+        // Claim the application FIRST. The status transition is the only atomic
+        // guard against a concurrent reject/transition; it must succeed before
+        // any non-transactional side effects (Supabase Auth user creation, an
+        // active/verified Provider record). If another reviewer moved the row
+        // out of PENDING/MORE_INFO_REQUIRED between the initial read and here,
+        // count === 0 and we abort BEFORE provisioning, so a
+        // rejected/superseded application can never end up linked to an active
+        // provider account that can sign in or receive leads.
+        const statusUpdate = await tx.providerApplication.updateMany({
+          where: { id, status: { in: ['PENDING', 'MORE_INFO_REQUIRED'] } },
+          data: {
+            status: 'APPROVED',
+            reviewedAt: new Date(),
+            reviewedById: session.id,
+          },
+        })
+
+        if (statusUpdate.count === 0) {
+          console.info('[applications] Approval skipped because application is no longer pending', {
+            applicationId: app.id,
+          })
+          return {
+            id: app.id,
+            status: app.status,
+            providerId: app.providerId,
+            reviewedById: app.reviewedById,
+            approvedNow: false,
+          }
+        }
+
         const supabase = createServiceClient()
         let authUser: { userId: string; source: 'created' | 'existing' }
         try {
@@ -258,13 +288,12 @@ async function approveApplication(formData: FormData) {
       // Phase 4 follow-up Task 5 - atomicity invariant:
       //   - syncProviderRecord(verified: true) flips Provider.status -> 'ACTIVE'
       //     (lib/provider-record.ts:199 maps `verified: true` to status ACTIVE).
-      //   - The `tx.providerApplication.updateMany({ status: 'APPROVED' })` call
-      //     below runs in the same crudAction transaction.
-      // Both writes either commit together or roll back together, so a stale
-      // Provider.status = 'APPLICATION_PENDING' alongside an APPROVED
-      // application is structurally impossible. Existing coverage:
-      // __tests__/lib/provider-record.test.ts asserts the verified->ACTIVE
-      // mapping on every code path.
+      //   - The status claim above and this provider write run in the same
+      //     crudAction transaction, so they commit or roll back together. A
+      //     stale Provider.status = 'APPLICATION_PENDING' alongside an APPROVED
+      //     application is structurally impossible. Existing coverage:
+      //     __tests__/lib/provider-record.test.ts asserts the verified->ACTIVE
+      //     mapping on every code path.
       const providerId = await syncProviderRecord(tx as typeof db, {
         userId: authUser.userId,
         phone: app.phone,
@@ -278,6 +307,14 @@ async function approveApplication(formData: FormData) {
         cohortName: app.cohortName,
       })
 
+      // Backfill the application's providerId now that the provider record
+      // exists. The claim above could not set it because the provider had not
+      // been provisioned yet; this runs in the same transaction.
+      await tx.providerApplication.update({
+        where: { id },
+        data: { providerId },
+      })
+
       const { error: metaError } = await supabase.auth.admin.updateUserById(authUser.userId, {
         user_metadata: {
           role: 'provider',
@@ -287,29 +324,6 @@ async function approveApplication(formData: FormData) {
       })
       if (metaError) {
         console.error('[applications] Failed to stamp providerId in user_metadata:', metaError)
-      }
-
-      const statusUpdate = await tx.providerApplication.updateMany({
-        where: { id, status: { in: ['PENDING', 'MORE_INFO_REQUIRED'] } },
-        data: {
-          status: 'APPROVED',
-          providerId,
-          reviewedAt: new Date(),
-          reviewedById: session.id,
-        },
-      })
-
-      if (statusUpdate.count === 0) {
-        console.info('[applications] Approval skipped because application is no longer pending', {
-          applicationId: app.id,
-        })
-        return {
-          id: app.id,
-          status: app.status,
-          providerId,
-          reviewedById: app.reviewedById,
-          approvedNow: false,
-        }
       }
 
       const providerCategoryRows = app.skills.map((skill) => ({
@@ -372,14 +386,18 @@ async function approveApplication(formData: FormData) {
     })
   }
 
-  if (approvedProviderId) {
+  // Only run customer recontact / category promotion when THIS action actually
+  // performed the approval. A stale claim (approvedNow === false) can still
+  // surface a pre-existing providerId, but must never trigger downstream
+  // recontact that could leak customer job details to a non-approved provider.
+  if (approvedNow && approvedProviderId) {
     const { checkJobsForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
     await checkJobsForNewProviderAvailability(approvedProviderId).catch((error) => {
       console.error('[applications] new-provider availability check failed:', error)
     })
   }
 
-  if (approvedProviderId) {
+  if (approvedNow && approvedProviderId) {
     const { autoApproveLowRiskCategories } = await import('@/lib/provider-categories')
     await autoApproveLowRiskCategories(approvedProviderId).catch((error) => {
       console.error('[applications] autoApproveLowRiskCategories failed', { providerId: approvedProviderId }, error)
@@ -848,11 +866,27 @@ export default async function ApplicationsPage({
   const banner = getApplicationsAdminMessage(message)
   const now = new Date()
 
-  const applications = await db.providerApplication.findMany({
-    select: providerApplicationSelect,
-    orderBy: { submittedAt: 'desc' },
-    take: 100,
-  })
+  // Status-scoped pagination instead of a flat LIMIT 100 across all statuses.
+  // A single automated WhatsApp account could otherwise fill the latest-100
+  // window with terminal (REJECTED / CANCELLED) rows and push live PENDING /
+  // MORE_INFO_REQUIRED applications out of the visible review queue. Actionable
+  // applications are always loaded in full; terminal rows are capped separately
+  // for the read-only history sections.
+  const [actionableApplications, terminalApplications] = await Promise.all([
+    db.providerApplication.findMany({
+      where: { status: { in: ['PENDING', 'MORE_INFO_REQUIRED'] } },
+      select: providerApplicationSelect,
+      orderBy: { submittedAt: 'desc' },
+      take: 200,
+    }),
+    db.providerApplication.findMany({
+      where: { status: { in: ['APPROVED', 'REJECTED', 'CANCELLED'] } },
+      select: providerApplicationSelect,
+      orderBy: { submittedAt: 'desc' },
+      take: 100,
+    }),
+  ])
+  const applications = [...actionableApplications, ...terminalApplications]
   const onboardingRecoveryRowsAll = await listProviderOnboardingRecoveryRows(db)
   const onboardingRecoveryRows = filterAdminActionableRecoveryRows(onboardingRecoveryRowsAll, now)
   const conflictingApplicationIds = getConflictingActiveProviderApplicationIds(applications)

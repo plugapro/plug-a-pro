@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { sendTemplate } from '@/lib/whatsapp'
 import {
+  listProviderOnboardingRecoveryRows,
   sendProviderOnboardingRecoveryFollowUps,
   summarizeProviderOnboardingRecoveryRows,
 } from '@/lib/provider-onboarding-recovery'
@@ -23,6 +24,39 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date()
+
+    // Default-off safety gate. State-changing auto-nudges only run when an
+    // operator has explicitly enabled provider.onboarding.recovery_auto_nudge.
+    // When disabled the cron is read-only: it reports the queue so the admin
+    // surface stays warm, but never sends recruitment/onboarding WhatsApp
+    // messages. Manual sends from /admin/applications remain available.
+    const autoNudgeEnabled = await isEnabled('provider.onboarding.recovery_auto_nudge')
+    if (!autoNudgeEnabled) {
+      const rows = await listProviderOnboardingRecoveryRows(db, { now })
+      const summary = summarizeProviderOnboardingRecoveryRows(rows)
+      const durationMs = Date.now() - cronStart
+      console.log(JSON.stringify({
+        event: 'cron_complete',
+        cron: cronName,
+        mode: 'report_only',
+        durationMs,
+        sent: 0,
+        skipped: 0,
+        errors: 0,
+        ...summary,
+        timestamp: new Date().toISOString(),
+      }))
+      return NextResponse.json({
+        ok: true,
+        mode: 'report_only',
+        durationMs,
+        sent: 0,
+        skipped: 0,
+        errors: 0,
+        ...summary,
+      })
+    }
+
     const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send')
     const recovery = await sendProviderOnboardingRecoveryFollowUps(db, {
       now,

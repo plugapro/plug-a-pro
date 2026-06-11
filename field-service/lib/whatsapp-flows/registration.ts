@@ -2309,7 +2309,6 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     const normalizedPhone = normalizePhone(ctx.phone)
     const cancelTraceId = `provider_app_cancel_${crypto.randomUUID().slice(0, 12)}`
     const cohort = createTestCohortContext(normalizedPhone)
-    const name = ctx.data.name?.trim() ?? 'unknown'
     const skills = uniqueStrings(ctx.data.skills ?? [])
     const canonicalSkills = canonicalizeServiceCategoryValues(skills)
     const serviceAreas = uniqueStrings(
@@ -2318,61 +2317,35 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
        ctx.data.serviceAreas) ?? [],
     )
     const now = new Date()
-    let cancelledApplicationId: string | undefined
 
+    // A cancellation is NOT a submission: never persist a ProviderApplication
+    // row (and its high-sensitivity PII — name, email, ID/passport, evidence
+    // attachment IDs, references) when the applicant chose not to submit.
+    // Persisting CANCELLED rows retained onboarding PII after explicit opt-out
+    // and let a single automated WhatsApp account flood the admin review queue.
+    // Record only a non-PII audit event so cancels stay observable without
+    // storing the collected personal data or creating a queue row.
     try {
-      const cancelled = await db.$transaction(async (tx) => {
-        const app = await tx.providerApplication.create({
-          data: {
-            phone: normalizedPhone,
-            email: ctx.data.providerEmail ?? null,
-            name,
-            skills: canonicalSkills,
-            serviceAreas,
-            experience: ctx.data.experience ?? null,
-            availability: formatAvailabilityLabel(uniqueStrings(ctx.data.availability ?? [])),
-            callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
-            hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
-            rateNegotiable: ctx.data.rateNegotiable !== false,
-            alternateMobileE164: ctx.data.alternateMobileE164?.trim(),
-            preferredLanguage: ctx.data.preferredLanguage?.trim(),
-            reference1Name: ctx.data.reference1Name?.trim(),
-            reference1Mobile: ctx.data.reference1Mobile?.trim(),
-            reference2Name: ctx.data.reference2Name?.trim(),
-            reference2Mobile: ctx.data.reference2Mobile?.trim(),
-            evidenceNote: ctx.data.evidenceNote ?? null,
-            evidenceFileUrls: uniqueStrings(ctx.data.evidenceFileUrls ?? []),
-            idNumber: ctx.data.providerIdNumber?.trim(),
-            isTestUser: cohort.isTestUser,
-            cohortName: cohort.cohortName,
+      await (db as any).auditLog?.create?.({
+        data: {
+          actorId: normalizedPhone,
+          actorRole: 'provider_applicant',
+          action: 'provider_application.cancelled',
+          entityType: 'ProviderApplication',
+          entityId: cancelTraceId,
+          after: {
             status: 'CANCELLED',
-            cancelledAt: now,
+            cancelledAt: now.toISOString(),
+            selectedSkillsCount: canonicalSkills.length,
+            selectedAreasCount: serviceAreas.length,
+            traceId: cancelTraceId,
           },
-          select: { id: true },
-        })
-        await (tx as any).auditLog?.create?.({
-          data: {
-            actorId: normalizedPhone,
-            actorRole: 'provider_applicant',
-            action: 'provider_application.cancelled',
-            entityType: 'ProviderApplication',
-            entityId: app.id,
-            after: {
-              status: 'CANCELLED',
-              cancelledAt: now.toISOString(),
-              selectedSkillsCount: canonicalSkills.length,
-              selectedAreasCount: serviceAreas.length,
-              traceId: cancelTraceId,
-            },
-            isTestEvent: cohort.isTestUser,
-            cohortName: cohort.cohortName,
-          },
-        })
-        return app
+          isTestEvent: cohort.isTestUser,
+          cohortName: cohort.cohortName,
+        },
       })
-      cancelledApplicationId = cancelled.id
     } catch (err) {
-      console.warn('[registration-flow] cancel record creation failed (non-fatal)', {
+      console.warn('[registration-flow] cancel audit event write failed (non-fatal)', {
         trace_id: cancelTraceId,
         normalized_phone: normalizedPhone,
         error: safeErrorMessage(err),
@@ -2382,7 +2355,6 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     console.info('[registration-flow] provider application cancelled at summary', {
       trace_id: cancelTraceId,
       normalized_phone: normalizedPhone,
-      cancelled_application_id: cancelledApplicationId ?? null,
       is_test_user: cohort.isTestUser,
     })
     await sendText(ctx.phone, "Application cancelled. Reply *join* anytime to apply again.")
