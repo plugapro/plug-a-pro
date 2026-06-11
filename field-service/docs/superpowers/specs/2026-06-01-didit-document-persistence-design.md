@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-01
 **Status:** Review-ready — awaiting implementation planning approval
-**Owners:** Engineering (Lebogang)
+**Owners:** Engineering
 **Related:**
 - `lib/identity-verification/vendors/didit/` (existing adapter)
 - `lib/identity-verification/orchestrator.ts` (existing verdict pipeline)
@@ -14,12 +14,12 @@ Didit is wired as a hosted-flow identity-verification vendor (PR #24, merged 202
 
 Today, when a Didit-routed verification reaches a persisted verdict state (PASSED, FAILED, NEEDS_MANUAL_REVIEW), PlugAPro stores only the verdict + minimal metadata. **Document images, structured ID fields, scores, and AML/liveness/face-match artifacts remain on Didit's side.** The admin manual-review screen for a Didit-routed verification displays "No documents uploaded" because we never download them.
 
-This blocks any meaningful manual review of Didit-routed verifications. Today's smoke test for Lovemore Sibanda (verification id `cmpv7l9j8000dl2042porhv0g`) landed in `NEEDS_MANUAL_REVIEW` with reason `PROVIDER_LIVENESS_FAILED` — but the reviewer has nothing to look at locally.
+This blocks any meaningful manual review of Didit-routed verifications. A smoke-test verification (verification id `verification-id-example`) landed in `NEEDS_MANUAL_REVIEW` with a liveness-failure reason — but the reviewer has nothing to look at locally.
 
 ## 2. Goals
 
 1. Persist Didit's verification artifacts (images + structured fields + redacted raw payload) into PlugAPro after each Didit webhook that produces a persisted verdict state, idempotently.
-2. Backfill Lovemore's existing record so his in-flight manual review can proceed with full context.
+2. Backfill the existing record so the in-flight manual review can proceed with full context.
 3. Provide a clean code path that the admin "Refresh from Didit" action can also use for missed-webhook recovery.
 
 ## 3. Non-goals
@@ -146,7 +146,7 @@ Persist is called **at caller boundaries, NOT inside `applyVendorVerdict`**. The
      // Same DIDIT_PERSIST_FAILED event log; do not propagate.
    }
    ```
-4. **No flag check** — admin clicked the button; they opted in. This is the path we use to backfill Lovemore on day 1.
+4. **No flag check** — admin clicked the button; they opted in. This is the path we use to backfill the example record on day 1.
 5. Terminal verifications: if the verification is already `PASSED`, `FAILED`, `EXPIRED`, or `CANCELLED`, still fetch the latest Didit decision during admin refresh and run `persistDiditDecision`; skip `applyVendorVerdict` if no state transition is needed. This preserves the backfill use case for rows whose verdict already landed before V1 shipped.
 6. UI exposure: current detail page hides the refresh form for most terminal rows. V1 must show a TRUST-only refresh/backfill control for Didit rows with missing local documents or missing structured Didit fields, even if the status is already `PASSED` or `FAILED`.
 
@@ -278,7 +278,7 @@ Persist is best-effort and isolated per kind.
 - `false`: webhook path is a no-op. Admin refresh path **still runs persist** (admin explicit opt-in).
 - `true`: webhook path runs persist after every Didit webhook that produces `PASSED`, `FAILED`, or `NEEDS_MANUAL_REVIEW` via `applyVendorVerdict`.
 
-Rollout pattern: ship code with flag off → admin manually backfills Lovemore via refresh → verify outputs → flip flag on.
+Rollout pattern: ship code with flag off → admin manually backfills the example record via refresh → verify outputs → flip flag on.
 
 ## 5. Data flow
 
@@ -377,7 +377,7 @@ Per TDD discipline:
 2. **Implement:** TDD per §7; conform to lint + typecheck + existing CI gates.
 3. **PR review** with owner sign-off.
 4. **Merge to `main`** → Vercel auto-deploys to production with flag off.
-5. **Backfill Lovemore:** admin (Lebogang) opens `https://app.plugapro.co.za/admin/verifications/cmpv7l9j8000dl2042porhv0g` → clicks "Refresh from Didit" → persist runs (flag-independent admin path) → documents + fields populate.
+5. **Backfill the example record:** admin opens `/admin/verifications/verification-id-example` → clicks "Refresh from Didit" → persist runs (flag-independent admin path) → documents + fields populate.
 6. **Verify** in admin UI: 4 private document links, structured fields visible (DOB, gender, citizenship, document-number last4, scores), decision metadata complete. Reviewer proceeds with manual review.
 7. **Flag flip:** set `feature_flags.enabled = true` for `provider.identity.vendor.didit.persist_documents` in production DB. Future terminal webhooks auto-persist.
 8. **Monitor:** watch `provider_verification_events` for `DIDIT_PERSIST_FAILED` over the next 48h; tune retry / error handling if anything pops.

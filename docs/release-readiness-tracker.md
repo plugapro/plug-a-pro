@@ -29,7 +29,7 @@
 | Evidence | Live API check 2026-04-09 |
 | Updated | 2026-04-09 |
 
-**WABA confirmed:** `104200042667877` is the production WABA under "Kgolaentle Holdings". Phone number +27 69 355 2447. This is not a sandbox account.
+**WABA confirmed:** `<PRODUCTION_WABA_ID>` is the production WABA under "Kgolaentle Holdings". Phone number +27 69 355 2447. This is not a sandbox account.
 
 **Live status as of 2026-04-09 (verified via Graph API):**
 
@@ -64,8 +64,13 @@ Meta overrode our UTILITY submission and classified `quote_ready` as MARKETING. 
 
 **Remaining gate:** Wait for Meta to approve `quote_ready` and `technician_assigned`. Re-verify:
 ```bash
+# Pass the token in the Authorization header, never as an access_token query
+# parameter (query-string credentials leak via proxy/process/CLI logs).
 source field-service/.env.production.local
-curl -s "https://graph.facebook.com/v21.0/${WHATSAPP_WABA_ID}/message_templates?limit=200&fields=name,status,category&access_token=${WHATSAPP_ACCESS_TOKEN}" | python3 -m json.tool
+curl -s \
+  -H "Authorization: Bearer ${WHATSAPP_ACCESS_TOKEN}" \
+  "https://graph.facebook.com/v21.0/${WHATSAPP_WABA_ID}/message_templates?limit=200&fields=name,status,category" \
+  | python3 -m json.tool
 ```
 
 ---

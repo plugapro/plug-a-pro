@@ -206,7 +206,7 @@ On `/admin/providers/[id]`, add:
 
 Expose the filter reasons the matcher is actually using (`MISSING_REQUIRED_CERTIFICATION`, `MISSING_REQUIRED_EQUIPMENT`) as first-class fields on the profile so ops can fix them in-place.
 
-**Acceptance for WS6:** Opening Lerato Molefe's profile shows her active Dispatch case with a direct link. Opening Kagiso Sithole's profile shows his certifications and equipment as editable fields matching the matcher's criteria.
+**Acceptance for WS6:** Opening Customer A's profile shows the active Dispatch case with a direct link. Opening Provider A's profile shows the certifications and equipment as editable fields matching the matcher's criteria.
 
 ---
 
@@ -442,7 +442,7 @@ You have three real customer requests that have been waiting 6–7 days. The imp
 
 Today, manually:
 
-1. Phone the three customers (Lerato Molefe, Siphamandla Dube, Boitumelo Sithole). Apologise. Offer timelines or close politely.
+1. Phone the three affected customers (Customer A, Customer B, Customer C). Apologise. Offer timelines or close politely.
 2. Either force-match them to the nearest capable provider in your actual contact list (even if manually, off-platform), or cancel with the customer's consent.
 3. Note what happened in a spreadsheet until the Cases system lands.
 

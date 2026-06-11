@@ -114,7 +114,7 @@ Cases get stuck and nobody can tell. The combination of (a) a green-looking dash
 
 ## E. Subscriber profile assessment
 
-I opened two profiles to test: customer **Lerato Molefe** (cust0000000000000002 — has an open Dispatch case) and provider **Kagiso Sithole** (prov000000000000002 — Electrical, who *should* be the provider for Lerato's case but is filtered out for being outside her service area).
+I opened two profiles to test: customer **Customer A** (<customer-id-example> — has an open Dispatch case) and provider **Provider A** (<provider-id-example> — Electrical, who *should* be the provider for Customer A's case but is filtered out for being outside her service area).
 
 ### Customer profile — data available
 Phone, email, channel ("WhatsApp only"), customer-since date, marketing/service opt-in state, header showing "Booking history (1)".
@@ -123,7 +123,7 @@ Phone, email, channel ("WhatsApp only"), customer-since date, marketing/service 
 - Identity verification state / KYC
 - Subscription state (the platform doesn't have one — fine — but if the brief wants this, it's worth saying clearly)
 - Address(es)
-- Active / open requests (Lerato has one open Dispatch case — it is not linked from her profile)
+- Active / open requests (Customer A has one open Dispatch case — it is not linked from her profile)
 - Exception history / case history
 - Notes / internal flags (e.g. "VIP", "complaint history", "do not contact after 18:00")
 - Audit trail (who changed what, when)
@@ -247,13 +247,13 @@ The most concrete proof point that this isn't ready right now: **as I write this
 ## Evidence captured during the walkthrough
 
 - **Dashboard top tiles:** Validation 0, Dispatch 3, Field 0, Operational exceptions 0; today funnel: Requests 2 → Matches 0 → Quotes 0 → Bookings 0 → Completed 0 → Paid 0 → Revenue R 0.
-- **Dispatch queue:** 3 open requests — "No power to lounge plug points" (Lerato Molefe, Claremont, Cape Town, age 7d, Open, Unclaimed, 0 leads sent); "Overgrown back garden — full clearance" (Siphamandla Dube, Morningside, Durban, 6d, Matching, 0 leads sent); "Roof leaking after recent storms" (Boitumelo Sithole, Arcadia, Pretoria, 6d, Open, 0 leads sent). All against a 15-min SLA.
+- **Dispatch queue:** 3 open requests — "No power to lounge plug points" (Customer A, Claremont, Cape Town, age 7d, Open, Unclaimed, 0 leads sent); "Overgrown back garden — full clearance" (Customer B, Morningside, Durban, 6d, Matching, 0 leads sent); "Roof leaking after recent storms" (Customer C, Arcadia, Pretoria, 6d, Open, 0 leads sent). All against a 15-min SLA.
 - **Dispatch matcher log:** Every recorded attempt for these requests is `AUTO_ASSIGN — NO_MATCH — Considered 12–14, eligible 0`, with every candidate provider tagged `OUTSIDE_SERVICE_AREA / MISSING_REQUIRED_SKILL / MISSING_REQUIRED_CERTIFICATION / MISSING_REQUIRED_EQUIPMENT`. Dozens of identical attempts logged.
 - **Dispatch actions present:** Claim dispatch, Auto-assign top candidate, Refresh ranked shortlist. *No* override/escalate/cancel/notify-customer.
 - **Customers list:** 4 customers, columns: Name / Phone / Channel / Bookings / Last booking. No filter, no search, no status, no risk flags.
-- **Customer profile (Lerato Molefe):** Contact, channel, customer-since, WhatsApp opt-in flags, "Booking history (1)" header but body says "No bookings yet." Single action: "Opt in (admin override)." No link to her open Dispatch case.
+- **Customer profile (Customer A):** Contact, channel, customer-since, WhatsApp opt-in flags, "Booking history (1)" header but body says "No bookings yet." Single action: "Opt in (admin override)." No link to her open Dispatch case.
 - **Providers list:** 12 providers, all "available," all "0 active jobs." Skill column visible; no service-area, certification, or equipment column.
-- **Provider profile (Kagiso Sithole):** Skills (Electrical), Service Areas (Midrand/Centurion/Halfway House/Waterfall/Noordwyk — Gauteng only). The Cape Town request can never match him. Single action: "Deactivate." No certifications or equipment shown despite the matcher filtering on them.
+- **Provider profile (Provider A):** Skills (Electrical), Service Areas (Midrand/Centurion/Halfway House/Waterfall/Noordwyk — Gauteng only). The Cape Town request can never match him. Single action: "Deactivate." No certifications or equipment shown despite the matcher filtering on them.
 - **Applications:** 0 pending, 2 reviewed (one with reviewed-date "—", one with 2026/04/16) — minor audit consistency issue.
 - **Bookings:** 1 booking (Sandton plumbing job, completed). Booking detail shows quote history (good — full revision trail) and an empty "Actions" header.
 - **Disputes / Payments / Field Exceptions / Quotes / Validation / Messages:** all empty (0 records).
@@ -266,11 +266,11 @@ The most concrete proof point that this isn't ready right now: **as I write this
 - [Operations Dashboard](https://admin.plugapro.co.za/admin)
 - [Dispatch console](https://admin.plugapro.co.za/admin/dispatch)
 - [Customers list](https://admin.plugapro.co.za/admin/customers)
-- [Customer: Lerato Molefe](https://admin.plugapro.co.za/admin/customers/cust0000000000000002)
+- [Customer: Customer A](https://admin.plugapro.co.za/admin/customers/<customer-id-example>)
 - [Providers list](https://admin.plugapro.co.za/admin/providers)
-- [Provider: Kagiso Sithole](https://admin.plugapro.co.za/admin/providers/prov000000000000002)
+- [Provider: Provider A](https://admin.plugapro.co.za/admin/providers/<provider-id-example>)
 - [Bookings list](https://admin.plugapro.co.za/admin/bookings)
-- [Booking 00000001 detail](https://admin.plugapro.co.za/admin/bookings/book000000000000001)
+- [Booking 00000001 detail](https://admin.plugapro.co.za/admin/bookings/<booking-id-example>)
 - [Matches](https://admin.plugapro.co.za/admin/matches)
 - [Applications](https://admin.plugapro.co.za/admin/applications)
 - [Validation Queue](https://admin.plugapro.co.za/admin/validation)

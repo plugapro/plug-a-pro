@@ -1,10 +1,11 @@
 /**
- * One-shot remediation: Sarah Sullivan DIY & Assembly job (2026-05-19)
+ * One-shot remediation: re-dispatch an expired AUTO_ASSIGN DIY & Assembly job
+ * back to the originally-offered provider after a dispatch bug.
  *
  * Root cause: handleAssignmentHoldAcceptance called acceptLead instead of
  * acceptAssignmentOffer. acceptLead always returned EXPIRED for AUTO_ASSIGN jobs
- * because the job request status is OPEN (never transitions to MATCHING). Lovemore
- * attempted to accept at 12:41 SAST but the bug refused it. The hold timed out
+ * because the job request status is OPEN (never transitions to MATCHING). The
+ * provider attempted to accept but the bug refused it. The hold timed out
  * naturally, the engine rotated twice more, all rounds timed out, and the job
  * request was marked EXPIRED.
  *
@@ -12,16 +13,21 @@
  *
  * This script:
  *   1. Resets the job request from EXPIRED → OPEN
- *   2. Creates a fresh AssignmentHold for Lovemore (10-minute window)
+ *   2. Creates a fresh AssignmentHold for the provider (offer-TTL window)
  *   3. Calls dispatchMatchLead — upserts the lead to SENT and sends the WhatsApp
  *
- * Job request ID : cmpcgwrwh003plg04924oftqi
- * Lead ID        : cmpci5i5j000ml404i189l9fb
- * Provider       : Lovemore Sibanda (+27823035070)
- * Customer       : Sarah Sullivan
+ * All record identifiers are supplied at runtime via environment variables so
+ * no production PII or record IDs are committed to source. Look the values up
+ * from the affected records before running:
+ *
+ *   JOB_REQUEST_ID         — the EXPIRED job request to revive
+ *   PROVIDER_ID            — the provider to re-offer the job to
+ *   DISPATCH_DECISION_ID   — a valid dispatch decision FK from the original round
+ *   MATCH_ATTEMPT_ID       — a valid match attempt FK from the original round
  *
  * Usage:
- *   pnpm tsx --env-file=.env.local scripts/redispatch-sarah-diy-to-lovemore.ts
+ *   JOB_REQUEST_ID=... PROVIDER_ID=... DISPATCH_DECISION_ID=... MATCH_ATTEMPT_ID=... \
+ *     pnpm tsx --env-file=.env.local scripts/redispatch-sarah-diy-to-lovemore.ts
  */
 
 import 'dotenv/config'
@@ -30,11 +36,20 @@ import { PrismaClient } from '@prisma/client'
 import { dispatchMatchLead } from '../lib/matching/dispatch'
 import { MATCHING_CONFIG } from '../lib/matching/config'
 
-const JOB_REQUEST_ID = 'cmpcgwrwh003plg04924oftqi'
-const PROVIDER_ID = 'b6b91902-b268-4bc3-9d16-0942a25c2d60'
-// From the original Lovemore dispatch round — reused so the hold has valid FK references
-const DISPATCH_DECISION_ID = 'cmpchmbfr0001l4042zox7gje'
-const MATCH_ATTEMPT_ID = 'cmpchmbvp0005l404esa1pcq2'
+function requireEnv(name: string): string {
+  const value = process.env[name]?.trim()
+  if (!value) {
+    console.error(`[redispatch] Missing required env var ${name}. Set it to the affected record id before running.`)
+    process.exit(1)
+  }
+  return value
+}
+
+const JOB_REQUEST_ID = requireEnv('JOB_REQUEST_ID')
+const PROVIDER_ID = requireEnv('PROVIDER_ID')
+// Reused from the original dispatch round so the hold has valid FK references
+const DISPATCH_DECISION_ID = requireEnv('DISPATCH_DECISION_ID')
+const MATCH_ATTEMPT_ID = requireEnv('MATCH_ATTEMPT_ID')
 
 const db = new PrismaClient()
 
@@ -76,7 +91,8 @@ async function main() {
     },
   })
 
-  console.log('[redispatch] provider:', provider.name, provider.phone)
+  // Do not log provider name/phone — avoid materialising PII in stdout/CI logs.
+  console.log('[redispatch] provider loaded:', provider.id)
 
   if (!provider.active || provider.id !== PROVIDER_ID) {
     console.error('[redispatch] Provider is not active — aborting')
@@ -107,7 +123,7 @@ async function main() {
   } else {
     const expiresAt = new Date(Date.now() + MATCHING_CONFIG.offerTtlMinutes * 60_000)
     // Use raw SQL — the schema requires dispatchDecisionId and matchAttemptId to be
-    // non-null, so we reuse the original FK references from the first Lovemore round.
+    // non-null, so we reuse the original FK references from the first dispatch round.
     const holdId = randomUUID()
     const now = new Date()
     await db.$executeRaw`
@@ -147,8 +163,8 @@ async function main() {
     },
   })
 
-  console.log('[redispatch] ✓ WhatsApp dispatched to', provider.name, '— lead upserted to SENT, expires at', hold.expiresAt.toISOString())
-  console.log('[redispatch] Lovemore has', MATCHING_CONFIG.offerTtlMinutes, 'minutes to accept.')
+  console.log('[redispatch] ✓ WhatsApp dispatched to provider', provider.id, '— lead upserted to SENT, expires at', hold.expiresAt.toISOString())
+  console.log('[redispatch] Provider has', MATCHING_CONFIG.offerTtlMinutes, 'minutes to accept.')
 
   await db.$disconnect()
 }

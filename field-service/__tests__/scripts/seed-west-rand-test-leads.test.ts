@@ -61,19 +61,19 @@ afterEach(() => vi.clearAllMocks())
 
 describe('normalisePhone', () => {
   it('converts 082-format to E.164', () => {
-    expect(normalisePhone('0827006695')).toBe('+27827006695')
+    expect(normalisePhone('0000000001')).toBe('+27000000001')
   })
   it('converts +27 format unchanged', () => {
-    expect(normalisePhone('+27827006695')).toBe('+27827006695')
+    expect(normalisePhone('+27000000001')).toBe('+27000000001')
   })
   it('converts 27-prefix to E.164', () => {
-    expect(normalisePhone('27764010810')).toBe('+27764010810')
+    expect(normalisePhone('27000000002')).toBe('+27000000002')
   })
   it('strips spaces', () => {
-    expect(normalisePhone('+27 82 700 6695')).toBe('+27827006695')
+    expect(normalisePhone('+27 00 000 0001')).toBe('+27000000001')
   })
   it('strips hyphens and spaces in local format', () => {
-    expect(normalisePhone('082 700 6695')).toBe('+27827006695')
+    expect(normalisePhone('000 000 0001')).toBe('+27000000001')
   })
   it('throws on non-SA number', () => {
     expect(() => normalisePhone('+1 555 000 1234')).toThrow(/South African/)
@@ -87,14 +87,14 @@ describe('normalisePhone', () => {
 
 describe('classifyImages', () => {
   const mapping: Record<string, ImageMappingEntry> = {
-    ABCDEF: { customerKey: 'masego-mataboge', label: 'evidence', caption: 'Drain' },
+    ABCDEF: { customerKey: 'test-customer-1', label: 'evidence', caption: 'Drain' },
   }
 
   it('classifies a known file', () => {
     const result = classifyImages(['ABCDEF.PNG', 'UNKNOWN.PNG'], mapping)
     expect(result.classified).toHaveLength(1)
     expect(result.classified[0].filename).toBe('ABCDEF.PNG')
-    expect(result.classified[0].customerKey).toBe('masego-mataboge')
+    expect(result.classified[0].customerKey).toBe('test-customer-1')
     expect(result.needsReview).toEqual(['UNKNOWN.PNG'])
   })
 
@@ -142,16 +142,16 @@ describe('buildAvailabilityWindow', () => {
 // ─── upsertCustomer ───────────────────────────────────────────────────────────
 
 const testCustomer: CustomerConfig = {
-  key: 'masego-mataboge',
-  name: 'Masego Mataboge',
-  phone: '+27827006695',
+  key: 'test-customer-1',
+  name: 'Test Customer One',
+  phone: '+27000000001',
   category: 'plumbing',
   title: 'Blocked shower drain',
   description: 'Water drains slowly.',
   availability: 'urgent',
   address: {
     label: 'Home',
-    street: '14 Sunset Road',
+    street: '123 Test Street',
     suburb: 'Ruimsig',
     city: 'Roodepoort',
     province: 'Gauteng',
@@ -163,7 +163,7 @@ const testCustomer: CustomerConfig = {
 
 describe('upsertCustomer', () => {
   it('returns existing customer when found', async () => {
-    const existing = { id: 'cust-1', phone: '+27827006695', name: 'Masego Mataboge' }
+    const existing = { id: 'cust-1', phone: '+27000000001', name: 'Test Customer One' }
     mockDb.customer.findUnique.mockResolvedValueOnce(existing)
 
     const result = await upsertCustomer(testCustomer, true)
@@ -174,7 +174,7 @@ describe('upsertCustomer', () => {
 
   it('creates customer when not found', async () => {
     mockDb.customer.findUnique.mockResolvedValueOnce(null)
-    const created = { id: 'cust-2', phone: '+27827006695', name: 'Masego Mataboge' }
+    const created = { id: 'cust-2', phone: '+27000000001', name: 'Test Customer One' }
     mockDb.customer.create.mockResolvedValueOnce(created)
 
     const result = await upsertCustomer(testCustomer, true)
@@ -183,8 +183,8 @@ describe('upsertCustomer', () => {
     expect(mockDb.customer.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          phone: '+27827006695',
-          name: 'Masego Mataboge',
+          phone: '+27000000001',
+          name: 'Test Customer One',
           isTestUser: true,
           cohortName: 'west-rand-pilot-seed',
           channel: 'PWA',
@@ -208,7 +208,7 @@ describe('upsertCustomer', () => {
 
 describe('upsertAddress', () => {
   it('returns existing address by customerId + street + suburb', async () => {
-    const existing = { id: 'addr-1', street: '14 Sunset Road', suburb: 'Ruimsig' }
+    const existing = { id: 'addr-1', street: '123 Test Street', suburb: 'Ruimsig' }
     mockDb.address.findFirst.mockResolvedValueOnce(existing)
 
     const result = await upsertAddress('cust-1', testCustomer.address, true)
@@ -229,7 +229,7 @@ describe('upsertAddress', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           customerId: 'cust-1',
-          street: '14 Sunset Road',
+          street: '123 Test Street',
           suburb: 'Ruimsig',
           city: 'Roodepoort',
           province: 'Gauteng',
@@ -253,7 +253,7 @@ describe('upsertAddress', () => {
 // ─── upsertJobRequest ─────────────────────────────────────────────────────────
 
 describe('upsertJobRequest', () => {
-  const customer = { id: 'cust-1', phone: '+27827006695', name: 'Masego' }
+  const customer = { id: 'cust-1', phone: '+27000000001', name: 'Test' }
 
   it('returns existing request for same customer + cohort + category', async () => {
     const existing = { id: 'jr-1', status: 'MATCHING' }
@@ -359,7 +359,7 @@ describe('uploadAndAttach', () => {
 
 // ─── createLeadChain ─────────────────────────────────────────────────────────
 
-const fannieProvider = { id: 'prov-1', phone: '+27820000001', name: 'Fannie Dlamini' }
+const fannieProvider = { id: 'prov-1', phone: '+27000000009', name: 'Test Provider' }
 
 describe('createLeadChain', () => {
   it('returns null in dry-run when no existing lead', async () => {
@@ -446,15 +446,15 @@ describe('createLeadChain', () => {
 
 describe('findFannie', () => {
   it('searches by name fragment (case-insensitive)', async () => {
-    const fannie = { id: 'prov-1', name: 'Fannie Dlamini', phone: '+27820000001', active: true }
+    const fannie = { id: 'prov-1', name: 'Test Provider', phone: '+27000000009', active: true }
     mockDb.provider.findFirst.mockResolvedValueOnce(fannie)
 
-    const result = await findFannie('Fannie')
+    const result = await findFannie('test-provider')
     expect(result).toBe(fannie)
     expect(mockDb.provider.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          name: { contains: 'Fannie', mode: 'insensitive' },
+          name: { contains: 'test-provider', mode: 'insensitive' },
           active: true,
         }),
       }),
@@ -463,7 +463,7 @@ describe('findFannie', () => {
 
   it('returns null when not found', async () => {
     mockDb.provider.findFirst.mockResolvedValueOnce(null)
-    expect(await findFannie('Fannie')).toBeNull()
+    expect(await findFannie('test-provider')).toBeNull()
   })
 })
 
