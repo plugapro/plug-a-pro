@@ -16,13 +16,16 @@ import {
   type ProviderEconomicsInput,
 } from '@/lib/commercial/provider-economics'
 import type { DiditWorkflowProfile } from '@/lib/commercial/didit-pricing'
+// SECURITY (54bc65eb): import display-only values from the browser-safe display
+// module. The sensitive commercial notes and raw onboarding-model composition
+// stay in the server-side `smileid-pricing` module and never reach this client
+// bundle. The Smile Secure note is supplied by the server page as a prop.
 import {
-  ONBOARDING_VERIFICATION_MODELS,
-  SMILE_ID_CHECKS,
-  SMILE_SECURE_COMMERCIAL_NOTE,
-  type OnboardingVerificationModel,
-  type SmileIdCheckKey,
-} from '@/lib/commercial/smileid-pricing'
+  ECONOMICS_VERIFICATION_MODEL_OPTIONS,
+  ECONOMICS_SMILE_ID_CHECK_OPTIONS,
+  type EconomicsVerificationModel as OnboardingVerificationModel,
+  type EconomicsSmileIdCheckKey as SmileIdCheckKey,
+} from '@/lib/commercial/economics-display'
 import {
   Card,
   CardContent,
@@ -41,12 +44,12 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
-const MODEL_OPTIONS = Object.entries(ONBOARDING_VERIFICATION_MODELS).map(([key, value]) => ({
-  key: key as OnboardingVerificationModel,
-  label: value.label,
+const MODEL_OPTIONS = ECONOMICS_VERIFICATION_MODEL_OPTIONS.map((model) => ({
+  key: model.key as OnboardingVerificationModel,
+  label: model.label,
 }))
 
-const CHECK_OPTIONS = Object.values(SMILE_ID_CHECKS)
+const CHECK_OPTIONS = ECONOMICS_SMILE_ID_CHECK_OPTIONS
 
 const DEFAULT_ASSUMPTIONS: ProviderEconomicsInput = {
   activeProviderCount: 100,
@@ -67,7 +70,14 @@ const DEFAULT_ASSUMPTIONS: ProviderEconomicsInput = {
 
 export type ProviderEconomicsCalculatorProps = {
   diditScenarioEnabled?: boolean
+  // SECURITY (54bc65eb): the Smile Secure commercial note is supplied by the
+  // server page (which can read the sensitive server-only pricing module)
+  // rather than imported into this client bundle.
+  smileSecureNote?: string
 }
+
+const DEFAULT_SMILE_SECURE_NOTE =
+  'Smile Secure is modelled as a conditional fixed monthly subscription. Confirm with SmileID whether it applies before treating it as a mandatory cost.'
 
 type FieldKey = keyof Pick<
   ProviderEconomicsInput,
@@ -81,7 +91,10 @@ type FieldKey = keyof Pick<
   | 'paidLeadConversionRate'
 >
 
-export function ProviderEconomicsCalculator({ diditScenarioEnabled = false }: ProviderEconomicsCalculatorProps = {}) {
+export function ProviderEconomicsCalculator({
+  diditScenarioEnabled = false,
+  smileSecureNote = DEFAULT_SMILE_SECURE_NOTE,
+}: ProviderEconomicsCalculatorProps = {}) {
   const [assumptions, setAssumptions] = useState<ProviderEconomicsInput>(DEFAULT_ASSUMPTIONS)
   const [exchangeRateValue, setExchangeRateValue] = useState('')
   const scenario: OnboardingVendorScenario = assumptions.onboardingVendorScenario ?? 'SMILE_ID'
@@ -469,7 +482,7 @@ export function ProviderEconomicsCalculator({ diditScenarioEnabled = false }: Pr
                     <CheckCircle2 className="h-4 w-4" />
                     Smile Secure impact
                   </CardTitle>
-                  <CardDescription>{SMILE_SECURE_COMMERCIAL_NOTE}</CardDescription>
+                  <CardDescription>{smileSecureNote}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div className="flex items-center justify-between gap-3 rounded-[16px] bg-muted/50 px-4 py-3">

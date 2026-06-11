@@ -4,6 +4,10 @@ import { ProviderEconomicsCalculator } from '@/components/admin/commercial/Provi
 import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
+// SECURITY (54bc65eb): the full commercial note lives in the server-only pricing
+// module. Reading it here (server component, behind requireAdmin) and passing it
+// as a prop keeps it out of the public client bundle.
+import { SMILE_SECURE_COMMERCIAL_NOTE } from '@/lib/commercial/smileid-pricing'
 
 export const metadata = buildMetadata({ title: 'Provider Economics', noIndex: true })
 
@@ -21,7 +25,10 @@ export default async function ProviderEconomicsPage() {
         </p>
       </div>
 
-      <ProviderEconomicsCalculator diditScenarioEnabled={diditScenarioEnabled} />
+      <ProviderEconomicsCalculator
+        diditScenarioEnabled={diditScenarioEnabled}
+        smileSecureNote={SMILE_SECURE_COMMERCIAL_NOTE}
+      />
     </div>
   )
 }

@@ -57,10 +57,14 @@ export type SelectedProviderAcceptanceResult =
         | 'DUPLICATE_ACCEPT_IGNORED'
         | 'IDENTITY_NOT_VERIFIED'
         | 'CREDIT_CHECK_FAILED'
+        | 'CREDIT_REQUIRED'
         | 'INSUFFICIENT_CREDITS'
         | 'CREDIT_APPLICATION_FAILED'
         | 'JOB_ASSIGNMENT_FAILED'
       currentCreditBalance?: number
+      // Surfaces the underlying credit-check failure so callers can render the
+      // appropriate top-up / wallet messaging even though the accept did not succeed.
+      creditCheck?: ProviderLeadCreditCheckResult
     }
 
 function logProviderLeadAction(params: {
@@ -288,13 +292,25 @@ export async function acceptSelectedProviderJob(params: {
       })
 
       if (!creditCheck.ok) {
+        // SECURITY (66b2eee9): a failed credit check leaves the lead in
+        // CREDIT_REQUIRED (a non-final, locked-pending state) with NO credit
+        // spent. The outer function must therefore report failure, never
+        // success — otherwise the request stays locked while callers believe
+        // the lead was accepted. Map the underlying credit-check reason onto an
+        // existing failure reason that callers already handle with the right
+        // top-up / wallet messaging, and carry the full creditCheck detail.
+        const failureReason =
+          creditCheck.reason === 'INSUFFICIENT_CREDITS' ||
+          creditCheck.reason === 'WALLET_MISSING' ||
+          creditCheck.reason === 'CORRUPT_CREDIT_BALANCE' ||
+          creditCheck.reason === 'WALLET_NOT_ACTIVE'
+            ? ('INSUFFICIENT_CREDITS' as const)
+            : ('CREDIT_REQUIRED' as const)
         return {
-          ok: true as const,
-          leadId: lead.id,
-          creditCheck,
+          ok: false as const,
+          reason: failureReason,
           currentCreditBalance: creditCheck.currentCreditBalance,
-          alreadyAccepted,
-          notificationSent: false,
+          creditCheck,
         }
       }
 
@@ -375,7 +391,9 @@ export async function acceptSelectedProviderJob(params: {
       result: result.acceptedLock?.alreadyLocked ? 'idempotent' : result.creditApplied ? 'accepted_locked' : result.alreadyAccepted ? 'idempotent' : 'accepted',
       source: params.source,
       traceId: params.traceId,
-      reason: result.creditCheck.ok ? undefined : result.creditCheck.reason,
+      // Success results always carry a passing credit check now; a failed
+      // credit check returns the failure shape earlier (SECURITY 66b2eee9).
+      reason: undefined,
     })
 
     return { ...result, notificationSent }
