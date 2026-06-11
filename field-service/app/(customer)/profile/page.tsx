@@ -110,9 +110,9 @@ export default async function ProfilePage() {
   // render, so it also covers manual URL edits, deep links and refreshes.
   const providerDest = resolveProviderRedirect(session, 'profile')
   if (providerDest) {
+    // No PII in logs: phone numbers are sensitive (POPIA) and this redirect
+    // does not need an identifier. Keep a non-identifying breadcrumb only.
     console.log('[profile] provider routed away from customer profile', {
-      userId: session.id,
-      phone: session.phone,
       role: session.role,
       isProvider: session.isProvider,
       dest: providerDest,

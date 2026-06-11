@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHmac } from 'crypto'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { maskPhone } from './support-diagnostics'
 import { normalizePhone } from './utils'
@@ -211,9 +211,26 @@ function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
 }
 
+// South African mobile numbers have a small, enumerable keyspace, so a plain
+// `sha256(phone)` prefix is brute-forceable: an operator with read access to
+// these audit/ops outputs could grind candidate numbers until a prefix matches
+// and recover the raw WhatsApp number. Pseudonymise with a keyed HMAC instead -
+// without PHONE_HASH_SECRET the digest cannot be reproduced offline. Full hex
+// output (no slice) further removes any prefix-collision shortcut.
+function phoneHashSecret(): string {
+  const secret = process.env.PHONE_HASH_SECRET?.trim()
+  if (secret) return secret
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+    return 'test-only-phone-hash-secret'
+  }
+  throw new Error(
+    'PHONE_HASH_SECRET is required outside of test runtimes (NODE_ENV=test or VITEST=true)',
+  )
+}
+
 export function safeRefForPhone(phone: string) {
   const normalizedPhone = normalizePhone(phone)
-  return `wa_${createHash('sha256').update(normalizedPhone).digest('hex').slice(0, 10)}`
+  return `wa_${createHmac('sha256', phoneHashSecret()).update(normalizedPhone).digest('hex')}`
 }
 
 function phoneTail(phone: string) {
