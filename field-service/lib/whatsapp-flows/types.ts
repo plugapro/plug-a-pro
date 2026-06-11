@@ -209,6 +209,12 @@ export interface ConversationData {
   pendingCompletionJobId?: string
   providerCompletionStep?: 'note' | 'photo'
   providerCompletionNote?: string
+  // Scoped context captured when a provider accepts a lead. The post-accept
+  // location-share handler binds the shared location to THIS accepted lead/match
+  // rather than guessing the provider's "most recent active job".
+  postAcceptLeadId?: string
+  postAcceptMatchId?: string
+  postAcceptJobRequestId?: string
   skills?: string[]
   serviceAreas?: string[]
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"

@@ -1515,7 +1515,7 @@ async function processInboundMessageUnlocked(
         return
       }
       if (reply.type === 'location' && reply.latitude != null && reply.longitude != null) {
-        await handleProviderLocationShare(phone, reply.latitude, reply.longitude)
+        await handleProviderLocationShare(phone, reply.latitude, reply.longitude, data)
         return
       }
       // Any other message while waiting - re-prompt or ignore
@@ -1924,42 +1924,72 @@ async function processInboundMessageUnlocked(
     }
 
 
-    if (reply.id?.startsWith('completion_yes_')) {
-      const matchId = reply.id.slice('completion_yes_'.length)
-      const { handleCompletionCheckYes } = await import('./completion-check')
-      await handleCompletionCheckYes({ matchId, customerPhone: phone })
-      return
-    }
+    if (
+      reply.id?.startsWith('completion_yes_') ||
+      reply.id?.startsWith('completion_no_') ||
+      reply.id?.startsWith('completion_why_rescheduled_') ||
+      reply.id?.startsWith('completion_why_not_finished_') ||
+      reply.id?.startsWith('completion_why_didnt_show_')
+    ) {
+      // ── Sender binding ───────────────────────────────────────────────────────
+      // Completion buttons (incl. template quick-reply payloads) route solely on
+      // the embedded matchId, which is an untrusted channel input. Resolve the
+      // owning customer for the match and reject if the inbound phone does not
+      // belong to that customer, before any completion state change.
+      const prefix = [
+        'completion_yes_',
+        'completion_no_',
+        'completion_why_rescheduled_',
+        'completion_why_not_finished_',
+        'completion_why_didnt_show_',
+      ].find((p) => reply.id!.startsWith(p))!
+      const matchId = reply.id!.slice(prefix.length)
+      const match = await db.match.findUnique({
+        where: { id: matchId },
+        select: {
+          id: true,
+          jobRequest: { select: { customer: { select: { phone: true } } } },
+          provider: { select: { name: true } },
+        },
+      })
+      const ownerPhone = match?.jobRequest?.customer?.phone
+      const senderVariants = phoneLookupVariants(phone)
+      if (!match || !ownerPhone || !senderVariants.includes(normalizePhone(ownerPhone))) {
+        console.warn('[whatsapp-bot] completion: sender does not own match - rejecting', {
+          traceId: identity.traceId,
+          matchId,
+          phone: maskedPhone(phone),
+          matchFound: Boolean(match),
+        })
+        await sendText(phone, "We couldn't match this request to your number. Reply *Hi* to see your active requests.")
+        return
+      }
 
-    if (reply.id?.startsWith('completion_no_')) {
-      const matchId = reply.id.slice('completion_no_'.length)
-      const { handleCompletionCheckNo } = await import('./completion-check')
-      const { db: _db } = await import('./db')
-      const _m = await _db.match.findUnique({ where: { id: matchId }, select: { provider: { select: { name: true } } } })
-      await handleCompletionCheckNo({ matchId, customerPhone: phone, providerFirstName: _m?.provider.name.split(' ')[0] ?? 'your provider' })
-      return
-    }
+      const providerName = match.provider?.name ?? 'your provider'
 
-    if (reply.id?.startsWith('completion_why_rescheduled_')) {
-      const matchId = reply.id.slice('completion_why_rescheduled_'.length)
-      const { handleCompletionCheckWhyRescheduled } = await import('./completion-check')
-      await handleCompletionCheckWhyRescheduled({ matchId, customerPhone: phone })
-      return
-    }
-
-    if (reply.id?.startsWith('completion_why_not_finished_')) {
-      const matchId = reply.id.slice('completion_why_not_finished_'.length)
-      const { handleCompletionCheckWhyNotFinished } = await import('./completion-check')
-      await handleCompletionCheckWhyNotFinished({ matchId, customerPhone: phone })
-      return
-    }
-
-    if (reply.id?.startsWith('completion_why_didnt_show_')) {
-      const matchId = reply.id.slice('completion_why_didnt_show_'.length)
+      if (reply.id!.startsWith('completion_yes_')) {
+        const { handleCompletionCheckYes } = await import('./completion-check')
+        await handleCompletionCheckYes({ matchId, customerPhone: phone })
+        return
+      }
+      if (reply.id!.startsWith('completion_no_')) {
+        const { handleCompletionCheckNo } = await import('./completion-check')
+        await handleCompletionCheckNo({ matchId, customerPhone: phone, providerFirstName: providerName.split(' ')[0] })
+        return
+      }
+      if (reply.id!.startsWith('completion_why_rescheduled_')) {
+        const { handleCompletionCheckWhyRescheduled } = await import('./completion-check')
+        await handleCompletionCheckWhyRescheduled({ matchId, customerPhone: phone })
+        return
+      }
+      if (reply.id!.startsWith('completion_why_not_finished_')) {
+        const { handleCompletionCheckWhyNotFinished } = await import('./completion-check')
+        await handleCompletionCheckWhyNotFinished({ matchId, customerPhone: phone })
+        return
+      }
+      // completion_why_didnt_show_
       const { handleCompletionCheckWhyDidntShow } = await import('./completion-check')
-      const { db: _db2 } = await import('./db')
-      const _m2 = await _db2.match.findUnique({ where: { id: matchId }, select: { provider: { select: { name: true } } } })
-      await handleCompletionCheckWhyDidntShow({ matchId, customerPhone: phone, providerName: _m2?.provider.name ?? 'the provider' })
+      await handleCompletionCheckWhyDidntShow({ matchId, customerPhone: phone, providerName })
       return
     }
 
@@ -2200,7 +2230,11 @@ async function processInboundMessageUnlocked(
       const jobCommand = parseProviderJobCommand(reply.text)
       if (jobCommand) {
         if (jobCommand.kind === 'complete') {
-          const lookup = await findSingleActiveJobForProviderPhone(phone)
+          // Pass the parsed #jobref so the note-collection prompt is reached for
+          // multi-active-job providers too. Without it, a targeted
+          // "complete #REF" would skip the note prompt and fall through to
+          // executeProviderJobCommand.
+          const lookup = await findSingleActiveJobForProviderPhone(phone, { jobRef: jobCommand.jobRef })
           if (lookup.state === 'unique' && lookup.status === 'STARTED') {
             await saveConversation({
               phone,
@@ -3793,7 +3827,19 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
   // ── Location prompt ──────────────────────────────────────────────────────────
   // Ask the provider to share their current location so the customer can be
   // notified the provider is en route. This is optional - the provider can skip.
-  await saveConversation({ phone, flow: 'provider_journey', step: 'post_accept_location_prompt', data: {} })
+  // Persist the accepted lead/match/jobRequest context so the location-share
+  // handler binds the shared coordinates to THIS accepted job, not whatever the
+  // provider's most-recent active job happens to be.
+  await saveConversation({
+    phone,
+    flow: 'provider_journey',
+    step: 'post_accept_location_prompt',
+    data: {
+      postAcceptLeadId: lead.id,
+      postAcceptMatchId: result.matchId ?? undefined,
+      postAcceptJobRequestId: lead.jobRequestId,
+    },
+  })
   await sendButtons(
     phone,
     "📍 *Share your location*\n\nThanks for accepting! Share your current location so we can give your customer an estimated arrival time.",
@@ -3807,6 +3853,7 @@ async function handleProviderLocationShare(
   phone: string,
   latitude: number,
   longitude: number,
+  data: ConversationData,
 ): Promise<void> {
   const traceId = createTraceId('wbot')
 
@@ -3818,11 +3865,32 @@ async function handleProviderLocationShare(
     return
   }
 
-  // Find the provider's most recent active job (pre-completion statuses)
+  // Resource binding: load the job for the EXACT accepted lead/match/jobRequest
+  // we stored when the provider accepted, then verify it belongs to this
+  // provider before writing coordinates or notifying the customer. We never fall
+  // back to "most recent active job" - that could attach the location and an
+  // en-route notification to the wrong customer/job when the provider has
+  // multiple active jobs or the accepted lead has not produced a job yet.
+  const scopedJobRequestId = data.postAcceptJobRequestId
+  if (!scopedJobRequestId) {
+    console.warn('[whatsapp-bot] location-share: no accepted-job context in conversation', {
+      traceId, providerId: provider.id,
+    })
+    await sendText(phone, "We couldn't find an active job to attach your location to. Reply *my jobs* to manage your accepted jobs.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
   const job = await db.job.findFirst({
     where: {
       providerId: provider.id,
       status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED'] },
+      booking: {
+        match: {
+          jobRequestId: scopedJobRequestId,
+          ...(data.postAcceptMatchId ? { id: data.postAcceptMatchId } : {}),
+        },
+      },
     },
     orderBy: { createdAt: 'desc' },
     include: {
@@ -3847,11 +3915,14 @@ async function handleProviderLocationShare(
     },
   })
 
-  if (!job) {
-    console.warn('[whatsapp-bot] location-share: no active job found for provider', {
-      traceId, providerId: provider.id,
+  if (!job || job.providerId !== provider.id) {
+    console.warn('[whatsapp-bot] location-share: no scoped active job found for provider', {
+      traceId,
+      providerId: provider.id,
+      jobRequestId: scopedJobRequestId,
+      jobFound: Boolean(job),
     })
-    await sendText(phone, "We couldn't find an active job to attach your location to. If this looks wrong, please contact support.")
+    await sendText(phone, "We couldn't find an active job to attach your location to. Reply *my jobs* to manage your accepted jobs.")
     await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
     return
   }
@@ -3907,7 +3978,13 @@ async function sendLeadInsufficientCreditsMessage(
     }),
     [
       { id: 'provider_top_up_credits', title: 'Top up credits' },
-      { id: holdId ? `accept:${holdId}` : `match_inspect_${leadId}`, title: ctaLabelFor('view_lead') },
+      // Action-confusion guard: `accept:{holdId}` is a stateless ACCEPT action
+      // (handleAssignmentHoldAcceptance → acceptLead), so its title must read as
+      // an explicit acceptance, not "View lead". Only the non-hold
+      // `match_inspect_{leadId}` payload is a true preview/view action.
+      holdId
+        ? { id: `accept:${holdId}`, title: 'Accept job' }
+        : { id: `match_inspect_${leadId}`, title: ctaLabelFor('view_lead') },
       { id: 'back_home', title: 'Main Menu' },
     ],
   )
@@ -4736,8 +4813,19 @@ async function handleProviderCompletionCapture(
 async function handleRebookConfirm(phone: string, buttonId: string): Promise<void> {
   const jobRequestId = buttonId.slice('rebook_confirm:'.length)
 
-  const priorJob = await db.jobRequest.findUnique({
-    where: { id: jobRequestId },
+  // Sender binding: rebook_confirm carries an attacker-controlled jobRequestId.
+  // Resolve the inbound sender first and scope the lookup to their own customer
+  // record so a sender cannot copy another customer's job category/description
+  // into their conversation or probe for the existence of arbitrary IDs.
+  const identity = await resolveWhatsAppUserContext(phone)
+  if (!identity.customerId) {
+    await sendText(phone, "Sorry, we couldn't find that job. Type *Request a job* to start a new booking.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  const priorJob = await db.jobRequest.findFirst({
+    where: { id: jobRequestId, customerId: identity.customerId },
     select: { id: true, category: true, title: true, description: true, customerId: true },
   })
 
@@ -4747,7 +4835,6 @@ async function handleRebookConfirm(phone: string, buttonId: string): Promise<voi
     return
   }
 
-  const identity = await resolveWhatsAppUserContext(phone)
   const baseData: ConversationData = {
     selectedCategory: priorJob.category ?? undefined,
     category: priorJob.category ?? undefined,

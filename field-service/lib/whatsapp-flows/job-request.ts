@@ -1754,12 +1754,16 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     const traceId = createTraceId('req')
     console.error('[job-request-flow] Create job request error:', { traceId, err })
 
-    // In pilot mode, append a truncated technical error to the WhatsApp message
-    // so failures can be triaged without needing server logs. Disable by removing
-    // PILOT_DEBUG_ERRORS from env once stable.
-    const debugSuffix = process.env.PILOT_DEBUG_ERRORS === 'true'
-      ? `\n\n_🔧 Debug: ${errorMessage.slice(0, 300)}_`
-      : ''
+    // In NON-PRODUCTION pilot mode, append a truncated technical error to the
+    // WhatsApp message so failures can be triaged without needing server logs.
+    // SECURITY: this path is reachable by external WhatsApp users via the Meta
+    // webhook, and the error text can contain DB/host/schema or integration
+    // details. Never disclose it in production - gate on NODE_ENV as well as the
+    // env flag, and always log the full error server-side only (above).
+    const debugSuffix =
+      process.env.NODE_ENV !== 'production' && process.env.PILOT_DEBUG_ERRORS === 'true'
+        ? `\n\n_🔧 Debug: ${errorMessage.slice(0, 300)}_`
+        : ''
 
     await sendText(
       ctx.phone,

@@ -1321,13 +1321,12 @@ async function handleJobDetail(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promise<FlowResult> {
   const traceId = crypto.randomUUID().slice(0, 8)
-  const normalizedPhone = normalizePhone(ctx.phone)
   const provider = await findProviderForWhatsApp(ctx.phone)
   if (!provider) {
     console.info('[provider-journey] lead_detail provider lookup failed', {
       traceId,
-      normalizedPhone,
-      leadId,
+      // Phone is POPIA-covered PII - log only a masked suffix.
+      phone: maskPhoneForJourneyLog(ctx.phone),
       inboundMessageId: ctx.reply.id ?? null,
     })
     await sendText(ctx.phone, "You're not registered as a provider.")
@@ -1370,14 +1369,11 @@ async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promi
   const nextStep = acceptedLeadNextStep(match)
   console.info('[provider-journey] lead_detail resolved', {
     traceId,
-    normalizedPhone,
+    // Phone is POPIA-covered PII - log only a masked suffix.
+    phone: maskPhoneForJourneyLog(ctx.phone),
     resolvedProviderId: provider.id,
-    leadId: lead.id,
-    jobRequestRef: shortRef(lead.jobRequestId),
     leadStatus: lead.status,
     matchStatus: match.status,
-    statusLabel: status,
-    nextStep,
   })
   const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
   const body =

@@ -23,7 +23,19 @@
 
 import { db } from '../db'
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
+import { normalizePhone, phoneLookupVariants } from '../utils'
 import type { SlotOption } from '../matching/types'
+
+// ── Sender binding ────────────────────────────────────────────────────────────
+// WhatsApp interactive IDs are attacker-controlled routing data. Every handler
+// that mutates a JobRequest by the ID embedded in the button MUST first verify
+// the inbound phone belongs to that request's customer. Returns the loaded
+// customer phone variants for the caller to reuse, or null when the sender does
+// not own the request (caller then rejects).
+function senderOwnsCustomerPhone(phone: string, customerPhone: string | null | undefined): boolean {
+  if (!customerPhone) return false
+  return phoneLookupVariants(phone).includes(normalizePhone(customerPhone))
+}
 
 // ── Public entry point - called by orchestrator on NO_MATCH ──────────────────
 
@@ -204,10 +216,16 @@ async function handleCustomerSelectedSlot(
       altSlotNegotiationSentAt: true,
       altSlotNegotiationOutcome: true,
       latestDispatchDecisionId: true,
+      customer: { select: { phone: true } },
     },
   })
 
   if (!jobRequest) {
+    await sendText(phone, "❌ Request not found. Reply *Hi* to check your current requests.")
+    return
+  }
+  if (!senderOwnsCustomerPhone(phone, jobRequest.customer?.phone)) {
+    console.warn('[alt-slot] customer slot select: sender does not own request', { jobRequestId })
     await sendText(phone, "❌ Request not found. Reply *Hi* to check your current requests.")
     return
   }
@@ -257,10 +275,10 @@ async function handleCustomerDeclinedAllSlots(
 ): Promise<void> {
   const jobRequest = await db.jobRequest.findUnique({
     where: { id: jobRequestId },
-    select: { id: true, altSlotNegotiationOutcome: true, category: true },
+    select: { id: true, altSlotNegotiationOutcome: true, category: true, customer: { select: { phone: true } } },
   })
 
-  if (!jobRequest || jobRequest.altSlotNegotiationOutcome != null) {
+  if (!jobRequest || !senderOwnsCustomerPhone(phone, jobRequest.customer?.phone) || jobRequest.altSlotNegotiationOutcome != null) {
     await sendText(phone, "✅ Your response has been noted. Reply *Hi* for your request status.")
     return
   }
@@ -341,6 +359,18 @@ async function handleProviderSelectedSlot(
     return
   }
 
+  // Sender binding: the provider that taps a slot button must actually be one of
+  // the providers offered that SlotOption. The button ID is attacker-controlled,
+  // so a leaked jobRequestId/slotKey must not let an unrelated provider set the
+  // customer's preferred provider or drive the negotiation.
+  if (!slotOption.providers.some((p) => p.id === provider.id)) {
+    console.warn('[alt-slot] provider slot select: provider not offered this slot', {
+      jobRequestId, providerId: provider.id, slotKey,
+    })
+    await sendText(phone, "❌ This slot offer is no longer available for your profile.")
+    return
+  }
+
   const customerPhone = jobRequest.customer?.phone
   if (!customerPhone) {
     await sendText(phone, "❌ Customer contact details unavailable - this request has been passed back to our team.")
@@ -379,17 +409,34 @@ async function handleProviderDeclinedAllSlots(
   phone: string,
   jobRequestId: string
 ): Promise<void> {
+  const provider = await db.provider.findUnique({ where: { phone }, select: { id: true } })
+  if (!provider) {
+    await sendText(phone, "Understood, thanks.")
+    return
+  }
+
   const jobRequest = await db.jobRequest.findUnique({
     where: { id: jobRequestId },
     select: {
       id: true,
       category: true,
       altSlotNegotiationOutcome: true,
+      latestDispatchDecisionId: true,
       customer: { select: { phone: true, name: true } },
     },
   })
 
   if (!jobRequest || jobRequest.altSlotNegotiationOutcome != null) {
+    await sendText(phone, "Understood, thanks.")
+    return
+  }
+
+  // Sender binding: only a provider that was actually offered one of this
+  // request's alternative slots may clear/reset its negotiation state.
+  if (!(await providerWasOfferedSlot(jobRequest.latestDispatchDecisionId, provider.id))) {
+    console.warn('[alt-slot] provider decline-all: provider not offered any slot', {
+      jobRequestId, providerId: provider.id,
+    })
     await sendText(phone, "Understood, thanks.")
     return
   }
@@ -473,10 +520,20 @@ async function handleCustomerConfirmedProviderSlot(
       category: true,
       altSlotNegotiationOutcome: true,
       latestDispatchDecisionId: true,
+      customer: { select: { phone: true } },
     },
   })
 
-  if (!jobRequest || jobRequest.altSlotNegotiationOutcome != null) {
+  if (!jobRequest) {
+    await sendText(phone, "✅ Already confirmed - check your request status by replying *Hi*.")
+    return
+  }
+  if (!senderOwnsCustomerPhone(phone, jobRequest.customer?.phone)) {
+    console.warn('[alt-slot] customer confirm provider slot: sender does not own request', { jobRequestId })
+    await sendText(phone, "✅ Already confirmed - check your request status by replying *Hi*.")
+    return
+  }
+  if (jobRequest.altSlotNegotiationOutcome != null) {
     await sendText(phone, "✅ Already confirmed - check your request status by replying *Hi*.")
     return
   }
@@ -536,10 +593,11 @@ async function handleCustomerRejectedProviderSlot(
       id: true,
       category: true,
       altSlotNegotiationOutcome: true,
+      customer: { select: { phone: true } },
     },
   })
 
-  if (!jobRequest || jobRequest.altSlotNegotiationOutcome != null) {
+  if (!jobRequest || !senderOwnsCustomerPhone(phone, jobRequest.customer?.phone) || jobRequest.altSlotNegotiationOutcome != null) {
     await sendText(phone, "✅ Your response has been recorded. Reply *Hi* for status.")
     return
   }
@@ -587,6 +645,20 @@ async function loadSlotOption(
 
   const slots = decision.alternativeSlotOptions as unknown as SlotOption[]
   return slots.find((s) => s.slotKey === slotKey) ?? null
+}
+
+async function providerWasOfferedSlot(
+  dispatchDecisionId: string | null | undefined,
+  providerId: string,
+): Promise<boolean> {
+  if (!dispatchDecisionId) return false
+  const decision = await db.dispatchDecision.findUnique({
+    where: { id: dispatchDecisionId },
+    select: { alternativeSlotOptions: true },
+  })
+  if (!decision?.alternativeSlotOptions) return false
+  const slots = decision.alternativeSlotOptions as unknown as SlotOption[]
+  return slots.some((s) => s.providers?.some((p) => p.id === providerId))
 }
 
 async function triggerRematch(jobRequestId: string): Promise<void> {
