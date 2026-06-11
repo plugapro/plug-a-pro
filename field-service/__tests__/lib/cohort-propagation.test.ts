@@ -38,6 +38,12 @@ const {
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/db', () => ({ db: mockDb }))
+// This suite verifies test-cohort flag propagation, not WhatsApp consent policy.
+// Allow sends so the dispatch path reaches the message-send assertions.
+vi.mock('@/lib/whatsapp-policy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/whatsapp-policy')>()),
+  canSend: async () => ({ allowed: true }),
+}))
 vi.mock('../../lib/category-config', () => ({
   resolveCategoryRequirements: mockResolveCategoryRequirements,
 }))
@@ -286,6 +292,7 @@ describe('test cohort propagation chain', () => {
         active: true,
         verified: true,
         availableNow: true,
+        whatsappMarketingOptIn: true,
         cohortName: 'internal_staff_test',
       } as never,
     })
