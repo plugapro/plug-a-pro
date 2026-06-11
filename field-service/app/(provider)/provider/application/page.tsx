@@ -60,13 +60,19 @@ export default async function ProviderApplicationPage() {
     )
   }
 
+  // Intentionally does NOT select `notes`. ProviderApplication.notes holds
+  // internal admin/ops review annotations (risk signals such as
+  // HIGH_RISK_REVIEW, missing-field flags, reviewer comments) and is not
+  // cleared on approval, so surfacing it here would disclose internal review
+  // detail to the applicant. A sanitized, applicant-safe message belongs in a
+  // dedicated providerFacingStatusMessage field (schema change tracked
+  // separately); until then this page shows only status-derived guidance.
   const application = await db.providerApplication.findFirst({
     where: { providerId: provider.id },
     orderBy: { submittedAt: 'desc' },
     select: {
       id: true,
       status: true,
-      notes: true,
       submittedAt: true,
       reviewedAt: true,
       name: true,
@@ -173,12 +179,19 @@ export default async function ProviderApplicationPage() {
               </div>
             ) : null}
 
-            {application.notes ? (
+            {application.status === 'MORE_INFO_REQUIRED' ? (
               <div className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-3">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                  Admin note
+                  Action needed
                 </p>
-                <p>{application.notes}</p>
+                <p>We need a bit more information before we can approve your application. Please check your WhatsApp for the details we requested and reply there.</p>
+              </div>
+            ) : application.status === 'REJECTED' ? (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-3">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                  Application outcome
+                </p>
+                <p>Your application was not approved. Reply to any of our WhatsApp messages or contact support if you have questions.</p>
               </div>
             ) : null}
 

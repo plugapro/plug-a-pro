@@ -443,6 +443,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.onboarding.recovery_auto_nudge': {
+    description: 'Allow the /api/cron/provider-onboarding-recovery schedule to auto-send WhatsApp onboarding recovery nudges. Default off: when disabled the cron only reports the queue and admins send nudges manually from /admin/applications. Sends are additionally scoped to phones with real provider-registration intent.',
+    owner: 'ops',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY

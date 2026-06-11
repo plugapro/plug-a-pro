@@ -252,6 +252,25 @@ export function providerOnboardingStageLabel(stage: ProviderOnboardingRecoverySt
   return STAGE_LABELS[stage]
 }
 
+// A phone only belongs in the provider onboarding recovery queue when it shows
+// real provider-registration intent: either a ProviderApplication on file, or an
+// open WhatsApp conversation that is actually in the `registration` flow.
+//
+// Without this guard, classifyProviderOnboardingStage() maps every other inbound
+// conversation (customer job_request/help/status flows, or inbound-only users
+// with no conversation) to `welcome_idle`, which becomes due after ~20 minutes.
+// The auto-nudge cron would then send provider recruitment/onboarding WhatsApp
+// messages to customers and opted-out users who merely messaged the bot. Gate at
+// the row-building layer so both the admin queue and the cron sender ignore these
+// non-registration phones entirely.
+function hasProviderRegistrationIntent(params: {
+  conversation?: { flow: string } | null
+  application?: { status: string } | null
+}): boolean {
+  if (params.application) return true
+  return params.conversation?.flow === 'registration'
+}
+
 export function classifyProviderOnboardingStage(input: ClassificationInput): ProviderOnboardingRecoveryStage {
   const data = dataRecord(input.data)
   if (hasCustomerFlowConflict(input)) return 'flow_conflict'
@@ -533,7 +552,12 @@ export function buildProviderOnboardingRecoveryRowsFromSnapshots(input: BuildRow
     outcomeEventsByRef.set(event.entityId, list)
   }
 
-  const rows = buildInboundStats(input.inbound).map((stats) => {
+  const rows = buildInboundStats(input.inbound)
+    .filter((stats) => hasProviderRegistrationIntent({
+      conversation: conversationsByPhone.get(stats.phone),
+      application: applicationsByPhone.get(stats.phone),
+    }))
+    .map((stats) => {
     const conversation = conversationsByPhone.get(stats.phone)
     const application = applicationsByPhone.get(stats.phone)
     const data = dataRecord(conversation?.data)

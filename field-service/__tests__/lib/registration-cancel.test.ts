@@ -5,7 +5,6 @@ import type { FlowContext } from '@/lib/whatsapp-flows/types'
 //     inside vi.mock factory closures (vi.mock is hoisted to top of file) ─────
 const {
   mockDb,
-  mockTx,
   mockSendText,
   mockSendButtons,
   mockSendList,
@@ -13,19 +12,12 @@ const {
   mockFindLatestActiveApp,
   mockCreateTestCohortContext,
 } = vi.hoisted(() => {
-  const txObj = {
-    providerApplication: { create: vi.fn() },
-    auditLog: { create: vi.fn() },
-    customer: { findFirst: vi.fn() },
-    provider: { findFirst: vi.fn() },
-  }
   return {
-    mockTx: txObj,
     mockDb: {
       customer: { findFirst: vi.fn() },
       provider: { findFirst: vi.fn() },
       providerApplication: { create: vi.fn(), findFirst: vi.fn() },
-      $transaction: vi.fn(async (fn: (tx: typeof txObj) => Promise<unknown>) => fn(txObj)),
+      auditLog: { create: vi.fn() },
     },
     mockSendText: vi.fn().mockResolvedValue(undefined),
     mockSendButtons: vi.fn().mockResolvedValue(undefined),
@@ -130,28 +122,30 @@ function makeCtx(overrides: Partial<FlowContext> = {}): FlowContext {
 describe('Registration cancel - summary step (reg_pending)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockTx.providerApplication.create.mockResolvedValue({ id: 'app_cancelled_123' })
-    mockTx.auditLog.create.mockResolvedValue({})
+    mockDb.auditLog.create.mockResolvedValue({})
   })
 
-  it('creates a CANCELLED ProviderApplication record', async () => {
+  it('does NOT create a ProviderApplication row on cancel (no PII persisted)', async () => {
     const result = await handleRegistrationFlow(makeCtx())
-    expect(mockTx.providerApplication.create).toHaveBeenCalledOnce()
-    const createCall = mockTx.providerApplication.create.mock.calls[0][0]
-    expect(createCall.data.status).toBe('CANCELLED')
-    expect(createCall.data.cancelledAt).toBeInstanceOf(Date)
-    expect(createCall.data.name).toBe('Sipho Dlamini')
-    expect(createCall.data.skills).toEqual(['plumbing'])
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
     expect(result.nextStep).toBe('done')
   })
 
-  it('writes an AuditLog entry inside the same transaction', async () => {
+  it('writes a non-PII AuditLog cancellation event', async () => {
     await handleRegistrationFlow(makeCtx())
-    expect(mockTx.auditLog.create).toHaveBeenCalledOnce()
-    const auditCall = mockTx.auditLog.create.mock.calls[0][0]
+    expect(mockDb.auditLog.create).toHaveBeenCalledOnce()
+    const auditCall = mockDb.auditLog.create.mock.calls[0][0]
     expect(auditCall.data.action).toBe('provider_application.cancelled')
     expect(auditCall.data.actorRole).toBe('provider_applicant')
     expect(auditCall.data.after.status).toBe('CANCELLED')
+    // The event records only non-identifying counts/trace metadata - none of the
+    // collected onboarding PII (name, ID/passport, email, evidence) is retained.
+    const serialized = JSON.stringify(auditCall.data.after)
+    expect(serialized).not.toContain('Sipho Dlamini')
+    expect(serialized).not.toContain('8001010000088')
+    expect(auditCall.data.after).not.toHaveProperty('name')
+    expect(auditCall.data.after).not.toHaveProperty('idNumber')
+    expect(auditCall.data.after).not.toHaveProperty('evidenceFileUrls')
   })
 
   it('sends the cancellation message without a trailing emoji', async () => {
@@ -167,26 +161,11 @@ describe('Registration cancel - summary step (reg_pending)', () => {
     expect(result.nextStep).toBe('done')
   })
 
-  it('is non-fatal: still returns done and sends message even when DB write fails', async () => {
-    mockDb.$transaction.mockRejectedValueOnce(new Error('DB constraint'))
+  it('is non-fatal: still returns done and sends message even when the audit write fails', async () => {
+    mockDb.auditLog.create.mockRejectedValueOnce(new Error('DB constraint'))
     const result = await handleRegistrationFlow(makeCtx())
     expect(result.nextStep).toBe('done')
     expect(mockSendText).toHaveBeenCalledOnce()
-  })
-
-  it('uses selectedSuburbLabels as the service area list', async () => {
-    const ctx = makeCtx({
-      data: {
-        ...makeCtx().data,
-        selectedSuburbLabels: ['Soweto', 'Diepkloof'],
-        selectedRegionLabels: [],
-        serviceAreas: [],
-      },
-    })
-    await handleRegistrationFlow(ctx)
-    const createCall = mockTx.providerApplication.create.mock.calls[0][0]
-    expect(createCall.data.serviceAreas).toContain('Soweto')
-    expect(createCall.data.serviceAreas).toContain('Diepkloof')
   })
 })
 
@@ -202,8 +181,8 @@ describe('Registration cancel - intro (reg_cancel at name collection)', () => {
       reply: { type: 'button_reply', id: 'reg_cancel', title: 'Not Now' },
     })
     await handleRegistrationFlow(ctx)
-    expect(mockDb.$transaction).not.toHaveBeenCalled()
-    expect(mockTx.providerApplication.create).not.toHaveBeenCalled()
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+    expect(mockDb.auditLog.create).not.toHaveBeenCalled()
   })
 
   it('sends the no-problem message without trailing emoji', async () => {
@@ -231,9 +210,8 @@ describe('Registration cancel - intro (reg_cancel at name collection)', () => {
 })
 
 describe('Re-join after cancel', () => {
-  // CANCELLED is excluded from ACTIVE_PROVIDER_APPLICATION_STATUSES, so
-  // findLatestActiveProviderApplicationByPhone returns null - the provider
-  // sees the onboarding intro screen and can re-apply.
+  // No CANCELLED ProviderApplication row is created, so a previously cancelled
+  // applicant simply sees the onboarding intro screen and can re-apply.
   beforeEach(() => {
     vi.clearAllMocks()
     mockDb.provider.findFirst.mockResolvedValue(null)
