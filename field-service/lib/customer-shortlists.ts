@@ -1836,6 +1836,30 @@ export async function selectProviderForCustomerRequest(params: {
     )
   }
 
+  // Shortlist publication is the editorial boundary for selection. Because this
+  // action is exported from a 'use server' module, authorization must not rely on
+  // the UI only rendering it for visible shortlist cards: a caller could invoke it
+  // with their own requestId and any providerId from ranked matches. Require a
+  // PUBLISHED ProviderShortlistItem for the selected provider so a provider cannot
+  // be selected outside the published shortlist boundary.
+  const publishedShortlistItem = await db.providerShortlistItem.findFirst({
+    where: {
+      providerId,
+      shortlist: { requestId, status: 'PUBLISHED' },
+    },
+    select: { id: true },
+  })
+  if (!publishedShortlistItem) {
+    logSelectionRejected('provider_not_in_published_shortlist', {
+      requestId,
+      providerId,
+    })
+    throw new CustomerShortlistError(
+      'INVALID_PROVIDER_SELECTION',
+      'This provider is not part of your published shortlist.',
+    )
+  }
+
   // Prefer an existing selectable lead for this provider; older or completed
   // leads are ignored so we do not resurrect stale state when the customer
   // re-opens this flow.

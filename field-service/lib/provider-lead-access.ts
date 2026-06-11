@@ -87,6 +87,8 @@ type ProviderLeadAccessInvalidReason =
   | 'PROVIDER_PHONE_MISMATCH'
   | 'SENDER_PHONE_MISMATCH'
   | 'MATCH_CANCELLED'
+  | 'JOB_REQUEST_CLOSED'
+  | 'PROVIDER_REASSIGNED'
 
 const SAFE_LEAD_UNLOCK_SELECT = {
   id: true,
@@ -247,7 +249,12 @@ export function providerLeadTokenAllowsScope(
   scope: ProviderLeadAccessScope,
 ) {
   if (!payload) return false
-  if (!payload.scopes?.length) return true
+  // Fail closed for unscoped/empty-scope tokens. Legacy tokens minted before the
+  // scope model (and any token without explicit scopes) are treated as minimal:
+  // they may only view the lead, never job-state or contact-customer actions.
+  if (!payload.scopes?.length) {
+    return scope === 'view_lead'
+  }
   return payload.scopes.includes(scope)
 }
 
@@ -398,6 +405,8 @@ export async function resolveProviderLeadAccessToken(
           id: true,
           category: true,
           assignmentMode: true,
+          status: true,
+          selectedProviderId: true,
           title: true,
           description: true,
           requestedWindowStart: true,
@@ -567,7 +576,53 @@ export async function resolveProviderLeadAccessToken(
     }
   }
 
+  // If the parent request itself reached a terminal state (cancelled or expired),
+  // revoke access. ACCEPTED_LOCKED requests may have no Match row, so the
+  // match-cancelled check above is not sufficient: a stale signed link could
+  // otherwise keep resolving customer PII after the request is closed.
+  if (lead.jobRequest.status === 'CANCELLED' || lead.jobRequest.status === 'EXPIRED') {
+    console.warn('[provider-lead-access] token rejected: job request closed', {
+      traceId,
+      leadId: lead.id,
+      providerId: lead.providerId,
+      jobRequestStatus: lead.jobRequest.status,
+    })
+    return {
+      status: 'invalid' as const,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: 'JOB_REQUEST_CLOSED' as const,
+    }
+  }
+
   const acceptedState = lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED'
+
+  // For accepted/locked leads, verify the request is still selected for this
+  // exact provider before any customer PII or accepted-scope attachments are
+  // exposed. If the request was reassigned to a different provider after this
+  // lead was accepted/locked, fail closed. selectedProviderId may be null on
+  // some accepted-state rows (legacy/auto-assign); only reject on a concrete
+  // mismatch so we do not regress the existing accepted-lead journey.
+  if (
+    acceptedState &&
+    lead.jobRequest.selectedProviderId != null &&
+    lead.jobRequest.selectedProviderId !== lead.providerId
+  ) {
+    console.warn('[provider-lead-access] token rejected: request reassigned to another provider', {
+      traceId,
+      leadId: lead.id,
+      providerId: lead.providerId,
+      selectedProviderId: lead.jobRequest.selectedProviderId,
+    })
+    return {
+      status: 'invalid' as const,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: 'PROVIDER_REASSIGNED' as const,
+    }
+  }
   const leadUnlock = acceptedState
     ? await db.leadUnlock.findUnique({
         where: { leadId: lead.id },
@@ -644,17 +699,44 @@ export async function resolveProviderLeadAttachmentScope(token: string) {
     return { status: resolved.status, jobRequestId: null, leadId: resolved.payload?.leadId ?? null, traceId: resolved.traceId }
   }
 
+  const lead = resolved.lead
+
+  // Lead offers are short-lived; signed HMAC links live for the full token TTL.
+  // A lead won by another provider is marked EXPIRED, but expiresAt is not always
+  // moved into the past. Treat EXPIRED (or a past expiresAt) as a closed state so
+  // a losing/declined/timed-out provider cannot keep pulling customer photos via
+  // the attachment proxy until the HMAC token expires.
+  const leadClosed =
+    lead.status === 'EXPIRED' ||
+    lead.status === 'DECLINED' ||
+    lead.status === 'CANCELLED' ||
+    Boolean(lead.expiresAt && lead.expiresAt <= new Date())
+  if (leadClosed) {
+    console.warn('[provider-lead-access] attachment scope rejected: lead closed', {
+      traceId: resolved.traceId,
+      leadId: lead.id,
+      providerId: lead.providerId,
+      leadStatus: lead.status,
+    })
+    return {
+      status: 'expired' as const,
+      jobRequestId: null,
+      leadId: lead.id,
+      traceId: resolved.traceId,
+    }
+  }
+
   // Expose whether the provider has an accepted unlock - the attachment proxy
   // uses this to decide whether to enforce safeForPreview on request-level
   // attachments. After acceptance, the provider may view all request attachments.
   const hasAcceptedUnlock =
-    (resolved.lead.status === 'ACCEPTED' || resolved.lead.status === 'ACCEPTED_LOCKED') &&
-    resolved.lead.unlock?.providerId === resolved.lead.providerId
+    (lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') &&
+    lead.unlock?.providerId === lead.providerId
 
   return {
     status: 'active' as const,
-    jobRequestId: resolved.lead.jobRequestId,
-    leadId: resolved.lead.id,
+    jobRequestId: lead.jobRequestId,
+    leadId: lead.id,
     isAccepted: hasAcceptedUnlock,
     traceId: resolved.traceId,
   }

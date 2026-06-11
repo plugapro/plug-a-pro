@@ -3,10 +3,13 @@ import { db } from './db'
 import { getPublicAppUrl } from './provider-credit-copy'
 import { createTraceId } from './support-diagnostics'
 
-// 30-day TTL so a customer's first WhatsApp link stays valid for the entire
-// active job lifecycle. ensureJobRequestAccessToken reuses an existing valid
-// token on every call, so this only affects newly issued or expired tokens.
-const ACCESS_TOKEN_TTL_HOURS = 720
+// 72-hour (3-day) TTL. These customer access links are unauthenticated bearer
+// tokens delivered over WhatsApp: possession of the URL is enough to resolve the
+// request and take state-changing actions. A long TTL widens the window in which
+// a forwarded, logged, screenshotted or recovered link can be abused, so the TTL
+// is kept short. ensureJobRequestAccessToken reuses an existing valid token on
+// every call, so this only affects newly issued or expired tokens.
+const ACCESS_TOKEN_TTL_HOURS = 72
 
 function buildExpiryDate() {
   return new Date(Date.now() + ACCESS_TOKEN_TTL_HOURS * 60 * 60 * 1000)

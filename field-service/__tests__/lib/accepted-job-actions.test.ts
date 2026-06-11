@@ -290,10 +290,11 @@ describe('accepted job actions', () => {
     })
   })
 
-  it('allows a LEAD_RESPONSE_SCOPES token (original WhatsApp invite URL) to save arrival for an accepted lead', async () => {
-    // Simulate the provider using their original "View Lead" URL after accepting via WhatsApp.
-    // That token has LEAD_RESPONSE_SCOPES which does not include 'confirm_arrival'.
-    // tokenAllowsAcceptedJobScope must detect this and let resolveAcceptedLeadFromToken decide.
+  it('blocks a LEAD_RESPONSE_SCOPES-only token (original WhatsApp invite URL) from saving arrival', async () => {
+    // Security boundary: the original "View Lead" URL carries LEAD_RESPONSE_SCOPES
+    // (view_lead/accept_lead/decline_lead) which does NOT include 'confirm_arrival'.
+    // tokenAllowsAcceptedJobScope must require the exact accepted-job scope; a
+    // lower-scoped lead invite token must not be able to mutate arrival times.
     mockVerifyToken.mockReturnValue({
       status: 'active',
       payload: {
@@ -311,11 +312,8 @@ describe('accepted job actions', () => {
       plannedArrivalEnd: plannedEnd,
     })
 
-    expect(result).toMatchObject({ ok: true, duplicate: false })
-    expect(mockDb.match.update).toHaveBeenCalledWith({
-      where: { id: 'match-1' },
-      data: expect.objectContaining({ plannedArrivalStart: plannedStart }),
-    })
+    expect(result).toMatchObject({ ok: false, reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB' })
+    expect(mockDb.match.update).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid/tampered token before hitting the database', async () => {

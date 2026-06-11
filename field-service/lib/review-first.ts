@@ -2157,10 +2157,34 @@ export async function expireRfpInvitations() {
   return { expiredCount: expired.length }
 }
 
+// Request statuses from which a decline/expiry cascade may legitimately resurface
+// the next shortlisted provider. If the customer has already moved on (a provider
+// confirmation is pending for someone else, the job is matched/accepted, or the
+// request was cancelled/expired), a stale decline must NOT mutate the request or
+// notify a different provider.
+const CASCADEABLE_REQUEST_STATUSES = new Set(['MATCHING', 'SHORTLIST_READY'])
+
 export async function cascadeToNextShortlistedProvider(params: {
   requestId: string
   declinedLeadId: string
 }): Promise<{ cascaded: boolean; nextLeadId?: string; preferenceRank?: number; wasRfpLead: boolean }> {
+  // Guard: only cascade while the parent request is still in a cascadeable state.
+  // A replayed/stale decline on a SEND_FAILED sibling lead could otherwise reset
+  // the request or send a signed lead URL to another provider after the customer
+  // has already selected someone else.
+  const cascadeRequest = await db.jobRequest.findUnique({
+    where: { id: params.requestId },
+    select: { status: true },
+  })
+  if (!cascadeRequest || !CASCADEABLE_REQUEST_STATUSES.has(cascadeRequest.status)) {
+    console.warn('[review-first.cascade] skipped: request not cascadeable', {
+      requestId: params.requestId,
+      declinedLeadId: params.declinedLeadId,
+      requestStatus: cascadeRequest?.status ?? null,
+    })
+    return { cascaded: false, wasRfpLead: false }
+  }
+
   const shortlist = await db.providerShortlist.findFirst({
     where: { requestId: params.requestId, status: 'DRAFT' },
     select: {

@@ -30,6 +30,7 @@ const state: { tx: any; shortlistItem: any; declineLead: any } = {
     },
     providerShortlistItem: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       updateMany: vi.fn(),
     },
     matchAttempt: {
@@ -203,6 +204,13 @@ describe('customer shortlists', () => {
       address: { suburb: 'Ruimsig', city: 'Johannesburg' },
     })
     mockDb.matchAttempt.findFirst.mockResolvedValue(null)
+    // selectProviderForCustomerRequest requires a PUBLISHED shortlist item for the
+    // selected provider (editorial boundary). Reset clears any queued one-off
+    // resolutions from prior tests, then default to a present published item so
+    // selection-flow tests reach their original assertions; reject-path tests that
+    // exercise the missing-shortlist guard override this with null explicitly.
+    mockDb.providerShortlistItem.findFirst.mockReset()
+    mockDb.providerShortlistItem.findFirst.mockResolvedValue({ id: 'published-item-1' })
     mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' })
     mockDb.lead.upsert.mockResolvedValue({
       id: 'lead-upserted',
@@ -1503,6 +1511,37 @@ describe('customer shortlists', () => {
         providerId: 'provider-unknown',
       }),
     ).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND' })
+  })
+
+  it('rejects provider selection when provider is not in the published shortlist', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      id: 'request-1',
+      customerId: 'customer-1',
+      category: 'plumbing',
+      status: 'SHORTLIST_READY',
+      latestDispatchDecisionId: 'dispatch-1',
+      selectedProviderId: null,
+      selectedLeadInviteId: null,
+      address: { suburb: 'Ruimsig' },
+      leads: [],
+    })
+    // No PUBLISHED shortlist item exists for this provider: selection must be
+    // rejected before any lead is created or the request advanced, even though
+    // the provider may appear in ranked matches. beforeEach restores the default
+    // present-item resolution for subsequent tests.
+    mockDb.providerShortlistItem.findFirst.mockResolvedValue(null)
+    mockDb.matchAttempt.findFirst.mockResolvedValue({ id: 'match-1' })
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-ranked-only',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
+
+    expect(state.tx.jobRequest.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.matchAttempt.findFirst).not.toHaveBeenCalled()
   })
 
   it('rejects when requestId is missing', async () => {
