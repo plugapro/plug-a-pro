@@ -1553,11 +1553,13 @@ model KycCampaign {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  createdBy    AdminUser        @relation(fields: [createdById], references: [id])
-  locationNode LocationNode?    @relation(fields: [locationNodeId], references: [id])
+  createdBy    AdminUser           @relation(fields: [createdById], references: [id])
+  locationNode LocationNode?       @relation(fields: [locationNodeId], references: [id])
   sponsorships KycSponsorship[]
+  ledgerEntries KycFeeLedgerEntry[]
 
   @@index([status, startsAt])
+  @@index([locationNodeId])
   @@map("kyc_campaigns")
 }
 
@@ -1566,8 +1568,10 @@ model KycSponsorship {
   campaignId     String
   providerId     String
   verificationId String?
-  // SHA-256 identifier hash from the verified ID document — anti-fraud dedup:
-  // one human identity gets at most one sponsorship across all campaigns.
+  // SHA-256 identifier hash from the verified ID document, for cross-campaign
+  // anti-fraud lookups. The one-sponsorship-per-identity rule is enforced at
+  // the application layer (booking checks CONSUMED rows by hash) — a DB unique
+  // would block legitimate REVERSED + re-grant histories.
   identifierHash String?
   status         KycSponsorshipStatus @default(CONSUMED)
   source         String // "system" | "admin"
@@ -1577,8 +1581,9 @@ model KycSponsorship {
   revokedById    String?
   reason         String?
 
-  campaign KycCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  provider Provider    @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  campaign   KycCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  provider   Provider    @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  revokedBy  AdminUser?  @relation(fields: [revokedById], references: [id])
 
   @@unique([campaignId, providerId])
   @@index([providerId])
@@ -1605,11 +1610,13 @@ model KycFeeLedgerEntry {
   metadata          Json               @default("{}")
   createdAt         DateTime           @default(now())
 
-  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  provider Provider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  campaign KycCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   @@index([providerId, createdAt])
   @@index([reason, createdAt])
   @@index([campaignId, createdAt])
+  @@index([referenceType, referenceId])
   @@map("kyc_fee_ledger_entries")
 }
 
@@ -2763,6 +2770,7 @@ model AdminUser {
   voucherBatches               VoucherBatch[]
   issuedProviderResumeTokens   ProviderResumeToken[]
   kycCampaigns                 KycCampaign[]
+  revokedKycSponsorships       KycSponsorship[]
 
   @@map("admin_users")
 }
