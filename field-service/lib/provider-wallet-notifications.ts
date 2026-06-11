@@ -226,6 +226,24 @@ function templateUrlButtonComponent(index: number, url: string): WhatsAppCompone
   }
 }
 
+// Exact hosts Plug A Pro will turn into a branded WhatsApp "Pay now" CTA. Any
+// other host (or a non-https scheme) is rejected so a malicious/compromised
+// Pay@ response or poisoned stored paymentLink cannot send providers a trusted
+// -looking CTA to an attacker-controlled domain.
+const PAYAT_ALLOWED_CTA_HOSTS = new Set(['payat.io', 'go.payat.co.za'])
+
+function isAllowedPayatCtaLink(paymentLink: string | undefined): paymentLink is string {
+  if (!paymentLink) return false
+  let url: URL
+  try {
+    url = new URL(paymentLink)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:') return false
+  return PAYAT_ALLOWED_CTA_HOSTS.has(url.hostname.toLowerCase())
+}
+
 function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppComponent | null {
   let url: URL
   try {
@@ -237,18 +255,24 @@ function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppCo
     console.error('[provider-wallet-notifications] invalid Pay@ payment link URL - omitting button component')
     return null
   }
-  if (url.hostname !== 'go.payat.co.za') {
-    console.error('[provider-wallet-notifications] Pay@ payment link hostname mismatch - template button may render incorrectly', { hostname: url.hostname })
+  // Only the fixed-template base host (go.payat.co.za) is safe to render as a
+  // URL suffix under the approved WhatsApp template. Reject any other host/scheme
+  // outright rather than appending an attacker-controlled suffix.
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'go.payat.co.za') {
+    console.error('[provider-wallet-notifications] Pay@ template button link rejected - host/scheme not allowlisted', { hostname: url.hostname })
+    return null
   }
   const suffix = `${url.pathname.replace(/^\//, '')}${url.search}${url.hash}`
   return templateUrlButtonComponent(index, suffix)
 }
 
 function shouldSendPayatLinkAsExactCtaUrl(paymentLink: string | undefined): paymentLink is string {
-  if (!paymentLink) return false
+  // Exact-CTA delivery is used for live payat.io links. Require an allowlisted
+  // host + https, and exclude go.payat.co.za (which is delivered via the
+  // approved template-button suffix path instead).
+  if (!isAllowedPayatCtaLink(paymentLink)) return false
   try {
-    const url = new URL(paymentLink)
-    return url.hostname !== 'go.payat.co.za'
+    return new URL(paymentLink).hostname.toLowerCase() !== 'go.payat.co.za'
   } catch {
     return false
   }

@@ -105,6 +105,23 @@ function maskMerchantIdentifier(identifier: string): string {
   return `${identifier.slice(0, 2)}***${identifier.slice(-2)}`
 }
 
+// Best-effort extraction of a non-PII error code/identifier from a Pay@ error
+// body so production logs retain actionable signal without echoing submitted
+// PII. Returns null when nothing safe can be parsed.
+function extractPayatErrorCode(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>
+    const candidate =
+      parsed.code ?? parsed.errorCode ?? parsed.error_code ?? parsed.status ?? parsed.error
+    if (typeof candidate === 'string' || typeof candidate === 'number') {
+      return String(candidate).slice(0, 80)
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 async function readResponseBodySafely(response: Response): Promise<string> {
   const withText = response as Response & { text?: () => Promise<string> }
   if (typeof withText.text === 'function') {
@@ -158,8 +175,9 @@ async function sendPayatPaymentRequest(
     phone: maskPhone(params.providerPhone),
     hasEmail: Boolean(params.providerEmail),
     email: params.providerEmail ? maskEmail(params.providerEmail) : null,
-    merchantIdentifier,
-    endpoint,
+    // Never log the raw merchant identifier or the endpoint (which embeds it) -
+    // both are PSP configuration secrets. Use the masked identifier only.
+    merchantIdentifierMasked: maskMerchantIdentifier(merchantIdentifier),
     retry: !retryOnUnauthorized,
   }))
 
@@ -215,18 +233,20 @@ async function sendPayatPaymentRequest(
       ? response.headers.get('content-type')
       : null
   const responseBody = await readResponseBodySafely(response)
-  const responseBodyPreview = responseBody.slice(0, 800)
+  const isProduction = process.env.NODE_ENV === 'production'
 
-  // TEMP DIAGNOSTIC (remove after production validation): capture the exact
-  // HTTP outcome from Pay@ for each RTP create attempt.
-  console.warn(JSON.stringify({
+  // Structured outcome log. Pay@ RTP responses can echo provider PII (name,
+  // phone, email) and bearer-style payment URLs, so the raw body is NEVER
+  // logged in production. Outside production we keep a short preview to aid
+  // integration debugging only.
+  console.info(JSON.stringify({
     event: 'payat.rtp_fetch_outcome',
     topupId: params.topupId,
     endpoint,
     httpStatus: response.status,
     ok: response.ok,
     contentType: responseContentType,
-    bodyPreview: responseBodyPreview,
+    ...(isProduction ? {} : { bodyPreview: responseBody.slice(0, 800) }),
     retry: !retryOnUnauthorized,
   }))
 
@@ -240,12 +260,16 @@ async function sendPayatPaymentRequest(
   }
 
   if (!response.ok) {
+    // Pay@ error bodies commonly echo submitted request fields (customer name,
+    // phone, email) and PSP config detail. In production we log only the HTTP
+    // status and a parsed error code (never the raw body) to avoid a PII leak to
+    // runtime logs / log processors. Non-production keeps a truncated preview.
     console.error(JSON.stringify({
       event: 'payat.rtp_create_failed',
       topupId: params.topupId,
       httpStatus: response.status,
-      // Truncate to 500 chars - enough for the error code, not enough to expose large payloads.
-      errorBody: responseBody.slice(0, 500),
+      errorCode: extractPayatErrorCode(responseBody),
+      ...(isProduction ? {} : { errorBody: responseBody.slice(0, 500) }),
     }))
     throw new PayatApiError('rtp_create_failed', response.status)
   }
@@ -258,7 +282,8 @@ async function sendPayatPaymentRequest(
       event: 'payat.rtp_response_parse_failed',
       topupId: params.topupId,
       httpStatus: response.status,
-      bodyPreview: responseBodyPreview,
+      contentType: responseContentType,
+      ...(isProduction ? {} : { bodyPreview: responseBody.slice(0, 800) }),
     }))
     throw new PayatApiError('rtp_response_invalid')
   }

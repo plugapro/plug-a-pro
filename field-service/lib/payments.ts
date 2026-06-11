@@ -8,6 +8,12 @@
 // 2. Add a case to getProvider()
 // 3. Set PSP_PROVIDER env var
 
+// Server-only poison pill: this module pulls in Prisma, audit, PSP config and
+// other server-only dependencies. Importing it from a client component must fail
+// the build. Browser-safe helpers (e.g. formatCurrency) live in '@/lib/currency'
+// and must be imported from there, not from here.
+import 'server-only'
+
 import { db } from './db'
 import { recordAuditLog } from './audit'
 import { checkPilotGate, resolveAreaScopeByNodeId } from './customer-serviceability'

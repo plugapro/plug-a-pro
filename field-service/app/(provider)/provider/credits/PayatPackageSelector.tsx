@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-wallet'
+import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-credit-pricing'
 import { createProviderPayatTopUpIntent } from './actions'
 
 const TOP_UP_AMOUNTS_CENTS = [10_000, 20_000, 50_000] as const

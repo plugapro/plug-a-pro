@@ -18,7 +18,20 @@
  */
 
 import { db } from './db'
-import { creditPaidCreditsInTransaction } from './provider-wallet'
+import { creditPaidCreditsInTransaction, PLUG_A_PRO_CREDIT_VALUE_CENTS } from './provider-wallet'
+
+/**
+ * Credits that the paid amount is worth at CURRENT pricing. A PaymentIntent
+ * persists creditsToIssue at creation time; if the credit price changed after a
+ * pending checkout was created, the stored value can be stale (e.g. an old R100
+ * intent stored 5 credits when R100 now buys 2). We never issue MORE than the
+ * amount is currently worth, so we credit the lower of stored vs recomputed.
+ */
+function creditsToIssueForAmount(amountCents: number, storedCreditsToIssue: number): number {
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return 0
+  const recomputed = Math.floor(amountCents / PLUG_A_PRO_CREDIT_VALUE_CENTS)
+  return Math.max(0, Math.min(storedCreditsToIssue, recomputed))
+}
 
 // Gateway intents arrive at ITN_RECEIVED before crediting. This function
 // accepts both ITN_RECEIVED (normal flow) and PENDING_PAYMENT (admin retry
@@ -98,18 +111,33 @@ async function creditProviderWalletFromGatewayIntent(
       }
 
       const amountFormatted = formatZar(intent.amountCents)
+      // Recompute credits against current pricing. A pre-price-change intent may
+      // carry a stale (higher) creditsToIssue for its amount; we issue the lower
+      // of stored vs recomputed so an old cheap checkout cannot over-credit.
+      const creditsToIssue = creditsToIssueForAmount(intent.amountCents, intent.creditsToIssue)
+      if (creditsToIssue !== intent.creditsToIssue) {
+        console.warn('[provider-credit-gateway-itn] stale creditsToIssue recomputed against current pricing', {
+          alert: true,
+          intentId: intent.id,
+          providerId: intent.providerId,
+          amountCents: intent.amountCents,
+          storedCreditsToIssue: intent.creditsToIssue,
+          issuedCreditsToIssue: creditsToIssue,
+        })
+      }
       const walletResult = await creditPaidCreditsInTransaction(
         tx,
         intent.providerId,
-        intent.creditsToIssue,
+        creditsToIssue,
         {
           referenceType: 'payment_intent',
           referenceId: intent.id,
-          description: `Top-up via ${source.gatewayLabel} - ${intent.creditsToIssue} Plug A Pro provider credits (${amountFormatted})`,
+          description: `Top-up via ${source.gatewayLabel} - ${creditsToIssue} Plug A Pro provider credits (${amountFormatted})`,
           metadata: {
             paymentReference: intent.paymentReference,
             amountCents: intent.amountCents,
-            creditsToIssue: intent.creditsToIssue,
+            creditsToIssue,
+            storedCreditsToIssue: intent.creditsToIssue,
             itnPaymentStatus: intent.itnPaymentStatus,
           },
           createdBy: source.createdBy,

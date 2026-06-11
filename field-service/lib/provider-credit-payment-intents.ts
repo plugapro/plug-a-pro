@@ -22,6 +22,28 @@ import {
 export const MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000
 export const MANUAL_EFT_REFERENCE_ATTEMPTS = 10
 
+// Default Pay@ counter service fee in cents when PAYAT_MERCHANT_FEE_FIXED_CENTS
+// is unset or invalid. Kept in sync with the WhatsApp top-up flows so all Pay@
+// paths charge the same fee at the till.
+export const PAYAT_DEFAULT_MERCHANT_FEE_CENTS = 700
+
+/**
+ * Single trusted source for the Pay@ counter service fee.
+ *
+ * The fee must be derived here - never accepted from the caller - so every Pay@
+ * top-up path (PWA action, REST API, WhatsApp bot, WhatsApp flow) charges the
+ * same fee-inclusive amount at the till and the webhook reconciles against the
+ * same stored total. A caller-supplied fee could otherwise generate a fee-free
+ * Pay@ request for a provider who still receives full credits.
+ */
+export function getPayatMerchantFeeCents(): number {
+  const raw = process.env.PAYAT_MERCHANT_FEE_FIXED_CENTS?.trim()
+  if (!raw) return PAYAT_DEFAULT_MERCHANT_FEE_CENTS
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isInteger(parsed) || parsed < 0) return PAYAT_DEFAULT_MERCHANT_FEE_CENTS
+  return parsed
+}
+
 // ─── Gateway-allowed top-up package amounts ───────────────────────────────────
 // Pay@, Payfast and manual EFT all restrict to the approved R100/R200/R500 packages.
 export const PAYFAST_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
@@ -426,7 +448,11 @@ export type CreatePayfastTopUpIntentResult = {
 export type CreatePayatTopUpIntentInput = {
   providerId: string
   amountCents: number
-  /** Counter service fee to add on top of the credit amount for the Pay@ barcode. */
+  /**
+   * @deprecated The counter service fee is now derived centrally from
+   * PAYAT_MERCHANT_FEE_FIXED_CENTS inside this layer and this field is ignored.
+   * Retained only for call-site backward compatibility.
+   */
   feeAmountCents?: number
   providerCellphone?: string | null
   actorUserId?: string | null
@@ -449,12 +475,17 @@ export async function createPayatTopUpIntent(
 ): Promise<CreatePayatTopUpIntentResult> {
   const traceId = randomBytes(4).toString('hex')
 
+  // Fee is derived centrally - the caller-supplied feeAmountCents is ignored so
+  // every Pay@ path charges the same till amount and webhook reconciliation is
+  // consistent. See getPayatMerchantFeeCents().
+  const feeAmountCents = getPayatMerchantFeeCents()
+
   console.info(JSON.stringify({
     event: 'payat.intent_create_start',
     traceId,
     providerId: input.providerId,
     amountCents: input.amountCents,
-    feeAmountCents: input.feeAmountCents ?? 0,
+    feeAmountCents,
     hasCellphoneFallback: Boolean(input.providerCellphone?.trim()),
   }))
 
@@ -473,10 +504,10 @@ export async function createPayatTopUpIntent(
 
   const creditsToIssue = creditsForAmount(input.amountCents)
   // payAtAmountCents is what the provider pays at the counter - credit value plus
-  // any service fee that Plug A Pro passes through to cover gateway costs.
-  // NOTE: PAYAT_MERCHANT_FEE_FIXED_CENTS exists in env but is not yet read here;
-  // callers must pass feeAmountCents explicitly until fee auto-wiring is added.
-  const payAtAmountCents = input.amountCents + (input.feeAmountCents ?? 0)
+  // the centrally-derived service fee that Plug A Pro passes through to cover
+  // gateway costs. The fee is enforced here for ALL callers (PWA, API, WhatsApp)
+  // so no path can generate a fee-free Pay@ request and still receive credits.
+  const payAtAmountCents = input.amountCents + feeAmountCents
 
   const { intent, provider, resolvedPhone } = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
@@ -589,7 +620,7 @@ export async function createPayatTopUpIntent(
         status: 'PENDING_PAYMENT',
         providerCellphone: resolvedPhone,
         expiresAt: payatExpiresAt,
-        metadata: toJson({ ...(input.metadata ?? {}), payAtAmountCents }),
+        metadata: toJson({ ...(input.metadata ?? {}), payAtAmountCents, feeAmountCents }),
       },
     })
 

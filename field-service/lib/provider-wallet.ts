@@ -7,9 +7,15 @@ import {
 import { randomUUID } from 'crypto'
 import { db } from './db'
 
-export const PROVIDER_CREDIT_PRICE_ZAR = 50
-export const PROVIDER_CREDIT_PRICE_CENTS = PROVIDER_CREDIT_PRICE_ZAR * 100
-export const PLUG_A_PRO_CREDIT_VALUE_CENTS = PROVIDER_CREDIT_PRICE_CENTS
+// Pricing constants live in a browser-safe module (no DB/crypto/secret deps) and
+// are re-exported here for backward compatibility with existing server importers.
+// Client components should import them from '@/lib/provider-credit-pricing'
+// directly so they never pull this server module into the browser bundle.
+export {
+  PROVIDER_CREDIT_PRICE_ZAR,
+  PROVIDER_CREDIT_PRICE_CENTS,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS,
+} from './provider-credit-pricing'
 
 type WalletErrorCode =
   | 'INVALID_AMOUNT'

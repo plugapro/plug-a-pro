@@ -26,7 +26,16 @@ const {
 	      kycStatus: string
 	      suspendedUntil: Date | null
 	    } | null
-	    highAssuranceVerification: { id: string; providerId: string } | null
+	    highAssuranceVerification:
+	      | {
+	          id: string
+	          providerId: string
+	          status?: string
+	          decision?: string
+	          assuranceLevel?: string
+	          expiresAt?: Date | null
+	        }
+	      | null
 	    existingReferences: Set<string>
 	    intents: any[]
 	  } = {
@@ -41,7 +50,14 @@ const {
 	      kycStatus: 'VERIFIED',
 	      suspendedUntil: null,
 	    },
-    highAssuranceVerification: { id: 'verification-1', providerId: 'provider-1' },
+    highAssuranceVerification: {
+      id: 'verification-1',
+      providerId: 'provider-1',
+      status: 'PASSED',
+      decision: 'PASS',
+      assuranceLevel: 'HIGH',
+      expiresAt: null,
+    },
     existingReferences: new Set(),
     intents: [],
   }
@@ -108,6 +124,9 @@ describe('provider credit payment intents', () => {
     vi.stubEnv('PROVIDER_CREDIT_EFT_BRANCH_CODE', '250655')
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_TYPE', 'Business current account')
     vi.stubEnv('PROVIDER_CREDIT_EFT_INTENT_EXPIRY_DAYS', '7')
+    // Pay@ counter fee is now derived centrally from this env var (default 700).
+    // Pin it so fee-inclusive Pay@ amounts are deterministic in these tests.
+    vi.stubEnv('PAYAT_MERCHANT_FEE_FIXED_CENTS', '700')
 
     state.provider = {
       id: 'provider-1',
@@ -120,7 +139,14 @@ describe('provider credit payment intents', () => {
 	      kycStatus: 'VERIFIED',
 	      suspendedUntil: null,
 	    }
-    state.highAssuranceVerification = { id: 'verification-1', providerId: 'provider-1' }
+    state.highAssuranceVerification = {
+      id: 'verification-1',
+      providerId: 'provider-1',
+      status: 'PASSED',
+      decision: 'PASS',
+      assuranceLevel: 'HIGH',
+      expiresAt: null,
+    }
     state.existingReferences = new Set()
     state.intents = []
     mockNotifyPaymentIntentCreated.mockResolvedValue(undefined)
@@ -287,10 +313,12 @@ describe('provider credit payment intents', () => {
       status: 'PENDING_PAYMENT',
       providerCellphone: '+27821234567',
     })
+    // The Pay@ counter fee is derived centrally (700) and added on top of the
+    // credit amount - no caller can produce a fee-free Pay@ request.
     expect(mockCreatePayatPaymentRequest).toHaveBeenCalledWith({
       topupId: 'intent-1',
-      amountCents: 10_000,
-      description: 'Plug A Pro wallet top-up R100',
+      amountCents: 10_700,
+      description: 'Plug A Pro wallet top-up R107',
       providerName: 'Provider One',
       providerPhone: '+27821234567',
       providerEmail: 'provider@example.com',

@@ -33,24 +33,36 @@ export type IdentityVerificationLookupClient = {
   }
   providerIdentityVerification: {
     findFirst(args: {
-      where: {
-        providerId: string
-        status: 'PASSED'
-        decision: 'PASS'
-        assuranceLevel: 'HIGH'
-        OR: Array<{ expiresAt: null } | { expiresAt: { gt: Date } }>
+      where: { providerId: string }
+      orderBy: Array<{ createdAt: 'desc' } | { updatedAt: 'desc' }>
+      select: {
+        id: true
+        providerId: true
+        status: true
+        decision: true
+        assuranceLevel: true
+        expiresAt: true
       }
-      orderBy: { updatedAt: 'desc' }
-      select: { id: true; providerId: true }
-    }): Promise<{ id: string; providerId: string | null } | null>
+    }): Promise<LatestProviderIdentityVerification | null>
   }
 }
 
-type IdentityVerificationFindFirstArgs = Parameters<
-  IdentityVerificationLookupClient['providerIdentityVerification']['findFirst']
->[0]
+type LatestProviderIdentityVerification = {
+  id: string
+  providerId: string | null
+  status: string | null
+  decision: string | null
+  assuranceLevel: string | null
+  expiresAt: Date | null
+}
 
-export type HighAssuranceCreditVerificationWhere = IdentityVerificationFindFirstArgs['where']
+export type HighAssuranceCreditVerificationWhere = {
+  providerId: string
+  status: 'PASSED'
+  decision: 'PASS'
+  assuranceLevel: 'HIGH'
+  OR: Array<{ expiresAt: null } | { expiresAt: { gt: Date } }>
+}
 
 export type EligibilityLookupClient = IdentityVerificationLookupClient
 
@@ -76,6 +88,13 @@ export function isProviderProfileEligibleForCreditPurchases(
   return providerCreditProfileBlockReason(provider, now) === null
 }
 
+// NOTE: this where-clause is shared with the verification-start "already
+// verified?" check in gate.ts and with provider-journey.ts. It returns the
+// predicate for a high-assurance PASS row but does NOT by itself guarantee that
+// row is the provider's LATEST verification. The credit gate
+// (findEligibleCreditIdentity) additionally enforces the latest-record rule via
+// isPassingCreditVerification so a stale PASS cannot unlock paid credits when a
+// newer adverse record exists. Do not weaken this predicate for other callers.
 export function buildHighAssuranceCreditVerificationWhere(
   providerId: string,
   now = new Date(),
@@ -87,6 +106,22 @@ export function buildHighAssuranceCreditVerificationWhere(
     assuranceLevel: 'HIGH',
     OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
   }
+}
+
+/**
+ * True only when this (latest) verification row is a current high-assurance pass:
+ * status PASSED, decision PASS, assuranceLevel HIGH, and not expired.
+ */
+export function isPassingCreditVerification(
+  verification: LatestProviderIdentityVerification | null,
+  now = new Date(),
+): boolean {
+  if (!verification) return false
+  if (verification.status !== 'PASSED') return false
+  if (verification.decision !== 'PASS') return false
+  if (verification.assuranceLevel !== 'HIGH') return false
+  if (verification.expiresAt && verification.expiresAt.getTime() <= now.getTime()) return false
+  return true
 }
 
 export class IdentityCreditGateError extends Error {
@@ -119,17 +154,29 @@ async function findEligibleCreditIdentity(
     return null
   }
 
+  // Fetch the LATEST verification record for this provider regardless of outcome,
+  // then require that this most-recent row is a current high-assurance pass.
+  // Ordering by createdAt (then updatedAt as a tie-breaker) ensures a newer
+  // adverse verification (FAILED / CANCELLED / EXPIRED / manual-review) supersedes
+  // any older PASS - a stale historical pass must not unlock paid credits.
   const verification = await client.providerIdentityVerification.findFirst({
-    where: buildHighAssuranceCreditVerificationWhere(providerId),
-    orderBy: { updatedAt: 'desc' },
-    select: { id: true, providerId: true },
+    where: { providerId },
+    orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
+    select: {
+      id: true,
+      providerId: true,
+      status: true,
+      decision: true,
+      assuranceLevel: true,
+      expiresAt: true,
+    },
   })
 
-  if (!verification) {
+  if (!isPassingCreditVerification(verification)) {
     return null
   }
 
-  return { providerId, verificationId: verification.id }
+  return { providerId, verificationId: verification!.id }
 }
 
 export async function assertIdentityVerifiedForCredits(

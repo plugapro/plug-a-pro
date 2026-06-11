@@ -65,8 +65,20 @@ export async function PATCH(
       file: upload,
     })
 
-    const updated = await db.paymentIntent.update({
-      where: { id: intent.id },
+    // Conditional, predicate-guarded write. An admin credit operation may set
+    // status=CREDITED + creditedAt while the upload is in flight; without these
+    // predicates the provider write would silently revert a credited intent back
+    // to PROOF_UPLOADED/MATCHED_ON_STATEMENT while leaving creditedAt and the
+    // wallet ledger in place. Constraining to the mutable statuses + creditedAt:
+    // null makes a concurrent credit a 409 instead of a state corruption.
+    const updateResult = await db.paymentIntent.updateMany({
+      where: {
+        id: intent.id,
+        providerId: provider.id,
+        paymentMethod: 'MANUAL_EFT',
+        status: { in: [...PROOF_MUTABLE_STATUSES] },
+        creditedAt: null,
+      },
       data: {
         proofOfPaymentUrl,
         status: nextStatus(intent.status),
@@ -80,10 +92,17 @@ export async function PATCH(
       },
     })
 
+    if (updateResult.count !== 1) {
+      return NextResponse.json(
+        { error: 'This payment intent was updated concurrently. Please refresh and try again.' },
+        { status: 409 },
+      )
+    }
+
     return NextResponse.json({
-      id: updated.id,
-      status: updated.status,
-      proofUploaded: Boolean(updated.proofOfPaymentUrl),
+      id: intent.id,
+      status: nextStatus(intent.status),
+      proofUploaded: true,
       proofUploadedAt,
     })
   } catch (error) {
