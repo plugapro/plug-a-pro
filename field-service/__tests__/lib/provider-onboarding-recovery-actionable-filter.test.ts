@@ -13,7 +13,6 @@ function row(overrides: Partial<ProviderOnboardingRecoveryRow> = {}): ProviderOn
     source: 'conversation',
     safeUserRef: 'phn:abc',
     phoneMasked: '••••••',
-    phoneTail: '0000',
     providerName: null,
     serviceCategory: null,
     area: null,

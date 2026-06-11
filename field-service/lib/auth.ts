@@ -33,6 +33,15 @@ export interface AdminAuthUser extends AuthUser {
   adminUserId: string | null
 }
 
+// Mask an E.164 phone for logs: keep only the last 4 digits (e.g. "***1234").
+// Never log a raw phone number — it is PII.
+function maskPhoneForLog(phone: string | null | undefined): string | null {
+  if (!phone) return null
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length < 4) return '***'
+  return `***${digits.slice(-4)}`
+}
+
 type ProviderAuthLookupInput = Pick<AuthUser, 'id' | 'phone'>
 
 export function providerAuthWhere(session: ProviderAuthLookupInput) {
@@ -140,7 +149,7 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
       providerId = provider?.id
       console.log('[auth.role] provider not yet portal-eligible - flagged isProvider', {
         userId: user.id,
-        phone,
+        phone: maskPhoneForLog(phone),
         providerStatus: provider?.status,
         verified: provider?.verified,
         active: provider?.active,

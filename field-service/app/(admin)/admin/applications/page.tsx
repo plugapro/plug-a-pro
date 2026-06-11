@@ -979,7 +979,6 @@ export default async function ApplicationsPage({
                       </TableCell>
                       <TableCell className="font-medium">
                         <span className="block">{row.phoneMasked}</span>
-                        <span className="block text-xs text-muted-foreground">Tail {row.phoneTail}</span>
                         <span className="block text-xs text-muted-foreground">{row.safeUserRef}</span>
                       </TableCell>
                       <TableCell>

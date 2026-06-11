@@ -974,23 +974,32 @@ describe('otp security service', () => {
     expect(mocks.state.securityEvents[0].relatedOtpChallengeId).toBe(oldTerminal.id)
   })
 
-  it('pruneStaleSecurityEvents drops events older than SECURITY_EVENT_RETENTION_DAYS regardless of status', async () => {
+  it('pruneStaleSecurityEvents drops only terminal events past retention; preserves active alerts regardless of age', async () => {
     mocks.reset()
     // Default retention: 365 days. NOW = 2026-05-26T10:00:00Z. Cutoff:
-    // 2025-05-26T10:00:00Z. Insert one row before, one after.
+    // 2025-05-26T10:00:00Z. Active (NEW/ACKNOWLEDGED) events must survive even
+    // when older than the cutoff, so an unresolved alert can never be silently
+    // auto-deleted out from under an investigation.
     mocks.state.securityEvents.push(
       { id: 'evt_old_resolved', status: 'RESOLVED', createdAt: new Date('2024-01-01T00:00:00Z'), phoneE164: PHONE },
+      { id: 'evt_old_false_positive', status: 'FALSE_POSITIVE', createdAt: new Date('2024-03-01T00:00:00Z'), phoneE164: PHONE },
       { id: 'evt_old_new', status: 'NEW', createdAt: new Date('2024-06-01T00:00:00Z'), phoneE164: PHONE },
+      { id: 'evt_old_acknowledged', status: 'ACKNOWLEDGED', createdAt: new Date('2024-07-01T00:00:00Z'), phoneE164: PHONE },
       { id: 'evt_recent_resolved', status: 'RESOLVED', createdAt: new Date('2026-01-01T00:00:00Z'), phoneE164: PHONE },
     )
 
     await expect(pruneStaleSecurityEvents(NOW)).resolves.toEqual({ deleted: 2 })
     expect(mocks.db.securityEvent.deleteMany).toHaveBeenCalledWith({
       where: {
+        status: { in: ['RESOLVED', 'FALSE_POSITIVE'] },
         createdAt: { lt: new Date('2025-05-26T10:00:00.000Z') },
       },
     })
-    expect(mocks.state.securityEvents.map((row) => row.id)).toEqual(['evt_recent_resolved'])
+    expect(mocks.state.securityEvents.map((row) => row.id).sort()).toEqual([
+      'evt_old_acknowledged',
+      'evt_old_new',
+      'evt_recent_resolved',
+    ])
   })
 
   it('pruneClearedAccountSecurityStates only deletes cleared+stale rows; protects active state', async () => {

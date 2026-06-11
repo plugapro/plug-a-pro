@@ -14,6 +14,7 @@ import {
 import { PROVIDER_PROFILE_PHOTO_LABEL } from '@/lib/provider-attachment-labels'
 import {
   providerOnboardingStageLabel,
+  safeRefForPhone,
   type ProviderOnboardingRecoveryRow,
 } from '@/lib/provider-onboarding-recovery'
 
@@ -313,23 +314,28 @@ export type BuildUnifiedRowsInput = {
 
 export function buildUnifiedRows(input: BuildUnifiedRowsInput): UnifiedApplicationRow[] {
   const now = input.now ?? new Date()
-  const recoveryByPhoneTail = new Map<string, ProviderOnboardingRecoveryRow>()
+  // Merge recovery rows into application rows by the keyed HMAC pseudonym
+  // (safeUserRef) rather than the raw last-4 phone tail — the tail is PII and was
+  // removed from the recovery row. safeUserRef is stable across both sides because
+  // the application side recomputes it from app.phone with the same secret.
+  const recoveryBySafeRef = new Map<string, ProviderOnboardingRecoveryRow>()
 
   for (const row of input.recoveryRows) {
-    const existing = recoveryByPhoneTail.get(row.phoneTail)
+    const existing = recoveryBySafeRef.get(row.safeUserRef)
     if (!existing || existing.lastInteractionAt < row.lastInteractionAt) {
-      recoveryByPhoneTail.set(row.phoneTail, row)
+      recoveryBySafeRef.set(row.safeUserRef, row)
     }
   }
 
-  const consumedRecoveryTails = new Set<string>()
+  const consumedRecoveryRefs = new Set<string>()
   const rows: UnifiedApplicationRow[] = []
 
   for (const app of input.applications) {
     const phoneKey = phoneKeyFor(app.phone)
     const tail = phoneTailFor(app.phone)
-    const recovery = recoveryByPhoneTail.get(tail) ?? null
-    if (recovery) consumedRecoveryTails.add(tail)
+    const appSafeRef = safeRefForPhone(app.phone)
+    const recovery = recoveryBySafeRef.get(appSafeRef) ?? null
+    if (recovery) consumedRecoveryRefs.add(recovery.safeUserRef)
 
     const completeness = evaluateApplicationCompleteness(app)
     const hasConflict = input.conflictingApplicationIds.has(app.id)
@@ -387,12 +393,14 @@ export function buildUnifiedRows(input: BuildUnifiedRowsInput): UnifiedApplicati
   }
 
   for (const recovery of input.recoveryRows) {
-    if (consumedRecoveryTails.has(recovery.phoneTail)) continue
+    if (consumedRecoveryRefs.has(recovery.safeUserRef)) continue
     const bucket = bucketForRecoveryOnly(recovery)
     rows.push({
       rowId: `rec:${recovery.id}`,
-      phoneKey: `tail:${recovery.phoneTail}`,
-      phoneTail: recovery.phoneTail,
+      // Recovery-only rows carry no raw phone (PII removed) — key on the HMAC
+      // pseudonym and leave the application-derived tail empty.
+      phoneKey: `ref:${recovery.safeUserRef}`,
+      phoneTail: '',
       phoneMasked: recovery.phoneMasked,
       application: null,
       recovery,

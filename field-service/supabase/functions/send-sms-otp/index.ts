@@ -108,7 +108,8 @@ Deno.serve(async (req: Request) => {
       verified = true
       log('DEBUG: bearer token verification passed')
     } else {
-      log(`DEBUG: bearer check failed — recv="${authHeader.slice(0, 20)}..." exp="Bearer ${HOOK_SECRET_FULL.slice(0, 20)}..."`)
+      // Never log the expected or received bearer value — it is the hook secret (PII/secret material).
+      log(`DEBUG: bearer check failed`)
     }
   }
 

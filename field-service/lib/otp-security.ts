@@ -687,6 +687,19 @@ export async function checkOtpVerifyLimit(params: {
   | { ok: true; challengeId: string }
   | { ok: false; reason: 'rate_limited' | 'limiter_unavailable' | 'no_active_challenge' }
 > {
+  // Probe for an active challenge BEFORE consuming the shared `verifyByPhone`
+  // bucket. This wrapper backs a (gated) telemetry endpoint that accepts an
+  // arbitrary phone number; consuming the bucket first let an attacker who
+  // knows a victim's number drain `OTP_VERIFY_LIMIT_PER_PHONE_HOUR` and lock
+  // the victim out of legitimate provider OTP verification. When no challenge
+  // is active there is nothing to rate-limit, so the bucket is left untouched.
+  const challenge = await findLatestActiveChallenge(serviceDb(), {
+    phoneE164: params.phoneE164,
+    now: new Date(),
+  })
+
+  if (!challenge) return { ok: false, reason: 'no_active_challenge' }
+
   let limitResult: Awaited<ReturnType<typeof checkBaseOtpVerifyLimit>>
   try {
     limitResult = await checkBaseOtpVerifyLimit({
@@ -703,13 +716,6 @@ export async function checkOtpVerifyLimit(params: {
       reason: limitResult.code === 'limiter_unavailable' ? 'limiter_unavailable' : 'rate_limited',
     }
   }
-
-  const challenge = await findLatestActiveChallenge(serviceDb(), {
-    phoneE164: params.phoneE164,
-    now: new Date(),
-  })
-
-  if (!challenge) return { ok: false, reason: 'no_active_challenge' }
 
   return { ok: true, challengeId: challenge.id }
 }
@@ -935,14 +941,23 @@ export async function pruneTerminalOtpChallenges(
   return { deleted: result.count }
 }
 
+// Terminal security-event statuses: an operator has triaged the alert to a
+// final disposition. Only these are eligible for retention pruning. NEW and
+// ACKNOWLEDGED are still actionable on the admin OTP Security page and must
+// survive the retention window, otherwise an old-but-unresolved HIGH/CRITICAL
+// alert (incl. invalid-webhook-signature and pilot-allowlist-breach events
+// sharing this table) would silently disappear and break incident response.
+const TERMINAL_SECURITY_EVENT_STATUSES = ['RESOLVED', 'FALSE_POSITIVE'] as const
+
 /**
  * Drops historical security_events older than the configured retention
  * window. Default 365 days (`SECURITY_EVENT_RETENTION_DAYS`).
  *
- * All event statuses are eligible - including RESOLVED and FALSE_POSITIVE
- * - once they're past the retention horizon. The audit value of an event
- * decays with age; for compliance / long-term audit trails the canonical
- * `audit_logs` table remains untouched.
+ * Only events in a terminal status (RESOLVED, FALSE_POSITIVE) are pruned.
+ * Active events (NEW, ACKNOWLEDGED) are preserved regardless of age so an
+ * unresolved alert can never be auto-deleted out from under an investigation.
+ * The audit value of a triaged event decays with age; for compliance /
+ * long-term audit trails the canonical `audit_logs` table remains untouched.
  */
 export async function pruneStaleSecurityEvents(
   now: Date = new Date(),
@@ -950,6 +965,7 @@ export async function pruneStaleSecurityEvents(
   const cutoff = addDays(now, -getOtpSecurityConfig().securityEventRetentionDays)
   const result = await serviceDb().securityEvent.deleteMany({
     where: {
+      status: { in: [...TERMINAL_SECURITY_EVENT_STATUSES] },
       createdAt: { lt: cutoff },
     },
   })

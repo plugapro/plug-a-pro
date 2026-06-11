@@ -155,7 +155,6 @@ describe('provider onboarding recovery', () => {
     expect(rows[0]).toMatchObject({
       priority: 1,
       phoneMasked: '082****002',
-      phoneTail: '0002',
       providerName: 'Naledi Maseko',
       serviceCategory: 'Painting',
       area: 'Roodepoort',
@@ -182,7 +181,7 @@ describe('provider onboarding recovery', () => {
       applications: [],
       outcomeEvents: [
         {
-          entityId: 'wa_88931941c8',
+          entityId: 'wa_80fa5b79025ace483a930fbf02f5d2d53434cef44d3707a4e5e30dfc3e7d9a96',
           timestamp: new Date('2026-06-04T09:45:00.000Z'),
           after: {
             outcomeStatus: 'message_sent',
@@ -258,7 +257,6 @@ describe('provider onboarding recovery', () => {
         source: 'conversation',
         stage: 'register_started_no_name',
         phoneMasked: '082****567',
-        phoneTail: '4567',
         lastInteractionAt: new Date('2026-06-04T09:30:00.000Z'),
       }),
       expect.objectContaining({
@@ -626,9 +624,8 @@ describe('provider onboarding recovery', () => {
     }
 
     await recordProviderOnboardingRecoveryOutcome(client as never, {
-      safeUserRef: 'wa_4179bfef51',
+      safeUserRef: 'wa_bb735d72261710bac2ea4986e8ae00b2d2ca78f00dc50eef3b20f09fd818b3d8',
       phoneMasked: '082****567',
-      phoneTail: '4567',
       recoveryStage: 'register_started_no_name',
       messageTemplateKey: 'register_started_no_name',
       outcomeStatus: 'message_sent',
@@ -643,10 +640,12 @@ describe('provider onboarding recovery', () => {
       actorRole: 'operator',
       action: 'provider_onboarding_recovery.outcome_logged',
       entityType: 'ProviderOnboardingRecovery',
-      entityId: 'wa_4179bfef51',
+      entityId: 'wa_bb735d72261710bac2ea4986e8ae00b2d2ca78f00dc50eef3b20f09fd818b3d8',
     })
     expect(JSON.stringify(call.data)).toContain('082****567')
     expect(JSON.stringify(call.data)).not.toContain('+27821234567')
     expect(JSON.stringify(call.data)).not.toContain('27821234567')
+    // The last-4 phone tail must not be persisted to the audit log either.
+    expect(JSON.stringify(call.data)).not.toContain('phoneTail')
   })
 })
