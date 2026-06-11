@@ -142,11 +142,14 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
   electrical: {
     normalizedCategory: 'electrical',
     bookingOnAssignment: false,
-    // Certification and equipment requirements relaxed - providers are not blocked from
-    // receiving leads for lacking a wireman's licence or multimeter. Plug A Pro does not
-    // take responsibility for verifying regulatory compliance; see disclaimer above.
-    requiredCertificationCodes: [],
-    requiredEquipmentTags: [],
+    // Electrical is a regulated category. Matching MUST enforce a technical
+    // authorization boundary: a provider needs the wireman certification and the
+    // required electrical equipment before they can be offered an electrical lead.
+    // The marketplace disclaimer above does not replace this control — empty
+    // requirement arrays would let uncertified providers receive street-level
+    // customer details for regulated electrical work.
+    requiredCertificationCodes: ['wireman'],
+    requiredEquipmentTags: ['multimeter'],
     requiredVehicleTypes: [],
     regulated: true,
   },

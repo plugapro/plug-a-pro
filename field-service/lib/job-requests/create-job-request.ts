@@ -117,6 +117,18 @@ export class DuplicateActiveRequestError extends Error {
   }
 }
 
+/**
+ * Thrown when the resolved customer is blocked, deactivated or suspended.
+ * Blocked/inactive customers must not be able to create new job requests (which
+ * would reserve providers and disclose their job details to matched providers).
+ */
+export class CustomerBlockedError extends Error {
+  constructor(public readonly customerId: string, public readonly reason: 'BLOCKED' | 'INACTIVE' | 'SUSPENDED') {
+    super('CUSTOMER_BLOCKED')
+    this.name = 'CustomerBlockedError'
+  }
+}
+
 export class JobRequestPhotoLinkError extends Error {
   constructor(
     public readonly expectedCount: number,
@@ -326,6 +338,26 @@ export async function createJobRequest(
         },
         select: { id: true, isTestUser: true, cohortName: true },
       })
+    }
+
+    // Block guard (defence-in-depth): reject blocked / deactivated / suspended
+    // customers before any address or job-request row is written. A blocked
+    // customer creating a request would otherwise reserve a provider and disclose
+    // their job details to the matched provider.
+    const customerGuard = await tx.customer.findUnique({
+      where: { id: customer.id },
+      select: { isBlocked: true, active: true, suspendedUntil: true },
+    })
+    if (customerGuard) {
+      if (customerGuard.isBlocked) {
+        throw new CustomerBlockedError(customer.id, 'BLOCKED')
+      }
+      if (customerGuard.active === false) {
+        throw new CustomerBlockedError(customer.id, 'INACTIVE')
+      }
+      if (customerGuard.suspendedUntil && customerGuard.suspendedUntil > new Date()) {
+        throw new CustomerBlockedError(customer.id, 'SUSPENDED')
+      }
     }
 
     // Reuse a saved address if the caller supplies an existingAddressId that

@@ -37,11 +37,19 @@ interface GeocodeInput {
 // ─── 1. Static lookup ─────────────────────────────────────────────────────────
 
 function staticLookup(input: GeocodeInput): GeoPoint | null {
-  // Try suburb first (most specific), then city
-  const suburbanResult = lookupSuburb(input.suburb)
+  const scope = { province: input.province, city: input.city }
+
+  // Try suburb first (most specific), then city. Both are disambiguated by the
+  // submitted province/city so a duplicate suburb name (e.g. "Morningside" in
+  // both Gauteng and KwaZulu-Natal) does not resolve to the wrong city/province
+  // and misroute the customer's private job lead. When the suburb name exists in
+  // the reference but only for a DIFFERENT province/city, lookupSuburb returns
+  // null — we fall through to the city lookup and finally Nominatim rather than
+  // storing conflicting coordinates.
+  const suburbanResult = lookupSuburb(input.suburb, scope)
   if (suburbanResult) return { lat: suburbanResult.lat, lng: suburbanResult.lng }
 
-  const cityResult = lookupSuburb(input.city)
+  const cityResult = lookupSuburb(input.city, { province: input.province })
   if (cityResult) return { lat: cityResult.lat, lng: cityResult.lng }
 
   return null
