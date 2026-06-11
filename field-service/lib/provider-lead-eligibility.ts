@@ -1,3 +1,5 @@
+import { isKycGrandfathered } from '@/lib/matching/kyc-grace'
+
 export type ProviderLeadEligibilityCode =
   | 'PROVIDER_NOT_ACTIVE'
   | 'PROVIDER_NOT_APPROVED'
@@ -34,8 +36,10 @@ export type ProviderUnlockEligibilitySubject = ProviderLeadEligibilitySubject & 
   // Identity verification status (Provider.kycStatus). Marketplace approval flags
   // (active/verified/status) are NOT identity guarantees, so unlocking a lead -
   // which spends a credit and reveals the customer's contact and exact address -
-  // additionally requires a VERIFIED KYC outcome.
+  // additionally requires a VERIFIED KYC outcome (or the scoped legacy grace).
   kycStatus: string
+  // Sign-up time, used by the scoped legacy KYC grace to grandfather pre-cutoff providers.
+  createdAt?: Date | null
 }
 
 /**
@@ -44,13 +48,19 @@ export type ProviderUnlockEligibilitySubject = ProviderLeadEligibilitySubject & 
  * are marketplace approval flags, not identity guarantees, so unlocking a lead -
  * which exposes customer PII and spends a credit - requires kycStatus === 'VERIFIED'.
  */
-export function checkProviderCanUnlockLead(provider: ProviderUnlockEligibilitySubject):
+export function checkProviderCanUnlockLead(
+  provider: ProviderUnlockEligibilitySubject,
+  kycGraceEnabled = false,
+):
   | { ok: true }
   | { ok: false; code: ProviderLeadEligibilityCode } {
   const approval = checkPhaseOneLeadDetailEligibility(provider)
   if (!approval.ok) return approval
 
-  if (provider.kycStatus !== 'VERIFIED') {
+  if (
+    provider.kycStatus !== 'VERIFIED' &&
+    !isKycGrandfathered(provider.createdAt, kycGraceEnabled)
+  ) {
     return { ok: false, code: 'KYC_REQUIRED' }
   }
 

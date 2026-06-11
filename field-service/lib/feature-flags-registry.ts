@@ -267,6 +267,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'matching.kyc_grace_legacy_providers': {
+    description: 'Scoped, time-boxed KYC grace. When ON, providers created before KYC_GRACE_CUTOFF (lib/matching/kyc-grace.ts) are eligible for matching AND lead-unlock WITHOUT kycStatus=VERIFIED; providers created after the cutoff always require real KYC. Default ON so the live marketplace keeps working (the provider base was ~97% non-KYC when enforcement landed). Retire (set OFF) once the legacy cohort completes KYC.',
+    owner: 'eng',
+    defaultValue: true,
+  },
   'launch.west_rand_pilot.electrical_gate': {
     description: 'Independent gate for the electrical-readiness check. Dead path in v1 (electrical is not in the pilot allowlist); reserved for the future re-introduction of Electrical once threshold approved providers exist.',
     owner: 'eng',

@@ -6,6 +6,8 @@ import {
   type WalletMutationResult,
 } from './provider-wallet'
 import { checkProviderCanUnlockLead } from './provider-lead-eligibility'
+import { isEnabled } from './flags'
+import { KYC_GRACE_FLAG } from './matching/kyc-grace'
 
 export const LEAD_UNLOCK_COST_CREDITS = 1
 
@@ -91,13 +93,17 @@ function assertLeadAvailable(lead: {
   }
 }
 
-function assertProviderCanUnlock(provider: {
-  active: boolean
-  verified: boolean
-  status: string
-  kycStatus: string
-}) {
-  const eligibility = checkProviderCanUnlockLead(provider)
+function assertProviderCanUnlock(
+  provider: {
+    active: boolean
+    verified: boolean
+    status: string
+    kycStatus: string
+    createdAt?: Date | null
+  },
+  kycGraceEnabled = false,
+) {
+  const eligibility = checkProviderCanUnlockLead(provider, kycGraceEnabled)
   if (eligibility.ok) return
 
   if (eligibility.code === 'PROVIDER_NOT_ACTIVE') {
@@ -182,6 +188,7 @@ export async function unlockLeadForProvider(
               verified: true,
               status: true,
               kycStatus: true,
+              createdAt: true,
               isTestUser: true,
             },
           },
@@ -203,7 +210,7 @@ export async function unlockLeadForProvider(
       if (lead.providerId !== providerId) {
         throw new LeadUnlockError('FORBIDDEN', 'This lead belongs to another provider.')
       }
-      assertProviderCanUnlock(lead.provider)
+      assertProviderCanUnlock(lead.provider, await isEnabled(KYC_GRACE_FLAG))
       if (
         lead.jobRequest.match &&
         lead.jobRequest.match.providerId !== providerId
@@ -388,6 +395,7 @@ export async function unlockLeadForProviderInTransaction(
           verified: true,
           status: true,
           kycStatus: true,
+          createdAt: true,
           isTestUser: true,
         },
       },
@@ -409,7 +417,7 @@ export async function unlockLeadForProviderInTransaction(
   if (lead.providerId !== providerId) {
     throw new LeadUnlockError('FORBIDDEN', 'This lead belongs to another provider.')
   }
-  assertProviderCanUnlock(lead.provider)
+  assertProviderCanUnlock(lead.provider, await isEnabled(KYC_GRACE_FLAG))
   if (
     lead.jobRequest.match &&
     lead.jobRequest.match.providerId !== providerId

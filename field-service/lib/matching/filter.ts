@@ -13,6 +13,7 @@ import { isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { MATCHING_CONFIG } from './config'
 import { pointFallsWithinRadius } from './geography'
+import { KYC_GRACE_CUTOFF, KYC_GRACE_FLAG } from './kyc-grace'
 import {
   buildWorkingWindow,
   deriveRequestWindow,
@@ -312,6 +313,11 @@ export async function filterEligibleProviders(
     }
   }
 
+  // Scoped, time-boxed KYC grace: when ON, providers created before the cutoff are
+  // matchable without kycStatus=VERIFIED (legacy cohort grandfathered while they
+  // complete KYC). Providers created after the cutoff always require VERIFIED.
+  const kycGraceOn = await isEnabled(KYC_GRACE_FLAG)
+
   // ── Batch-fetch all detail tables in parallel ─────────────────────────────
   // NOTE: No .catch() here - a DB failure must surface as an error so the
   // orchestrator can return { status: 'ERROR' } rather than silently filtering
@@ -345,9 +351,13 @@ export async function filterEligibleProviders(
           id: { in: providerIds },
           active: true,
           verified: true,
-          // KYC (kycStatus VERIFIED) is the identity boundary for matching and must
-          // never be bypassed by a feature flag. Non-KYC providers are not surfaced.
-          kycStatus: 'VERIFIED',
+          // KYC (kycStatus VERIFIED) is the identity boundary for matching. The only
+          // permitted relaxation is the scoped, dated legacy grace (lib/matching/
+          // kyc-grace.ts): when the grace flag is ON, providers created before the
+          // cutoff are admitted without VERIFIED; everyone created after still needs it.
+          ...(kycGraceOn
+            ? { OR: [{ kycStatus: 'VERIFIED' }, { createdAt: { lt: KYC_GRACE_CUTOFF } }] }
+            : { kycStatus: 'VERIFIED' }),
           status: 'ACTIVE',
           isTestUser: Boolean(jobRequest.isTestRequest),
         },
