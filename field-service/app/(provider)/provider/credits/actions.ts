@@ -1427,3 +1427,32 @@ export async function getProviderWalletLedgerPage(opts: {
 export async function createProviderCreditTopUpIntentAction(formData: FormData) {
   return createProviderTopUpIntentFormAction(formData)
 }
+
+export type ProviderKycFeeBanner = { kind: 'sponsored' | 'accrued'; text: string }
+
+export async function getProviderKycFeeBanner(): Promise<ProviderKycFeeBanner | null> {
+  const { isEnabled } = await import('@/lib/flags')
+  if (!(await isEnabled('kyc.fee_accrual.enabled'))) return null
+  const provider = await getAuthenticatedProvider()
+  const { getKycFeeStatus } = await import('@/lib/kyc-fee/ledger')
+  const { formatRandsFromCents, KYC_FEE_CENTS } = await import('@/lib/kyc-fee/constants')
+  const status = await getKycFeeStatus(provider.id)
+  if (status.lastReason === 'KYC_FEE_SPONSORED' && status.outstandingCents === 0) {
+    const lastSponsored = await db.kycFeeLedgerEntry.findFirst({
+      where: { providerId: provider.id, reason: 'KYC_FEE_SPONSORED' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { amountCents: true },
+    })
+    return {
+      kind: 'sponsored',
+      text: `ID verification fee: ${formatRandsFromCents(lastSponsored?.amountCents ?? KYC_FEE_CENTS)} - sponsored by a Plug A Pro launch campaign. Nothing due.`,
+    }
+  }
+  if (status.outstandingCents > 0) {
+    return {
+      kind: 'accrued',
+      text: `ID verification fee: ${formatRandsFromCents(status.outstandingCents)} - will be recovered from your first top-up.`,
+    }
+  }
+  return null
+}
