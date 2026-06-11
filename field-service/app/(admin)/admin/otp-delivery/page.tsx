@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 
-import { requireAdmin } from '@/lib/auth'
+import { requireRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { maskPhone } from '@/lib/support-diagnostics'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Badge } from '@/components/ui/badge'
 
@@ -27,7 +28,10 @@ function formatDate(date: Date): string {
 }
 
 export default async function OtpDeliveryPage() {
-  await requireAdmin()
+  // OTP delivery records expose authentication telemetry and customer/provider
+  // phone numbers. Restrict to TRUST-or-higher reviewers, matching the OTP
+  // Security page sensitivity, and mask phone numbers below.
+  await requireRole(['TRUST', 'ADMIN', 'OWNER'])
 
   const attempts = await db.otpDeliveryAttempt.findMany({
     orderBy: { createdAt: 'desc' },
@@ -69,7 +73,7 @@ export default async function OtpDeliveryPage() {
                 {attempts.map((attempt) => (
                   <tr key={attempt.id} className="border-b last:border-b-0">
                     <td className="px-3 py-2 whitespace-nowrap">{formatDate(attempt.createdAt)}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{attempt.phoneE164}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{maskPhone(attempt.phoneE164) ?? '-'}</td>
                     <td className="px-3 py-2">{attempt.templateName ?? 'otp_login'}</td>
                     <td className="px-3 py-2">{attempt.channel}</td>
                     <td className="px-3 py-2">

@@ -97,8 +97,8 @@ export type MatchingProvider = Pick<
   technicianServiceAreas: TechnicianServiceArea[]
   technicianAvailability: TechnicianAvailability | null
   scheduleItems: TechnicianScheduleItem[]
-  /** Verified ProviderCertification records (WS-B.1). Checked in addition to technicianCertifications. */
-  adminCertifications?: Pick<ProviderCertification, 'name' | 'verifiedAt'>[]
+  /** Verified ProviderCertification records (WS-B.1). Checked in addition to technicianCertifications. expiresAt is used to reject expired certs. */
+  adminCertifications?: Pick<ProviderCertification, 'name' | 'verifiedAt' | 'expiresAt'>[]
   /** Active ProviderEquipment records (WS-B.1). Checked in addition to equipmentTags. */
   equipment?: Pick<ProviderEquipment, 'label' | 'category' | 'active'>[]
 }

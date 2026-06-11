@@ -44,6 +44,7 @@ export async function createLocationNodeAction(input: CreateInput) {
     entity: 'LocationNode',
     action: 'location.create',
     requiredRole: [...ROLES],
+    roleExact: true,
     requiredFlag: FLAG,
     schema: CreateLocationNodeSchema,
     input,
@@ -70,6 +71,7 @@ export async function updateLocationNodeAction(input: UpdateInput) {
     entityId: input.id,
     action: 'location.update',
     requiredRole: [...ROLES],
+    roleExact: true,
     requiredFlag: FLAG,
     schema: UpdateLocationNodeSchema,
     input,
@@ -93,6 +95,7 @@ export async function deactivateLocationNodeAction(id: string) {
     entityId: id,
     action: 'location.deactivate',
     requiredRole: [...ROLES],
+    roleExact: true,
     requiredFlag: FLAG,
     input: { id },
     run: async () => {

@@ -346,32 +346,69 @@ export async function revokeAdminFromFormAction(formData: FormData) {
   }
 }
 
+// ─── resendInvite ─────────────────────────────────────────────────────────────
+
+const ResendInviteSchema = z.object({
+  adminUserId: z.string().min(1),
+})
+
+type ResendInviteInput = z.infer<typeof ResendInviteSchema>
+
+export async function resendInviteAction(input: ResendInviteInput) {
+  // Route through crudAction so the admin.users.v2 flag is enforced and the
+  // privileged invite-link re-issuance is audited, matching every other team
+  // management mutation. Without this gate an OWNER could re-issue admin magic
+  // links even when the UI is read-only (flag off) and leave no audit trail.
+  const result = await crudAction<ResendInviteInput, { id: string; email: string; name: string }>({
+    entity: 'AdminUser',
+    entityId: input.adminUserId,
+    action: 'admin.resend_invite',
+    requiredRole: ['OWNER'],
+    requiredFlag: FLAG,
+    schema: ResendInviteSchema,
+    input,
+    run: async (data, tx) => {
+      const adminUser = await tx.adminUser.findUnique({
+        where: { id: data.adminUserId },
+        select: { id: true, email: true, name: true, active: true, acceptedAt: true },
+      })
+      if (!adminUser) {
+        throw new CrudActionError('NOT_FOUND', 'Admin user not found')
+      }
+      if (!adminUser.active) {
+        throw new CrudActionError('CONFLICT', 'Admin account is not active')
+      }
+      if (adminUser.acceptedAt) {
+        throw new CrudActionError('CONFLICT', 'Admin has already accepted the invite')
+      }
+      return { id: adminUser.id, email: adminUser.email, name: adminUser.name }
+    },
+  })
+
+  // Send the Supabase invite email outside the transaction (best-effort, the
+  // AdminUser row remains the source of truth - mirrors inviteAdminAction).
+  const supabase = createServiceClient()
+  const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(result.data.email, {
+    data: { role: 'admin', name: result.data.name },
+  })
+  if (inviteError) {
+    console.error('[resendInvite] Supabase error:', inviteError)
+    throw new CrudActionError('CONFLICT', 'Failed to send invite email - please try again.')
+  }
+
+  revalidatePath('/admin/team')
+  revalidatePath('/admin/team/permissions')
+  return result
+}
+
 export async function resendInviteFromFormAction(formData: FormData) {
   try {
-    await requireRole(['OWNER'])
     const adminUserId = formData.get('adminUserId')
     if (typeof adminUserId !== 'string' || !adminUserId) {
       return { ok: false as const, error: 'Invalid admin user ID' }
     }
-    const { db } = await import('@/lib/db')
-    const adminUser = await db.adminUser.findUnique({
-      where: { id: adminUserId },
-      select: { id: true, email: true, name: true, active: true, acceptedAt: true },
-    })
-    if (!adminUser) return { ok: false as const, error: 'Admin user not found' }
-    if (!adminUser.active) return { ok: false as const, error: 'Admin account is not active' }
-    if (adminUser.acceptedAt) return { ok: false as const, error: 'Admin has already accepted the invite' }
-
-    const supabase = createServiceClient()
-    const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(adminUser.email, {
-      data: { role: 'admin', name: adminUser.name },
-    })
-    if (inviteError) {
-      console.error('[resendInvite] Supabase error:', inviteError)
-      return { ok: false as const, error: 'Failed to send invite email - please try again.' }
-    }
-    revalidatePath('/admin/team')
-    return { ok: true as const, message: `Invite re-sent to ${adminUser.email}` }
+    const result = await resendInviteAction({ adminUserId })
+    return { ok: true as const, message: `Invite re-sent to ${result.data.email}` }
   } catch (err) {
     console.error('[resendInvite]', err)
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
