@@ -131,28 +131,33 @@ export default async function ProviderJobsPage({
       }),
       // Leads where the provider accepted but has insufficient credits.
       // No Match row exists yet - surfaced here so the provider knows they
-      // need to top up to confirm their slot.
+      // need to top up to confirm their slot. Customer identity (name, exact
+      // address) stays locked until the credit-gated unlock completes, so we
+      // only select the job category here - never the related customer/address.
       db.lead.findMany({
         where: {
           providerId: provider.id,
           status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] },
         },
-        include: {
-          jobRequest: { include: { customer: true, address: true } },
+        select: {
+          id: true,
+          jobRequest: { select: { category: true } },
         },
         orderBy: { providerAcceptedAt: 'desc' },
       }),
       // Leads where a customer selected this provider but the provider has not
       // yet confirmed acceptance. They need to tap confirm_accept on WhatsApp.
       // Surfacing these prevents a provider missing the confirmation message from
-      // silently losing their slot.
+      // silently losing their slot. Pre-unlock, customer identity must stay
+      // hidden, so we only select the job category - never customer/address.
       db.lead.findMany({
         where: {
           providerId: provider.id,
           status: 'CUSTOMER_SELECTED',
         },
-        include: {
-          jobRequest: { include: { customer: true, address: true } },
+        select: {
+          id: true,
+          jobRequest: { select: { category: true } },
         },
         orderBy: { customerSelectedAt: 'desc' },
       }),
@@ -233,10 +238,6 @@ export default async function ProviderJobsPage({
             </SectionLabel>
             <div className="space-y-3">
               {customerSelectedLeads.map((lead) => {
-                const customerName = lead.jobRequest?.customer?.name ?? 'Customer'
-                const area = [lead.jobRequest?.address?.suburb, lead.jobRequest?.address?.city]
-                  .filter(Boolean)
-                  .join(', ')
                 return (
                   <div
                     key={lead.id}
@@ -248,7 +249,7 @@ export default async function ProviderJobsPage({
                           {lead.jobRequest.category}
                         </p>
                         <p className="text-[12px] text-[var(--ink-mute)] truncate">
-                          {customerName}{area ? ` · ${area}` : ''}
+                          Customer has selected you
                         </p>
                       </div>
                       <span
@@ -262,7 +263,7 @@ export default async function ProviderJobsPage({
                       </span>
                     </div>
                     <p className="text-[12px] text-[var(--ink-mute)]">
-                      A customer selected you for this job. Reply on WhatsApp to confirm acceptance (1 credit).
+                      A customer selected you for this job. Reply on WhatsApp to confirm acceptance (1 credit). Customer details unlock once you confirm.
                     </p>
                   </div>
                 )
@@ -279,10 +280,6 @@ export default async function ProviderJobsPage({
             </SectionLabel>
             <div className="space-y-3">
               {creditRequiredLeads.map((lead) => {
-                const customerName = lead.jobRequest?.customer?.name ?? 'Customer'
-                const area = [lead.jobRequest?.address?.suburb, lead.jobRequest?.address?.city]
-                  .filter(Boolean)
-                  .join(', ')
                 return (
                   <Link
                     key={lead.id}
@@ -295,7 +292,7 @@ export default async function ProviderJobsPage({
                           {lead.jobRequest.category}
                         </p>
                         <p className="text-[12px] text-[var(--ink-mute)] truncate">
-                          {customerName}{area ? ` · ${area}` : ''}
+                          Credit top-up required
                         </p>
                       </div>
                       <span
@@ -309,7 +306,7 @@ export default async function ProviderJobsPage({
                       </span>
                     </div>
                     <p className="text-[12px] text-[var(--ink-mute)]">
-                      You accepted this job but need more credits to confirm your slot. Tap to top up.
+                      You accepted this job but need more credits to confirm your slot. Customer details unlock once you top up. Tap to top up.
                     </p>
                   </Link>
                 )
