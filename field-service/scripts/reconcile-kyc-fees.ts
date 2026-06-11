@@ -1,0 +1,59 @@
+/**
+ * Sweeps providers with kycStatus VERIFIED that have no KYC fee accrual and
+ * books the fee through the same accrue-or-sponsor path as the live hook.
+ *
+ * Dry-run by default. Usage:
+ *   pnpm tsx scripts/reconcile-kyc-fees.ts             # report only
+ *   pnpm tsx scripts/reconcile-kyc-fees.ts --apply     # book missing fees
+ *
+ * NOTE: running with --apply against providers verified BEFORE the fee model
+ * launched is a product decision (retroactive fees). Confirm before applying.
+ */
+import 'dotenv/config'
+import { db } from '../lib/db'
+import { bookKycFeeForVerifiedProvider } from '../lib/kyc-fee/booking'
+
+const apply = process.argv.includes('--apply')
+
+async function main() {
+  const providers = await db.provider.findMany({
+    where: {
+      kycStatus: 'VERIFIED',
+      kycFeeLedgerEntries: { none: { reason: 'KYC_FEE_ACCRUED' } },
+    },
+    select: {
+      id: true,
+      name: true,
+      identityVerifications: {
+        where: { status: 'PASSED', decision: 'PASS' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { id: true },
+      },
+    },
+  })
+
+  console.log(`${providers.length} VERIFIED provider(s) without a KYC fee accrual.`)
+  if (!apply) {
+    for (const p of providers) console.log(`  would book: ${p.id} (${p.name})`)
+    console.log('Dry run. Re-run with --apply to book.')
+    return
+  }
+
+  for (const p of providers) {
+    const verificationId = p.identityVerifications[0]?.id
+    if (!verificationId) {
+      console.log(`  skip ${p.id} (${p.name}): no PASSED verification row`)
+      continue
+    }
+    const result = await bookKycFeeForVerifiedProvider({ providerId: p.id, verificationId })
+    console.log(`  ${p.id} (${p.name}): ${result.outcome}`)
+  }
+}
+
+main()
+  .catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+  .finally(() => db.$disconnect())
