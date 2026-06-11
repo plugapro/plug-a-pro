@@ -31,6 +31,46 @@ const ALLOWED_EVIDENCE_TYPES: Record<string, string> = {
   'application/pdf': 'pdf',
 }
 
+/**
+ * Thrown by downloadAndStoreWhatsAppMedia when an authoritative DB count shows
+ * the conversation-scoped attachment cap has already been reached. Callers that
+ * pass `capScope` must handle this and stop re-uploading (finding 09336394).
+ */
+export class MediaCapReachedError extends Error {
+  readonly code = 'MEDIA_CAP_REACHED' as const
+  readonly currentCount: number
+  readonly max: number
+  constructor(currentCount: number, max: number) {
+    super(`Media cap reached: ${currentCount}/${max} already stored`)
+    this.name = 'MediaCapReachedError'
+    this.currentCount = currentCount
+    this.max = max
+  }
+}
+
+/**
+ * Conversation-scoped upload cap (finding 09336394). When supplied, the
+ * Attachment row is namespaced under `uploadedBy = "<scopeKey>:<mediaId>"` so
+ * all uploads for the same conversation share a countable namespace, and the
+ * count-then-insert runs inside a single transaction immediately before the
+ * insert. This makes the cap authoritative against the DB rather than a
+ * once-loaded conversation snapshot, narrowing (but not fully closing) the
+ * cross-instance webhook race to the DB count → insert window.
+ */
+export type MediaCapScope = {
+  /** Stable per-conversation namespace, e.g. `system:whatsapp:cphoto:+27821234567`. */
+  scopeKey: string
+  /** Maximum attachments allowed under this scope+label. */
+  max: number
+  /**
+   * Extra count predicate to exclude already-finalised rows from the cap. For
+   * customer photos pass `{ jobRequestId: null }` so a previously submitted
+   * request's linked photos do not count against a fresh in-progress request on
+   * the same phone.
+   */
+  where?: { jobRequestId?: null }
+}
+
 type WhatsAppMediaDownload = {
   buffer: ArrayBuffer
   ext: string
@@ -44,9 +84,18 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   prefix?: string
   label?: string
   maxSizeBytes?: number
+  /**
+   * When set, enforces an authoritative DB-count cap immediately before the
+   * Attachment insert and namespaces `uploadedBy` under `scopeKey` so the count
+   * is conversation-scoped (finding 09336394). Throws MediaCapReachedError when
+   * the cap is already met.
+   */
+  capScope?: MediaCapScope
 }): Promise<{ attachmentId: string }> {
-  const { mediaId, providerApplicationId = null, prefix = 'evidence', label = 'evidence', maxSizeBytes = MAX_EVIDENCE_SIZE } = params
-  const uploadedBy = `system:whatsapp:${mediaId}`
+  const { mediaId, providerApplicationId = null, prefix = 'evidence', label = 'evidence', maxSizeBytes = MAX_EVIDENCE_SIZE, capScope } = params
+  // Namespace the row under the conversation scope when a cap is enforced so the
+  // authoritative count below only matches this conversation's uploads.
+  const uploadedBy = capScope ? `${capScope.scopeKey}:${mediaId}` : `system:whatsapp:${mediaId}`
   const traceId = randomUUID().slice(0, 8)
 
   const existing = await db.attachment.findFirst({
@@ -61,6 +110,21 @@ export async function downloadAndStoreWhatsAppMedia(params: {
       label,
     })
     return { attachmentId: existing.id }
+  }
+
+  // Authoritative pre-check (finding 09336394): reject before paying the
+  // download/upload cost if the cap is already met. Re-checked atomically inside
+  // the insert transaction below; this is a cheap fast-fail, not the guard.
+  if (capScope) {
+    const preCount = await db.attachment.count({
+      where: { uploadedBy: { startsWith: `${capScope.scopeKey}:` }, label, ...capScope.where },
+    })
+    if (preCount >= capScope.max) {
+      console.info('[whatsapp-media] media cap reached (pre-download check)', {
+        traceId, label, currentCount: preCount, max: capScope.max,
+      })
+      throw new MediaCapReachedError(preCount, capScope.max)
+    }
   }
 
   const { buffer, ext, meta } = await downloadWhatsAppMedia({
@@ -93,17 +157,49 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   // Step 4 - create Attachment record so access goes via the auth proxy.
   // providerApplicationId / jobRequestId start null; backfilled by the caller once the parent
   // record exists (e.g. handlePending for evidence, handleJobRequestSubmitted for customer photos).
-  const attachment = await db.attachment.create({
-    data: {
-      providerApplicationId,
-      url: blob.url,
-      blobKey: blob.pathname,
-      mimeType: meta.mime_type,
-      sizeBytes: buffer.byteLength,   // actual transferred bytes - meta.file_size can be stale
-      label,
-      uploadedBy,
-    },
-  })
+  //
+  // When a capScope is supplied we count-then-insert inside a single transaction
+  // immediately before creating the row (finding 09336394). This is the
+  // authoritative cap: it reads committed rows from concurrent webhook handlers
+  // (across Vercel instances, where the per-phone in-memory queue does not
+  // serialize) and rejects the over-the-cap insert. Residual: two transactions
+  // can still interleave their count before either commits its insert, so the
+  // hard ceiling is best-effort within the count→insert window unless a DB-level
+  // partial unique/exclusion constraint or advisory lock is added.
+  const attachment = capScope
+    ? await db.$transaction(async (tx) => {
+        const liveCount = await tx.attachment.count({
+          where: { uploadedBy: { startsWith: `${capScope.scopeKey}:` }, label, ...capScope.where },
+        })
+        if (liveCount >= capScope.max) {
+          console.info('[whatsapp-media] media cap reached (pre-insert tx check)', {
+            traceId, label, currentCount: liveCount, max: capScope.max,
+          })
+          throw new MediaCapReachedError(liveCount, capScope.max)
+        }
+        return tx.attachment.create({
+          data: {
+            providerApplicationId,
+            url: blob.url,
+            blobKey: blob.pathname,
+            mimeType: meta.mime_type,
+            sizeBytes: buffer.byteLength,   // actual transferred bytes - meta.file_size can be stale
+            label,
+            uploadedBy,
+          },
+        })
+      })
+    : await db.attachment.create({
+        data: {
+          providerApplicationId,
+          url: blob.url,
+          blobKey: blob.pathname,
+          mimeType: meta.mime_type,
+          sizeBytes: buffer.byteLength,   // actual transferred bytes - meta.file_size can be stale
+          label,
+          uploadedBy,
+        },
+      })
   console.info('[whatsapp-media] attachment record created', {
     traceId,
     mediaIdSuffix: mediaId.slice(-8),
