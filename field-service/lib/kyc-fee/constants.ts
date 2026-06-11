@@ -1,6 +1,13 @@
 // Once-off KYC / ID-verification recovery fee, in ZAR cents.
 // Overridable via env so finance can tune without a redeploy.
-export const KYC_FEE_CENTS = Number(process.env.KYC_FEE_CENTS ?? '2000')
+const DEFAULT_KYC_FEE_CENTS = 2000
+const parsedKycFeeCents = Number(process.env.KYC_FEE_CENTS ?? DEFAULT_KYC_FEE_CENTS)
+// A malformed override must not poison fee bookings (NaN would make every
+// booking throw INVALID_AMOUNT and roll back admin approvals).
+export const KYC_FEE_CENTS =
+  Number.isInteger(parsedKycFeeCents) && parsedKycFeeCents > 0
+    ? parsedKycFeeCents
+    : DEFAULT_KYC_FEE_CENTS
 
 // Didit free tier: first 500 Full-KYC bundles/month (see lib/commercial/didit-pricing.ts).
 // Display-only on the admin campaign page; reconciliation against the vendor

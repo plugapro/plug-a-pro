@@ -254,7 +254,7 @@ export async function grantKycSponsorshipAction(input: unknown) {
         data: { sponsoredCount: { increment: 1 } },
       })
       if (claimed.count === 0) {
-        throw new CrudActionError('CONFLICT', 'Campaign allocation is exhausted - raise the max sponsored count first')
+        throw new CrudActionError('CONFLICT', 'Campaign allocation is exhausted - no sponsorship slots remain on this campaign')
       }
 
       const sponsorship = await tx.kycSponsorship.create({

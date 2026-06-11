@@ -13,6 +13,7 @@ import { decryptIdentifier } from '@/lib/identity-verification/crypto'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import {
   applyVendorVerdict,
+  notifyTerminalVerificationStatus,
   submitVerificationForAutomation,
   transitionIdentityVerification,
 } from '@/lib/identity-verification/orchestrator'
@@ -504,6 +505,15 @@ export async function refreshDiditSessionAction(input: RefreshDiditInput) {
     select: { id: true, status: true, decision: true },
   })
   if (!post) return { ok: false as const, error: 'not_found' as const }
+
+  // Mirror the approve action's post-commit notification: when the Didit
+  // refresh transitions the verification to PASSED, the orchestrator suppressed
+  // the notify (PASSED inside a caller-held tx). Send it here, post-commit, so
+  // the fee ledger rows are visible and the fee sentence reads correct data.
+  // Guard: only when the status genuinely moved to PASSED (not already there).
+  if (verification.status !== 'PASSED' && post.status === 'PASSED') {
+    await notifyTerminalVerificationStatus(verification.id, 'PASSED')
+  }
 
   // Honour the operator persistence/backfill control: persistDiditDecision
   // stores redacted raw payloads and downloads private identity documents.
