@@ -277,13 +277,17 @@ describe('provider final acceptance credit application', () => {
     })
   })
 
-  it('keeps customer details locked when credit is required', async () => {
+  it('keeps customer details locked and reports failure when credit is required', async () => {
     state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
     const result = await acceptSelectedProviderJob({ leadId: 'lead-c13', providerId: 'provider-c13' })
 
+    // SECURITY (66b2eee9): a failed credit check must report failure, not
+    // success, so the request is not left locked while callers believe it was
+    // accepted. No credit spent, customer details remain hidden.
     expect(result).toMatchObject({
-      ok: true,
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
       creditCheck: {
         ok: false,
         reason: 'INSUFFICIENT_CREDITS',

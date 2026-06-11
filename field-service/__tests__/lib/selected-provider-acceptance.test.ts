@@ -299,13 +299,18 @@ describe('selected provider final acceptance', () => {
     )
   })
 
-  it('sets CREDIT_REQUIRED when accepted provider has no credits', async () => {
+  it('returns failure (not success) and spends no credit when accepted provider has no credits', async () => {
     state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
     const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' })
 
+    // SECURITY (66b2eee9): a failed credit check must NOT report success — the
+    // lead stays in CREDIT_REQUIRED with no credit spent, so the outer accept
+    // must surface a failure shape the callers treat as not-accepted.
     expect(result).toMatchObject({
-      ok: true,
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
       creditCheck: {
         ok: false,
         reason: 'INSUFFICIENT_CREDITS',
@@ -313,10 +318,14 @@ describe('selected provider final acceptance', () => {
         currentCreditBalance: 0,
       },
     })
+    // Lead is parked in CREDIT_REQUIRED (non-final, locked-pending) ...
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
       where: { id: 'lead-1', status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] } },
       data: { status: 'CREDIT_REQUIRED' },
     })
+    // ... and no credit was applied / no lock taken.
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
   })
 
   it('is idempotent for duplicate accept after provider accepted', async () => {
