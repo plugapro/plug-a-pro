@@ -4,6 +4,11 @@ import { isEnabled } from '../flags'
 import { getPublicAppUrl } from '../provider-credit-copy'
 import { issueProviderVerificationToken } from '../provider-verification-token'
 import { sendText } from '../whatsapp-interactive'
+import {
+  bookKycFeeForVerifiedProvider,
+  type KycFeeBookingClient,
+} from '../kyc-fee/booking'
+import { kycFeeOutcomeSentence } from '../kyc-fee/messaging'
 import { decryptIdentifier, encryptIdentifier } from './crypto'
 import { logIdentityVerificationError, logIdentityVerificationEvent } from './log'
 import type { VerificationDecision, VerificationStatus } from './types'
@@ -472,6 +477,25 @@ export async function transitionIdentityVerification(
         data: { kycStatus },
       })
     }
+    if (kycStatus === 'VERIFIED') {
+      try {
+        // The admin approval path passes crudAction's open transaction as
+        // `client`; the webhook/automation paths pass the root db client.
+        // Booking joins the caller's tx when one exists, otherwise opens its
+        // own. The structural IdentityVerificationClient type doesn't declare
+        // the kyc-fee delegates, so widen for the call - the runtime object
+        // is always a full Prisma client or interactive-transaction client.
+        await bookKycFeeForVerifiedProvider(
+          { providerId: current.providerId, verificationId: input.verificationId },
+          (client as unknown) === db ? undefined : (client as unknown as KycFeeBookingClient),
+        )
+      } catch (error) {
+        logIdentityVerificationError('verify.kyc_fee_booking.failed', error, {
+          verificationId: input.verificationId,
+          providerId: current.providerId,
+        })
+      }
+    }
   }
 
   if (current.status !== input.toStatus && TERMINAL_NOTIFICATION_STATUSES.has(input.toStatus)) {
@@ -509,7 +533,7 @@ export async function notifyTerminalVerificationStatus(
     if (!text) return
     const verification = await db.providerIdentityVerification.findUnique({
       where: { id: verificationId },
-      select: { provider: { select: { phone: true } } },
+      select: { provider: { select: { id: true, phone: true } } },
     })
     const phone = verification?.provider?.phone
     if (!phone) {
@@ -519,7 +543,12 @@ export async function notifyTerminalVerificationStatus(
       })
       return
     }
-    await sendText(phone, text)
+    let message = text
+    if (toStatus === 'PASSED' && verification?.provider?.id) {
+      const feeSentence = await kycFeeOutcomeSentence(verification.provider.id)
+      if (feeSentence) message = `${text} ${feeSentence}`
+    }
+    await sendText(phone, message)
     logIdentityVerificationEvent('verify.terminal_notify.sent', {
       verificationId,
       toStatus,
