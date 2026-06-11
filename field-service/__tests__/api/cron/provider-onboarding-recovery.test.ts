@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockSendFollowUps, mockSummarizeRows } = vi.hoisted(() => ({
+const { mockSendFollowUps, mockSummarizeRows, mockListRows } = vi.hoisted(() => ({
   mockSendFollowUps: vi.fn(),
   mockSummarizeRows: vi.fn(),
+  mockListRows: vi.fn(),
 }))
 const { mockIsEnabled } = vi.hoisted(() => ({
   mockIsEnabled: vi.fn(),
@@ -11,6 +12,7 @@ const { mockIsEnabled } = vi.hoisted(() => ({
 vi.mock('@/lib/provider-onboarding-recovery', () => ({
   sendProviderOnboardingRecoveryFollowUps: mockSendFollowUps,
   summarizeProviderOnboardingRecoveryRows: mockSummarizeRows,
+  listProviderOnboardingRecoveryRows: mockListRows,
 }))
 vi.mock('@/lib/flags', async () => {
   const actual = await vi.importActual<typeof import('@/lib/flags')>('@/lib/flags')
@@ -33,6 +35,7 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
       { stage: 'evidence_upload', followUpStatus: 'due' },
       { stage: 'approved', followUpStatus: 'submitted_excluded' },
     ]
+    mockListRows.mockResolvedValue(rows)
     mockSendFollowUps.mockResolvedValue({
       total: rows.length,
       due: 1,
@@ -61,6 +64,10 @@ describe('GET /api/cron/provider-onboarding-recovery', () => {
   })
 
   it('sends due onboarding recovery nudges and reports the queue summary', async () => {
+    // Auto-nudge is gated off by default (report-only); enable it to exercise the send path.
+    mockIsEnabled.mockImplementation((flag: string) =>
+      Promise.resolve(flag === 'provider.onboarding.recovery_auto_nudge'),
+    )
     const res = await GET(new Request('http://localhost/api/cron/provider-onboarding-recovery', {
       headers: { authorization: `Bearer ${CRON_SECRET}` },
     }))
