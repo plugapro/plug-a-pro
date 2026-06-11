@@ -5,7 +5,11 @@ const { mockDb, mockPut, mockFetch, mockStoreIdentityDocument } = vi.hoisted(() 
     attachment: {
       findFirst: vi.fn(),
       create: vi.fn(),
+      count: vi.fn(),
     },
+    // Run the callback against the same mockDb.attachment so count/create inside
+    // the cap transaction hit the mocked methods.
+    $transaction: vi.fn(),
   },
   mockPut: vi.fn(),
   mockFetch: vi.fn(),
@@ -19,7 +23,7 @@ vi.mock('../../lib/identity-verification/storage', () => ({
 }))
 vi.stubGlobal('fetch', mockFetch)
 
-import { downloadAndStoreWhatsAppIdentityDocument, downloadAndStoreWhatsAppMedia } from '../../lib/whatsapp-media'
+import { downloadAndStoreWhatsAppIdentityDocument, downloadAndStoreWhatsAppMedia, MediaCapReachedError } from '../../lib/whatsapp-media'
 
 describe('downloadAndStoreWhatsAppMedia', () => {
   beforeEach(() => {
@@ -27,6 +31,8 @@ describe('downloadAndStoreWhatsAppMedia', () => {
     process.env.WHATSAPP_ACCESS_TOKEN = 'wa-token'
     mockDb.attachment.findFirst.mockResolvedValue(null)
     mockDb.attachment.create.mockResolvedValue({ id: 'att-1' })
+    mockDb.attachment.count.mockResolvedValue(0)
+    mockDb.$transaction.mockImplementation((fn: (tx: typeof mockDb) => unknown) => fn(mockDb))
     mockPut.mockResolvedValue({
       url: 'https://blob.example/customer-photos/media.jpg',
       pathname: 'customer-photos/media.jpg',
@@ -383,5 +389,84 @@ describe('downloadAndStoreWhatsAppMedia', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(1)
     expect(mockStoreIdentityDocument).not.toHaveBeenCalled()
+  })
+
+  // ─── Authoritative photo-cap (finding 09336394) ──────────────────────────────
+
+  it('namespaces uploadedBy under the cap scope key when capScope is supplied', async () => {
+    const body = new Uint8Array([1, 2, 3, 4]).buffer
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ url: 'https://lookaside.whatsapp.net/m', mime_type: 'image/jpeg', file_size: 4 }) })
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => body })
+
+    await downloadAndStoreWhatsAppMedia({
+      mediaId: 'media-scoped-001',
+      label: 'customer_photo',
+      capScope: { scopeKey: 'system:whatsapp:cphoto:+27821234567', max: 5, where: { jobRequestId: null } },
+    })
+
+    expect(mockDb.attachment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        uploadedBy: 'system:whatsapp:cphoto:+27821234567:media-scoped-001',
+      }),
+    })
+  })
+
+  it('counts only the conversation-scoped, unlinked rows when enforcing the cap', async () => {
+    const body = new Uint8Array([1, 2, 3, 4]).buffer
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ url: 'https://lookaside.whatsapp.net/m', mime_type: 'image/jpeg', file_size: 4 }) })
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => body })
+
+    await downloadAndStoreWhatsAppMedia({
+      mediaId: 'media-count-001',
+      label: 'customer_photo',
+      capScope: { scopeKey: 'system:whatsapp:cphoto:+27820000000', max: 5, where: { jobRequestId: null } },
+    })
+
+    expect(mockDb.attachment.count).toHaveBeenCalledWith({
+      where: {
+        uploadedBy: { startsWith: 'system:whatsapp:cphoto:+27820000000:' },
+        label: 'customer_photo',
+        jobRequestId: null,
+      },
+    })
+  })
+
+  it('rejects with MediaCapReachedError before downloading when the scope is already at the cap', async () => {
+    mockDb.attachment.count.mockResolvedValue(5)
+
+    await expect(
+      downloadAndStoreWhatsAppMedia({
+        mediaId: 'media-over-cap',
+        label: 'customer_photo',
+        capScope: { scopeKey: 'system:whatsapp:cphoto:+27821111111', max: 5, where: { jobRequestId: null } },
+      }),
+    ).rejects.toBeInstanceOf(MediaCapReachedError)
+
+    // Fast-fails before any network/storage work and before creating a row.
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(mockPut).not.toHaveBeenCalled()
+    expect(mockDb.attachment.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects at the transaction insert boundary if a concurrent upload fills the last slot after the pre-check', async () => {
+    const body = new Uint8Array([1, 2, 3, 4]).buffer
+    // Pre-download check sees 4 (room for one), but by the time the insert tx
+    // runs the authoritative count is 5 - the over-cap insert is rejected.
+    mockDb.attachment.count.mockResolvedValueOnce(4).mockResolvedValueOnce(5)
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ url: 'https://lookaside.whatsapp.net/m', mime_type: 'image/jpeg', file_size: 4 }) })
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => body })
+
+    await expect(
+      downloadAndStoreWhatsAppMedia({
+        mediaId: 'media-race-insert',
+        label: 'customer_photo',
+        capScope: { scopeKey: 'system:whatsapp:cphoto:+27822222222', max: 5, where: { jobRequestId: null } },
+      }),
+    ).rejects.toBeInstanceOf(MediaCapReachedError)
+
+    expect(mockDb.attachment.create).not.toHaveBeenCalled()
   })
 })

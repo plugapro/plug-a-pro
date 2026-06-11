@@ -16,7 +16,7 @@ import {
 import { db } from '../db'
 import { resolveCategoryRequirements } from '../category-config'
 import { createJobRequest } from '../job-requests/create-job-request'
-import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
+import { downloadAndStoreWhatsAppMedia, MediaCapReachedError } from '../whatsapp-media'
 import {
   isInActiveServiceArea,
   isActiveProvince,
@@ -1548,6 +1548,11 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
         prefix: 'customer-photos',
         label: 'customer_photo',
         maxSizeBytes: MAX_CUSTOMER_PHOTO_BYTES,
+        // Authoritative DB-count cap immediately before insert (finding 09336394).
+        // Scope key is the conversation phone so concurrent webhook deliveries
+        // (which each carry their own stale snapshot) count the same committed
+        // rows and the over-the-cap insert is rejected rather than racing through.
+        capScope: { scopeKey: `system:whatsapp:cphoto:${ctx.phone}`, max: MAX_CUSTOMER_PHOTOS, where: { jobRequestId: null } },
       })
       // Build on the merged (persisted ∪ in-memory) ids so concurrent handlers do
       // not each re-add against a stale snapshot and overshoot MAX_CUSTOMER_PHOTOS.
@@ -1559,6 +1564,19 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       }
       return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated, photoMediaIds: updatedMediaIds } }
     } catch (err) {
+      // Cap hit at the authoritative DB boundary: a concurrent handler already
+      // filled the last slot. Treat as "maximum reached" - do not over-upload.
+      if (err instanceof MediaCapReachedError) {
+        console.info('[job-request-flow:handleCollectPhotos] photo cap reached at insert boundary', {
+          phone: maskedPhone(ctx.phone),
+          currentCount: err.currentCount,
+          max: err.max,
+        })
+        if (!ctx.suppressCustomerPhotoProgress) {
+          await sendCustomerPhotoProgress(ctx.phone, MAX_CUSTOMER_PHOTOS)
+        }
+        return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: mergedAttachmentIds, photoMediaIds: mergedMediaIds } }
+      }
       console.error('[job-request-flow:handleCollectPhotos] media upload failed:', err)
       await sendWhatsAppJourneyRecovery(ctx.phone, {
         userRole: 'customer',

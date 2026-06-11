@@ -61,6 +61,18 @@ vi.mock('@/lib/whatsapp-media-batch', () => ({
 
 vi.mock('@/lib/whatsapp-media', () => ({
   downloadAndStoreWhatsAppMedia: vi.fn(),
+  // Real error class so `err instanceof MediaCapReachedError` works in the flow.
+  MediaCapReachedError: class MediaCapReachedError extends Error {
+    code = 'MEDIA_CAP_REACHED' as const
+    currentCount: number
+    max: number
+    constructor(currentCount: number, max: number) {
+      super(`Media cap reached: ${currentCount}/${max} already stored`)
+      this.name = 'MediaCapReachedError'
+      this.currentCount = currentCount
+      this.max = max
+    }
+  },
 }))
 
 vi.mock('@/lib/location-nodes', () => ({
@@ -1662,6 +1674,36 @@ describe('WhatsApp job-request flow - collect_photos step', () => {
       undefined,
       expect.objectContaining({ templateName: 'interactive:journey_recovery' }),
     )
+  })
+
+  it('passes a conversation-scoped capScope so the cap is authoritative against the DB', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_001' })
+    await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-abc'))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capScope: expect.objectContaining({
+          scopeKey: `system:whatsapp:cphoto:${PHONE}`,
+          max: 5,
+          where: { jobRequestId: null },
+        }),
+      })
+    )
+  })
+
+  it('treats MediaCapReachedError from the insert boundary as max-reached without over-adding (finding 09336394)', async () => {
+    // A concurrent webhook handler filled the last slot; the authoritative
+    // count-before-insert in whatsapp-media rejects this upload.
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new (whatsappMedia as unknown as { MediaCapReachedError: new (c: number, m: number) => Error }).MediaCapReachedError(5, 5)
+    )
+    const data = { ...baseData, photoAttachmentIds: ['a', 'b', 'c', 'd'], photoMediaIds: ['m1', 'm2', 'm3', 'm4'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-race'))
+
+    expect(result.nextStep).toBe('collect_photos')
+    // No new attachment id is added - the in-flight upload is dropped.
+    expect(result.nextData?.photoAttachmentIds).toEqual(['a', 'b', 'c', 'd'])
+    // Customer is told the maximum is reached, not shown a storage-failure recovery.
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Maximum reached'), expect.any(Array))
   })
 
   it('resends skip/start prompt on unknown reply when no photos yet', async () => {
