@@ -329,6 +329,60 @@ describe('Didit decision persistence helpers', () => {
     })
   })
 
+  it('redacts the callback magic link and unlisted url/token/link fields while preserving benign metadata', () => {
+    const redacted = redactPayload({
+      session_id: 'sess_callback',
+      status: 'Approved',
+      callback: 'https://plug.test/provider/verify/secret-token-123/liveness/complete',
+      document: {
+        file_url: 'https://didit.test/file.jpg?token=file-url-secret',
+        download_url: 'https://didit.test/download?token=download-secret',
+        media_url: 'https://didit.test/media.mp4?token=media-secret',
+        document_link: 'https://didit.test/doc?token=doc-link-secret',
+        session_token: 'tok-abcdef',
+        result_href: 'https://didit.test/result',
+        return_redirect: 'https://didit.test/return',
+        files: ['https://didit.test/extra1.jpg?token=files-secret', 'https://didit.test/extra2.jpg'],
+        file_extension: 'jpg',
+        link_id: 'didit-link-123',
+      },
+    }) as {
+      callback: string
+      document: {
+        file_url: string
+        download_url: string
+        media_url: string
+        document_link: string
+        session_token: string
+        result_href: string
+        return_redirect: string
+        files: string[]
+        file_extension: string
+        link_id: string
+      }
+    }
+
+    expect(redacted.callback).toBe('[REDACTED_URL]')
+    expect(redacted.document.file_url).toBe('[REDACTED_URL]')
+    expect(redacted.document.download_url).toBe('[REDACTED_URL]')
+    expect(redacted.document.media_url).toBe('[REDACTED_URL]')
+    expect(redacted.document.document_link).toBe('[REDACTED_URL]')
+    expect(redacted.document.session_token).toBe('[REDACTED_URL]')
+    expect(redacted.document.result_href).toBe('[REDACTED_URL]')
+    expect(redacted.document.return_redirect).toBe('[REDACTED_URL]')
+    expect(redacted.document.files).toEqual(['[REDACTED_URL]', '[REDACTED_URL]'])
+    expect(redacted.document.file_extension).toBe('jpg')
+    expect(redacted.document.link_id).toBe('didit-link-123')
+    const text = JSON.stringify(redacted)
+    expect(text).not.toContain('secret-token-123')
+    expect(text).not.toContain('file-url-secret')
+    expect(text).not.toContain('download-secret')
+    expect(text).not.toContain('media-secret')
+    expect(text).not.toContain('doc-link-secret')
+    expect(text).not.toContain('tok-abcdef')
+    expect(text).not.toContain('files-secret')
+  })
+
   it('preserves non-URL quality metadata and unrelated number fields in the redacted payload', () => {
     const redacted = redactPayload({
       session_id: 'sess_quality',

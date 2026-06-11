@@ -59,6 +59,8 @@ export type DiditDecisionResponse = {
   status: string                                    // top-level Didit status string
   vendor_data?: string | null
   workflow_id?: string | null
+  // Browser return URL that can embed an active provider verification
+  // magic-link token; redactPayload() drops it via URL_KEYS before storage.
   callback?: string | null
   created_at?: string
   expires_at?: string | null
