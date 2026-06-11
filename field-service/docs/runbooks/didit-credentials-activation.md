@@ -1,6 +1,6 @@
 # Claude Code Task — Add Didit credentials to Vercel
 
-**Audience:** A Claude Code session executing on this repo, with the human pasting the Didit secret values into the chat at the right step.
+**Audience:** A Claude Code session executing on this repo. The human operator enters secret values **directly into `vercel env add`'s interactive prompt or via stdin redirect** — never by pasting them into the chat, a CLI argument, or a pipeline. Secrets pasted into chat can be retained in AI-provider logs, session transcripts, and tooling; secrets passed as command arguments leak via shell history, process listings, and command-telemetry. Keep every secret out of the conversation and out of argv.
 
 **Scope:** This document covers **only** the Vercel environment-variable setup for the Didit identity-verification adapter. It does **NOT** flip feature flags, activate the vendor config row, or seed the pilot allowlist. Those are deliberately separate phases — see [Out of scope](#out-of-scope) for the next document to run.
 
@@ -64,7 +64,7 @@ In the order they should be entered (the API key is the riskiest, do it last so 
 
 ## Execution steps
 
-For each env var, the operator pastes the value into the chat when prompted, and the Claude Code session pipes it into `vercel env add` via stdin (so the value never goes through shell history or process listings).
+For each env var, the operator enters the value **directly into `vercel env add`'s interactive prompt** (the CLI reads it from the terminal without echoing it and without placing it in argv). The operator never pastes the value into the chat, and the value is never embedded in a command argument. If a fully non-interactive flow is unavoidable, redirect the value from a stdin source the operator controls (`vercel env add NAME production < /dev/stdin`, then type the value and EOF) — but the interactive prompt is preferred.
 
 ### Step 0 — Sanity check the project linkage
 
@@ -77,61 +77,68 @@ Expected output: `no DIDIT_ vars in production yet`. If any `DIDIT_*` row alread
 
 ### Step 1 — `DIDIT_PROVIDER_KYC_WORKFLOW_ID`
 
-Ask the operator: `Paste the BASIC workflow id (UUID from Didit Console → Workflows → KYC Basic).`
+Ask the operator to have the BASIC workflow id (UUID from Didit Console → Workflows → KYC Basic) ready, but **not** to paste it into the chat.
 
-When they reply with the value:
+Run the interactive add and let the operator type the value at the CLI prompt:
 
 ```bash
-printf '%s' '<PASTED_BASIC_WORKFLOW_ID>' | vercel env add DIDIT_PROVIDER_KYC_WORKFLOW_ID production
+vercel env add DIDIT_PROVIDER_KYC_WORKFLOW_ID production
+# vercel prompts: "What's the value of DIDIT_PROVIDER_KYC_WORKFLOW_ID?"
+# The operator types/pastes the value into the terminal prompt — it is not echoed,
+# not stored in shell history, and never appears in argv or the chat transcript.
 ```
 
-**Important:** use `printf '%s'` (no trailing newline), and quote the value in single quotes so the shell doesn't expand any `$`. Confirm the command succeeded by checking the return code, then verify:
+Confirm the command succeeded by checking the return code, then verify:
 
 ```bash
 vercel env ls production 2>&1 | grep DIDIT_PROVIDER_KYC_WORKFLOW_ID
 ```
 
-The masked value should appear in the list. If the operator's pasted value contained whitespace or quotes, the `printf` above preserves them exactly — that's correct.
+The masked value should appear in the list. Do not strip or transform the value yourself — paste it verbatim into the prompt, including any whitespace the operator intends.
 
 ### Step 2 — `DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID`
 
-Same pattern. Ask: `Paste the AUTHORITATIVE workflow id (UUID — the workflow that includes SA DHA validation).`
+Same pattern. Ask the operator to have the AUTHORITATIVE workflow id (UUID — the workflow that includes SA DHA validation) ready, entered at the prompt rather than pasted into chat.
 
 ```bash
-printf '%s' '<PASTED_AUTHORITATIVE_WORKFLOW_ID>' | vercel env add DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID production
+vercel env add DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID production
+# Operator types the value at the interactive prompt.
 ```
 
 Verify with `vercel env ls production`.
 
 ### Step 3 — `DIDIT_WEBHOOK_SECRET`
 
-Ask: `Paste the webhook signing secret from the Didit Console → Destinations → <your destination> → Signing secret. If you're staging a rotation, comma-separate old and new (e.g. "old_secret,new_secret").`
+Ask the operator to retrieve the webhook signing secret from the Didit Console → Destinations → <your destination> → Signing secret, and to enter it **at the CLI prompt, not in chat**. If staging a rotation, the operator comma-separates old and new (e.g. `old_secret,new_secret`) when typing it into the prompt.
 
 ```bash
-printf '%s' '<PASTED_WEBHOOK_SECRET>' | vercel env add DIDIT_WEBHOOK_SECRET production
+vercel env add DIDIT_WEBHOOK_SECRET production
+# Operator types the secret at the interactive prompt (never in chat or argv).
 ```
 
-Verify. The value is hex on most setups; whitespace will silently break HMAC verification, so the `printf '%s'` (no trailing newline) is critical.
+Verify with `vercel env ls production`. The value is hex on most setups; a trailing newline or whitespace will silently break HMAC verification, so the operator must avoid appending one when typing/pasting into the prompt.
 
 ### Step 4 — `DIDIT_API_KEY`
 
-Ask: `Paste the Didit API key (Console → Settings → API Keys → Production). This is the most sensitive value; I will not echo it.`
+Ask the operator to retrieve the Didit API key (Console → Settings → API Keys → Production) and enter it **at the CLI prompt only** — this is the most sensitive value; it must never appear in chat, shell history, or a command argument.
 
 ```bash
-printf '%s' '<PASTED_API_KEY>' | vercel env add DIDIT_API_KEY production
+vercel env add DIDIT_API_KEY production
+# Operator types the API key at the interactive prompt; it is not echoed.
 ```
 
 Verify with `vercel env ls production`. Confirm to the operator: `4/4 Didit vars now in production.`
 
 ### Step 5 — Optional preview duplication
 
-If the operator chose **production + preview** in the decision step, repeat Steps 1–4 with `preview` in place of `production`:
+If the operator chose **production + preview** in the decision step, repeat Steps 1–4 with `preview` in place of `production`, again entering each value at the interactive prompt:
 
 ```bash
-printf '%s' '<value>' | vercel env add DIDIT_PROVIDER_KYC_WORKFLOW_ID preview
-printf '%s' '<value>' | vercel env add DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID preview
-printf '%s' '<value>' | vercel env add DIDIT_WEBHOOK_SECRET preview
-printf '%s' '<value>' | vercel env add DIDIT_API_KEY preview
+vercel env add DIDIT_PROVIDER_KYC_WORKFLOW_ID preview
+vercel env add DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID preview
+vercel env add DIDIT_WEBHOOK_SECRET preview
+vercel env add DIDIT_API_KEY preview
+# Each command prompts for its value; the operator types it at the terminal.
 ```
 
 Reuse the same values unless Didit Console gave the operator a separate sandbox key — in which case the operator should explicitly say "preview uses sandbox values" when pasting.
@@ -154,16 +161,12 @@ After all four (or eight) `vercel env add` commands succeed:
    DIDIT_WEBHOOK_SECRET                         Encrypted   <age> ago    Production
    ```
 
-2. **Round-trip check** — pull the env to a temp file, confirm shape (NOT values), then wipe:
+2. **Presence check (no disk materialization)** — confirm the keys exist without pulling their values to disk. **Do not** `vercel env pull` to a file: that writes the real secrets to local disk, where they can be read by other processes, picked up by backup/sync tooling (this repo lives in Dropbox), or accidentally committed. The masked `vercel env ls` listing in step 1 already proves the values are set. If you need to confirm a key is non-empty, inspect the masked listing only:
    ```bash
-   vercel env pull --environment=production --yes /tmp/didit-env-check
-   grep -cE '^DIDIT_[A-Z_]+=.+$' /tmp/didit-env-check
+   vercel env ls production 2>&1 | grep -E "^DIDIT_" | wc -l
    # Expected: 4 (or 6 if you added BASE_URL and SESSION_EXPIRY_HOURS too)
-   grep -E '^DIDIT_[A-Z_]+=' /tmp/didit-env-check | sed 's/=.*/=<REDACTED>/'
-   # Expected: 4 lines of "DIDIT_*=<REDACTED>"
-   rm -f /tmp/didit-env-check
    ```
-   The `rm -f` is non-negotiable — never leave a `.env*` file with real secrets on disk.
+   Never write production secrets to a `.env*` file on disk during verification.
 
 3. **Production deploy refresh** — Vercel does NOT automatically redeploy when env vars change; the next deploy will pick them up, but for now production is still running the build that didn't have them. Two options:
    - **Wait for the next merge to main** — env vars apply on the next natural deploy. Safe, no extra action.
@@ -197,9 +200,10 @@ Doing any of these before a production deploy has picked up the new env vars wil
 If at any step the operator pastes a wrong value or a partial paste lands:
 
 ```bash
-# Remove the specific variable, then re-add cleanly.
+# Remove the specific variable, then re-add cleanly via the interactive prompt.
 vercel env rm DIDIT_<NAME> production --yes
-printf '%s' '<corrected value>' | vercel env add DIDIT_<NAME> production
+vercel env add DIDIT_<NAME> production
+# Operator types the corrected value at the prompt (never in chat or argv).
 ```
 
 If the entire setup needs to be reverted:

@@ -29,7 +29,7 @@ import {
   COHORT,
   CUSTOMERS,
   IMAGE_MAPPING,
-  FANNIE_NAME_FRAGMENT,
+  PROVIDER_NAME_FRAGMENT,
   MIN_PROMO_CREDITS,
   TOP_UP_PROMO_CREDITS,
   LEAD_TTL_MINUTES,
@@ -548,13 +548,15 @@ export function printReport(report: SeedReport, commit: boolean): void {
   }
 
   if (report.provider) {
-    console.log('\nPROVIDER (Fannie):')
-    console.log(`  id=${report.provider.id}  name=${report.provider.name}`)
+    // Do not print the provider name to stdout — avoid materialising PII in
+    // terminal scrollback / CI logs. The id is enough to look the row up.
+    console.log('\nPROVIDER:')
+    console.log(`  id=${report.provider.id}`)
     console.log(
       `  credits added=${report.provider.creditsAdded}  total balance=${report.provider.totalCredits}`,
     )
   } else {
-    console.log('\nPROVIDER: ⚠  Fannie not found — check FANNIE_NAME_FRAGMENT in config')
+    console.log('\nPROVIDER: ⚠  provider not found — check PROVIDER_NAME_FRAGMENT in config')
   }
 
   console.log('\nLEADS:')
@@ -562,7 +564,10 @@ export function printReport(report: SeedReport, commit: boolean): void {
     if (lead.leadId) {
       const status = lead.alreadyExisted ? 'found' : 'created'
       console.log(`  ${status.padEnd(14)} leadId=${lead.leadId}`)
-      if (lead.leadUrl) console.log(`    URL: ${lead.leadUrl}`)
+      // Lead URLs are bearer-style magic links (signed access tokens). Never
+      // print them to stdout/CI logs. Look the token up from the lead row or
+      // re-issue it through the normal flow when manual testing is needed.
+      if (lead.leadUrl) console.log('    URL: [REDACTED_SIGNED_URL]')
     } else {
       console.log(`  would create  jobRequest=${lead.jobRequestId}`)
     }
@@ -660,12 +665,12 @@ async function main() {
     }
   }
 
-  // ─── Find Fannie early (needed for lead creation) ─────────────────────────
-  const fannie = await findFannie(FANNIE_NAME_FRAGMENT)
+  // ─── Find the target provider early (needed for lead creation) ────────────
+  const fannie = await findFannie(PROVIDER_NAME_FRAGMENT)
   if (!fannie) {
     report.warnings.push(
-      `Provider not found: name contains "${FANNIE_NAME_FRAGMENT}". ` +
-        'Update FANNIE_NAME_FRAGMENT in config.',
+      `Provider not found: name contains "${PROVIDER_NAME_FRAGMENT}". ` +
+        'Set PROVIDER_NAME_FRAGMENT to the target provider name fragment.',
     )
   }
 

@@ -3,7 +3,7 @@
 
 export const COHORT = 'west-rand-pilot-seed' as const
 
-export type CustomerKey = 'masego-mataboge' | 'seth-mataboge' | 'emma-mafoko'
+export type CustomerKey = 'test-customer-1' | 'test-customer-2' | 'test-customer-3'
 
 export interface CustomerConfig {
   key: CustomerKey
@@ -35,9 +35,9 @@ export interface ImageMappingEntry {
 
 export const CUSTOMERS: CustomerConfig[] = [
   {
-    key: 'masego-mataboge',
-    name: 'Masego Mataboge',
-    phone: '+27827006695',
+    key: 'test-customer-1',
+    name: 'Test Customer One',
+    phone: '+27000000001',
     category: 'plumbing',
     title: 'Blocked shower drain',
     description:
@@ -45,19 +45,19 @@ export const CUSTOMERS: CustomerConfig[] = [
     availability: 'urgent',
     address: {
       label: 'Home',
-      street: '14 Sunset Road',
+      street: '123 Test Street',
       suburb: 'Ruimsig',
       city: 'Roodepoort',
       province: 'Gauteng',
-      postalCode: '1724',
+      postalCode: '0000',
       lat: -26.08,
       lng: 27.853,
     },
   },
   {
-    key: 'seth-mataboge',
-    name: 'Seth Mataboge',
-    phone: '+27764010810',
+    key: 'test-customer-2',
+    name: 'Test Customer Two',
+    phone: '+27000000002',
     category: 'plumbing',
     title: 'Geyser leaking',
     description:
@@ -65,19 +65,19 @@ export const CUSTOMERS: CustomerConfig[] = [
     availability: 'mornings',
     address: {
       label: 'Home',
-      street: '7 Acacia Avenue',
+      street: '456 Test Avenue',
       suburb: 'Wilgeheuwel',
       city: 'Roodepoort',
       province: 'Gauteng',
-      postalCode: '1724',
+      postalCode: '0000',
       lat: -26.062,
       lng: 27.908,
     },
   },
   {
-    key: 'emma-mafoko',
-    name: 'Emma Mafoko',
-    phone: '+27824978565',
+    key: 'test-customer-3',
+    name: 'Test Customer Three',
+    phone: '+27000000003',
     category: 'handyman',
     title: 'Light fittings — handyman / electrical',
     description:
@@ -85,11 +85,11 @@ export const CUSTOMERS: CustomerConfig[] = [
     availability: 'flexible',
     address: {
       label: 'Home',
-      street: '23 Maple Close',
+      street: '789 Test Close',
       suburb: 'Little Falls',
       city: 'Roodepoort',
       province: 'Gauteng',
-      postalCode: '1735',
+      postalCode: '0000',
       lat: -26.083,
       lng: 27.917,
     },
@@ -98,15 +98,15 @@ export const CUSTOMERS: CustomerConfig[] = [
 
 // ─── Image mapping ────────────────────────────────────────────────────────────
 // Keys are UUID filenames WITHOUT the file extension (case-sensitive).
-// Fill in this section after viewing the source images in:
-//   /Users/shimane/Desktop/defects/plugapro/images
+// Fill in this section after viewing the source images in your local
+// image source directory (path supplied at runtime, not committed).
 //
-// Available customer keys: 'masego-mataboge' | 'seth-mataboge' | 'emma-mafoko'
+// Available customer keys: 'test-customer-1' | 'test-customer-2' | 'test-customer-3'
 // Available labels: 'evidence' | 'before' | 'after'
 //
 // Example entry:
 //   '55B6FEAD-AE90-49AB-B9FA-823E994E5B2B': {
-//     customerKey: 'masego-mataboge',
+//     customerKey: 'test-customer-1',
 //     label: 'evidence',
 //     caption: 'Blocked shower drain — standing water',
 //   },
@@ -116,43 +116,45 @@ export const CUSTOMERS: CustomerConfig[] = [
 
 export const IMAGE_MAPPING: Record<string, ImageMappingEntry> = {
   '55B6FEAD-AE90-49AB-B9FA-823E994E5B2B': {
-    customerKey: 'emma-mafoko',
+    customerKey: 'test-customer-3',
     label: 'evidence',
     caption: 'LED security light fitting — electrical work',
   },
   '87A345AD-30F3-4EDE-A91D-208E6EA38F0F': {
-    customerKey: 'seth-mataboge',
+    customerKey: 'test-customer-2',
     label: 'evidence',
     caption: 'Geyser — temperature valve replaced',
   },
   'A4AFDD26-F45F-4BA7-80F4-F5DBB37AC471': {
-    customerKey: 'masego-mataboge',
+    customerKey: 'test-customer-1',
     label: 'evidence',
     caption: 'Blocked shower drain — clogged and water not flowing',
   },
   'AD901123-5E38-4259-AEFB-4735644C7D7D': {
-    customerKey: 'seth-mataboge',
+    customerKey: 'test-customer-2',
     label: 'evidence',
     caption: 'Leaking geyser — hot water system leaking near valve connection',
   },
   'B1E5333F-BBD8-4F9D-BEFB-B6CFB547A76B': {
-    customerKey: 'masego-mataboge',
+    customerKey: 'test-customer-1',
     label: 'evidence',
     caption: 'Leaking pipe under sink — plumbing issue',
   },
   'F5A063D4-71E0-4C3C-BE7F-BC9D854EF362': {
-    customerKey: 'seth-mataboge',
+    customerKey: 'test-customer-2',
     label: 'evidence',
     caption: 'Water leak at toilet base — plumbing issue',
   },
 }
 
-// ─── Fannie provider lookup ───────────────────────────────────────────────────
+// ─── Provider lookup ──────────────────────────────────────────────────────────
 // The script searches for a provider whose name contains this string (case-insensitive).
-export const FANNIE_NAME_FRAGMENT = 'Fannie'
+// Supply the target provider name fragment at runtime via PROVIDER_NAME_FRAGMENT so no
+// real provider name is committed to source. Falls back to a harmless placeholder.
+export const PROVIDER_NAME_FRAGMENT = process.env.PROVIDER_NAME_FRAGMENT?.trim() || 'test-provider'
 
 // ─── Lead timing ─────────────────────────────────────────────────────────────
 export const LEAD_TTL_MINUTES = 120     // 2 hours — enough time for manual phone testing
 export const REQUEST_EXPIRES_DAYS = 30  // how far in the future the request expires
-export const MIN_PROMO_CREDITS = 5      // ensure Fannie has at least this many credits
+export const MIN_PROMO_CREDITS = 5      // ensure the provider has at least this many credits
 export const TOP_UP_PROMO_CREDITS = 10  // add this many promo credits if below minimum

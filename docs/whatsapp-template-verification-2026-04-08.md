@@ -142,8 +142,14 @@ The marketplace core loop — customer receives quote notification → approves 
 **Verify template approval state:**
 
 ```bash
+# Load the token into the shell env only (never echo it). Pass it in the
+# Authorization header — NOT as an access_token query parameter, which leaks
+# into proxy logs, process accounting, and browser/CLI history.
 source field-service/.env.production.local
-curl -s "https://graph.facebook.com/v21.0/${WHATSAPP_WABA_ID}/message_templates?limit=200&fields=name,status,category&access_token=${WHATSAPP_ACCESS_TOKEN}" | python3 -m json.tool
+curl -s \
+  -H "Authorization: Bearer ${WHATSAPP_ACCESS_TOKEN}" \
+  "https://graph.facebook.com/v21.0/${WHATSAPP_WABA_ID}/message_templates?limit=200&fields=name,status,category" \
+  | python3 -m json.tool
 ```
 
 All UTILITY templates must show `APPROVED`. All MARKETING templates (`slot_available`, `job_offer`, `technician_welcome`) must also be approved.

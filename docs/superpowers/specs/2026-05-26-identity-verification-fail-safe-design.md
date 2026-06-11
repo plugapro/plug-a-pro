@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-26 (revised 2026-05-27 after user review)
 **Status:** Awaiting user re-review
-**Trigger:** Lovemore Sibanda (`b6b91902-…`) has 4 verification rows in production — 1 PASSED, 1 NEEDS_MANUAL_REVIEW, 2 AWAITING_DOCUMENT. He shouldn't have been able to create more than 1.
+**Trigger:** Provider A (`provider-uuid-example`) has 4 verification rows in production — 1 PASSED, 1 NEEDS_MANUAL_REVIEW, 2 AWAITING_DOCUMENT. He shouldn't have been able to create more than 1.
 
 ## Revision history
 
@@ -39,21 +39,21 @@ Stated intent (decided with user):
 
 ## Two deliverables, sequenced
 
-### 1. Immediate one-off cleanup — Lovemore Sibanda
+### 1. Immediate one-off cleanup — Provider A
 
 Production fix that runs once, transactionally, and is irreversible.
 
-**Target provider:** `b6b91902-b268-4bc3-9d16-0942a25c2d60` (Lovemore Sibanda)
+**Target provider:** `provider-uuid-example` (Provider A)
 
 **To delete (3 rows):**
 | id | status | channel | created |
 |---|---|---|---|
-| `cmpl9tqhl000aju049p01q6zz` | NEEDS_MANUAL_REVIEW | PWA | 2026-05-25 13:57 |
-| `cmplfn21i0006jr0433g0x3uk` | AWAITING_DOCUMENT | WhatsApp | 2026-05-25 16:40 |
-| `cmplixlep0006ih04dy30uqji` | AWAITING_DOCUMENT | WhatsApp | 2026-05-25 18:12 |
+| `verification-id-example-1` | NEEDS_MANUAL_REVIEW | PWA | 2026-05-25 13:57 |
+| `verification-id-example-2` | AWAITING_DOCUMENT | WhatsApp | 2026-05-25 16:40 |
+| `verification-id-example-3` | AWAITING_DOCUMENT | WhatsApp | 2026-05-25 18:12 |
 
 **To keep (1 row):**
-| `cmpm8xjru0006l5041fo3jzcc` | PASSED ✅ | WhatsApp | 2026-05-26 06:20 (reviewed by Lebogang) |
+| `verification-id-example-4` | PASSED ✅ | WhatsApp | 2026-05-26 06:20 (reviewed by an operator) |
 
 **Cascade rows — handled per their actual FK behaviour in `schema.prisma`:**
 
@@ -365,7 +365,7 @@ If the gate misfires in production:
 - Flip `provider.identity.verification.fail_safe` to OFF via the `admin.crud.feature_flags` page (or DB) — instant.
 - The migration is additive (one nullable-default column + one index); rollback would require a separate `DROP COLUMN` migration, not strictly needed if the flag is off.
 
-For Lovemore's cleanup, rollback isn't possible — the rows are hard-deleted. The AuditLog row captures the ids and timestamps. If recovery is needed later, manual re-creation from the AuditLog `before` payload is the path.
+For Provider A's cleanup, rollback isn't possible — the rows are hard-deleted. The AuditLog row captures the ids and timestamps. If recovery is needed later, manual re-creation from the AuditLog `before` payload is the path.
 
 ## Order of operations on the day
 
@@ -388,7 +388,7 @@ The correct sequence for the new fail-safe migration:
 1. Land schema migration + flag (default OFF) on main — CI green.
 2. Apply migration in production using the sequence above. Confirm column exists and is backfilled.
 3. Land gate function + wiring + tests on main — CI green.
-4. Run cleanup script for Lovemore: first `--dry-run` (no flag), review output, then re-run with `--confirm`.
+4. Run cleanup script for Provider A: first `--dry-run` (no flag), review output, then re-run with `--confirm`.
 5. Flip `provider.identity.verification.fail_safe` flag ON in production.
 6. Manual smoke per the section above — including the credit-purpose scope test (step 6) and the flag-off regression check (step 7).
 7. If smoke passes: done. If smoke fails: flip flag OFF (immediate; preserves today's behaviour), investigate, fix forward.
@@ -396,7 +396,7 @@ The correct sequence for the new fail-safe migration:
 ## Out of scope
 
 - **Admin override on lock** — explicit decision; ticket-only.
-- **Auto-expiry of stuck non-terminal records** — separate cron concern; deferred. Lovemore's 2 AWAITING_DOCUMENT rows are handled by the one-off cleanup; long-term solution (auto-expire after N days) is a follow-up.
+- **Auto-expiry of stuck non-terminal records** — separate cron concern; deferred. Provider A's 2 AWAITING_DOCUMENT rows are handled by the one-off cleanup; long-term solution (auto-expire after N days) is a follow-up.
 - **Per-provider attempt-budget override** — admin-side "give this provider extra attempts" is a future feature. For v1 the cap is global = 3.
 - **Multi-channel concurrent creates** — the gate uses SELECT, not row-lock. Two truly simultaneous create requests from the same provider could both pass the gate. Mitigation (deferred): a partial unique index on `(providerId)` where `status NOT IN terminal`. Rare in practice given the consent UX rate.
 - **Migration of historic PASSED providers** — they keep their PASSED row; the gate's purpose-scoped already-verified check handles them correctly.

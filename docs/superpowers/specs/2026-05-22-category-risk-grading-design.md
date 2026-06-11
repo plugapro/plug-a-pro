@@ -6,7 +6,7 @@
 
 ## Context
 
-During a no-match incident (Sarah Sullivan / Plumbing / Constantia Kloof), investigation revealed that `provider_categories` rows default to `PENDING_REVIEW`, blocking matching eligibility for every category until ops manually approves each one per provider. For low-risk service categories (cleaning, garden, DIY), this creates unnecessary ops queue volume with no meaningful safety benefit.
+During a no-match incident (a customer requesting Plumbing in a Roodepoort suburb), investigation revealed that `provider_categories` rows default to `PENDING_REVIEW`, blocking matching eligibility for every category until ops manually approves each one per provider. For low-risk service categories (cleaning, garden, DIY), this creates unnecessary ops queue volume with no meaningful safety benefit.
 
 This feature introduces a `riskTier` field on a new `Category` model. When a provider is approved, all their LOW-risk categories are auto-approved in the same transaction. When an already-active provider adds a LOW-risk category later, the row is written as APPROVED directly.
 

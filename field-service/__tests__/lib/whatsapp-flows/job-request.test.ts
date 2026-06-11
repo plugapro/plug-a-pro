@@ -218,7 +218,7 @@ describe('WhatsApp job-request flow - structured address', () => {
     })
 
     it.each([
-      '21 Jump Street',
+      '123 Test Street',
       '10 Church Road',
       'Unit 4, 8 Oak Avenue',
       '22B Nelson Mandela Drive',
@@ -260,10 +260,10 @@ describe('WhatsApp job-request flow - structured address', () => {
     it('keeps saved address state and responds when next-step send fails', async () => {
       ;(wa.sendList as any).mockRejectedValueOnce(new Error('Meta list send failed'))
 
-      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '21 Jump Street'))
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '123 Test Street'))
 
       expect(result.nextStep).toBe('addr_select_province')
-      expect(result.nextData).toMatchObject({ addressLine1: '21 Jump Street', addressStreet: '21 Jump Street' })
+      expect(result.nextData).toMatchObject({ addressLine1: '123 Test Street', addressStreet: '123 Test Street' })
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
         expect.stringContaining('We saved that street address'),
@@ -273,7 +273,7 @@ describe('WhatsApp job-request flow - structured address', () => {
     it('keeps customer on street address step when the draft save fails', async () => {
       ;(db.conversation.upsert as any).mockRejectedValueOnce(new Error('db unavailable'))
 
-      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '21 Jump Street'))
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '123 Test Street'))
 
       expect(result.nextStep).toBe('collect_address_street')
       expect(wa.sendText).toHaveBeenCalledWith(
@@ -521,7 +521,7 @@ describe('WhatsApp job-request flow - structured address', () => {
 
     it('uses conversation-stored customer name when submission context misses customerName', async () => {
       ;(db.conversation.findUnique as any).mockResolvedValue({
-        data: { customerName: 'Sarah Sullivan' },
+        data: { customerName: 'Test Customer' },
       })
 
       await handleJobRequestFlow(
@@ -533,7 +533,7 @@ describe('WhatsApp job-request flow - structured address', () => {
 
       expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
         expect.objectContaining({
-          customerName: 'Sarah Sullivan',
+          customerName: 'Test Customer',
         }),
       )
     })
@@ -719,8 +719,8 @@ describe('WhatsApp job-request flow - structured address', () => {
         addresses: [
           {
             id: 'addr_1',
-            street: '21 Jump Street',
-            addressLine1: '21 Jump Street',
+            street: '123 Test Street',
+            addressLine1: '123 Test Street',
             suburb: 'Bromhof',
             region: 'JHB West',
             city: 'Johannesburg',
@@ -768,30 +768,30 @@ describe('WhatsApp job-request flow - structured address', () => {
       ;(db.customer.findFirst as any).mockResolvedValue({
         id: 'cust_1',
         phone: PHONE,
-        name: 'Sarah Sullivan',
+        name: 'Test Customer',
         addresses: [
           {
             id: 'addr_with_unit',
-            street: 'Unit 21, 21 Jump Street',
-            addressLine1: '21 Jump Street',
-            suburb: 'Constantia Kloof',
+            street: 'Unit 1, 123 Test Street',
+            addressLine1: '123 Test Street',
+            suburb: 'Test Suburb',
             region: 'JHB West / Roodepoort',
             city: 'Johannesburg',
             province: 'Gauteng',
-            postalCode: '1709',
-            locationNodeId: 'sub_constantia_kloof',
+            postalCode: '0000',
+            locationNodeId: 'sub_test_suburb',
             isDefault: false,
           },
           {
             id: 'addr_plain',
-            street: '21 Jump Street',
-            addressLine1: '21 Jump Street',
-            suburb: 'Constantia Kloof',
+            street: '123 Test Street',
+            addressLine1: '123 Test Street',
+            suburb: 'Test Suburb',
             region: 'JHB West / Roodepoort',
             city: 'Johannesburg',
             province: 'Gauteng',
-            postalCode: '1709',
-            locationNodeId: 'sub_constantia_kloof',
+            postalCode: '0000',
+            locationNodeId: 'sub_test_suburb',
             isDefault: false,
           },
         ],
@@ -808,7 +808,7 @@ describe('WhatsApp job-request flow - structured address', () => {
       )
       expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Welcome back, Sarah'),
+        expect.stringContaining('Welcome back, Test'),
         expect.arrayContaining([
           expect.objectContaining({ id: 'addr_same' }),
           expect.objectContaining({ id: 'addr_new' }),
@@ -823,23 +823,23 @@ describe('WhatsApp job-request flow - structured address', () => {
           {
             id: 'addr_with_unit',
             label: null,
-            street: 'Unit 21, 21 Jump Street',
-            addressLine1: '21 Jump Street',
-            suburb: 'Constantia Kloof',
+            street: 'Unit 1, 123 Test Street',
+            addressLine1: '123 Test Street',
+            suburb: 'Test Suburb',
             city: 'Johannesburg',
             province: 'Gauteng',
-            locationNodeId: 'sub_constantia_kloof',
+            locationNodeId: 'sub_test_suburb',
             isDefault: false,
           },
           {
             id: 'addr_plain',
             label: null,
-            street: '21 Jump Street',
-            addressLine1: '21 Jump Street',
-            suburb: 'Constantia Kloof',
+            street: '123 Test Street',
+            addressLine1: '123 Test Street',
+            suburb: 'Test Suburb',
             city: 'Johannesburg',
             province: 'Gauteng',
-            locationNodeId: 'sub_constantia_kloof',
+            locationNodeId: 'sub_test_suburb',
             isDefault: false,
           },
         ],
@@ -847,7 +847,7 @@ describe('WhatsApp job-request flow - structured address', () => {
 
       const result = await handleJobRequestFlow(
         makeCtx('collect_site', 'collect_site_start', undefined, {
-          customerName: 'Sarah',
+          customerName: 'Test',
           category: 'Plumbing',
         }),
       )
@@ -872,12 +872,12 @@ describe('WhatsApp job-request flow - structured address', () => {
       ;(db.customer.findFirst as any).mockResolvedValue({
         id: 'cust_1',
         phone: PHONE,
-        name: 'Sarah Sullivan',
+        name: 'Test Customer',
         addresses: [
           {
             id: 'addr_1',
-            street: '21 Jump Street',
-            addressLine1: '21 Jump Street',
+            street: '123 Test Street',
+            addressLine1: '123 Test Street',
             suburb: 'Bromhof',
             region: 'JHB West',
             city: 'Johannesburg',
@@ -894,14 +894,14 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(result.nextStep).toBe('collect_address')
       expect(result.nextData).toMatchObject({
         customerId: 'cust_1',
-        customerName: 'Sarah Sullivan',
+        customerName: 'Test Customer',
         isFirstBooking: false,
         selectedCategory: 'Painting',
       })
       expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
       expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Welcome back, Sarah'),
+        expect.stringContaining('Welcome back, Test'),
         expect.arrayContaining([
           expect.objectContaining({ id: 'addr_same' }),
           expect.objectContaining({ id: 'addr_new' }),
@@ -930,8 +930,8 @@ describe('WhatsApp job-request flow - structured address', () => {
       ;(db.address.findFirst as any).mockResolvedValue({
         id: 'addr_1',
         customerId: 'cust_1',
-        street: '21 Jump Street',
-        addressLine1: '21 Jump Street',
+        street: '123 Test Street',
+        addressLine1: '123 Test Street',
         suburb: 'Bromhof',
         city: 'Johannesburg',
         province: 'Gauteng',
@@ -950,7 +950,7 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(result.nextStep).toBe('confirm_job_request')
       expect(result.nextData).toMatchObject({
         issueDescription: 'Paint two bedrooms',
-        addressLine1: '21 Jump Street',
+        addressLine1: '123 Test Street',
         addrLocationNodeId: 'sub_sandton',
         savedAddressId: 'addr_1',
       })

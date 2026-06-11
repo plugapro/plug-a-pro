@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create a safe, idempotent TypeScript seed script that inserts three West Rand test customers, service requests, image attachments, and lead-chain records (DispatchDecision → MatchAttempt → AssignmentHold → Lead) so Fannie's provider account can test the full lead-acceptance journey without going through WhatsApp.
+**Goal:** Create a safe, idempotent TypeScript seed script that inserts three West Rand test customers, service requests, image attachments, and lead-chain records (DispatchDecision → MatchAttempt → AssignmentHold → Lead) so a target provider account can test the full lead-acceptance journey without going through WhatsApp.
 
 **Architecture:** A single self-contained CLI script (`scripts/seed-west-rand-test-leads.ts`) driven by a co-located config module (`scripts/seed-west-rand-test-leads.config.ts`). The script imports existing library code (`lib/provider-wallet.ts`, `lib/provider-lead-access.ts`, `lib/db.ts`) and Vercel Blob directly — it does NOT call the WhatsApp dispatch function. Image classification is config-driven (UUID filenames require manual assignment in the config); unclassified images are reported and skipped. All test records carry `isTestRequest: true`, `isTestLead: true`, and `cohortName: 'west-rand-pilot-seed'` for easy targeted cleanup.
 
@@ -55,7 +55,7 @@ npx tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --dry-run
 
 export const COHORT = 'west-rand-pilot-seed' as const
 
-export type CustomerKey = 'masego-mataboge' | 'seth-mataboge' | 'emma-mafoko'
+export type CustomerKey = 'test-customer-1' | 'test-customer-2' | 'test-customer-3'
 
 export interface CustomerConfig {
   key: CustomerKey
@@ -87,9 +87,9 @@ export interface ImageMappingEntry {
 
 export const CUSTOMERS: CustomerConfig[] = [
   {
-    key: 'masego-mataboge',
-    name: 'Masego Mataboge',
-    phone: '+27827006695',
+    key: 'test-customer-1',
+    name: 'Test Customer One',
+    phone: '+27000000001',
     category: 'plumbing',
     title: 'Blocked shower drain',
     description:
@@ -97,7 +97,7 @@ export const CUSTOMERS: CustomerConfig[] = [
     availability: 'urgent',
     address: {
       label: 'Home',
-      street: '14 Sunset Road',
+      street: '123 Test Street',
       suburb: 'Ruimsig',
       city: 'Roodepoort',
       province: 'Gauteng',
@@ -107,9 +107,9 @@ export const CUSTOMERS: CustomerConfig[] = [
     },
   },
   {
-    key: 'seth-mataboge',
-    name: 'Seth Mataboge',
-    phone: '+27764010810',
+    key: 'test-customer-2',
+    name: 'Test Customer Two',
+    phone: '+27000000002',
     category: 'plumbing',
     title: 'Geyser leaking',
     description:
@@ -117,7 +117,7 @@ export const CUSTOMERS: CustomerConfig[] = [
     availability: 'mornings',
     address: {
       label: 'Home',
-      street: '7 Acacia Avenue',
+      street: '456 Test Avenue',
       suburb: 'Wilgeheuwel',
       city: 'Roodepoort',
       province: 'Gauteng',
@@ -127,9 +127,9 @@ export const CUSTOMERS: CustomerConfig[] = [
     },
   },
   {
-    key: 'emma-mafoko',
-    name: 'Emma Mafoko',
-    phone: '+27824978565',
+    key: 'test-customer-3',
+    name: 'Test Customer Three',
+    phone: '+27000000003',
     category: 'handyman',
     title: 'Light fittings — handyman / electrical',
     description:
@@ -137,7 +137,7 @@ export const CUSTOMERS: CustomerConfig[] = [
     availability: 'flexible',
     address: {
       label: 'Home',
-      street: '23 Maple Close',
+      street: '789 Test Close',
       suburb: 'Little Falls',
       city: 'Roodepoort',
       province: 'Gauteng',
@@ -151,14 +151,14 @@ export const CUSTOMERS: CustomerConfig[] = [
 // ─── Image mapping ────────────────────────────────────────────────────────────
 // Keys are UUID filenames WITHOUT the file extension (case-sensitive).
 // Fill in this section after viewing the source images in:
-//   /Users/shimane/Desktop/defects/plugapro/images
+//   <LOCAL_IMAGE_SOURCE_DIR>
 //
-// Available customer keys: 'masego-mataboge' | 'seth-mataboge' | 'emma-mafoko'
+// Available customer keys: 'test-customer-1' | 'test-customer-2' | 'test-customer-3'
 // Available labels: 'evidence' | 'before' | 'after'
 //
 // Example entry:
 //   '55B6FEAD-AE90-49AB-B9FA-823E994E5B2B': {
-//     customerKey: 'masego-mataboge',
+//     customerKey: 'test-customer-1',
 //     label: 'evidence',
 //     caption: 'Blocked shower drain — standing water',
 //   },
@@ -170,15 +170,15 @@ export const IMAGE_MAPPING: Record<string, ImageMappingEntry> = {
   // ← fill in after reviewing images
 }
 
-// ─── Fannie provider lookup ───────────────────────────────────────────────────
+// ─── Provider lookup ───────────────────────────────────────────────────
 // The script searches for a provider whose name contains this string (case-insensitive).
-// If Fannie's name in the DB differs, update this value.
-export const FANNIE_NAME_FRAGMENT = 'Fannie'
+// Supply the target provider name fragment via PROVIDER_NAME_FRAGMENT.
+export const PROVIDER_NAME_FRAGMENT = process.env.PROVIDER_NAME_FRAGMENT?.trim() || 'test-provider'
 
 // ─── Lead timing ─────────────────────────────────────────────────────────────
-export const LEAD_TTL_MINUTES = 30     // how long Fannie has to respond
+export const LEAD_TTL_MINUTES = 30     // how long the provider has to respond
 export const REQUEST_EXPIRES_DAYS = 30 // how far in the future the request expires
-export const MIN_PROMO_CREDITS = 5     // ensure Fannie has at least this many credits
+export const MIN_PROMO_CREDITS = 5     // ensure the provider has at least this many credits
 export const TOP_UP_PROMO_CREDITS = 10 // add this many promo credits if below minimum
 ```
 
@@ -207,19 +207,19 @@ import { normalisePhone } from '../../scripts/seed-west-rand-test-leads'
 
 describe('normalisePhone', () => {
   it('converts 082-format to E.164', () => {
-    expect(normalisePhone('0827006695')).toBe('+27827006695')
+    expect(normalisePhone('0000000001')).toBe('+27000000001')
   })
   it('converts +27 format unchanged', () => {
-    expect(normalisePhone('+27827006695')).toBe('+27827006695')
+    expect(normalisePhone('+27000000001')).toBe('+27000000001')
   })
   it('converts 27-prefix to E.164', () => {
-    expect(normalisePhone('27764010810')).toBe('+27764010810')
+    expect(normalisePhone('27000000002')).toBe('+27000000002')
   })
   it('strips spaces and hyphens', () => {
-    expect(normalisePhone('+27 82 700 6695')).toBe('+27827006695')
+    expect(normalisePhone('+27 00 000 0001')).toBe('+27000000001')
   })
   it('strips spaces and hyphens in local format', () => {
-    expect(normalisePhone('082 700 6695')).toBe('+27827006695')
+    expect(normalisePhone('000 000 0001')).toBe('+27000000001')
   })
   it('throws on non-SA number', () => {
     expect(() => normalisePhone('+1 555 000 1234')).toThrow(/South African/)
@@ -298,14 +298,14 @@ import type { ImageMappingEntry } from '../../scripts/seed-west-rand-test-leads.
 
 describe('classifyImages', () => {
   const mapping: Record<string, ImageMappingEntry> = {
-    'ABCDEF': { customerKey: 'masego-mataboge', label: 'evidence', caption: 'Drain' },
+    'ABCDEF': { customerKey: 'test-customer-1', label: 'evidence', caption: 'Drain' },
   }
 
   it('classifies a known file', () => {
     const result = classifyImages(['ABCDEF.PNG', 'UNKNOWN.PNG'], mapping)
     expect(result.classified).toHaveLength(1)
     expect(result.classified[0].filename).toBe('ABCDEF.PNG')
-    expect(result.classified[0].customerKey).toBe('masego-mataboge')
+    expect(result.classified[0].customerKey).toBe('test-customer-1')
     expect(result.needsReview).toEqual(['UNKNOWN.PNG'])
   })
 
@@ -529,15 +529,15 @@ import { upsertCustomer } from '../../scripts/seed-west-rand-test-leads'
 import type { CustomerConfig } from '../../scripts/seed-west-rand-test-leads.config'
 
 const testCustomer: CustomerConfig = {
-  key: 'masego-mataboge',
-  name: 'Masego Mataboge',
-  phone: '+27827006695',
+  key: 'test-customer-1',
+  name: 'Test Customer One',
+  phone: '+27000000001',
   category: 'plumbing',
   title: 'Blocked shower drain',
   description: 'Water drains slowly.',
   availability: 'urgent',
   address: {
-    label: 'Home', street: '14 Sunset Road', suburb: 'Ruimsig',
+    label: 'Home', street: '123 Test Street', suburb: 'Ruimsig',
     city: 'Roodepoort', province: 'Gauteng', postalCode: '1724',
     lat: -26.08, lng: 27.853,
   },
@@ -547,7 +547,7 @@ describe('upsertCustomer', () => {
   afterEach(() => vi.clearAllMocks())
 
   it('returns existing customer when found', async () => {
-    const existing = { id: 'cust-1', phone: '+27827006695', name: 'Masego Mataboge' }
+    const existing = { id: 'cust-1', phone: '+27000000001', name: 'Test Customer One' }
     mockDb.customer.findUnique.mockResolvedValueOnce(existing)
 
     const result = await upsertCustomer(testCustomer, true)
@@ -558,7 +558,7 @@ describe('upsertCustomer', () => {
 
   it('creates customer when not found', async () => {
     mockDb.customer.findUnique.mockResolvedValueOnce(null)
-    const created = { id: 'cust-2', phone: '+27827006695', name: 'Masego Mataboge' }
+    const created = { id: 'cust-2', phone: '+27000000001', name: 'Test Customer One' }
     mockDb.customer.create.mockResolvedValueOnce(created)
 
     const result = await upsertCustomer(testCustomer, true)
@@ -567,8 +567,8 @@ describe('upsertCustomer', () => {
     expect(mockDb.customer.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          phone: '+27827006695',
-          name: 'Masego Mataboge',
+          phone: '+27000000001',
+          name: 'Test Customer One',
           isTestUser: true,
           cohortName: 'west-rand-pilot-seed',
           channel: 'PWA',
@@ -671,7 +671,7 @@ import { upsertAddress } from '../../scripts/seed-west-rand-test-leads'
 import type { AddressConfig } from '../../scripts/seed-west-rand-test-leads.config'
 
 const testAddress: AddressConfig = {
-  label: 'Home', street: '14 Sunset Road', suburb: 'Ruimsig',
+  label: 'Home', street: '123 Test Street', suburb: 'Ruimsig',
   city: 'Roodepoort', province: 'Gauteng', postalCode: '1724',
   lat: -26.08, lng: 27.853,
 }
@@ -680,7 +680,7 @@ describe('upsertAddress', () => {
   afterEach(() => vi.clearAllMocks())
 
   it('finds existing address by customerId + street + suburb', async () => {
-    const existing = { id: 'addr-1', street: '14 Sunset Road', suburb: 'Ruimsig' }
+    const existing = { id: 'addr-1', street: '123 Test Street', suburb: 'Ruimsig' }
     mockDb.address = { findFirst: vi.fn().mockResolvedValueOnce(existing), create: vi.fn() }
     const result = await upsertAddress('cust-1', testAddress, true)
     expect(result.address).toBe(existing)
@@ -689,7 +689,7 @@ describe('upsertAddress', () => {
   })
 
   it('creates address when not found', async () => {
-    const created = { id: 'addr-2', street: '14 Sunset Road', suburb: 'Ruimsig' }
+    const created = { id: 'addr-2', street: '123 Test Street', suburb: 'Ruimsig' }
     mockDb.address = { findFirst: vi.fn().mockResolvedValueOnce(null), create: vi.fn().mockResolvedValueOnce(created) }
     const result = await upsertAddress('cust-1', testAddress, true)
     expect(result.address).toBe(created)
@@ -698,7 +698,7 @@ describe('upsertAddress', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           customerId: 'cust-1',
-          street: '14 Sunset Road',
+          street: '123 Test Street',
           suburb: 'Ruimsig',
           city: 'Roodepoort',
           province: 'Gauteng',
@@ -808,7 +808,7 @@ describe('upsertJobRequest', () => {
     mockDb.jobRequest = { findFirst: vi.fn().mockResolvedValueOnce(existing), create: vi.fn() }
 
     const result = await upsertJobRequest(
-      { id: 'cust-1', phone: '+27827006695', name: 'Masego' },
+      { id: 'cust-1', phone: '+27000000001', name: 'Test' },
       { id: 'addr-1' } as any,
       testCustomer,
       true,
@@ -822,7 +822,7 @@ describe('upsertJobRequest', () => {
     mockDb.jobRequest = { findFirst: vi.fn().mockResolvedValueOnce(null), create: vi.fn().mockResolvedValueOnce(created) }
 
     const result = await upsertJobRequest(
-      { id: 'cust-1', phone: '+27827006695', name: 'Masego' },
+      { id: 'cust-1', phone: '+27000000001', name: 'Test' },
       { id: 'addr-1' } as any,
       testCustomer,
       true,
@@ -846,7 +846,7 @@ describe('upsertJobRequest', () => {
   it('skips create in dry-run', async () => {
     mockDb.jobRequest = { findFirst: vi.fn().mockResolvedValueOnce(null), create: vi.fn() }
     const result = await upsertJobRequest(
-      { id: 'cust-1', phone: '+27827006695', name: 'Masego' },
+      { id: 'cust-1', phone: '+27000000001', name: 'Test' },
       null,
       testCustomer,
       false,
@@ -1145,7 +1145,7 @@ describe('createLeadChain', () => {
 
     const result = await createLeadChain({
       jobRequestId: 'jr-1',
-      provider: { id: 'prov-1', phone: '+27820000001', name: 'Fannie' } as any,
+      provider: { id: 'prov-1', phone: '+27000000009', name: 'Test Provider' } as any,
       commit: false,
     })
 
@@ -1159,7 +1159,7 @@ describe('createLeadChain', () => {
 
     const result = await createLeadChain({
       jobRequestId: 'jr-1',
-      provider: { id: 'prov-1', phone: '+27820000001', name: 'Fannie' } as any,
+      provider: { id: 'prov-1', phone: '+27000000009', name: 'Test Provider' } as any,
       commit: true,
       resetExisting: false,
     })
@@ -1187,7 +1187,7 @@ describe('createLeadChain', () => {
 
     const result = await createLeadChain({
       jobRequestId: 'jr-1',
-      provider: { id: 'prov-1', phone: '+27820000001', name: 'Fannie' } as any,
+      provider: { id: 'prov-1', phone: '+27000000009', name: 'Test Provider' } as any,
       commit: true,
     })
 
@@ -1369,7 +1369,7 @@ git commit -m "feat(seed): createLeadChain utility + tests"
 
 ---
 
-## Task 10: Fannie lookup + promo credit top-up + tests
+## Task 10: provider lookup + promo credit top-up + tests
 
 **Files:**
 - Modify: `scripts/seed-west-rand-test-leads.ts`
@@ -1386,14 +1386,14 @@ describe('findFannie', () => {
   afterEach(() => vi.clearAllMocks())
 
   it('finds provider by name fragment (case-insensitive)', async () => {
-    const fannie = { id: 'prov-1', name: 'Fannie Dlamini', phone: '+27820000001', status: 'ACTIVE', active: true, verified: true }
+    const fannie = { id: 'prov-1', name: 'Test Provider', phone: '+27000000009', status: 'ACTIVE', active: true, verified: true }
     mockDb.provider = { findFirst: vi.fn().mockResolvedValueOnce(fannie) }
-    const result = await findFannie('Fannie')
+    const result = await findFannie('test-provider')
     expect(result).toBe(fannie)
     expect(mockDb.provider.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          name: { contains: 'Fannie', mode: 'insensitive' },
+          name: { contains: 'test-provider', mode: 'insensitive' },
         }),
       }),
     )
@@ -1401,7 +1401,7 @@ describe('findFannie', () => {
 
   it('returns null when provider not found', async () => {
     mockDb.provider = { findFirst: vi.fn().mockResolvedValueOnce(null) }
-    const result = await findFannie('Fannie')
+    const result = await findFannie('test-provider')
     expect(result).toBeNull()
   })
 })
@@ -1638,11 +1638,11 @@ export function printReport(report: SeedReport, commit: boolean): void {
   }
 
   if (report.provider) {
-    console.log('\nPROVIDER (Fannie):')
+    console.log('\nPROVIDER:')
     console.log(`  id=${report.provider.id} name=${report.provider.name}`)
     console.log(`  credits added=${report.provider.creditsAdded}  total balance=${report.provider.totalCredits}`)
   } else {
-    console.log('\nPROVIDER: ⚠ Fannie not found — check FANNIE_NAME_FRAGMENT in config')
+    console.log('\nPROVIDER: ⚠ Fannie not found — check PROVIDER_NAME_FRAGMENT in config')
   }
 
   console.log('\nLEADS:')
@@ -1677,7 +1677,7 @@ async function main() {
   const resetExisting = args.includes('--reset-existing=true')
   const imageDir = (() => {
     const flag = args.find((a) => a.startsWith('--image-dir='))
-    return flag ? flag.split('=')[1] : '/Users/shimane/Desktop/defects/plugapro/images'
+    return flag ? flag.split('=')[1] : '<LOCAL_IMAGE_SOURCE_DIR>'
   })()
 
   if (sendWhatsApp) {
@@ -1696,7 +1696,7 @@ async function main() {
   const {
     CUSTOMERS,
     IMAGE_MAPPING,
-    FANNIE_NAME_FRAGMENT,
+    PROVIDER_NAME_FRAGMENT,
     MIN_PROMO_CREDITS,
     TOP_UP_PROMO_CREDITS,
   } = await import('./seed-west-rand-test-leads.config')
@@ -1828,10 +1828,10 @@ async function main() {
     })
   }
 
-  // ─── Find Fannie + ensure credits ────────────────────────────────────────────
-  const fannie = await findFannie(FANNIE_NAME_FRAGMENT)
+  // ─── Find target provider + ensure credits ───────────────────────────────────
+  const fannie = await findFannie(PROVIDER_NAME_FRAGMENT)
   if (!fannie) {
-    report.warnings.push(`Provider not found: name contains "${FANNIE_NAME_FRAGMENT}". Update FANNIE_NAME_FRAGMENT in config.`)
+    report.warnings.push(`Provider not found: name contains "". Set PROVIDER_NAME_FRAGMENT to the target provider name fragment.`)
   }
 
   if (fannie) {
@@ -1963,16 +1963,16 @@ ALLOW_TEST_DATA_IMPORT=true npx tsx --env-file=.env.local scripts/seed-west-rand
 Expected output (abbreviated):
 ```
 Mode: DRY-RUN
-Image dir: /Users/shimane/Desktop/defects/plugapro/images
+Image dir: <LOCAL_IMAGE_SOURCE_DIR>
 
 ────────────────────────────────────────────────────────────
 Plug A Pro — West Rand Test Seed [DRY-RUN]
 ────────────────────────────────────────────────────────────
 
 CUSTOMERS:
-  would create   Masego Mataboge (+27827006695) → id=n/a
-  would create   Seth Mataboge (+27764010810) → id=n/a
-  would create   Emma Mafoko (+27824978565) → id=n/a
+  would create   Test Customer One (+27000000001) → id=n/a
+  would create   Test Customer Two (+27000000002) → id=n/a
+  would create   Test Customer Three (+27000000003) → id=n/a
 
 ADDRESSES:
   found/skipped  Ruimsig (customerId=n/a)
@@ -1997,8 +1997,8 @@ IMAGES:
 ATTACHMENTS:
   (none — update IMAGE_MAPPING in config)
 
-PROVIDER (Fannie):
-  (Fannie lookup runs against DB — verify in commit mode)
+PROVIDER:
+  (provider lookup runs against DB — verify in commit mode)
 
 LEADS:
   would create  jobRequest=n/a
@@ -2030,7 +2030,7 @@ This task is **manual**. The 6 source images have UUID filenames with no naming 
 
 Open the folder and inspect each image:
 ```bash
-open "/Users/shimane/Desktop/defects/plugapro/images"
+open "<LOCAL_IMAGE_SOURCE_DIR>"
 ```
 
 The 6 files to classify:
@@ -2050,12 +2050,12 @@ Edit `scripts/seed-west-rand-test-leads.config.ts` and update `IMAGE_MAPPING` ba
 ```typescript
 export const IMAGE_MAPPING: Record<string, ImageMappingEntry> = {
   '55B6FEAD-AE90-49AB-B9FA-823E994E5B2B': {
-    customerKey: 'masego-mataboge',
+    customerKey: 'test-customer-1',
     label: 'evidence',
     caption: 'Blocked shower drain — standing water',
   },
   '87A345AD-30F3-4EDE-A91D-208E6EA38F0F': {
-    customerKey: 'masego-mataboge',
+    customerKey: 'test-customer-1',
     label: 'evidence',
     caption: 'Blocked shower drain — drain close-up',
   },
@@ -2102,9 +2102,9 @@ Plug A Pro — West Rand Test Seed [COMMIT]
 ────────────────────────────────────────────────────────────
 
 CUSTOMERS:
-  created        Masego Mataboge (+27827006695) → id=cma...
-  created        Seth Mataboge (+27764010810) → id=cmb...
-  created        Emma Mafoko (+27824978565) → id=cmc...
+  created        Test Customer One (+27000000001) → id=cma...
+  created        Test Customer Two (+27000000002) → id=cmb...
+  created        Test Customer Three (+27000000003) → id=cmc...
 ...
 LEADS:
   created        leadId=cld...
@@ -2135,7 +2135,7 @@ Open the three lead URLs printed in the report. Confirm:
 - [ ] **Step 4: Test full acceptance journey**
 
 1. Click Accept on one lead
-2. Confirm 1 credit is deducted from Fannie's balance
+2. Confirm 1 credit is deducted from the provider's balance
 3. Confirm full customer address is now visible
 4. Confirm image(s) render at full resolution
 
@@ -2150,7 +2150,7 @@ Open the three lead URLs printed in the report. Confirm:
 ```bash
 cd field-service
 git add -A
-git commit -m "test(seed): west-rand test leads verified — Fannie acceptance flow confirmed"
+git commit -m "test(seed): west-rand test leads verified — provider acceptance flow confirmed"
 ```
 
 ---
@@ -2217,7 +2217,7 @@ All of these must pass before the task is closed:
 | No WhatsApp notifications | `createLeadChain` does NOT call `dispatchMatchLead` |
 | No credits deducted at seed time | Credits only added (promo top-up), never debited |
 | Safety guard: refuse against prod | Task 11 (`assertSafeToRun`) |
-| Fannie has enough credits | Task 10 (`ensureFannieHasCredits`) |
+| provider has enough credits | Task 10 (`ensureFannieHasCredits`) |
 | Lead expires in 30 min | `LEAD_TTL_MINUTES = 30` in config |
 | Leads in SENT status (not accepted) | Task 9: `status: 'SENT'` |
 | Phone normalised to E.164 | Task 2 (`normalisePhone`) |
