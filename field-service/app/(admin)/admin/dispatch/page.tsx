@@ -34,8 +34,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CaseNotesPanel } from '@/components/admin/case/CaseNotesPanel'
 import { ResolveCaseForm } from '@/components/admin/case/ResolveCaseForm'
 import { DispatchActivityFeed, type ActivityEvent } from '@/components/admin/dispatch/DispatchActivityFeed'
-import { getReasonCodesForQueue } from '@/lib/reason-codes'
-import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase, addEvent } from '@/lib/cases'
+import { getReasonCodesForQueue, isValidReasonCode } from '@/lib/reason-codes'
+import { getCaseByEntity, getScopedCase, CaseScopeError, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase, addEvent } from '@/lib/cases'
 import { DispatchControlButtons, ForceAssignButton } from './_components/DispatchActionButtons'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
@@ -240,15 +240,36 @@ export default async function AdminDispatchPage({
     : null
   const dispatchReasonCodes = getReasonCodesForQueue('DISPATCH')
 
+  // The selected request's entity id is captured from server state so case
+  // lifecycle mutations bind to the DISPATCH/JOB_REQUEST case the page already
+  // authorised - never to a raw, attacker-controlled `caseId` form field.
+  const selectedRequestId = selectedRequest?.id ?? null
+
   async function closeCaseAction(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
     if (!(await isEnabled(CLOSE_OUT_FLAG, { userId: activeAdmin.id }))) return
+    if (!selectedRequestId) return
     const caseId = String(formData.get('caseId') ?? '')
     const reasonCode = String(formData.get('reasonCode') ?? '')
     const note = String(formData.get('note') ?? '') || undefined
     if (!caseId || !reasonCode) return
-    await resolveCase({ caseId, resolvedBy: activeAdmin.id, reasonCode, note })
+    // Validate the reason code belongs to the DISPATCH queue before resolving.
+    if (!isValidReasonCode('DISPATCH', reasonCode)) return
+    try {
+      // Bind the mutation to the DISPATCH/JOB_REQUEST case for the selected
+      // request and reject a tampered caseId that points at another case.
+      const scoped = await getScopedCase({
+        caseId,
+        queueType: 'DISPATCH',
+        entityType: 'JOB_REQUEST',
+        entityId: selectedRequestId,
+      })
+      await resolveCase({ caseId: scoped.id, resolvedBy: activeAdmin.id, reasonCode, note })
+    } catch (error) {
+      if (error instanceof CaseScopeError) return
+      throw error
+    }
     revalidatePath('/admin/dispatch')
     revalidatePath('/admin')
   }
@@ -257,9 +278,21 @@ export default async function AdminDispatchPage({
     'use server'
     const activeAdmin = await requireAdmin()
     if (!(await isEnabled(CLOSE_OUT_FLAG, { userId: activeAdmin.id }))) return
+    if (!selectedRequestId) return
     const caseId = String(formData.get('caseId') ?? '')
     if (!caseId) return
-    await reopenCase(caseId, activeAdmin.id)
+    try {
+      const scoped = await getScopedCase({
+        caseId,
+        queueType: 'DISPATCH',
+        entityType: 'JOB_REQUEST',
+        entityId: selectedRequestId,
+      })
+      await reopenCase(scoped.id, activeAdmin.id)
+    } catch (error) {
+      if (error instanceof CaseScopeError) return
+      throw error
+    }
     revalidatePath('/admin/dispatch')
   }
 
@@ -267,13 +300,25 @@ export default async function AdminDispatchPage({
     'use server'
     const activeAdmin = await requireAdmin()
     if (!(await isEnabled(CLOSE_OUT_FLAG, { userId: activeAdmin.id }))) return
+    if (!selectedRequestId) return
     const caseId = String(formData.get('caseId') ?? '')
     const release = formData.get('release') === '1'
     if (!caseId) return
-    if (release) {
-      await releaseCase(caseId, activeAdmin.id)
-    } else {
-      await claimCase({ caseId, userId: activeAdmin.id })
+    try {
+      const scoped = await getScopedCase({
+        caseId,
+        queueType: 'DISPATCH',
+        entityType: 'JOB_REQUEST',
+        entityId: selectedRequestId,
+      })
+      if (release) {
+        await releaseCase(scoped.id, activeAdmin.id)
+      } else {
+        await claimCase({ caseId: scoped.id, userId: activeAdmin.id })
+      }
+    } catch (error) {
+      if (error instanceof CaseScopeError) return
+      throw error
     }
     revalidatePath('/admin/dispatch')
   }
