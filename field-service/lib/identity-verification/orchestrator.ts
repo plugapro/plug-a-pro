@@ -478,28 +478,43 @@ export async function transitionIdentityVerification(
       })
     }
     if (kycStatus === 'VERIFIED') {
+      // Interactive transaction clients have no $transaction method; the root
+      // client does. Joining vs opening a transaction must follow the runtime
+      // shape, not module identity.
+      const isRootClient = '$transaction' in (client as object)
       try {
         // The admin approval path passes crudAction's open transaction as
         // `client`; the webhook/automation paths pass the root db client.
-        // Booking joins the caller's tx when one exists, otherwise opens its
-        // own. The structural IdentityVerificationClient type doesn't declare
-        // the kyc-fee delegates, so widen for the call - the runtime object
-        // is always a full Prisma client or interactive-transaction client.
+        // Booking joins the caller's tx when one is present (isRootClient=false),
+        // otherwise opens its own.
         await bookKycFeeForVerifiedProvider(
           { providerId: current.providerId, verificationId: input.verificationId },
-          (client as unknown) === db ? undefined : (client as unknown as KycFeeBookingClient),
+          isRootClient ? undefined : (client as unknown as KycFeeBookingClient),
         )
       } catch (error) {
         logIdentityVerificationError('verify.kyc_fee_booking.failed', error, {
           verificationId: input.verificationId,
           providerId: current.providerId,
         })
+        // Inside a caller's transaction a booking DB failure has already
+        // aborted the tx - swallowing it would only surface as confusing
+        // 25P02 errors on the caller's next write. Rethrow for a clean
+        // rollback. On the root-db path the booking ran (and failed) in its
+        // own transaction, so the transition itself is intact and we
+        // deliberately do not break it.
+        if (!isRootClient) throw error
       }
     }
   }
 
   if (current.status !== input.toStatus && TERMINAL_NOTIFICATION_STATUSES.has(input.toStatus)) {
-    void notifyTerminalVerificationStatus(input.verificationId, input.toStatus)
+    // PASSED inside a caller-held transaction: skip - the ledger rows are
+    // uncommitted (fee sentence would read empty) and the admin approval
+    // flow sends its own post-commit notification.
+    const skipPassedInsideCallerTx = input.toStatus === 'PASSED' && !('$transaction' in (client as object))
+    if (!skipPassedInsideCallerTx) {
+      void notifyTerminalVerificationStatus(input.verificationId, input.toStatus)
+    }
   }
 
   return updated
@@ -545,7 +560,7 @@ export async function notifyTerminalVerificationStatus(
     }
     let message = text
     if (toStatus === 'PASSED' && verification?.provider?.id) {
-      const feeSentence = await kycFeeOutcomeSentence(verification.provider.id)
+      const feeSentence = await kycFeeOutcomeSentence(verification.provider.id).catch(() => null)
       if (feeSentence) message = `${text} ${feeSentence}`
     }
     await sendText(phone, message)

@@ -24,6 +24,7 @@ import {
 import { refreshDiditSession } from '@/lib/identity-verification/vendors/didit/decision'
 import { persistDiditDecision } from '@/lib/identity-verification/vendors/didit/persist'
 import { copyKycSelfieToProviderAvatar } from '@/lib/storage'
+import { kycFeeOutcomeSentence } from '@/lib/kyc-fee/messaging'
 import { sendText } from '@/lib/whatsapp'
 
 const FLAG = 'admin.crud.verifications'
@@ -624,7 +625,11 @@ async function notifyProviderIdentityApproval(
     verification?.provider?.phone ?? verification?.providerApplication?.phone
   if (!verification || !providerPhone) return 'skipped'
 
-  const body = 'Your identity verification is complete. Your profile has been updated.'
+  const baseText = 'Your identity verification is complete. Your profile has been updated.'
+  const feeSentence = verification?.provider?.id
+    ? await kycFeeOutcomeSentence(verification.provider.id).catch(() => null)
+    : null
+  const body = feeSentence ? `${baseText} ${feeSentence}` : baseText
   const metadata = {
     verificationId,
     providerId: verification.provider?.id ?? null,
