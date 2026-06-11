@@ -408,9 +408,12 @@ export async function getProviderWallet(): Promise<ProviderWallet> {
   ])
   const creditPurchaseLocked = !eligible
   const identityVerificationStatus = providerIdentityVerificationStatus(provider.kycStatus)
+  // `provider` is already authenticated here and eligibility was just resolved
+  // above, so we use the private helper directly (no second eligibility round-trip
+  // and, critically, no caller-supplied providerId — see finding 138058c2).
   const pendingIntents = creditPurchaseLocked
     ? []
-    : await getProviderPendingIntents(provider.id)
+    : await loadProviderPendingIntents({ actor: provider, checkEligibility: false })
 
   return {
     credits: balance.totalCreditBalance,
@@ -450,15 +453,33 @@ export async function getProviderCreditPurchaseGate(): Promise<Pick<
   }
 }
 
-export async function getProviderPendingIntents(providerId?: string): Promise<ProviderWalletPendingIntent[]> {
-  const actor = providerId ? null : await getAuthenticatedProvider()
-  const resolvedId = providerId ?? actor!.id
+// SECURITY (finding 138058c2): the EXPORTED server action must always resolve the
+// provider from the authenticated session. It previously accepted an optional
+// caller-supplied `providerId` and, when present, skipped authentication and
+// ownership checks — an IDOR that let any caller read another provider's pending
+// Pay@ payment references, amounts, expiry times and payment links. The internal
+// `getProviderWallet` optimisation (which already authenticated and just wanted to
+// avoid a second auth round-trip) now uses the PRIVATE helper below with an actor
+// it has already authenticated; the public action never trusts a caller-supplied
+// ID.
+export async function getProviderPendingIntents(): Promise<ProviderWalletPendingIntent[]> {
+  const actor = await getAuthenticatedProvider()
+  return loadProviderPendingIntents({ actor, checkEligibility: true })
+}
 
-  if (!providerId && !(await isProviderEligibleForCredits(resolvedId))) {
+// Private helper. Callers MUST pass an already-authenticated actor; this function
+// never accepts an untrusted providerId from the client.
+async function loadProviderPendingIntents(params: {
+  actor: ProviderWalletActor
+  checkEligibility: boolean
+}): Promise<ProviderWalletPendingIntent[]> {
+  const { actor, checkEligibility } = params
+
+  if (checkEligibility && !(await isProviderEligibleForCredits(actor.id))) {
     logBlockedProviderCreditTopUpAttempt({
-      providerId: resolvedId,
-      userId: actor!.userId,
-      verificationStatus: actor!.kycStatus,
+      providerId: actor.id,
+      userId: actor.userId,
+      verificationStatus: actor.kycStatus,
       attemptedAction: 'provider_payat_pending_links_read',
     })
     return []
@@ -466,7 +487,7 @@ export async function getProviderPendingIntents(providerId?: string): Promise<Pr
 
   const pendingIntents = await db.paymentIntent.findMany({
     where: {
-      providerId: resolvedId,
+      providerId: actor.id,
       paymentMethod: 'PAYAT',
       status: { in: [...ACTIVE_PAYAT_STATUSES] },
     },

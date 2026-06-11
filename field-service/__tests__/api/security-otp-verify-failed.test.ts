@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   checkOtpVerifyLimit: vi.fn(),
   recordVerificationResult: vi.fn(),
   trustedClientIp: vi.fn(),
+  getSession: vi.fn(),
 }))
 
 vi.mock('@/lib/flags', () => ({
@@ -21,6 +22,14 @@ vi.mock('@/lib/otp-security', () => ({
 
 vi.mock('@/lib/request-ip', () => ({
   trustedClientIp: mocks.trustedClientIp,
+}))
+
+// The route now requires an authenticated session or CRON_SECRET before consuming
+// the shared verify-limit bucket (finding d3930a40). Most existing behavioural
+// assertions below cover the AUTHORIZED path, so we default getSession() to a
+// signed-in user; the dedicated "untrusted caller" test overrides it to null.
+vi.mock('@/lib/auth', () => ({
+  getSession: mocks.getSession,
 }))
 
 const TEST_IP = '8.8.4.4'
@@ -61,6 +70,40 @@ describe('POST /api/security/otp/verify-failed', () => {
     mocks.checkOtpVerifyLimit.mockResolvedValue({ ok: true, challengeId: 'otp_123' })
     mocks.recordVerificationResult.mockResolvedValue(undefined)
     mocks.trustedClientIp.mockReturnValue(TEST_IP)
+    // Default: an authenticated session is present (trusted caller).
+    mocks.getSession.mockResolvedValue({ id: 'user_1', role: 'customer' })
+  })
+
+  it('returns generic ok WITHOUT consuming the verify bucket for an untrusted caller', async () => {
+    // No session and no CRON_SECRET → must not touch the rate-limit bucket
+    // (finding d3930a40: prevents unauthenticated verify-limit exhaustion).
+    mocks.getSession.mockResolvedValueOnce(null)
+
+    const response = await postVerifyFailed({ body: { phoneE164: PHONE } })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ ok: true })
+    expect(mocks.isEnabled).not.toHaveBeenCalled()
+    expect(mocks.checkOtpVerifyLimit).not.toHaveBeenCalled()
+    expect(mocks.recordVerificationResult).not.toHaveBeenCalled()
+  })
+
+  it('allows a CRON_SECRET-bearing caller to consume the verify bucket without a session', async () => {
+    mocks.getSession.mockResolvedValueOnce(null)
+    const previous = process.env.CRON_SECRET
+    process.env.CRON_SECRET = 'cron-secret'
+
+    const response = await postVerifyFailed({
+      body: { phoneE164: PHONE },
+      headers: { authorization: 'Bearer cron-secret' },
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ ok: true })
+    expect(mocks.checkOtpVerifyLimit).toHaveBeenCalled()
+
+    if (previous === undefined) delete process.env.CRON_SECRET
+    else process.env.CRON_SECRET = previous
   })
 
   it.each([

@@ -1,9 +1,10 @@
 'use server'
 
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { getSafeAdminNextPath } from '@/lib/safe-redirect'
+import { siteConfig } from '@/lib/metadata'
 import { normalizeEmailInput, normalizePasswordInput } from '@/lib/auth-input'
 import { SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
 import { STEP_UP_COOKIE_NAME } from '@/lib/otp-security-crypto'
@@ -23,15 +24,15 @@ export type LoginState =
   | { status: '2fa-required'; email?: string; message?: string }
   | { status: 'locked'; retryAfter?: number }
 
-async function resolveAbsoluteUrl(path: string): Promise<string> {
-  const requestHeaders = await headers()
-  const proto = requestHeaders.get('x-forwarded-proto') ?? 'https'
-  const host = requestHeaders.get('host')
-
-  const base = host
-    ? `${proto}://${host}`
-    : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-
+// SECURITY (finding 40011d3c): the admin session callback URL must NEVER be
+// derived from the incoming request's Host / X-Forwarded-Host / X-Forwarded-Proto
+// headers. A spoofed Host header would otherwise cause this server action to POST
+// the admin Supabase access token to an attacker-controlled origin. We resolve the
+// callback origin from the trusted, build/env-configured site URL instead.
+function resolveTrustedCallbackUrl(path: string): string {
+  // `siteConfig.url` is sourced from APP_PUBLIC_URL / NEXT_PUBLIC_APP_URL (with a
+  // safe production default) — not from request headers.
+  const base = siteConfig.url || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
   return new URL(path, base).toString()
 }
 
@@ -176,7 +177,7 @@ export async function loginAction(
     }
   }
 
-  const sessionUrl = await resolveAbsoluteUrl('/api/auth/session')
+  const sessionUrl = resolveTrustedCallbackUrl('/api/auth/session')
   const sessionRes = await fetch(sessionUrl, {
     method: 'POST',
     headers: {

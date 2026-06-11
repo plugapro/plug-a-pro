@@ -74,9 +74,14 @@ Purpose:
 
 Minimum evidence:
 - `pnpm db:migrate:prod`
-- `pnpm db:seed`
 - `pnpm db:backfill`
 - idempotency expectations for reruns
+
+> **Do NOT run `pnpm db:seed` in production.** The seed script creates demo data
+> (verified fake providers, customers, and a quote with a hard-coded, publicly
+> guessable `approvalToken`). It is for local/dev/test only and now aborts when
+> `NODE_ENV=production`. Production data is created through the live app flows,
+> not the seed script.
 
 ### Gate 4 — Public/Auth Access Validation
 
@@ -172,9 +177,11 @@ Production rollout:
 
 ```bash
 pnpm db:migrate:prod
-pnpm db:seed
 pnpm db:backfill
 ```
+
+> Never run `pnpm db:seed` against production — it seeds demo/fake data and a
+> publicly guessable quote token, and the script aborts when `NODE_ENV=production`.
 
 Release gate scaffold:
 

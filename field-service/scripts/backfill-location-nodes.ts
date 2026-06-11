@@ -151,6 +151,16 @@ async function backfillProviderServiceAreas(prisma: PrismaClient, nodeMap: Map<s
           suburbKey,
           active: true,
         },
+        // SECURITY (finding eb48dac0): the provider profile flow models
+        // deselection by setting an existing structured row to active=false, but
+        // it does NOT clear the legacy Provider.serviceAreas[] string. If we set
+        // active:true on the update path, re-running this backfill would silently
+        // REACTIVATE a service area the provider intentionally turned off — which
+        // then leaks customer/job PII (area, first name, job title) to a provider
+        // who should no longer receive leads there. We therefore only refresh the
+        // descriptive fields here and NEVER force `active` back to true; the
+        // existing active state is preserved. New rows are created active via the
+        // `create` branch above.
         update: {
           areaType: areaType as never,
           label: normaliseLocationDisplayName(node.label),
@@ -158,7 +168,6 @@ async function backfillProviderServiceAreas(prisma: PrismaClient, nodeMap: Map<s
           cityKey: node.cityKey,
           regionKey: node.regionKey,
           suburbKey,
-          active: true,
         },
       })
       created++

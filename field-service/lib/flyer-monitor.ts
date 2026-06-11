@@ -504,8 +504,12 @@ async function queryFlyerRows(windowStart: Date, windowEnd: Date): Promise<Flyer
       AND COALESCE(jr."isTestRequest", false) = false
       AND COALESCE(c."isTestUser", false) = false
     UNION ALL
+    -- SECURITY (finding 90a97c24): do NOT pull the free-text admin notes column
+    -- into the report. We keep only the application status (needed for friction
+    -- detection) and surface a coarse boolean marker when notes are present, so
+    -- POPIA-sensitive admin free text never leaves the application boundary.
     SELECT 'provider_app' AS stage, phone AS phone, "submittedAt"::text AS at,
-           status::text || COALESCE(' / ' || LEFT(notes, 80), '') AS detail,
+           status::text || (CASE WHEN COALESCE(TRIM(notes), '') <> '' THEN ' / [notes present]' ELSE '' END) AS detail,
            NULL::text AS "failureCode"
     FROM provider_applications, bounds
     WHERE "submittedAt" >= bounds.window_start AND "submittedAt" < bounds.window_end
@@ -517,8 +521,12 @@ async function queryFlyerRows(windowStart: Date, windowEnd: Date): Promise<Flyer
     WHERE "createdAt" >= bounds.window_start AND "createdAt" < bounds.window_end
       AND COALESCE("isTestUser", false) = false
     UNION ALL
+    -- SECURITY (finding 90a97c24): do NOT pull the inbound WhatsApp message body
+    -- (free-text PII) into the report. We keep only the message TYPE so the
+    -- timeline still shows that an inbound message occurred without exposing the
+    -- customer's words.
     SELECT 'wa_inbound' AS stage, phone AS phone, "firstSeenAt"::text AS at,
-           "messageType"::text || ' / ' || LEFT(COALESCE(body, ''), 60) AS detail,
+           "messageType"::text AS detail,
            NULL::text AS "failureCode"
     FROM inbound_whatsapp_messages, bounds
     WHERE "firstSeenAt" >= bounds.window_start AND "firstSeenAt" < bounds.window_end
@@ -669,10 +677,25 @@ function previousMonitorSlot(now: Date): Date {
   return new Date(slotMs - SAST_OFFSET_MS)
 }
 
+// SECURITY (finding 90a97c24): redact POPIA-sensitive free text before it can
+// enter the report or be forwarded by the Gmail monitor. We strip phone-like
+// strings, email addresses, SA ID numbers, long digit runs (doc/reference IDs)
+// and URLs. Free-text bodies and admin notes are additionally NOT pulled from
+// the DB at all (see queryFlyerRows), so this is defence in depth for the
+// structured fields (status, source, flow/step) that remain.
 function sanitizeDetail(value: string | null | undefined): string | null {
   if (!value) return null
   return value
+    // Email addresses.
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[redacted-email]')
+    // URLs (may embed tokens / document IDs).
+    .replace(/https?:\/\/\S+/gi, '[redacted-url]')
+    // South African ID numbers (13 consecutive digits).
+    .replace(/\b\d{13}\b/g, '[redacted-id]')
+    // Phone-like strings.
     .replace(/\+?\d[\d\s-]{7,}\d/g, '[redacted-phone]')
+    // Any remaining long digit/reference runs (document refs, account numbers).
+    .replace(/\b[A-Za-z]*\d{6,}[A-Za-z0-9]*\b/g, '[redacted-ref]')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 120)
