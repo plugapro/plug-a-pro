@@ -103,6 +103,13 @@ export async function createKycCampaignAction(input: unknown) {
         }
         locationNodeId = node.id
       }
+      const duplicate = await tx.kycCampaign.findUnique({
+        where: { campaignCode: data.campaignCode },
+        select: { id: true },
+      })
+      if (duplicate) {
+        throw new CrudActionError('CONFLICT', `Campaign code '${data.campaignCode}' already exists`)
+      }
       if (data.endsAt && data.endsAt <= data.startsAt) {
         throw new CrudActionError('VALIDATION', 'endsAt must be after startsAt')
       }
@@ -177,7 +184,10 @@ const GrantSchema = z.object({
 
 export async function grantKycSponsorshipAction(input: unknown) {
   const admin = await requireAdmin()
-  const actorId = admin.adminUserId ?? admin.id
+  if (!admin.adminUserId) {
+    throw new CrudActionError('UNAUTHORIZED', 'No AdminUser record for the current session.')
+  }
+  const actorId = admin.adminUserId
   const result = await crudAction<z.infer<typeof GrantSchema>, { id: string }>({
     entity: 'KycSponsorship',
     action: 'kyc_sponsorship.grant',
@@ -208,22 +218,23 @@ export async function grantKycSponsorshipAction(input: unknown) {
         throw new CrudActionError('CONFLICT', 'Provider already has a sponsorship on this campaign')
       }
 
+      const verification = await tx.providerIdentityVerification.findFirst({
+        where: { providerId: data.providerId, status: 'PASSED', decision: 'PASS' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, identifierHash: true },
+      })
+
       const feeStatus = await getKycFeeStatus(data.providerId, tx)
       if (feeStatus.lastReason !== null && feeStatus.outstandingCents === 0) {
         throw new CrudActionError('CONFLICT', 'Provider has no outstanding KYC fee to sponsor')
       }
       if (feeStatus.lastReason === null) {
         // Provider verified before the fee model launched - book the accrual now.
-        const verification = await tx.providerIdentityVerification.findFirst({
-          where: { providerId: data.providerId, status: 'PASSED', decision: 'PASS' },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true },
-        })
         await writeKycFeeLedgerEntryInTransaction(tx, {
           providerId: data.providerId,
           reason: 'KYC_FEE_ACCRUED',
           amountCents: KYC_FEE_CENTS,
-          referenceType: 'provider_identity_verification',
+          referenceType: verification ? 'provider_identity_verification' : 'provider',
           referenceId: verification?.id ?? data.providerId,
           idempotencyKey: kycFeeAccruedKey(data.providerId),
           source: 'admin',
@@ -231,6 +242,12 @@ export async function grantKycSponsorshipAction(input: unknown) {
           description: 'Once-off ID verification recovery fee (booked at manual sponsorship)',
         })
       }
+
+      // Sponsor what the provider actually owes. For a fresh accrual that is
+      // KYC_FEE_CENTS; for a pre-existing balance (fee constant changed, or
+      // accrue->sponsor->revoke history) it is the outstanding amount.
+      const sponsorCents =
+        feeStatus.lastReason === null ? KYC_FEE_CENTS : feeStatus.outstandingCents
 
       const claimed = await tx.kycCampaign.updateMany({
         where: { id: campaign.id, sponsoredCount: { lt: campaign.maxSponsoredCount } },
@@ -246,8 +263,10 @@ export async function grantKycSponsorshipAction(input: unknown) {
           providerId: data.providerId,
           status: 'CONSUMED',
           source: 'admin',
-          feeCents: KYC_FEE_CENTS,
+          feeCents: sponsorCents,
           reason: data.reason,
+          verificationId: verification?.id ?? null,
+          identifierHash: verification?.identifierHash ?? null,
         },
         select: { id: true },
       })
@@ -255,7 +274,7 @@ export async function grantKycSponsorshipAction(input: unknown) {
       await writeKycFeeLedgerEntryInTransaction(tx, {
         providerId: data.providerId,
         reason: 'KYC_FEE_SPONSORED',
-        amountCents: KYC_FEE_CENTS,
+        amountCents: sponsorCents,
         referenceType: 'kyc_sponsorship',
         referenceId: sponsorship.id,
         campaignId: campaign.id,
@@ -279,7 +298,10 @@ const RevokeSchema = z.object({
 
 export async function revokeKycSponsorshipAction(input: unknown) {
   const admin = await requireAdmin()
-  const actorId = admin.adminUserId ?? admin.id
+  if (!admin.adminUserId) {
+    throw new CrudActionError('UNAUTHORIZED', 'No AdminUser record for the current session.')
+  }
+  const actorId = admin.adminUserId
   const result = await crudAction<z.infer<typeof RevokeSchema>, { id: string }>({
     entity: 'KycSponsorship',
     action: 'kyc_sponsorship.revoke',
@@ -336,34 +358,54 @@ export async function revokeKycSponsorshipAction(input: unknown) {
 // ─── Form wrappers (page <form action={…}>) ──────────────────────────────────
 
 export async function createKycCampaignFromFormAction(formData: FormData) {
-  await createKycCampaignAction({
-    name: formData.get('name'),
-    campaignCode: formData.get('campaignCode'),
-    locationNodeSlug: (formData.get('locationNodeSlug') as string)?.trim() || undefined,
-    startsAt: formData.get('startsAt'),
-    endsAt: (formData.get('endsAt') as string)?.trim() || undefined,
-    maxSponsoredCount: formData.get('maxSponsoredCount'),
-  })
+  try {
+    return await createKycCampaignAction({
+      name: formData.get('name'),
+      campaignCode: formData.get('campaignCode'),
+      locationNodeSlug: (formData.get('locationNodeSlug') as string)?.trim() || undefined,
+      startsAt: (formData.get('startsAt') as string)?.trim() || undefined,
+      endsAt: (formData.get('endsAt') as string)?.trim() || undefined,
+      maxSponsoredCount: formData.get('maxSponsoredCount'),
+    })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to create campaign' }
+  }
 }
 
 export async function setKycCampaignStatusFromFormAction(formData: FormData) {
-  await setKycCampaignStatusAction({
-    campaignId: formData.get('campaignId'),
-    status: formData.get('status'),
-  })
+  try {
+    return await setKycCampaignStatusAction({
+      campaignId: formData.get('campaignId'),
+      status: formData.get('status'),
+    })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to update campaign status' }
+  }
 }
 
 export async function grantKycSponsorshipFromFormAction(formData: FormData) {
-  await grantKycSponsorshipAction({
-    campaignId: formData.get('campaignId'),
-    providerId: formData.get('providerId'),
-    reason: formData.get('reason'),
-  })
+  try {
+    return await grantKycSponsorshipAction({
+      campaignId: formData.get('campaignId'),
+      providerId: formData.get('providerId'),
+      reason: formData.get('reason'),
+    })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to grant sponsorship' }
+  }
 }
 
 export async function revokeKycSponsorshipFromFormAction(formData: FormData) {
-  await revokeKycSponsorshipAction({
-    sponsorshipId: formData.get('sponsorshipId'),
-    reason: formData.get('reason'),
-  })
+  try {
+    return await revokeKycSponsorshipAction({
+      sponsorshipId: formData.get('sponsorshipId'),
+      reason: formData.get('reason'),
+    })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to revoke sponsorship' }
+  }
 }
