@@ -273,19 +273,19 @@ describe('provider final acceptance credit application', () => {
     })
   })
 
-  it('keeps customer details locked when credit is required', async () => {
+  it('rejects acceptance and keeps customer details locked when credits are insufficient', async () => {
     state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
     const result = await acceptSelectedProviderJob({ leadId: 'lead-c13', providerId: 'provider-c13' })
 
-    expect(result).toMatchObject({
-      ok: true,
-      creditCheck: {
-        ok: false,
-        reason: 'INSUFFICIENT_CREDITS',
-        leadStatus: 'CREDIT_REQUIRED',
-      },
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
     })
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
     expect(JSON.stringify(result)).not.toContain('Thandi')
     expect(JSON.stringify(result)).not.toContain('+2712')
     expect(JSON.stringify(result)).not.toContain('Oak Avenue')

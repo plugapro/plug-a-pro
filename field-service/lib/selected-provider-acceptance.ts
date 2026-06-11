@@ -225,6 +225,29 @@ export async function acceptSelectedProviderJob(params: {
         throw error
       }
 
+      // Pre-gate: before we move the lead out of CUSTOMER_SELECTED, confirm the
+      // provider can actually pay. Without this check the lead transitions to
+      // PROVIDER_ACCEPTED/CREDIT_REQUIRED and gets stuck because decline is
+      // blocked at customer-shortlists.ts and no Match/Quote/LeadUnlock exists.
+      if (lead.status === 'CUSTOMER_SELECTED') {
+        const wallet = await tx.providerWallet.findUnique({
+          where: { providerId: params.providerId },
+          select: { paidCreditBalance: true, promoCreditBalance: true, status: true },
+        })
+        const paidBalance = wallet?.paidCreditBalance ?? 0
+        const promoBalance = wallet?.promoCreditBalance ?? 0
+        const currentCreditBalance = Math.max(0, paidBalance + promoBalance)
+        const walletInactive = wallet != null && wallet.status !== 'ACTIVE'
+        const balanceInsufficient = currentCreditBalance < LEAD_UNLOCK_COST_CREDITS
+        if (!wallet || walletInactive || balanceInsufficient) {
+          return {
+            ok: false as const,
+            reason: 'INSUFFICIENT_CREDITS' as const,
+            currentCreditBalance,
+          }
+        }
+      }
+
       let alreadyAccepted = false
       if (lead.status === 'CUSTOMER_SELECTED') {
         const acceptedAt = new Date()

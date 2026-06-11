@@ -982,11 +982,14 @@ export default async function ProviderLeadAccessPage({
 
         {resolvedSearchParams.error === 'credits' && (
           <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
-            <p className="font-medium">You need 1 Plug A Pro provider credit to continue with this customer-selected job.</p>
+            <p className="font-medium">You&rsquo;re out of credits.</p>
             <p className="mt-1">
-              Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
+              Please top up your credits before accepting this lead. Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
-            <p className="mt-1">Your acceptance was recorded. Please top up in the Worker Portal to continue. Customer contact and exact address details remain hidden.</p>
+            <p className="mt-1">No credit was deducted and this lead is still available for you to accept once your balance is topped up.</p>
+            <Button asChild size="sm" className="mt-3">
+              <Link href="/provider/credits">Top up credits</Link>
+            </Button>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs">Error code: INSUFFICIENT_CREDITS · Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : (
@@ -1094,11 +1097,14 @@ export default async function ProviderLeadAccessPage({
               </>
             ) : (
               <>
+                <p className="mt-1 font-medium">You&rsquo;re out of credits.</p>
                 <p className="mt-1">
-                  You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to continue with this customer-selected job.
-                  Your current credits balance is {providerCreditBalance}.
+                  Please top up your credits before accepting this lead. You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this customer-selected job (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}). Your current credits balance is {providerCreditBalance}.
                 </p>
-                <p className="mt-1">You can still record your acceptance. Customer direct contact details remain locked until credits are available.</p>
+                <p className="mt-1">The lead stays open for you — no credit will be deducted and no acceptance will be recorded until your balance covers the cost.</p>
+                <Button asChild size="sm" className="mt-3">
+                  <Link href="/provider/credits">Top up credits</Link>
+                </Button>
               </>
             )}
           </div>
@@ -1378,25 +1384,48 @@ export default async function ProviderLeadAccessPage({
             </>
           ) : canRespondToLead && !confirmingAccept ? (
             <>
-              <Button asChild size="lg" className="w-full">
-                <Link href={`/leads/access/${encodeURIComponent(token)}?confirmAccept=1`}>
-                  Accept job
-                </Link>
-              </Button>
+              {hasEnoughCredits ? (
+                <Button asChild size="lg" className="w-full">
+                  <Link href={`/leads/access/${encodeURIComponent(token)}?confirmAccept=1`}>
+                    Accept job
+                  </Link>
+                </Button>
+              ) : (
+                <>
+                  <Button size="lg" className="w-full" disabled>
+                    Accept job
+                  </Button>
+                  <p className="text-center text-xs text-muted-foreground">
+                    You&rsquo;re out of credits. Top up to accept this lead.
+                  </p>
+                  <Button asChild size="lg" variant="outline" className="w-full">
+                    <Link href="/provider/credits">Top up credits</Link>
+                  </Button>
+                </>
+              )}
             </>
           ) : canRespondToLead && confirmingAccept ? (
-            <form action={acceptLeadWithToken}>
-              <input type="hidden" name="token" value={token} />
-              <input type="hidden" name="inspectionNeeded" value="false" />
-              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting lead...">
-                Confirm accept
-              </LeadActionSubmitButton>
-              {!hasEnoughCredits ? (
-                <p className="mt-2 text-center text-xs text-muted-foreground">
-                  If credits are still insufficient, this lead will stay locked until you top up.
+            hasEnoughCredits ? (
+              <form action={acceptLeadWithToken}>
+                <input type="hidden" name="token" value={token} />
+                <input type="hidden" name="inspectionNeeded" value="false" />
+                <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting lead...">
+                  Confirm accept
+                </LeadActionSubmitButton>
+              </form>
+            ) : (
+              <>
+                <Button size="lg" className="w-full" disabled>
+                  Confirm accept
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  You&rsquo;re out of credits. Please top up to continue.
                 </p>
-              ) : null}
-            </form>
+                <Button asChild size="lg" variant="outline" className="w-full">
+                  <Link href="/provider/credits">Top up credits</Link>
+                </Button>
+              </>
+            )
           ) : null}
 
           {canRespondToLead && (

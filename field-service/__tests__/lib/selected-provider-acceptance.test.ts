@@ -299,24 +299,52 @@ describe('selected provider final acceptance', () => {
     )
   })
 
-  it('sets CREDIT_REQUIRED when accepted provider has no credits', async () => {
+  it('rejects acceptance when the provider has zero credits and leaves CUSTOMER_SELECTED untouched', async () => {
     state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
-    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' })
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
 
-    expect(result).toMatchObject({
-      ok: true,
-      creditCheck: {
-        ok: false,
-        reason: 'INSUFFICIENT_CREDITS',
-        leadStatus: 'CREDIT_REQUIRED',
-        currentCreditBalance: 0,
-      },
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
     })
-    expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
-      where: { id: 'lead-1', status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] } },
-      data: { status: 'CREDIT_REQUIRED' },
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
+    expect(state.tx.auditLog.create).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
+    expect(mockNotifyAcceptedLeadLocked).not.toHaveBeenCalled()
+  })
+
+  it('rejects acceptance when the provider wallet is missing', async () => {
+    state.wallet = null
+
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
     })
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+  })
+
+  it('rejects acceptance when the provider wallet is suspended', async () => {
+    state.wallet = { paidCreditBalance: 5, promoCreditBalance: 0, status: 'SUSPENDED' }
+
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 5,
+    })
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
   })
 
   it('is idempotent for duplicate accept after provider accepted', async () => {
