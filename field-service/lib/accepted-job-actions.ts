@@ -11,7 +11,6 @@ import {
   resolveProviderLeadAccessToken,
   verifyProviderLeadAccessToken,
   providerLeadTokenAllowsScope,
-  LEAD_RESPONSE_SCOPES,
   type ProviderLeadAccessScope,
 } from './provider-lead-access'
 import { ctaLabelFor } from './whatsapp-copy'
@@ -102,11 +101,12 @@ function tokenAllowsAcceptedJobScope(params: {
   const verified = verifyProviderLeadAccessToken(params.token)
   if (verified.status !== 'active') return false
   const { payload } = verified
-  if (providerLeadTokenAllowsScope(payload, params.scope)) return true
-  // A LEAD_RESPONSE_SCOPES token (the original WhatsApp invite URL) identifies the
-  // assigned provider. After acceptance the same token may be used to perform job
-  // actions - the actual accepted-state check happens in resolveAcceptedLeadFromToken.
-  return payload.scopes?.some((s) => LEAD_RESPONSE_SCOPES.includes(s as ProviderLeadAccessScope)) ?? false
+  // Require the specific accepted-job scope on the token. A lead-response-only
+  // token (or any token lacking the exact ACCEPTED_JOB_SCOPES permission) must
+  // NOT be treated as authorized for arrival/status mutations just because it
+  // identifies the provider. The accepted-state check in
+  // resolveAcceptedLeadFromToken is a second gate, not a substitute for scope.
+  return providerLeadTokenAllowsScope(payload, params.scope)
 }
 
 async function notifyCustomer(params: {

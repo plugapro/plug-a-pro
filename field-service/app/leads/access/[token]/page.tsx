@@ -666,9 +666,14 @@ export default async function ProviderLeadAccessPage({
   if (resolved.status !== 'active' || !resolved.lead) {
     const invalidReason = resolved.reason
     const isInactiveProvider = invalidReason === 'PROVIDER_NOT_ACTIVE'
-    const isUnavailableLead = ['LEAD_NOT_FOUND', 'MATCH_CANCELLED', 'PROVIDER_MISMATCH', 'JOB_REQUEST_MISMATCH'].includes(
-      invalidReason ?? '',
-    )
+    const isUnavailableLead = [
+      'LEAD_NOT_FOUND',
+      'MATCH_CANCELLED',
+      'PROVIDER_MISMATCH',
+      'JOB_REQUEST_MISMATCH',
+      'JOB_REQUEST_CLOSED',
+      'PROVIDER_REASSIGNED',
+    ].includes(invalidReason ?? '')
     const title = isInactiveProvider
       ? 'Your provider profile is not active.'
       : isUnavailableLead

@@ -139,6 +139,22 @@ async function chooseMatchingModeFromToken(formData: FormData) {
     redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
   }
 
+  // Enforce the state contract before delegating to the broader matching-mode
+  // service. This public-ticket action is only intended for the "awaiting
+  // matching-mode choice" window. selectCustomerRequestMatchingMode is broader
+  // (it allows OPEN requests and, for review_first, can roll a request back into
+  // candidate generation), so a still-active ticket link could otherwise replay
+  // this action to disrupt matching already in progress. Require the request to
+  // still be awaiting its mode choice: PENDING_VALIDATION, ops-review assignment
+  // mode, and no dispatch decision yet committed.
+  if (
+    resolved.jobRequest.status !== 'PENDING_VALIDATION' ||
+    resolved.jobRequest.assignmentMode !== 'OPS_REVIEW' ||
+    resolved.jobRequest.latestDispatchDecisionId != null
+  ) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=matching-mode-locked`)
+  }
+
   try {
     await selectCustomerRequestMatchingMode({
       requestId,

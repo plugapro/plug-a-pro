@@ -29,7 +29,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     jobRequestId: 'jr-1',
     status: 'SENT',
     sentAt: new Date('2026-05-01T10:00:00.000Z'),
-    expiresAt: new Date('2026-05-04T10:00:00.000Z'),
+    expiresAt: new Date('2099-01-01T00:00:00.000Z'),
     provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, verified: true, status: 'ACTIVE' },
     unlock: null,
     jobRequest: {

@@ -261,9 +261,18 @@ export async function GET(
           },
         },
       })
+      // A lead won by another provider is marked EXPIRED (and CANCELLED on
+      // request cancellation) but expiresAt is not always moved into the past.
+      // Treat any closed lead status as a revocation regardless of expiresAt so
+      // a losing/declined/timed-out provider session cannot keep loading the
+      // customer's photos.
+      const leadStatusClosed =
+        scopedLead?.status === 'DECLINED' ||
+        scopedLead?.status === 'EXPIRED' ||
+        scopedLead?.status === 'CANCELLED'
       sessionAllowsAttachment = Boolean(
         scopedLead &&
-        scopedLead.status !== 'DECLINED' &&
+        !leadStatusClosed &&
         scopedLead.jobRequest?.match?.status !== 'CANCELLED' &&
         (!scopedLead.expiresAt || scopedLead.expiresAt > new Date()),
       )
