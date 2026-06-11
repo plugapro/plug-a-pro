@@ -115,3 +115,13 @@ export function getReasonCode(
 export function noteRequiredForCode(queueType: OpsQueueType, code: string): boolean {
   return getReasonCode(queueType, code)?.requiresNote ?? false
 }
+
+/**
+ * Returns true when `code` is a valid (non-deprecated) close-out reason for the
+ * given queue. Server actions receive the reason code from attacker-controlled
+ * form fields, so the code MUST be validated against the case's queue before a
+ * resolution is written.
+ */
+export function isValidReasonCode(queueType: OpsQueueType, code: string): boolean {
+  return getReasonCode(queueType, code) !== undefined
+}

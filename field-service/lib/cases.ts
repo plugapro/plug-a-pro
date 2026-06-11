@@ -68,6 +68,40 @@ export async function getCaseByEntity(
   })
 }
 
+/**
+ * Thrown when a case lifecycle mutation targets a case that does not belong to
+ * the queue/entity the caller is authorised to act on. Server actions take
+ * `caseId` from attacker-controlled form fields, so a queue/entity predicate
+ * MUST be enforced before any mutation, not the bare id.
+ */
+export class CaseScopeError extends Error {
+  constructor(message = 'Case does not match the expected queue or entity.') {
+    super(message)
+    this.name = 'CaseScopeError'
+  }
+}
+
+/**
+ * Loads a case by id but only if it matches the expected queueType (and, when
+ * supplied, entityType / entityId). Use from web-exposed server actions to bind
+ * a mutation to the queue/entity the page already authorised, preventing a
+ * tampered hidden `caseId` from resolving, reopening, or claiming an unrelated
+ * case (payment follow-up, dispute, another agent's case, etc.).
+ */
+export async function getScopedCase(params: {
+  caseId:     string
+  queueType:  OpsQueueType
+  entityType?: CaseEntityType
+  entityId?:  string
+}) {
+  const c = await db.case.findUnique({ where: { id: params.caseId } })
+  if (!c) throw new CaseScopeError('Case not found.')
+  if (c.queueType !== params.queueType) throw new CaseScopeError()
+  if (params.entityType && c.entityType !== params.entityType) throw new CaseScopeError()
+  if (params.entityId && c.entityId !== params.entityId) throw new CaseScopeError()
+  return c
+}
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 /** Creates a new Case or returns the existing one if it already exists. */

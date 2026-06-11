@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import type { Prisma } from '@prisma/client'
 import Link from 'next/link'
-import { requireAdmin } from '@/lib/auth'
+import { requireRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 
@@ -71,7 +71,10 @@ export default async function AdminAuditLogPage({
 }: {
   searchParams: Promise<SearchParams>
 }) {
-  const actor = await requireAdmin()
+  // viewAuditLog capability is restricted to ADMIN/OWNER (see
+  // lib/ops-dashboard/permissions.ts). Lower-privileged OPS/FINANCE/TRUST
+  // admins must not browse audit metadata.
+  const actor = await requireRole(['ADMIN', 'OWNER'])
   const resolved = await searchParams
 
   const entityTypeFilter = toText(resolved.entityType)
