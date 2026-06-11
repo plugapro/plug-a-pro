@@ -37,7 +37,16 @@ import { getCorrelationId } from '@/lib/correlation'
 // ─── Remote IP extraction ─────────────────────────────────────────────────────
 
 function getRemoteIp(request: NextRequest): string | null {
-  // Vercel sets x-forwarded-for; leftmost IP is the original client.
+  // Prefer the platform-injected single-hop header. x-forwarded-for is a
+  // client-spoofable chain (an attacker can prepend any leftmost value), so
+  // it is only a last-resort fallback. lib/payfast.ts documents this same
+  // preference for ITN source-IP validation.
+  const vercelForwarded = request.headers.get('x-vercel-forwarded-for')?.trim()
+  if (vercelForwarded) return vercelForwarded
+
+  const cfConnectingIp = request.headers.get('cf-connecting-ip')?.trim()
+  if (cfConnectingIp) return cfConnectingIp
+
   const forwarded = request.headers.get('x-forwarded-for')
   if (forwarded) return forwarded.split(',')[0].trim()
   return request.headers.get('x-real-ip')?.trim() ?? null
@@ -124,8 +133,16 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
   }
 
   // Step 7: amount validation.
+  // Tolerance: ±1 cent, matching the generic PSP webhook
+  // (app/api/webhooks/payments/route.ts). A floating-point rounding in
+  // amount_gross (e.g. "100.001") must NOT permanently FAIL a legitimate
+  // top-up. Do not loosen beyond ±1 cent.
   const itnAmountCents = parseItnAmountCents(payload.amount_gross)
-  if (Number.isNaN(itnAmountCents) || itnAmountCents !== intent.amountCents) {
+  const AMOUNT_TOLERANCE_CENTS = 1
+  if (
+    Number.isNaN(itnAmountCents) ||
+    Math.abs(itnAmountCents - intent.amountCents) > AMOUNT_TOLERANCE_CENTS
+  ) {
     console.error('[payfast-itn] amount_gross mismatch - marking intent FAILED', {
       traceId,
       intentId: intent.id,

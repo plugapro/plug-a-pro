@@ -205,6 +205,38 @@ describe('POST /api/webhooks/payfast', () => {
     expect(mockCreditProviderWallet).not.toHaveBeenCalled()
   })
 
+  it('credits within the ±1 cent tolerance for a floating-point rounding', async () => {
+    // intent expects 100.00 (10000 cents); ITN reports 100.01 (10001 cents).
+    // A 1-cent rounding must NOT fail a legitimate top-up - it credits.
+    mockDb.paymentIntent.findUnique.mockResolvedValue(makePendingIntent({ amountCents: 10_000 }))
+    const { POST } = await import('../../app/api/webhooks/payfast/route')
+    const req = makeRequest(buildItnBody({ amount_gross: '100.01' }))
+    await POST(req)
+
+    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'ITN_RECEIVED' }),
+      }),
+    )
+    expect(mockCreditProviderWallet).toHaveBeenCalledWith(INTENT_ID)
+  })
+
+  it('fails beyond the ±1 cent tolerance (2-cent difference)', async () => {
+    // intent expects 100.00 (10000 cents); ITN reports 100.02 (10002 cents).
+    // A 2-cent gap is outside tolerance and must FAIL - no credit.
+    mockDb.paymentIntent.findUnique.mockResolvedValue(makePendingIntent({ amountCents: 10_000 }))
+    const { POST } = await import('../../app/api/webhooks/payfast/route')
+    const req = makeRequest(buildItnBody({ amount_gross: '100.02' }))
+    await POST(req)
+
+    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'FAILED' }),
+      }),
+    )
+    expect(mockCreditProviderWallet).not.toHaveBeenCalled()
+  })
+
   it('stores ITN fields on the intent before crediting', async () => {
     mockDb.paymentIntent.findUnique.mockResolvedValue(makePendingIntent())
     const { POST } = await import('../../app/api/webhooks/payfast/route')
