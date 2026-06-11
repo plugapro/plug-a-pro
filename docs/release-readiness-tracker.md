@@ -29,7 +29,7 @@
 | Evidence | Live API check 2026-04-09 |
 | Updated | 2026-04-09 |
 
-**WABA confirmed:** `104200042667877` is the production WABA under "Kgolaentle Holdings". Phone number +27 69 355 2447. This is not a sandbox account.
+**WABA confirmed:** `<PRODUCTION_WABA_ID>` is the production WABA under "Kgolaentle Holdings". Phone number +27 69 355 2447. This is not a sandbox account.
 
 **Live status as of 2026-04-09 (verified via Graph API):**
 

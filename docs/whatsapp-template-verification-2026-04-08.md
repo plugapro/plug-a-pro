@@ -3,7 +3,7 @@
 **Initial check date:** 2026-04-08 (morning)
 **Updated:** 2026-04-08 (evening) — all 21 templates registered
 **Verified by:** Claude (automated — Meta Graph API v21.0 + Meta Business Manager)
-**WABA checked:** `104200042667877` — confirmed production WABA under "Kgolaentle Holdings", phone +27 69 355 2447
+**WABA checked:** `<PRODUCTION_WABA_ID>` — confirmed production WABA under "Kgolaentle Holdings", phone +27 69 355 2447
 **Verdict:** 🔄 TEMPLATES REGISTERED — awaiting Meta approval for 14 PENDING templates
 
 ---
@@ -46,9 +46,9 @@ All 21 production templates have been submitted to Meta. Current approval state:
 
 ### Morning check (initial state)
 
-WABA `104200042667877` contained only `sample_template`. All 21 production templates were absent. The registration script comment ("9 templates already APPROVED in en_ZA") did not reflect this WABA's state.
+WABA `<PRODUCTION_WABA_ID>` contained only `sample_template`. All 21 production templates were absent. The registration script comment ("9 templates already APPROVED in en_ZA") did not reflect this WABA's state.
 
-**WABA identity confirmed:** Meta Business Manager → Business Settings → WhatsApp Accounts shows `104200042667877` is the production WABA under "Kgolaentle Holdings" with production phone +27 69 355 2447. Not a sandbox account.
+**WABA identity confirmed:** Meta Business Manager → Business Settings → WhatsApp Accounts shows `<PRODUCTION_WABA_ID>` is the production WABA under "Kgolaentle Holdings" with production phone +27 69 355 2447. Not a sandbox account.
 
 ### Evening registration pass
 
@@ -176,4 +176,4 @@ The comment in `field-service/scripts/register-whatsapp-templates.mjs` states:
 
 > *"The 9 templates already APPROVED in en_ZA are NOT re-submitted here"*
 
-This comment is **incorrect** for WABA `104200042667877`. Those 9 templates were absent and have now been registered. The comment should be removed or updated to reflect that all 21 templates are registered on this WABA.
+This comment is **incorrect** for WABA `<PRODUCTION_WABA_ID>`. Those 9 templates were absent and have now been registered. The comment should be removed or updated to reflect that all 21 templates are registered on this WABA.
