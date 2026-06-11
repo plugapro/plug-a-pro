@@ -16,6 +16,9 @@ import {
 } from '@/lib/provider-credit-copy'
 import { sendButtons } from '@/lib/whatsapp-interactive'
 import { sendJobOffer, sendText } from '@/lib/whatsapp'
+import { canSend } from '@/lib/whatsapp-policy'
+import { TEMPLATES } from '@/lib/messaging-templates'
+import { maskPhone } from '@/lib/support-diagnostics'
 import { MATCHING_CONFIG } from './config'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
@@ -186,6 +189,27 @@ export async function dispatchMatchLead(params: {
     metadataPath: ['jobRequestId'],
     metadataEquals: jobRequest.id,
   })
+
+  // Consent gate: the Quick Match lead template (quick_match_provider_lead_offer)
+  // is classified MARKETING in the registry, so providers who opted out of
+  // marketing WhatsApps must not receive it. The UTILITY provider_lead_offer
+  // path is a transactional, customer-selected notification and is not gated
+  // here (canSend would look up a non-existent customer by the provider phone).
+  // Only the MARKETING category is policy-checked against provider opt-out.
+  const providerLeadTemplateIsMarketing =
+    TEMPLATES[providerLeadTemplateName]?.category === 'MARKETING'
+  if (providerLeadTemplateIsMarketing) {
+    const policy = await canSend(provider.phone, providerLeadTemplateName)
+    if (!policy.allowed) {
+      console.warn('[dispatch] provider lead suppressed by WhatsApp policy - hold still active', {
+        ...msgMeta,
+        phone: maskPhone(provider.phone),
+        templateName: providerLeadTemplateName,
+        reason: policy.reason,
+      })
+      return
+    }
+  }
 
   if (!leadUrl) {
     console.error('[dispatch] Missing provider lead URL - hold still active', msgMeta)

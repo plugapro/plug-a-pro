@@ -37,6 +37,18 @@ function senderOwnsCustomerPhone(phone: string, customerPhone: string | null | u
   return phoneLookupVariants(phone).includes(normalizePhone(customerPhone))
 }
 
+// ── Stale-button guard ──────────────────────────────────────────────────────────
+// Alternative-slot button IDs are stateless and replayable. The sender binding
+// blocks the wrong party, but a button from a request that has since moved to a
+// terminal state (matched, accepted, expired or cancelled) must not re-open the
+// job and trigger a fresh match. Only requests still in an active negotiable
+// state may be mutated by these handlers.
+const ALT_SLOT_NEGOTIABLE_STATUSES = new Set(['OPEN', 'MATCHING'])
+
+function jobIsNegotiable(status: string | null | undefined): boolean {
+  return status != null && ALT_SLOT_NEGOTIABLE_STATUSES.has(status)
+}
+
 // ── Public entry point - called by orchestrator on NO_MATCH ──────────────────
 
 export async function initiateAlternativeSlotNegotiation(params: {
@@ -234,6 +246,11 @@ async function handleCustomerSelectedSlot(
     await sendText(phone, "✅ You've already responded to this slot offer. Reply *Hi* to check your request status.")
     return
   }
+  if (!jobIsNegotiable(jobRequest.status)) {
+    console.warn('[alt-slot] customer slot select: request no longer negotiable', { jobRequestId, status: jobRequest.status })
+    await sendText(phone, "✅ This request has already been updated. Reply *Hi* to check your request status.")
+    return
+  }
 
   // Load slot from the latest dispatch decision
   const slotOption = await loadSlotOption(jobRequest.latestDispatchDecisionId, slotKey)
@@ -275,10 +292,15 @@ async function handleCustomerDeclinedAllSlots(
 ): Promise<void> {
   const jobRequest = await db.jobRequest.findUnique({
     where: { id: jobRequestId },
-    select: { id: true, altSlotNegotiationOutcome: true, category: true, customer: { select: { phone: true } } },
+    select: { id: true, status: true, altSlotNegotiationOutcome: true, category: true, customer: { select: { phone: true } } },
   })
 
-  if (!jobRequest || !senderOwnsCustomerPhone(phone, jobRequest.customer?.phone) || jobRequest.altSlotNegotiationOutcome != null) {
+  if (
+    !jobRequest ||
+    !senderOwnsCustomerPhone(phone, jobRequest.customer?.phone) ||
+    jobRequest.altSlotNegotiationOutcome != null ||
+    !jobIsNegotiable(jobRequest.status)
+  ) {
     await sendText(phone, "✅ Your response has been noted. Reply *Hi* for your request status.")
     return
   }
@@ -352,6 +374,11 @@ async function handleProviderSelectedSlot(
     await sendText(phone, "✅ This request has already been resolved. Check the app for updates.")
     return
   }
+  if (!jobIsNegotiable(jobRequest.status)) {
+    console.warn('[alt-slot] provider slot select: request no longer negotiable', { jobRequestId, status: jobRequest.status })
+    await sendText(phone, "✅ This request has already been resolved. Check the app for updates.")
+    return
+  }
 
   const slotOption = await loadSlotOption(jobRequest.latestDispatchDecisionId, slotKey)
   if (!slotOption) {
@@ -419,6 +446,7 @@ async function handleProviderDeclinedAllSlots(
     where: { id: jobRequestId },
     select: {
       id: true,
+      status: true,
       category: true,
       altSlotNegotiationOutcome: true,
       latestDispatchDecisionId: true,
@@ -426,7 +454,7 @@ async function handleProviderDeclinedAllSlots(
     },
   })
 
-  if (!jobRequest || jobRequest.altSlotNegotiationOutcome != null) {
+  if (!jobRequest || jobRequest.altSlotNegotiationOutcome != null || !jobIsNegotiable(jobRequest.status)) {
     await sendText(phone, "Understood, thanks.")
     return
   }
@@ -537,6 +565,11 @@ async function handleCustomerConfirmedProviderSlot(
     await sendText(phone, "✅ Already confirmed - check your request status by replying *Hi*.")
     return
   }
+  if (!jobIsNegotiable(jobRequest.status)) {
+    console.warn('[alt-slot] customer confirm provider slot: request no longer negotiable', { jobRequestId, status: jobRequest.status })
+    await sendText(phone, "✅ Already confirmed - check your request status by replying *Hi*.")
+    return
+  }
 
   const slotOption = await loadSlotOption(jobRequest.latestDispatchDecisionId, slotKey)
   if (!slotOption) {
@@ -591,13 +624,19 @@ async function handleCustomerRejectedProviderSlot(
     where: { id: jobRequestId },
     select: {
       id: true,
+      status: true,
       category: true,
       altSlotNegotiationOutcome: true,
       customer: { select: { phone: true } },
     },
   })
 
-  if (!jobRequest || !senderOwnsCustomerPhone(phone, jobRequest.customer?.phone) || jobRequest.altSlotNegotiationOutcome != null) {
+  if (
+    !jobRequest ||
+    !senderOwnsCustomerPhone(phone, jobRequest.customer?.phone) ||
+    jobRequest.altSlotNegotiationOutcome != null ||
+    !jobIsNegotiable(jobRequest.status)
+  ) {
     await sendText(phone, "✅ Your response has been recorded. Reply *Hi* for status.")
     return
   }

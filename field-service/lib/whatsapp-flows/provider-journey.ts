@@ -2003,6 +2003,16 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'pj_redeem_voucher_awaiting_code' }
   }
 
+  // Voucher codes are bearer-like secrets. The inbound webhook persists every raw
+  // message body + payload in inbound_whatsapp_messages BEFORE this handler runs,
+  // so the plaintext code is briefly retained in the logging trail. Scrub it as
+  // soon as we have read it - before redemption and before any further await -
+  // so an operator/attacker with read access to inbound storage cannot recover
+  // and replay a still-valid code. Best-effort: failure here must never block
+  // redemption. (Webhook-side scrubbing at the persistence source is a separate
+  // follow-up owned by the webhook route.)
+  await redactInboundVoucherCode(ctx.phone, rawCode)
+
   try {
     const result = await redeemVoucher(provider.id, rawCode, { channel: 'WHATSAPP' })
 
@@ -2026,4 +2036,48 @@ async function handleVoucherCodeEntry(ctx: FlowContext): Promise<FlowResult> {
   }
 
   return { nextStep: 'pj_credits' }
+}
+
+/**
+ * Redacts a raw voucher code that the inbound webhook persisted in
+ * inbound_whatsapp_messages.body / .payload. The voucher design hashes codes
+ * before storage and never keeps the plaintext; the WhatsApp ingress path is the
+ * one place a raw code lands in the database, so we scrub it immediately after
+ * reading. Targets only this sender's recent text records whose body equals the
+ * code, replacing the body with a marker and the stored payload text with the
+ * same marker. Best-effort and fully isolated: any failure (including a test/db
+ * client without this model) is swallowed so redemption is never blocked.
+ */
+async function redactInboundVoucherCode(phone: string, rawCode: string): Promise<void> {
+  const REDACTED = '[redacted voucher code]'
+  try {
+    const inboundModel = (db as { inboundWhatsAppMessage?: {
+      findMany?: (args: unknown) => Promise<Array<{ id: string; payload: unknown }>>
+      update?: (args: unknown) => Promise<unknown>
+    } }).inboundWhatsAppMessage
+    if (!inboundModel?.findMany || !inboundModel?.update) return
+
+    const matches = await inboundModel.findMany({
+      where: { phone, messageType: 'text', body: rawCode },
+      orderBy: { firstSeenAt: 'desc' },
+      take: 5,
+      select: { id: true, payload: true },
+    })
+
+    for (const row of matches) {
+      const payload = row.payload
+      const scrubbedPayload =
+        payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? { ...(payload as Record<string, unknown>), text: { body: REDACTED } }
+          : payload
+      await inboundModel.update({
+        where: { id: row.id },
+        data: { body: REDACTED, payload: scrubbedPayload as Prisma.InputJsonValue },
+      }).catch(() => undefined)
+    }
+  } catch (err) {
+    console.error('[voucher] failed to redact raw voucher code from inbound log', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }

@@ -14,6 +14,7 @@ const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
     $queryRaw: vi.fn(),
     assignmentHold: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -50,9 +51,11 @@ const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
       update: vi.fn(),
     },
     providerCapacity: {
+      findUnique: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      upsert: vi.fn(),
     },
     technicianAvailability: {
       upsert: vi.fn(),
@@ -161,6 +164,12 @@ function setupBaseTransaction() {
   })
   mockDb.assignmentHold.count.mockResolvedValue(0)
   mockDb.assignmentHold.findMany.mockResolvedValue([])
+  // Rotation eligibility gate (reserveRotationCandidateAtomically): provider is
+  // lockable, holds no active offer, is under capacity and the job is negotiable.
+  mockDb.assignmentHold.findFirst.mockResolvedValue(null)
+  mockDb.$queryRaw.mockResolvedValue([{ id: 'provider-2' }])
+  mockDb.providerCapacity.findUnique.mockResolvedValue({ activeHolds: 0, maxConcurrent: 2 })
+  mockDb.providerCapacity.upsert.mockResolvedValue({})
   mockDb.lead.updateMany.mockResolvedValue({ count: 1 })
   mockDb.lead.update.mockResolvedValue({})
   mockDb.lead.upsert.mockResolvedValue({ id: 'lead-new' })
