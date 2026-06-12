@@ -1,6 +1,10 @@
+import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-credit-pricing'
+
 // Once-off KYC / ID-verification recovery fee, in ZAR cents.
+// Pegged to exactly 1 credit (R50) so first-top-up recovery can deduct a
+// whole credit with no fractional-rand handling in the integer wallet.
 // Overridable via env so finance can tune without a redeploy.
-const DEFAULT_KYC_FEE_CENTS = 2000
+const DEFAULT_KYC_FEE_CENTS = PROVIDER_CREDIT_PRICE_CENTS
 const parsedKycFeeCents = Number(process.env.KYC_FEE_CENTS ?? DEFAULT_KYC_FEE_CENTS)
 // A malformed override must not poison fee bookings (NaN would make every
 // booking throw INVALID_AMOUNT and roll back admin approvals).

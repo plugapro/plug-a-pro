@@ -9,6 +9,7 @@ import {
   KycFeeBookingError,
   type KycFeeBookingClient,
 } from '../../lib/kyc-fee/booking'
+import { KYC_FEE_CENTS } from '../../lib/kyc-fee/constants'
 
 type FakeOverrides = {
   existingAccrual?: boolean
@@ -129,7 +130,7 @@ describe('bookKycFeeForVerifiedProvider', () => {
         identifierHash: 'hash-1',
         status: 'CONSUMED',
         source: 'system',
-        feeCents: 2000,
+        feeCents: KYC_FEE_CENTS,
       },
     })
     expect(result).toMatchObject({
