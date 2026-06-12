@@ -23,7 +23,14 @@ function getIsIpadUserAgent() {
   if (typeof navigator === 'undefined') {
     return false
   }
-  return /iPad/i.test(navigator.userAgent)
+  if (/iPad/i.test(navigator.userAgent)) {
+    return true
+  }
+  // iPadOS 13+ Safari sends a desktop "Macintosh" UA with no "iPad" token. A
+  // real Mac reports maxTouchPoints === 0; an iPad reports several, so this
+  // distinguishes them even when a trackpad/Magic Keyboard makes the iPad
+  // report a fine pointer (which would otherwise trip the desktop media query).
+  return /Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1
 }
 
 function getIsTabletUserAgent() {

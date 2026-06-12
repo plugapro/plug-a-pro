@@ -12,6 +12,7 @@ import {
   getSafeCustomerNextPath,
   getSafeProviderNextPath,
 } from '@/lib/safe-redirect'
+import { isDesktopBrowserUserAgent } from '@/lib/admin-desktop-policy'
 import { checkWorkerPortalAccess, logWorkerPortalDecision } from '@/lib/worker-provider-auth'
 
 // Routes that are public (no auth required)
@@ -342,20 +343,11 @@ function redirectToSignIn(
   return NextResponse.redirect(url)
 }
 
-// Server-side mirror of the client MobileGate UA heuristic. Inlined here (rather
-// than imported from the 'use client' mobile-gate component) so the proxy's
-// Node bundle never pulls in client-only React modules. Conservative by design:
-// only genuine desktop browsers are treated as desktop; unknown/empty UAs, bots,
-// crawlers, previews and monitoring agents are NEVER blocked.
-function isDesktopBrowserUserAgent(userAgent: string | null): boolean {
-  if (!userAgent) return false
-  const ua = userAgent.toLowerCase()
-  if (/iphone|ipod|android.*mobile|windows phone|blackberry|bb10|opera mini/.test(ua)) return false
-  if (/ipad|tablet|silk|playbook|kf[a-z]{2}|sm-t|gt-p|nexus 7|nexus 10|xoom/.test(ua)) return false
-  if (/android/.test(ua) && !/mobile/.test(ua)) return false
-  if (/bot|crawl|spider|slurp|preview|monitor|curl|wget|headless|lighthouse|pingdom|uptime/.test(ua)) return false
-  return /windows nt|macintosh|cros|x11|linux x86_64/.test(ua)
-}
+// The server-side device heuristic (isDesktopBrowserUserAgent) lives in
+// @/lib/admin-desktop-policy — a pure, unit-tested Node module with no React or
+// Prisma imports, so the proxy's Node bundle stays clean. It treats modern
+// iPads (which send a desktop "Macintosh" Safari UA) as possible tablets and
+// fails open, leaving the final decision to the client MobileGate.
 
 function shouldEnforceMobileOnlyForPath(pathname: string, host: string): boolean {
   if (pathname.startsWith('/api/')) return false
