@@ -1,5 +1,10 @@
 # HANDOFF BRIEF — Attach 4 Ads to the Paused West Rand Campaign
 
+> **STATUS: EXECUTED 2026-06-12 (Claude Code session, not Cowork).** All 4 ads published, campaign toggle OFF.
+> Ad IDs: urgent-v2 = 120246018375010243 · planned-v2-carousel = 120246019550980243 · planned-v3 = 120246022275430243 · outer-v3 = 120246022934370243.
+> Deviations: CTA "Get Started" no longer exists in Meta's taxonomy → "Book now" used on all 4 ads; "auto-show best cards first" checkbox no longer exists (card order locked by disabling all Advantage+ enhancements + single-media format variations).
+> Pixel fix applied same day: NEXT_PUBLIC_META_PIXEL_ID was empty in Vercel production → set to 1669029974327986 (dataset the ads track) + production redeploy.
+
 **For:** Claude Cowork (or any operator). This brief is self-contained — no prior session context needed.
 **Date:** 2026-06-12
 **Source spec:** `docs/superpowers/specs/2026-06-10-west-rand-customer-acquisition-ad-plan.md` (approved GO 2026-06-09)
@@ -68,7 +73,7 @@ https://app.plugapro.co.za?utm_source=facebook&utm_medium=paid&utm_campaign=wr-p
 ## Ad 4 — single image · ad set `WR-OUTER`
 
 - **Ad name:** `PAP | WR-OUTER | outer-v3 | Launch`
-- **Image:** `PAP-Client Acquisition-Now Live Constantia Kloof and Discovery.png`
+- **Image:** `PAP-Client Acquisition-Now Live West Rand.png`
 - **Primary text:** Plug A Pro has launched in Constantia Kloof and Discovery. Verified painters, plumbers, handymen and cleaners — now available in your area. Book your first job online.
 - **Headline:** Now live in your area.
 - **Description:** Constantia Kloof · Discovery
