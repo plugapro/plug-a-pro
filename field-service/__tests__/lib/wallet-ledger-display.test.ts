@@ -133,4 +133,26 @@ describe('summarizeWalletLedgerEntry', () => {
     expect(walletLedgerSignedAmount({ entryType: 'ADMIN_ADJUSTMENT', amountCredits: -1 })).toBe(-1)
     expect(walletLedgerSignedAmount({ entryType: 'TOPUP_CREDIT', amountCredits: 3 })).toBe(3)
   })
+
+  it('summarizes a first-top-up KYC deduction as a fee settlement, not a top-up', () => {
+    const entry = walletLedgerEntry({
+      entryType: 'FIRST_TOPUP_KYC_DEDUCTION',
+      creditType: 'PAID',
+      amountCredits: 1,
+      referenceType: 'payment_intent',
+      referenceId: 'intent-1',
+      description: 'Once-off ID verification fee (R50) settled from first top-up',
+    })
+
+    const summary = summarizeWalletLedgerEntry(entry)
+
+    expect(summary.title).toContain('ID verification fee')
+    expect(summary.title).not.toContain('Top-up from payment')
+  })
+
+  it('treats the first-top-up KYC deduction as a debit', () => {
+    expect(
+      walletLedgerSignedAmount({ entryType: 'FIRST_TOPUP_KYC_DEDUCTION', amountCredits: 1 }),
+    ).toBe(-1)
+  })
 })

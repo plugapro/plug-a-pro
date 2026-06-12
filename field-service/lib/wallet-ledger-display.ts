@@ -19,7 +19,8 @@ export type WalletLedgerSignedAmountInput = {
 export function walletLedgerSignedAmount(entry: WalletLedgerSignedAmountInput): number {
   const isDebit = entry.entryType === 'LEAD_UNLOCK_DEBIT' ||
     entry.entryType === 'PROMO_EXPIRY' ||
-    entry.entryType === 'PAYMENT_REVERSAL'
+    entry.entryType === 'PAYMENT_REVERSAL' ||
+    entry.entryType === 'FIRST_TOPUP_KYC_DEDUCTION'
 
   return isDebit
     ? -Math.abs(entry.amountCredits)
@@ -93,7 +94,13 @@ export function summarizeWalletLedgerEntry(entry: WalletLedgerEntry): WalletLedg
 
   let title = entry.description?.trim() || `${cleanStatus(entry.referenceType)} ${cleanStatus(entry.entryType)}`
 
-  if (entry.referenceType === 'payment_intent') {
+  if (entry.entryType === 'FIRST_TOPUP_KYC_DEDUCTION') {
+    // Shares referenceType 'payment_intent' with top-up credits, so this
+    // branch must run before the generic payment_intent title.
+    title = 'ID verification fee settled from first top-up'
+    const outstanding = formatCurrencyFromCents(metadata.outstandingCents)
+    pushIf(details, outstanding && `Fee ${outstanding}`)
+  } else if (entry.referenceType === 'payment_intent') {
     const amount = formatCurrencyFromCents(metadata.amountCents)
     title = `Top-up from payment ${paymentReference ?? formatReferenceHint(entry.referenceId)}`
     pushIf(details, amount && `Amount ${amount}`)

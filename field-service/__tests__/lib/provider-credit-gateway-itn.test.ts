@@ -37,7 +37,13 @@ const { mockDb, walletState } = vi.hoisted(() => {
 })
 
 const mockNotify = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const mockSettleKycFee = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ outcome: 'NO_OUTSTANDING_FEE' }),
+)
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/kyc-fee/recovery', () => ({
+  settleOutstandingKycFeeAfterTopUp: mockSettleKycFee,
+}))
 
 vi.mock('@/lib/provider-wallet', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/provider-wallet')>()
@@ -277,5 +283,47 @@ describe('creditProviderWalletFromGatewayItn', () => {
 
     const creditedCount = [first, second].filter((r) => r.credited).length
     expect(creditedCount).toBe(1)
+  })
+
+  it('settles any outstanding KYC fee after a successful credit, before notifying', async () => {
+    const { creditProviderWalletFromGatewayItn } = await import(
+      '../../lib/provider-credit-gateway-itn'
+    )
+
+    const result = await creditProviderWalletFromGatewayItn('intent-1')
+
+    expect(result).toMatchObject({ credited: true })
+    expect(mockSettleKycFee).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      paymentIntentId: 'intent-1',
+      createdBy: 'payfast-itn',
+    })
+    expect(mockSettleKycFee.mock.invocationCallOrder[0]).toBeLessThan(
+      mockNotify.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('does not attempt KYC fee settlement when the intent is already credited', async () => {
+    walletState.intent = makeIntent({ status: 'CREDITED', creditedAt: new Date() })
+
+    const { creditProviderWalletFromGatewayItn } = await import(
+      '../../lib/provider-credit-gateway-itn'
+    )
+
+    await creditProviderWalletFromGatewayItn('intent-1')
+
+    expect(mockSettleKycFee).not.toHaveBeenCalled()
+  })
+
+  it('still reports credited when KYC fee settlement rejects unexpectedly', async () => {
+    mockSettleKycFee.mockRejectedValueOnce(new Error('recovery exploded'))
+
+    const { creditProviderWalletFromGatewayItn } = await import(
+      '../../lib/provider-credit-gateway-itn'
+    )
+
+    const result = await creditProviderWalletFromGatewayItn('intent-1')
+
+    expect(result).toMatchObject({ credited: true })
   })
 })

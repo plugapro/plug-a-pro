@@ -54,6 +54,10 @@ vi.mock('../../lib/provider-wallet-notifications', () => ({
   notifyProviderPaymentCredited: vi.fn(),
 }))
 
+vi.mock('../../lib/kyc-fee/recovery', () => ({
+  settleOutstandingKycFeeAfterTopUp: vi.fn().mockResolvedValue({ outcome: 'NO_OUTSTANDING_FEE' }),
+}))
+
 describe('provider credit payment admin actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -69,6 +73,7 @@ describe('provider credit payment admin actions', () => {
     })
     ;(db.paymentIntent.findUnique as any).mockResolvedValue({
       id: 'intent-1',
+      providerId: 'provider-1',
       status: 'MATCHED_ON_STATEMENT',
       adminNote: null,
     })
@@ -163,6 +168,60 @@ describe('provider credit payment admin actions', () => {
     expect(creditPaymentIntentInTransaction).toHaveBeenCalledTimes(1)
     expect(notifyProviderPaymentCredited).toHaveBeenCalledTimes(1)
     expect(notifyProviderPaymentCredited).toHaveBeenCalledWith('intent-1')
+  })
+
+  it('settles any outstanding KYC fee after admin credit succeeds', async () => {
+    await arrangeAdmin()
+    const { creditPaymentIntentInTransaction } = await import('../../lib/provider-credit-reconciliation')
+    const { notifyProviderPaymentCredited } = await import('../../lib/provider-wallet-notifications')
+    const { settleOutstandingKycFeeAfterTopUp } = await import('../../lib/kyc-fee/recovery')
+
+    ;(creditPaymentIntentInTransaction as any).mockResolvedValue({
+      intent: { id: 'intent-1', status: 'CREDITED' },
+      ledgerEntries: [{ id: 'entry-1' }],
+    })
+    await executeCrudActionWith({})
+    ;(notifyProviderPaymentCredited as any).mockResolvedValue(undefined)
+
+    const { creditTopUpIntentAction } = await import(
+      '../../app/(admin)/admin/provider-credit-payments/actions'
+    )
+
+    await creditTopUpIntentAction({
+      paymentIntentId: 'intent-1',
+      adminNote: 'Funds confirmed',
+    })
+
+    expect(settleOutstandingKycFeeAfterTopUp).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      paymentIntentId: 'intent-1',
+      createdBy: 'admin-1',
+    })
+  })
+
+  it('does not attempt KYC fee settlement when the admin credit conflicts', async () => {
+    await arrangeAdmin()
+    const {
+      ProviderCreditReconciliationError,
+      creditPaymentIntentInTransaction,
+    } = await import('../../lib/provider-credit-reconciliation')
+    const { settleOutstandingKycFeeAfterTopUp } = await import('../../lib/kyc-fee/recovery')
+
+    ;(creditPaymentIntentInTransaction as any).mockRejectedValue(
+      new ProviderCreditReconciliationError('ALREADY_CREDITED', 'Already credited.'),
+    )
+    await executeCrudActionWith({})
+
+    const { creditTopUpIntentAction } = await import(
+      '../../app/(admin)/admin/provider-credit-payments/actions'
+    )
+
+    await creditTopUpIntentAction({
+      paymentIntentId: 'intent-1',
+      adminNote: 'Funds confirmed',
+    }).catch(() => undefined)
+
+    expect(settleOutstandingKycFeeAfterTopUp).not.toHaveBeenCalled()
   })
 
   it('maps duplicate credit attempts to an action conflict without notifying again', async () => {

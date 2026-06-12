@@ -202,6 +202,8 @@ function ledgerLabel(entryType: WalletLedgerEntryType) {
       return 'Starter credits expired'
     case 'PAYMENT_REVERSAL':
       return 'Payment reversal'
+    case 'FIRST_TOPUP_KYC_DEDUCTION':
+      return 'ID verification fee settled'
     case 'WALLET_SUSPENDED':
       return 'Wallet suspended'
     case 'WALLET_REACTIVATED':
@@ -217,7 +219,8 @@ function ledgerLabel(entryType: WalletLedgerEntryType) {
 function isDebit(entryType: WalletLedgerEntryType) {
   return entryType === 'LEAD_UNLOCK_DEBIT' ||
     entryType === 'PROMO_EXPIRY' ||
-    entryType === 'PAYMENT_REVERSAL'
+    entryType === 'PAYMENT_REVERSAL' ||
+    entryType === 'FIRST_TOPUP_KYC_DEDUCTION'
 }
 
 function asText(value: unknown) {
@@ -240,6 +243,8 @@ function summarizeActivityLabel(entryType: WalletLedgerEntryType) {
       return 'Credits purchased'
     case 'PAYMENT_REVERSAL':
       return 'Payment reversal'
+    case 'FIRST_TOPUP_KYC_DEDUCTION':
+      return 'ID verification fee settled'
     case 'LEAD_REFUND_CREDIT':
       return 'Lead refund'
     case 'PROMO_CREDIT':
@@ -1374,6 +1379,7 @@ const DEBIT_ENTRY_TYPES = [
   'LEAD_UNLOCK_DEBIT',
   'PROMO_EXPIRY',
   'PAYMENT_REVERSAL',
+  'FIRST_TOPUP_KYC_DEDUCTION',
 ] as const
 
 const CREDIT_ENTRY_TYPES = [
@@ -1428,7 +1434,7 @@ export async function createProviderCreditTopUpIntentAction(formData: FormData) 
   return createProviderTopUpIntentFormAction(formData)
 }
 
-export type ProviderKycFeeBanner = { kind: 'sponsored' | 'accrued'; text: string }
+export type ProviderKycFeeBanner = { kind: 'sponsored' | 'accrued' | 'recovered'; text: string }
 
 export async function getProviderKycFeeBanner(): Promise<ProviderKycFeeBanner | null> {
   const { isEnabled } = await import('@/lib/flags')
@@ -1446,6 +1452,17 @@ export async function getProviderKycFeeBanner(): Promise<ProviderKycFeeBanner | 
     return {
       kind: 'sponsored',
       text: `ID verification fee: ${formatRandsFromCents(lastSponsored?.amountCents ?? KYC_FEE_CENTS)} - sponsored by a Plug A Pro launch campaign. Nothing due.`,
+    }
+  }
+  if (status.lastReason === 'KYC_FEE_RECOVERED' && status.outstandingCents === 0) {
+    const lastRecovered = await db.kycFeeLedgerEntry.findFirst({
+      where: { providerId: provider.id, reason: 'KYC_FEE_RECOVERED' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { amountCents: true },
+    })
+    return {
+      kind: 'recovered',
+      text: `ID verification fee: ${formatRandsFromCents(lastRecovered?.amountCents ?? KYC_FEE_CENTS)} - settled from your first top-up (1 credit). Nothing due.`,
     }
   }
   if (status.outstandingCents > 0) {

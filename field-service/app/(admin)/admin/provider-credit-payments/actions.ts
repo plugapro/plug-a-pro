@@ -148,6 +148,23 @@ export async function creditTopUpIntentAction(input: CreditTopUpInput) {
     },
   })
 
+  // Post-commit KYC fee settlement: runs in its own transaction and can
+  // never roll back or fail the credit. Failures leave the debt outstanding.
+  if (before?.providerId) {
+    const { settleOutstandingKycFeeAfterTopUp } = await import('@/lib/kyc-fee/recovery')
+    await settleOutstandingKycFeeAfterTopUp({
+      providerId: before.providerId,
+      paymentIntentId: input.paymentIntentId,
+      createdBy: admin.adminUserId ?? admin.id,
+    }).catch((error: unknown) => {
+      console.error('[provider-credit-payments/actions] KYC fee settlement failed post-credit', {
+        alert: true,
+        paymentIntentId: input.paymentIntentId,
+        error,
+      })
+    })
+  }
+
   revalidatePath('/admin/provider-credit-payments')
   revalidatePath(`/admin/provider-credit-payments/${input.paymentIntentId}`)
   const { notifyProviderPaymentCredited } = await import('@/lib/provider-wallet-notifications')

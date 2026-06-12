@@ -2525,6 +2525,7 @@ enum WalletLedgerEntryType {
   PROMO_EXPIRY
   PAYMENT_REVERSAL
   VOUCHER_REDEMPTION // credits granted via printed voucher code redemption
+  FIRST_TOPUP_KYC_DEDUCTION // 1 credit deducted at first top-up to settle the once-off KYC fee
 }
 
 enum WalletCreditType {

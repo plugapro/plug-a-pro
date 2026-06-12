@@ -76,6 +76,19 @@ async function recoverIntent(intent: Awaited<ReturnType<typeof findOrphanedInten
     return { skipped: false as const, ledgerEntryId: ledgerEntry.id }
   })
 
+  if (!result.skipped) {
+    // Post-commit KYC fee settlement, same as the live crediting paths.
+    const { settleOutstandingKycFeeAfterTopUp } = await import('../lib/kyc-fee/recovery')
+    const settlement = await settleOutstandingKycFeeAfterTopUp({
+      providerId: intent.providerId,
+      paymentIntentId: intent.id,
+      createdBy: 'system-recovery',
+    })
+    if (settlement.outcome !== 'NO_OUTSTANDING_FEE' && settlement.outcome !== 'FLAG_OFF') {
+      console.log(`  KYC fee settlement: ${settlement.outcome}`)
+    }
+  }
+
   return result
 }
 

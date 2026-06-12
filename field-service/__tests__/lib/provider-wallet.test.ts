@@ -5,6 +5,7 @@ import {
   creditPaidCredits,
   creditPromoCredits,
   debitCreditsForLeadUnlock,
+  debitPaidCreditsForKycFeeInTransaction,
   getOrCreateProviderWallet,
   getProviderWalletLedgerEntries,
   getProviderWalletBalance,
@@ -477,5 +478,69 @@ describe('provider wallet service', () => {
         promoCreditBalance: 1,
       },
     })
+  })
+})
+
+describe('debitPaidCreditsForKycFeeInTransaction', () => {
+  it('debits paid credits only and writes a FIRST_TOPUP_KYC_DEDUCTION ledger entry', async () => {
+    state.wallet = makeWallet({ paidCreditBalance: 2, promoCreditBalance: 3 })
+
+    const result = await debitPaidCreditsForKycFeeInTransaction(
+      mockDb as any,
+      'provider-1',
+      1,
+      reference({ referenceType: 'payment_intent', referenceId: 'intent-1' }),
+    )
+
+    expect(result.wallet.paidCreditBalance).toBe(1)
+    expect(result.wallet.promoCreditBalance).toBe(3)
+    expect(result.ledgerEntries).toHaveLength(1)
+    expect(result.ledgerEntries[0]).toMatchObject({
+      entryType: 'FIRST_TOPUP_KYC_DEDUCTION',
+      creditType: 'PAID',
+      amountCredits: 1,
+      balanceAfterPaidCredits: 1,
+      balanceAfterPromoCredits: 3,
+    })
+  })
+
+  it('throws INSUFFICIENT_FUNDS when paid balance cannot cover the fee even if promo could', async () => {
+    state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 5 })
+
+    await expect(
+      debitPaidCreditsForKycFeeInTransaction(
+        mockDb as any,
+        'provider-1',
+        1,
+        reference({ referenceType: 'payment_intent', referenceId: 'intent-1' }),
+      ),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' })
+  })
+
+  it('throws CONCURRENT_MUTATION when the optimistic balance check misses', async () => {
+    state.wallet = makeWallet({ paidCreditBalance: 2, promoCreditBalance: 0 })
+    mockDb.providerWallet.updateMany.mockResolvedValueOnce({ count: 0 })
+
+    await expect(
+      debitPaidCreditsForKycFeeInTransaction(
+        mockDb as any,
+        'provider-1',
+        1,
+        reference({ referenceType: 'payment_intent', referenceId: 'intent-1' }),
+      ),
+    ).rejects.toMatchObject({ code: 'CONCURRENT_MUTATION' })
+  })
+
+  it('rejects a suspended wallet', async () => {
+    state.wallet = makeWallet({ paidCreditBalance: 2, status: 'SUSPENDED' })
+
+    await expect(
+      debitPaidCreditsForKycFeeInTransaction(
+        mockDb as any,
+        'provider-1',
+        1,
+        reference({ referenceType: 'payment_intent', referenceId: 'intent-1' }),
+      ),
+    ).rejects.toMatchObject({ code: 'WALLET_NOT_ACTIVE' })
   })
 })

@@ -28,6 +28,11 @@ export function kycFeeAccruedKey(providerId: string): string {
   return `kyc-fee-accrued:${providerId}`
 }
 
+// Once-off fee per provider — provider-scoped key makes recovery idempotent forever.
+export function kycFeeRecoveredKey(providerId: string): string {
+  return `kyc-fee-recovered:${providerId}`
+}
+
 // Sponsorship-scoped keys so a revoke + re-grant (different campaign) can't collide.
 export function kycFeeSponsoredKey(sponsorshipId: string): string {
   return `kyc-fee-sponsored:${sponsorshipId}`

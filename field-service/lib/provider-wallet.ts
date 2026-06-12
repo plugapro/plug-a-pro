@@ -390,6 +390,77 @@ export async function debitCreditsForLeadUnlockInTransaction(
   return { wallet: finalWallet, ledgerEntries }
 }
 
+/**
+ * Debit PAID credits to settle the once-off KYC fee at first top-up.
+ *
+ * Deliberately never touches promo credits: the fee recovers a real vendor
+ * cost, so it must come out of the credits the provider just purchased.
+ * Callers invoke this immediately after a top-up credit, so the paid balance
+ * is expected to cover the debit; INSUFFICIENT_FUNDS is a hard error.
+ */
+export async function debitPaidCreditsForKycFeeInTransaction(
+  tx: WalletTx,
+  providerId: string,
+  amountCredits: number,
+  reference: WalletReference,
+): Promise<WalletMutationResult> {
+  assertPositiveIntegerCredits(amountCredits)
+  assertReference(reference)
+
+  const wallet = await getOrCreateProviderWalletInTx(tx, providerId)
+  assertWalletActive(wallet)
+
+  if (wallet.paidCreditBalance < amountCredits) {
+    throw new ProviderWalletError(
+      'INSUFFICIENT_FUNDS',
+      'Provider wallet does not have enough paid credits to settle the KYC fee.',
+    )
+  }
+
+  const balanceAfterPaidDebit = wallet.paidCreditBalance - amountCredits
+
+  // Optimistic concurrency guard, same pattern as the lead-unlock debit.
+  const updated = await tx.providerWallet.updateMany({
+    where: {
+      id: wallet.id,
+      AND: [
+        { paidCreditBalance: wallet.paidCreditBalance },
+        { promoCreditBalance: wallet.promoCreditBalance },
+        { paidCreditBalance: { gte: amountCredits } },
+      ],
+    },
+    data: {
+      paidCreditBalance: { decrement: amountCredits },
+    },
+  })
+
+  if (updated.count !== 1) {
+    throw new ProviderWalletError(
+      'CONCURRENT_MUTATION',
+      'Provider wallet changed while settling the KYC fee. Retry.',
+    )
+  }
+
+  const ledgerEntry = await createLedgerEntry(tx, {
+    walletId: wallet.id,
+    providerId,
+    entryType: 'FIRST_TOPUP_KYC_DEDUCTION',
+    creditType: 'PAID',
+    amountCredits,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
+    balanceAfterPaidCredits: balanceAfterPaidDebit,
+    balanceAfterPromoCredits: wallet.promoCreditBalance,
+    reference,
+  })
+
+  const finalWallet = await tx.providerWallet.findUniqueOrThrow({
+    where: { id: wallet.id },
+  })
+
+  return { wallet: finalWallet, ledgerEntries: [ledgerEntry] }
+}
+
 export async function getOrCreateProviderWallet(providerId: string) {
   return getOrCreateProviderWalletInTx(db as unknown as WalletTx, providerId)
 }
@@ -763,6 +834,7 @@ function ledgerEntryDelta(entryType: string, amountCredits: number): number {
     case 'LEAD_UNLOCK_DEBIT':
     case 'PROMO_EXPIRY':
     case 'PAYMENT_REVERSAL':
+    case 'FIRST_TOPUP_KYC_DEDUCTION':
       return -amountCredits
     case 'ADMIN_ADJUSTMENT':
       // amountCredits carries its own sign for adjustments (+/-)

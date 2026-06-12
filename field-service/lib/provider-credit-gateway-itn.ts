@@ -166,6 +166,23 @@ async function creditProviderWalletFromGatewayIntent(
     throw error
   }
 
+  // Post-commit KYC fee settlement - runs in its own transaction so it can
+  // never roll back the credit, and before the notification so the provider's
+  // visible balance already reflects the deduction. Failures leave the debt
+  // outstanding for the next top-up.
+  const { settleOutstandingKycFeeAfterTopUp } = await import('./kyc-fee/recovery')
+  await settleOutstandingKycFeeAfterTopUp({
+    providerId: intent.providerId,
+    paymentIntentId: intent.id,
+    createdBy: source.createdBy,
+  }).catch((error: unknown) => {
+    console.error('[provider-credit-gateway-itn] KYC fee settlement failed post-credit', {
+      alert: true,
+      intentId: intent.id,
+      error,
+    })
+  })
+
   // Post-transaction notifications - failures must not roll back the credit.
   const { notifyProviderPaymentCredited } = await import('./provider-wallet-notifications')
   notifyProviderPaymentCredited(intentId).catch((error: unknown) => {
