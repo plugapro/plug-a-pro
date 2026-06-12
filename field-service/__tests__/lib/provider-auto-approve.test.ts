@@ -84,7 +84,7 @@ describe('provider auto-approval', () => {
     mockIsEnabled.mockReset().mockResolvedValue(true)
   })
 
-  it('returns early and approves nothing when provider.auto_approve.enabled is disabled', async () => {
+  it('returns early and approves nothing when provider.onboarding.auto_approve is disabled', async () => {
     mockIsEnabled.mockResolvedValue(false)
 
     const findMany = vi.fn().mockResolvedValue([standardApplication])
@@ -96,7 +96,7 @@ describe('provider auto-approval', () => {
 
     const result = await autoApproveProviderApplications(client)
 
-    expect(mockIsEnabled).toHaveBeenCalledWith('provider.auto_approve.enabled')
+    expect(mockIsEnabled).toHaveBeenCalledWith('provider.onboarding.auto_approve')
     expect(result).toMatchObject({ attempted: 0, approved: 0 })
     expect(result.skippedReasons).toContain('AUTO_APPROVE_FLAG_DISABLED')
     // No DB reads or writes occur when the kill switch is off.
