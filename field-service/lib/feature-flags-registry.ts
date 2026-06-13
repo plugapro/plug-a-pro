@@ -301,6 +301,11 @@ export const FEATURE_FLAGS_REGISTRY = {
   },
 
   // ─── Identity verification ───────────────────────────────────────────────────
+  'kyc_drive.auto_nudge': {
+    description: 'Enable automated provider_kyc_nudge WhatsApp sends from the kyc-drive-nudge cron (legacy pre-cutoff providers only). OFF = the cron is report-only.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.identity.verification': {
     description: 'Gate paid credit purchases (Pay@, Payfast, Manual EFT) behind HIGH-assurance identity verification. Disable to roll back without a deploy.',
     owner: 'eng',
