@@ -10,7 +10,7 @@ describe('provider_kyc_nudge template registration', () => {
   })
 
   it('keeps the deadline and name as the only body parameters', () => {
-    const params = t => [...t.example.matchAll(/\{\{(\d+)\}\}/g)].map(m => Number(m[1]))
+    const params = (t: { example: string }) => [...t.example.matchAll(/\{\{(\d+)\}\}/g)].map(m => Number(m[1]))
     expect(params(TEMPLATES.provider_kyc_nudge)).toEqual([1, 2])
   })
 })
