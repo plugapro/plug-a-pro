@@ -5,7 +5,7 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     provider: { findUnique: vi.fn() },
     category: { findUnique: vi.fn(), findMany: vi.fn() },
-    providerCategory: { findMany: vi.fn(), updateMany: vi.fn() },
+    providerCategory: { findMany: vi.fn(), updateMany: vi.fn(), createMany: vi.fn() },
     auditLog: { createMany: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -20,6 +20,7 @@ import {
   resolveInitialApprovalStatus,
   autoApproveLowRiskCategories,
   autoApproveProvidersForCategory,
+  reconcileProviderCategoriesForSkills,
 } from '@/lib/provider-categories'
 
 beforeEach(() => {
@@ -32,6 +33,7 @@ beforeEach(() => {
   })
   mockDb.auditLog.createMany.mockResolvedValue({ count: 0 })
   mockDb.providerCategory.updateMany.mockResolvedValue({ count: 0 })
+  mockDb.providerCategory.createMany.mockResolvedValue({ count: 0 })
 })
 
 // ─── resolveInitialApprovalStatus ────────────────────────────────────────────
@@ -192,5 +194,109 @@ describe('autoApproveProvidersForCategory', () => {
     expect(mockDb.providerCategory.updateMany).not.toHaveBeenCalled()
     expect(mockDb.auditLog.createMany).not.toHaveBeenCalled()
     expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+})
+
+// ─── reconcileProviderCategoriesForSkills ────────────────────────────────────
+
+describe('reconcileProviderCategoriesForSkills', () => {
+  it('creates a PENDING_REVIEW row for a newly added high-risk/standard skill', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([]) // no existing rows
+    mockDb.provider.findUnique.mockResolvedValue({ status: 'ACTIVE' })
+    mockDb.category.findMany.mockResolvedValue([{ slug: 'plumbing', id: 'cat-plumb', riskTier: 'STANDARD' }])
+
+    const result = await reconcileProviderCategoriesForSkills(mockDb, 'prov-1', ['plumbing'])
+
+    expect(mockDb.providerCategory.createMany).toHaveBeenCalledOnce()
+    const { data, skipDuplicates } = mockDb.providerCategory.createMany.mock.calls[0][0]
+    expect(skipDuplicates).toBe(true)
+    expect(data).toEqual([
+      expect.objectContaining({
+        providerId: 'prov-1',
+        categorySlug: 'plumbing',
+        categoryId: 'cat-plumb',
+        approvalStatus: 'PENDING_REVIEW',
+      }),
+    ])
+    expect(result.created).toEqual([{ categorySlug: 'plumbing', approvalStatus: 'PENDING_REVIEW' }])
+  })
+
+  it('creates an APPROVED row for a newly added LOW-risk skill on an ACTIVE provider', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue({ status: 'ACTIVE' })
+    mockDb.category.findMany.mockResolvedValue([{ slug: 'garden', id: 'cat-garden', riskTier: 'LOW' }])
+
+    const result = await reconcileProviderCategoriesForSkills(mockDb, 'prov-1', ['garden'])
+
+    const { data } = mockDb.providerCategory.createMany.mock.calls[0][0]
+    expect(data[0]).toMatchObject({ categorySlug: 'garden', approvalStatus: 'APPROVED' })
+    expect(result.created).toEqual([{ categorySlug: 'garden', approvalStatus: 'APPROVED' }])
+  })
+
+  it('defaults an unknown slug to PENDING_REVIEW (no Category row)', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue({ status: 'ACTIVE' })
+    mockDb.category.findMany.mockResolvedValue([]) // unknown slug
+
+    await reconcileProviderCategoriesForSkills(mockDb, 'prov-1', ['mystery-trade'])
+
+    const { data } = mockDb.providerCategory.createMany.mock.calls[0][0]
+    expect(data[0]).toMatchObject({ categorySlug: 'mystery-trade', categoryId: null, approvalStatus: 'PENDING_REVIEW' })
+  })
+
+  it('never recreates or downgrades a skill that already has a row', async () => {
+    // plumbing already APPROVED; only the newly-added geyser should be created
+    mockDb.providerCategory.findMany.mockResolvedValue([{ categorySlug: 'plumbing' }])
+    mockDb.provider.findUnique.mockResolvedValue({ status: 'ACTIVE' })
+    mockDb.category.findMany.mockResolvedValue([{ slug: 'geyser', id: 'cat-geyser', riskTier: 'STANDARD' }])
+
+    await reconcileProviderCategoriesForSkills(mockDb, 'prov-1', ['plumbing', 'geyser'])
+
+    const { data } = mockDb.providerCategory.createMany.mock.calls[0][0]
+    expect(data).toHaveLength(1)
+    expect(data[0]).toMatchObject({ categorySlug: 'geyser', approvalStatus: 'PENDING_REVIEW' })
+  })
+
+  it('no-ops (no create, no audit) when every skill already has a row', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([
+      { categorySlug: 'plumbing' },
+      { categorySlug: 'garden' },
+    ])
+
+    const result = await reconcileProviderCategoriesForSkills(mockDb, 'prov-1', ['plumbing', 'garden'])
+
+    expect(mockDb.providerCategory.createMany).not.toHaveBeenCalled()
+    expect(mockDb.auditLog.createMany).not.toHaveBeenCalled()
+    expect(result.created).toEqual([])
+  })
+
+  it('no-ops cleanly for an empty skill list', async () => {
+    const result = await reconcileProviderCategoriesForSkills(mockDb, 'prov-1', [])
+
+    expect(mockDb.providerCategory.findMany).not.toHaveBeenCalled()
+    expect(mockDb.providerCategory.createMany).not.toHaveBeenCalled()
+    expect(result.created).toEqual([])
+  })
+
+  it('writes an audit entry for each created row with the actor and resolved status', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue({ status: 'ACTIVE' })
+    mockDb.category.findMany.mockResolvedValue([{ slug: 'plumbing', id: 'cat-plumb', riskTier: 'STANDARD' }])
+
+    await reconcileProviderCategoriesForSkills(mockDb, 'prov-1', ['plumbing'], {
+      actorId: 'admin-7',
+      actorRole: 'admin',
+    })
+
+    expect(mockDb.auditLog.createMany).toHaveBeenCalledOnce()
+    const { data } = mockDb.auditLog.createMany.mock.calls[0][0]
+    expect(data[0]).toMatchObject({
+      actorId: 'admin-7',
+      actorRole: 'admin',
+      action: 'provider_category.created_on_skill_add',
+      entityType: 'ProviderCategory',
+      entityId: 'prov-1:plumbing',
+      after: expect.objectContaining({ approvalStatus: 'PENDING_REVIEW', categorySlug: 'plumbing' }),
+    })
   })
 })
