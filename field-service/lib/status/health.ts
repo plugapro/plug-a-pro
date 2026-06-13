@@ -74,7 +74,7 @@ const defaultBuildSummary: HealthBuildSummary = {
   builtAt: null,
 }
 
-const groupStatusOrder: HealthStatus[] = ['down', 'degraded', 'unknown', 'not_monitored', 'operational']
+const groupStatusOrder: HealthStatus[] = ['down', 'degraded', 'maintenance', 'unknown', 'not_monitored', 'operational']
 
 function normalizeString(value: unknown): string | null {
   return typeof value === 'string' ? value.trim() : null
@@ -165,6 +165,7 @@ function buildGroupStatusSummary(group: HealthServiceGroup): {
   operational: number
   degraded: number
   down: number
+  maintenance: number
   unknown: number
   notMonitored: number
   overall: HealthStatus
@@ -174,11 +175,12 @@ function buildGroupStatusSummary(group: HealthServiceGroup): {
       if (service.status === 'operational') acc.operational += 1
       else if (service.status === 'degraded') acc.degraded += 1
       else if (service.status === 'down') acc.down += 1
+      else if (service.status === 'maintenance') acc.maintenance += 1
       else if (service.status === 'not_monitored') acc.notMonitored += 1
       else acc.unknown += 1
       return acc
     },
-    { operational: 0, degraded: 0, down: 0, unknown: 0, notMonitored: 0 }
+    { operational: 0, degraded: 0, down: 0, maintenance: 0, unknown: 0, notMonitored: 0 }
   )
 
   const ordered: HealthStatus[] = groupStatusOrder.filter(
@@ -187,6 +189,7 @@ function buildGroupStatusSummary(group: HealthServiceGroup): {
       if (status === 'operational') return counts.operational > 0
       if (status === 'degraded') return counts.degraded > 0
       if (status === 'down') return counts.down > 0
+      if (status === 'maintenance') return counts.maintenance > 0
       return counts.unknown > 0
     },
   )
