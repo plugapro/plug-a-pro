@@ -24,6 +24,7 @@ type LimiterKey =
   | 'identityUploadByIdentity'
   | 'notifyInterestByIp'
   | 'notifyInterestByPhone'
+  | 'locationReverseByIp'
 
 type RateLimitDecision =
   | { ok: true }
@@ -138,6 +139,12 @@ function configs(): Record<LimiterKey, LimitConfig> {
     notifyInterestByPhone: {
       name: 'notifyInterestByPhone',
       limit: envInt('NOTIFY_INTEREST_LIMIT_PER_PHONE_HOUR', 10),
+      windowSec: HOUR,
+      prefix: 'rate_limit',
+    },
+    locationReverseByIp: {
+      name: 'locationReverseByIp',
+      limit: envInt('LOCATION_REVERSE_LIMIT_PER_IP_HOUR', 60),
       windowSec: HOUR,
       prefix: 'rate_limit',
     },
@@ -584,6 +591,25 @@ export async function checkNotifyInterestLimit(params: {
   }
 
   return { ok: true }
+}
+
+export type CheckLocationReverseLimitResult =
+  | { ok: true }
+  | { ok: false; retryAfterMs: number }
+
+// Per-IP limiter for the public reverse-geocode endpoint (booking "Use my
+// current location"). Fails OPEN when the durable limiter is unavailable so a
+// degraded Redis never blocks the anonymous booking funnel — the per-call 5s
+// Nominatim timeout and one-call-per-tap client behaviour are the primary
+// controls; this caps a single source from hammering the Nominatim dependency.
+export async function checkLocationReverseLimit(params: {
+  ip?: string | null
+}): Promise<CheckLocationReverseLimitResult> {
+  const ip = params.ip?.trim()
+  if (!ip) return { ok: true }
+  const decision = await consume('locationReverseByIp', `ip:${ip}`)
+  if (decision.ok || decision.reason === 'limiter_unavailable') return { ok: true }
+  return { ok: false, retryAfterMs: decision.retryAfterMs }
 }
 
 /** Test helper. Clears the lazy clients, one-shot warning state and in-memory store. */

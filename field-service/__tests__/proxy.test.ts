@@ -724,4 +724,19 @@ describe('proxy bfcache hardening on public pages', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).not.toBe('no-store')
   })
+
+  it('passes an anonymous reverse-geocode request through instead of redirecting to sign-in', async () => {
+    // Regression: when this API was auth-gated the proxy 307-redirected anonymous
+    // callers to /sign-in; fetch followed it to HTML and the client crashed in
+    // res.json(). It must now be public so the anonymous booking funnel works.
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(
+      new NextRequest('http://localhost/api/customer/location-reverse?lat=-26.16&lng=27.96'),
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
 })

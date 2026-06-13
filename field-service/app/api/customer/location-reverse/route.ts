@@ -1,19 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { type NextRequest, NextResponse } from 'next/server'
 import { reverseGeocodeCoordinates } from '@/lib/geocoding'
 import { resolveStructuredAddressByLabels } from '@/lib/location-nodes'
+import { checkLocationReverseLimit } from '@/lib/rate-limit'
+import { trustedClientIp } from '@/lib/request-ip'
 
+export const dynamic = 'force-dynamic'
+
+// GET /api/customer/location-reverse?lat=..&lng=..
+//
+// Public: the booking address step is reachable anonymously (the funnel only
+// requires auth at submit), so this must serve anonymous callers too. Previously
+// it was auth-gated, so an anonymous "Use my current location" request was
+// redirected to /sign-in by the proxy; the client then parsed that HTML as JSON
+// and surfaced WebKit's opaque "The string did not match the expected pattern."
+//
+// Reverse-geocoding public coordinates exposes no user data; a per-IP rate limit
+// protects the Nominatim dependency from a single source hammering it.
 export async function GET(req: NextRequest) {
-  const session = await getSession()
-  if (!session || session.role !== 'customer') {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+  const limit = await checkLocationReverseLimit({ ip: trustedClientIp(req) })
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: 'Too many location lookups. Please wait a moment and try again.' },
+      { status: 429 },
+    )
   }
 
   const { searchParams } = new URL(req.url)
   const lat = Number(searchParams.get('lat'))
   const lng = Number(searchParams.get('lng'))
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
     return NextResponse.json({ error: 'Valid lat and lng are required' }, { status: 400 })
   }
 

@@ -357,10 +357,17 @@ export function BookingFlow({
         lat: String(position.coords.latitude),
         lng: String(position.coords.longitude),
       })
-      const res = await fetch(`/api/customer/location-reverse?${params}`)
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error ?? 'Could not use your location')
+      const res = await fetch(`/api/customer/location-reverse?${params}`, {
+        headers: { Accept: 'application/json' },
+      })
+
+      // A redirected or non-JSON response (e.g. an auth redirect landing on an
+      // HTML page) must never reach res.json(): in WebKit that throws an opaque
+      // "The string did not match the expected pattern." Treat anything that is
+      // not a JSON 2xx as a handled failure.
+      const isJson = (res.headers.get('content-type') ?? '').includes('application/json')
+      if (!res.ok || res.redirected || !isJson) {
+        throw new Error('LOCATION_LOOKUP_FAILED')
       }
 
       const data = await res.json() as {
@@ -395,11 +402,11 @@ export function BookingFlow({
         setError('We found your street, but could not match the suburb exactly. Search for your suburb using the box below.')
       }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'We could not read your location. Please enter the address manually.',
-      )
+      // Never surface a raw exception message to the customer (a native WebKit
+      // error like "The string did not match the expected pattern." used to leak
+      // here). Log the real error for diagnosis and show actionable copy.
+      console.error('[booking-flow] use-my-location failed', err)
+      setError('We could not read your location. Please enter your suburb below.')
     } finally {
       setLocationLoading(false)
     }
@@ -625,6 +632,9 @@ export function BookingFlow({
               <button
                 type="button"
                 onClick={() => {
+                  // Clear any banner so a message from a later step does not
+                  // linger on the step we navigate back to.
+                  setError(null)
                   if (step === 'description') setStep('address')
                   else if (step === 'confirm') setStep('description')
                   else if (step === 'address') window.history.back()
@@ -747,6 +757,7 @@ export function BookingFlow({
                   <Select
                     value={address.province}
                     onValueChange={(val) => {
+                      setError(null)
                       setAddress((current) => ({
                         ...current,
                         province: val,
