@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   UserCheck,
+  Wrench,
   XCircle,
   Zap,
 } from 'lucide-react'
@@ -31,7 +32,7 @@ import {
 
 const AUTO_REFRESH_INTERVAL_S = 30
 
-type Tone = 'success' | 'warning' | 'danger' | 'neutral'
+type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info'
 
 function tone(status: HealthStatus): Tone {
   return statusToneFromCheck[status]
@@ -67,6 +68,13 @@ const T = {
     dot: 'bg-[var(--tone-neutral-fg)]',
     borderL: 'border-l-[var(--tone-neutral-fg)]',
   },
+  info: {
+    bg: 'bg-[var(--tone-info-bg)]',
+    border: 'border-[var(--tone-info-border)]',
+    fg: 'text-[var(--tone-info-fg)]',
+    dot: 'bg-[var(--tone-info-fg)]',
+    borderL: 'border-l-[var(--tone-info-fg)]',
+  },
 } satisfies Record<Tone, Record<string, string>>
 
 // User-friendly status labels for the public page
@@ -76,6 +84,7 @@ const USER_STATUS_LABELS: Record<HealthStatus, string> = {
   down: 'Currently unavailable',
   unknown: 'Checking status…',
   not_monitored: 'Not separately monitored',
+  maintenance: 'Scheduled maintenance',
 }
 
 // User-friendly headline labels
@@ -85,6 +94,7 @@ function headlineFor(status: HealthStatus): string {
     case 'degraded': return 'Some things are slower than usual'
     case 'down': return "We're experiencing an issue"
     case 'not_monitored': return 'Some checks are not monitored yet'
+    case 'maintenance': return 'Scheduled maintenance in progress'
     default: return 'Checking platform status…'
   }
 }
@@ -194,6 +204,8 @@ function StatusIcon({ status, className = 'size-4' }: { status: HealthStatus; cl
       return <AlertTriangle className={`${className} ${cls.fg}`} />
     case 'down':
       return <XCircle className={`${className} ${cls.fg}`} />
+    case 'maintenance':
+      return <Wrench className={`${className} ${cls.fg}`} />
     default:
       return <HelpCircle className={`${className} ${cls.fg}`} />
   }

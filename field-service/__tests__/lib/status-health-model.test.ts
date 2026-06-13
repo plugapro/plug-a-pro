@@ -246,4 +246,9 @@ describe('status health model', () => {
     expect(model.stale).toBe(false)
     expect(model.overall).toBe('operational')
   })
+
+  it('maps a maintenance payload to overall maintenance', () => {
+    const model = normalizeHealthPayload({ status: 'maintenance', db: 'ok', timestamp: new Date().toISOString() })
+    expect(model.overall).toBe('maintenance')
+  })
 })

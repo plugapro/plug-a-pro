@@ -4,9 +4,10 @@ export const STATUS_LABELS = {
   down: 'Not running',
   unknown: 'Unknown',
   not_monitored: 'Not separately monitored',
+  maintenance: 'Under maintenance',
 } as const
 
-export type HealthStatus = 'operational' | 'degraded' | 'down' | 'unknown' | 'not_monitored'
+export type HealthStatus = 'operational' | 'degraded' | 'down' | 'unknown' | 'not_monitored' | 'maintenance'
 export type HealthSource = 'live check' | 'derived' | 'not monitored'
 
 interface RawHealthPayload {
@@ -84,6 +85,7 @@ function normalizeStatus(value: unknown): HealthStatus {
   if (normalized === 'ok') return 'operational'
   if (normalized === 'error') return 'down'
   if (normalized === 'degraded') return 'degraded'
+  if (normalized === 'maintenance') return 'maintenance'
   return BASE_CHECK_DEFAULT
 }
 
@@ -124,6 +126,7 @@ function formatTimestamp(value: unknown, fallbackIso: string): string {
 }
 
 function derivePlatformStatus(healthStatus: HealthStatus, dbStatus: HealthStatus): HealthStatus {
+  if (healthStatus === 'maintenance') return 'maintenance'
   return mergeStatus([healthStatus, dbStatus])
 }
 
@@ -203,6 +206,10 @@ export function summarizeGroups(groups: HealthServiceGroup[]): HealthServiceGrou
 }
 
 function buildBotMessage(overall: HealthStatus, platform: HealthStatus): string {
+  if (platform === 'maintenance') {
+    return 'Plug A Pro is undergoing scheduled maintenance. Some services may be briefly unavailable.'
+  }
+
   if (platform === 'down') {
     return "Login and API checks are not responding. Customer and provider journeys may be affected."
   }
@@ -709,12 +716,13 @@ export function summarizeGroup(services: HealthService[]) {
   })
 }
 
-export const statusToneFromCheck: Record<HealthStatus, 'success' | 'warning' | 'danger' | 'neutral'> = {
+export const statusToneFromCheck: Record<HealthStatus, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
   operational: 'success',
   degraded: 'warning',
   down: 'danger',
-  unknown: 'neutral',
+  unknown: 'info',
   not_monitored: 'neutral',
+  maintenance: 'info',
 }
 
 export const statusSourceLabel: Record<HealthSource, string> = {
