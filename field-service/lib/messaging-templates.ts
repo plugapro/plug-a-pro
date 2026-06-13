@@ -256,6 +256,18 @@ export const TEMPLATES = {
       'Hi {{1}}, a customer is reviewing providers for a {{2}} job in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
   },
 
+  provider_kyc_nudge: {
+    name: 'provider_kyc_nudge',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'KYC drive nudge for existing providers - identity verification requirement notice with signed verification link in a template URL button',
+    // {{1}} provider first name, {{2}} completion deadline (e.g. "30 June 2026");
+    // button (url, index 0): {{1}} signed verification token suffix appended to /provider/verify/
+    example:
+      'Hi {{1}}, Plug A Pro now requires identity verification for all providers. Verify by {{2}} to keep receiving job leads - it takes about 5 minutes. Tap the button below to start.',
+  },
+
   technician_job_reminder: {
     name: 'technician_job_reminder',
     language: 'en_ZA',
