@@ -22,6 +22,8 @@ type LimiterKey =
   | 'voucherFailedByProvider'
   | 'healthProbeByIp'
   | 'identityUploadByIdentity'
+  | 'notifyInterestByIp'
+  | 'notifyInterestByPhone'
 
 type RateLimitDecision =
   | { ok: true }
@@ -124,6 +126,18 @@ function configs(): Record<LimiterKey, LimitConfig> {
     identityUploadByIdentity: {
       name: 'identityUploadByIdentity',
       limit: envInt('IDENTITY_UPLOAD_LIMIT_PER_IDENTITY_HOUR', 30),
+      windowSec: HOUR,
+      prefix: 'rate_limit',
+    },
+    notifyInterestByIp: {
+      name: 'notifyInterestByIp',
+      limit: envInt('NOTIFY_INTEREST_LIMIT_PER_IP_HOUR', 30),
+      windowSec: HOUR,
+      prefix: 'rate_limit',
+    },
+    notifyInterestByPhone: {
+      name: 'notifyInterestByPhone',
+      limit: envInt('NOTIFY_INTEREST_LIMIT_PER_PHONE_HOUR', 10),
       windowSec: HOUR,
       prefix: 'rate_limit',
     },
@@ -529,6 +543,43 @@ export async function checkVoucherRedemptionLimit(params: {
       ok: false,
       code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'rate_limited',
       retryAfterMs: decision.retryAfterMs,
+    }
+  }
+
+  return { ok: true }
+}
+
+export type CheckNotifyInterestLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'ip_limit' | 'phone_limit' | 'limiter_unavailable'; retryAfterMs: number }
+
+// Limiter for the public "notify me when this service is available" capture
+// endpoint. Keyed by IP first (caps a single source spamming the waitlist) and
+// then by phone (caps a single number across sources). Fails CLOSED when the
+// durable limiter is unavailable so a degraded Redis can't be used to flood the
+// service-area waitlist with unauthenticated rows.
+export async function checkNotifyInterestLimit(params: {
+  phone: string
+  ip?: string | null
+}): Promise<CheckNotifyInterestLimitResult> {
+  const ip = params.ip?.trim()
+  if (ip) {
+    const ipDecision = await consume('notifyInterestByIp', `ip:${ip}`)
+    if (!ipDecision.ok) {
+      return {
+        ok: false,
+        code: ipDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
+        retryAfterMs: ipDecision.retryAfterMs,
+      }
+    }
+  }
+
+  const phoneDecision = await consume('notifyInterestByPhone', `phone:${params.phone}`)
+  if (!phoneDecision.ok) {
+    return {
+      ok: false,
+      code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
+      retryAfterMs: phoneDecision.retryAfterMs,
     }
   }
 

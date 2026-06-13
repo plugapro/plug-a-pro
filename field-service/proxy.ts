@@ -69,6 +69,7 @@ const PUBLIC_PATHS = [
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
   '/api/track',                     // public tracking API; handler validates tracking identifiers
   '/api/locations',                 // public canonical location taxonomy used before booking/provider registration auth
+  '/api/customer/notify-interest',  // public "notify me when this service is available" capture; handler enforces flag + SA-phone validation + per-IP/phone rate limits
   // '/api/debug' is intentionally NOT public: diagnostic handlers (e.g. payat-ping)
   // can trigger real side-effects, so they enforce requireAdminApi() and must sit
   // behind the session gate. In production they are additionally 403'd outright.

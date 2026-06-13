@@ -25,6 +25,7 @@ import { SectionLabel } from '@/components/ui/section-label'
 import { AreaSelector } from '@/components/customer/AreaSelector'
 import { CustomerRequestSearchForm } from '@/components/customer/CustomerRequestSearchForm'
 import { HomeServiceSearch } from '@/components/customer/HomeServiceSearch'
+import { ComingSoonTile } from '@/components/customer/ComingSoonTile'
 
 export const metadata = buildMetadata({
   title: 'Skilled help near you - book local service providers',
@@ -102,6 +103,13 @@ export default async function CustomerHomePage({
   const serviceabilityV2Enabled = await isEnabled('customer.home.serviceability_v2', {
     userId: session?.id,
   })
+
+  // Notify-interest (customer.home.notify_interest): turns unavailable browse
+  // tiles into a "Coming soon — notify me" demand capture instead of dead tiles.
+  // Only meaningful under serviceability_v2, which is what marks tiles unavailable.
+  const notifyInterestEnabled =
+    serviceabilityV2Enabled &&
+    (await isEnabled('customer.home.notify_interest', { userId: session?.id }))
 
   const selectedServiceTag = service?.trim().toLowerCase() || null
 
@@ -248,6 +256,20 @@ export default async function CustomerHomePage({
             const isUnavailableForArea =
               serviceabilityV2Enabled && Boolean(area) && !serviceableTagSet.has(cat.tag)
             if (isUnavailableForArea) {
+              // notify_interest ON → invite the customer to register demand
+              // instead of rendering a dead tile.
+              if (notifyInterestEnabled && area) {
+                return (
+                  <ComingSoonTile
+                    key={cat.label}
+                    tag={cat.tag}
+                    label={cat.label}
+                    hue={cat.hue}
+                    areaSlug={area}
+                    areaLabel={areaScope?.node.label ?? area}
+                  />
+                )
+              }
               return (
                 <div
                   key={cat.label}
