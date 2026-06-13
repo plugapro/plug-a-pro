@@ -14,6 +14,7 @@ import { pickCustomerDisplayFirstName } from '@/lib/customer-name'
 import { buildMetadata } from '@/lib/metadata'
 import { isEnabled } from '@/lib/flags'
 import { getServiceCategoryLabel } from '@/lib/service-categories'
+import { formatLocationSlugLabel } from '@/lib/location-format'
 import {
   countActiveProvidersFor,
   listServiceableCategoriesForArea,
@@ -266,7 +267,7 @@ export default async function CustomerHomePage({
                     label={cat.label}
                     hue={cat.hue}
                     areaSlug={area}
-                    areaLabel={areaScope?.node.label ?? area}
+                    areaLabel={areaScope?.node.label ?? formatLocationSlugLabel(area)}
                   />
                 )
               }

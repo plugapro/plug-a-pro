@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from '
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { MapPin, ChevronDown, X, Search } from 'lucide-react'
+import { formatLocationSlugLabel } from '@/lib/location-format'
 
 const STORAGE_KEY = 'pap-area'
 
@@ -101,7 +102,12 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
     router.push('/')
   }
 
-  const displayLabel = selectedArea?.label ?? currentArea ?? null
+  // Always format for display: this both fixes the raw-slug leak when we only
+  // have a URL slug (deep links) and sanitises any stale slug-shaped label that
+  // an older build may have written to localStorage. Idempotent on clean labels.
+  // The stored value (selectedArea.slug / currentArea) is untouched — only the
+  // visible text is formatted.
+  const displayLabel = formatLocationSlugLabel(selectedArea?.label ?? currentArea) || null
 
   return (
     <>

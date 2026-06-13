@@ -66,6 +66,26 @@ export function normaliseLocationDisplayNames(values: string[] | null | undefine
     .filter(Boolean)
 }
 
+// Presentation-only: turn an internal location slug into a clean, customer-safe
+// label. Accepts a single segment ("kwazulu_natal") or a combined hierarchy key
+// ("kwazulu_natal__durban__umhlanga__ballito") and returns the most-specific
+// (last) segment, formatted via the shared overrides — so a chip reads "Ballito"
+// or "KwaZulu-Natal", never the raw key. Idempotent on already-clean labels
+// (e.g. "Durban" → "Durban"), so it is safe to wrap any display string.
+//
+// IMPORTANT: this is display-only. The stored/submitted value must remain the
+// slug — backend matching, filtering and routing still rely on the key.
+export function formatLocationSlugLabel(value: string | null | undefined): string {
+  if (!value) return ''
+  const mostSpecific =
+    value
+      .split('__')
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+      .at(-1) ?? ''
+  return normaliseLocationDisplayName(mostSpecific.replace(/_/g, ' '))
+}
+
 export function normaliseLocationKey(value: string | null | undefined): string {
   return collapseWhitespace(value ?? '')
     .normalize('NFKD')
