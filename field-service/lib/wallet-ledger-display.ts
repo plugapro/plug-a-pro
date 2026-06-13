@@ -16,13 +16,22 @@ export type WalletLedgerSignedAmountInput = {
   amountCredits: number
 }
 
-export function walletLedgerSignedAmount(entry: WalletLedgerSignedAmountInput): number {
-  const isDebit = entry.entryType === 'LEAD_UNLOCK_DEBIT' ||
-    entry.entryType === 'PROMO_EXPIRY' ||
-    entry.entryType === 'PAYMENT_REVERSAL' ||
-    entry.entryType === 'FIRST_TOPUP_KYC_DEDUCTION'
+// Single source of truth for which entry types reduce the wallet balance.
+// ledgerEntryDelta (drift replay), the provider activity UI and the history
+// filters all derive from this list — add new debit types here only.
+export const WALLET_DEBIT_ENTRY_TYPES = [
+  'LEAD_UNLOCK_DEBIT',
+  'PROMO_EXPIRY',
+  'PAYMENT_REVERSAL',
+  'FIRST_TOPUP_KYC_DEDUCTION',
+] as const
 
-  return isDebit
+export function isDebitWalletEntryType(entryType: string): boolean {
+  return (WALLET_DEBIT_ENTRY_TYPES as readonly string[]).includes(entryType)
+}
+
+export function walletLedgerSignedAmount(entry: WalletLedgerSignedAmountInput): number {
+  return isDebitWalletEntryType(entry.entryType)
     ? -Math.abs(entry.amountCredits)
     : entry.amountCredits
 }

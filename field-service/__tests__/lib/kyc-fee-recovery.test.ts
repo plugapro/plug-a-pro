@@ -4,7 +4,10 @@ const { mockIsEnabled } = vi.hoisted(() => ({ mockIsEnabled: vi.fn() }))
 vi.mock('../../lib/flags', () => ({ isEnabled: mockIsEnabled }))
 
 const { mockDb } = vi.hoisted(() => ({
-  mockDb: { $transaction: vi.fn() },
+  mockDb: {
+    $transaction: vi.fn(),
+    kycFeeLedgerEntry: { findFirst: vi.fn() },
+  },
 }))
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 
@@ -48,6 +51,10 @@ function makeTx(rows: FeeRow[]) {
       }),
     },
   }
+  // The pre-transaction status check reads through the root db client.
+  mockDb.kycFeeLedgerEntry.findFirst.mockImplementation(
+    async () => (rows.length ? rows[rows.length - 1] : null),
+  )
   return { tx, created }
 }
 
@@ -79,7 +86,7 @@ describe('settleOutstandingKycFeeAfterTopUp', () => {
     expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 
-  it('returns NO_OUTSTANDING_FEE when the provider owes nothing', async () => {
+  it('returns NO_OUTSTANDING_FEE without opening a transaction when the provider owes nothing', async () => {
     const { tx } = makeTx([])
     mockDb.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -87,6 +94,7 @@ describe('settleOutstandingKycFeeAfterTopUp', () => {
 
     expect(result).toEqual({ outcome: 'NO_OUTSTANDING_FEE' })
     expect(mockDebit).not.toHaveBeenCalled()
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 
   it('debits 1 paid credit and writes an idempotent KYC_FEE_RECOVERED row for an R50 debt', async () => {
@@ -157,13 +165,39 @@ describe('settleOutstandingKycFeeAfterTopUp', () => {
       },
     ])
     tx.kycFeeLedgerEntry.create.mockRejectedValue(
-      Object.assign(new Error('unique violation'), { code: 'P2002' }),
+      Object.assign(new Error('unique violation'), {
+        code: 'P2002',
+        meta: { target: ['idempotencyKey'] },
+      }),
     )
     mockDb.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(tx))
 
     const result = await settleOutstandingKycFeeAfterTopUp(input())
 
     expect(result).toEqual({ outcome: 'ALREADY_RECOVERED' })
+  })
+
+  it('maps a P2002 on a different unique constraint to FAILED, not ALREADY_RECOVERED', async () => {
+    const { tx } = makeTx([
+      {
+        id: 'fee-accrued',
+        providerId: 'provider-1',
+        reason: 'KYC_FEE_ACCRUED',
+        amountCents: 5000,
+        balanceAfterCents: 5000,
+      },
+    ])
+    tx.kycFeeLedgerEntry.create.mockRejectedValue(
+      Object.assign(new Error('unique violation'), {
+        code: 'P2002',
+        meta: { target: ['providerId', 'referenceId'] },
+      }),
+    )
+    mockDb.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    const result = await settleOutstandingKycFeeAfterTopUp(input())
+
+    expect(result).toMatchObject({ outcome: 'FAILED' })
   })
 
   it('returns FAILED instead of throwing when the wallet debit fails', async () => {

@@ -96,6 +96,7 @@ export async function writeKycFeeLedgerEntryInTransaction(
 export type KycFeeStatus = {
   outstandingCents: number
   lastReason: KycFeeLedgerReason | null
+  lastAmountCents: number | null
 }
 
 export async function getKycFeeStatus(
@@ -105,10 +106,11 @@ export async function getKycFeeStatus(
   const last = await client.kycFeeLedgerEntry.findFirst({
     where: { providerId },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    select: { balanceAfterCents: true, reason: true },
+    select: { balanceAfterCents: true, reason: true, amountCents: true },
   })
   return {
     outstandingCents: last?.balanceAfterCents ?? 0,
     lastReason: last?.reason ?? null,
+    lastAmountCents: last?.amountCents ?? null,
   }
 }

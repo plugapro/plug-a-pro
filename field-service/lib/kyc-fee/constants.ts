@@ -7,9 +7,14 @@ import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-credit-pricing'
 const DEFAULT_KYC_FEE_CENTS = PROVIDER_CREDIT_PRICE_CENTS
 const parsedKycFeeCents = Number(process.env.KYC_FEE_CENTS ?? DEFAULT_KYC_FEE_CENTS)
 // A malformed override must not poison fee bookings (NaN would make every
-// booking throw INVALID_AMOUNT and roll back admin approvals).
+// booking throw INVALID_AMOUNT and roll back admin approvals), and a
+// non-whole-credit override must not strand debts: recovery settles in whole
+// credits, so a fee that isn't a credit multiple would be skipped on every
+// top-up forever (SKIPPED_LEGACY_AMOUNT).
 export const KYC_FEE_CENTS =
-  Number.isInteger(parsedKycFeeCents) && parsedKycFeeCents > 0
+  Number.isInteger(parsedKycFeeCents) &&
+  parsedKycFeeCents > 0 &&
+  parsedKycFeeCents % PROVIDER_CREDIT_PRICE_CENTS === 0
     ? parsedKycFeeCents
     : DEFAULT_KYC_FEE_CENTS
 

@@ -34,20 +34,70 @@ async function main() {
   })
 
   console.log(`${providers.length} VERIFIED provider(s) without a KYC fee accrual.`)
-  if (!apply) {
+  if (apply) {
+    for (const p of providers) {
+      const verificationId = p.identityVerifications[0]?.id
+      if (!verificationId) {
+        console.log(`  skip ${p.id} (${p.name}): no PASSED verification row`)
+        continue
+      }
+      const result = await bookKycFeeForVerifiedProvider({ providerId: p.id, verificationId })
+      console.log(`  ${p.id} (${p.name}): ${result.outcome}`)
+    }
+  } else {
     for (const p of providers) console.log(`  would book: ${p.id} (${p.name})`)
-    console.log('Dry run. Re-run with --apply to book.')
+  }
+
+  await sweepMissedRecoveries()
+
+  if (!apply) console.log('\nDry run. Re-run with --apply to book/settle.')
+}
+
+/**
+ * Safety net for missed first-top-up recoveries: a provider whose fee is
+ * still outstanding but who already has a CREDITED top-up should have been
+ * settled by the post-credit hook. Catches hook gaps (a crediting path that
+ * forgot to call settlement) and transient settlement failures for providers
+ * who never topped up again.
+ */
+async function sweepMissedRecoveries() {
+  const accrued = await db.provider.findMany({
+    where: { kycFeeLedgerEntries: { some: { reason: 'KYC_FEE_ACCRUED' } } },
+    select: {
+      id: true,
+      name: true,
+      paymentIntents: {
+        where: { status: 'CREDITED' },
+        orderBy: { creditedAt: 'desc' },
+        take: 1,
+        select: { id: true },
+      },
+    },
+  })
+
+  const { getKycFeeStatus } = await import('../lib/kyc-fee/ledger')
+  const candidates: Array<{ id: string; name: string; intentId: string }> = []
+  for (const p of accrued) {
+    const intentId = p.paymentIntents[0]?.id
+    if (!intentId) continue
+    const status = await getKycFeeStatus(p.id)
+    if (status.outstandingCents > 0) candidates.push({ id: p.id, name: p.name, intentId })
+  }
+
+  console.log(`\n${candidates.length} provider(s) with an outstanding fee despite a CREDITED top-up.`)
+  if (!apply) {
+    for (const c of candidates) console.log(`  would settle: ${c.id} (${c.name}) via intent ${c.intentId}`)
     return
   }
 
-  for (const p of providers) {
-    const verificationId = p.identityVerifications[0]?.id
-    if (!verificationId) {
-      console.log(`  skip ${p.id} (${p.name}): no PASSED verification row`)
-      continue
-    }
-    const result = await bookKycFeeForVerifiedProvider({ providerId: p.id, verificationId })
-    console.log(`  ${p.id} (${p.name}): ${result.outcome}`)
+  const { settleOutstandingKycFeeAfterTopUp } = await import('../lib/kyc-fee/recovery')
+  for (const c of candidates) {
+    const result = await settleOutstandingKycFeeAfterTopUp({
+      providerId: c.id,
+      paymentIntentId: c.intentId,
+      createdBy: 'reconcile-kyc-fees',
+    })
+    console.log(`  ${c.id} (${c.name}): ${result.outcome}`)
   }
 }
 

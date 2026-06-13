@@ -29,6 +29,16 @@ export type KycFeeRecoveryResult =
  * Never throws: every caller is a post-commit hook (webhook handler, admin
  * action) where a recovery error must not fail the surrounding request.
  */
+// Only the recovery idempotency key counts as "already recovered". Any other
+// unique violation inside the transaction is a real failure that must alert,
+// not be silently absorbed.
+function isIdempotencyKeyCollision(error: unknown): boolean {
+  if ((error as { code?: string }).code !== 'P2002') return false
+  const target = (error as { meta?: { target?: unknown } }).meta?.target
+  const targetText = Array.isArray(target) ? target.join(',') : String(target ?? '')
+  return targetText.includes('idempotencyKey')
+}
+
 export async function settleOutstandingKycFeeAfterTopUp(input: {
   providerId: string
   paymentIntentId: string
@@ -37,6 +47,14 @@ export async function settleOutstandingKycFeeAfterTopUp(input: {
   try {
     if (!(await isEnabled('kyc.fee_accrual.enabled'))) {
       return { outcome: 'FLAG_OFF' }
+    }
+
+    // Pre-transaction guard: the steady-state majority of top-ups (fee already
+    // settled or never accrued) must not pay for an interactive transaction.
+    // The in-transaction re-read below stays authoritative for correctness.
+    const preStatus = await getKycFeeStatus(input.providerId)
+    if (preStatus.outstandingCents <= 0) {
+      return { outcome: 'NO_OUTSTANDING_FEE' }
     }
 
     return await db.$transaction(async (tx) => {
@@ -100,7 +118,7 @@ export async function settleOutstandingKycFeeAfterTopUp(input: {
       } as const
     })
   } catch (error) {
-    if ((error as { code?: string }).code === 'P2002') {
+    if (isIdempotencyKeyCollision(error)) {
       // Another top-up settled the fee concurrently; unique idempotency key
       // rolled this transaction back, so the wallet debit never committed.
       return { outcome: 'ALREADY_RECOVERED' }

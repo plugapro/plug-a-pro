@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  getKycFeeStatus,
   KycFeeLedgerError,
   writeKycFeeLedgerEntryInTransaction,
   type KycFeeLedgerTx,
@@ -84,5 +85,37 @@ describe('writeKycFeeLedgerEntryInTransaction', () => {
         }),
       ).rejects.toBeInstanceOf(KycFeeLedgerError)
     }
+  })
+})
+
+describe('getKycFeeStatus', () => {
+  it('includes the latest row amount so display surfaces need no follow-up query', async () => {
+    const tx = {
+      kycFeeLedgerEntry: {
+        findFirst: vi.fn().mockResolvedValue({
+          balanceAfterCents: 0,
+          reason: 'KYC_FEE_RECOVERED',
+          amountCents: 5000,
+        }),
+      },
+    } as unknown as KycFeeLedgerTx
+
+    const status = await getKycFeeStatus('provider-1', tx)
+
+    expect(status).toEqual({
+      outstandingCents: 0,
+      lastReason: 'KYC_FEE_RECOVERED',
+      lastAmountCents: 5000,
+    })
+  })
+
+  it('returns null amount for a provider with no fee history', async () => {
+    const tx = {
+      kycFeeLedgerEntry: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as KycFeeLedgerTx
+
+    const status = await getKycFeeStatus('provider-1', tx)
+
+    expect(status).toEqual({ outstandingCents: 0, lastReason: null, lastAmountCents: null })
   })
 })

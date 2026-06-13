@@ -199,6 +199,42 @@ describe('provider credit payment admin actions', () => {
     })
   })
 
+  it('settles the KYC fee via a re-fetched providerId when the pre-action snapshot was null', async () => {
+    const { requireAdmin } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    const { creditPaymentIntentInTransaction } = await import('../../lib/provider-credit-reconciliation')
+    const { notifyProviderPaymentCredited } = await import('../../lib/provider-wallet-notifications')
+    const { settleOutstandingKycFeeAfterTopUp } = await import('../../lib/kyc-fee/recovery')
+
+    ;(requireAdmin as any).mockResolvedValue({ id: 'user-1', adminUserId: 'admin-1' })
+    // Race: the pre-action snapshot misses, but the row exists by the time the
+    // post-success re-fetch runs.
+    ;(db.paymentIntent.findUnique as any)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'intent-1', providerId: 'provider-1' })
+    ;(creditPaymentIntentInTransaction as any).mockResolvedValue({
+      intent: { id: 'intent-1', status: 'CREDITED' },
+      ledgerEntries: [{ id: 'entry-1' }],
+    })
+    await executeCrudActionWith({})
+    ;(notifyProviderPaymentCredited as any).mockResolvedValue(undefined)
+
+    const { creditTopUpIntentAction } = await import(
+      '../../app/(admin)/admin/provider-credit-payments/actions'
+    )
+
+    await creditTopUpIntentAction({
+      paymentIntentId: 'intent-1',
+      adminNote: 'Funds confirmed',
+    })
+
+    expect(settleOutstandingKycFeeAfterTopUp).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      paymentIntentId: 'intent-1',
+      createdBy: 'admin-1',
+    })
+  })
+
   it('does not attempt KYC fee settlement when the admin credit conflicts', async () => {
     await arrangeAdmin()
     const {

@@ -60,6 +60,8 @@ const ENTRY_TYPES = [
   'WALLET_REACTIVATED',
   'PROMO_EXPIRY',
   'PAYMENT_REVERSAL',
+  'VOUCHER_REDEMPTION',
+  'FIRST_TOPUP_KYC_DEDUCTION',
 ] as const
 
 const CREDIT_TYPES = ['PAID', 'PROMO'] as const
@@ -188,11 +190,13 @@ function ledgerDelta(entryType: WalletLedgerEntryType, amountCredits: number): n
   switch (entryType) {
     case 'TOPUP_CREDIT':
     case 'PROMO_CREDIT':
+    case 'VOUCHER_REDEMPTION':
     case 'LEAD_REFUND_CREDIT':
       return amountCredits
     case 'LEAD_UNLOCK_DEBIT':
     case 'PROMO_EXPIRY':
     case 'PAYMENT_REVERSAL':
+    case 'FIRST_TOPUP_KYC_DEDUCTION':
       return -amountCredits
     case 'ADMIN_ADJUSTMENT':
       return amountCredits
@@ -632,10 +636,12 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
           "entryType" IN (
             'TOPUP_CREDIT',
             'PROMO_CREDIT',
+            'VOUCHER_REDEMPTION',
             'LEAD_UNLOCK_DEBIT',
             'LEAD_REFUND_CREDIT',
             'PROMO_EXPIRY',
-            'PAYMENT_REVERSAL'
+            'PAYMENT_REVERSAL',
+            'FIRST_TOPUP_KYC_DEDUCTION'
           )
           AND "amountCredits" > 0
         )

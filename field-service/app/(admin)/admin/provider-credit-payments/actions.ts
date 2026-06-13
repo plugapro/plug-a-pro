@@ -150,10 +150,20 @@ export async function creditTopUpIntentAction(input: CreditTopUpInput) {
 
   // Post-commit KYC fee settlement: runs in its own transaction and can
   // never roll back or fail the credit. Failures leave the debt outstanding.
-  if (before?.providerId) {
+  // The pre-action snapshot can be stale (race with intent creation), so
+  // re-resolve the provider from the now-credited row rather than skipping.
+  const settlementProviderId =
+    before?.providerId ??
+    (
+      await db.paymentIntent.findUnique({
+        where: { id: input.paymentIntentId },
+        select: { providerId: true },
+      })
+    )?.providerId
+  if (settlementProviderId) {
     const { settleOutstandingKycFeeAfterTopUp } = await import('@/lib/kyc-fee/recovery')
     await settleOutstandingKycFeeAfterTopUp({
-      providerId: before.providerId,
+      providerId: settlementProviderId,
       paymentIntentId: input.paymentIntentId,
       createdBy: admin.adminUserId ?? admin.id,
     }).catch((error: unknown) => {
@@ -162,6 +172,11 @@ export async function creditTopUpIntentAction(input: CreditTopUpInput) {
         paymentIntentId: input.paymentIntentId,
         error,
       })
+    })
+  } else {
+    console.warn('[provider-credit-payments/actions] KYC fee settlement skipped: provider unresolvable', {
+      alert: true,
+      paymentIntentId: input.paymentIntentId,
     })
   }
 

@@ -10,6 +10,7 @@ import {
   getProviderWalletBalance,
   getProviderWalletLedgerEntries,
 } from '@/lib/provider-wallet'
+import { isDebitWalletEntryType, WALLET_DEBIT_ENTRY_TYPES } from '@/lib/wallet-ledger-display'
 import {
   createPayatTopUpIntent,
   createManualEftTopUpIntent,
@@ -217,10 +218,7 @@ function ledgerLabel(entryType: WalletLedgerEntryType) {
 }
 
 function isDebit(entryType: WalletLedgerEntryType) {
-  return entryType === 'LEAD_UNLOCK_DEBIT' ||
-    entryType === 'PROMO_EXPIRY' ||
-    entryType === 'PAYMENT_REVERSAL' ||
-    entryType === 'FIRST_TOPUP_KYC_DEDUCTION'
+  return isDebitWalletEntryType(entryType)
 }
 
 function asText(value: unknown) {
@@ -1375,12 +1373,7 @@ export type ProviderWalletLedgerPageResult = {
 
 const HISTORY_PAGE_SIZE = 25
 
-const DEBIT_ENTRY_TYPES = [
-  'LEAD_UNLOCK_DEBIT',
-  'PROMO_EXPIRY',
-  'PAYMENT_REVERSAL',
-  'FIRST_TOPUP_KYC_DEDUCTION',
-] as const
+const DEBIT_ENTRY_TYPES = WALLET_DEBIT_ENTRY_TYPES
 
 const CREDIT_ENTRY_TYPES = [
   'TOPUP_CREDIT',
@@ -1443,26 +1436,21 @@ export async function getProviderKycFeeBanner(): Promise<ProviderKycFeeBanner | 
   const { getKycFeeStatus } = await import('@/lib/kyc-fee/ledger')
   const { formatRandsFromCents, KYC_FEE_CENTS } = await import('@/lib/kyc-fee/constants')
   const status = await getKycFeeStatus(provider.id)
+  // The status already carries the latest row's amount: when lastReason is
+  // SPONSORED/RECOVERED that row IS the settling entry, so no follow-up query.
   if (status.lastReason === 'KYC_FEE_SPONSORED' && status.outstandingCents === 0) {
-    const lastSponsored = await db.kycFeeLedgerEntry.findFirst({
-      where: { providerId: provider.id, reason: 'KYC_FEE_SPONSORED' },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { amountCents: true },
-    })
     return {
       kind: 'sponsored',
-      text: `ID verification fee: ${formatRandsFromCents(lastSponsored?.amountCents ?? KYC_FEE_CENTS)} - sponsored by a Plug A Pro launch campaign. Nothing due.`,
+      text: `ID verification fee: ${formatRandsFromCents(status.lastAmountCents ?? KYC_FEE_CENTS)} - sponsored by a Plug A Pro launch campaign. Nothing due.`,
     }
   }
   if (status.lastReason === 'KYC_FEE_RECOVERED' && status.outstandingCents === 0) {
-    const lastRecovered = await db.kycFeeLedgerEntry.findFirst({
-      where: { providerId: provider.id, reason: 'KYC_FEE_RECOVERED' },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { amountCents: true },
-    })
+    const { PROVIDER_CREDIT_PRICE_CENTS } = await import('@/lib/provider-credit-pricing')
+    const settledCents = status.lastAmountCents ?? KYC_FEE_CENTS
+    const credits = Math.round(settledCents / PROVIDER_CREDIT_PRICE_CENTS)
     return {
       kind: 'recovered',
-      text: `ID verification fee: ${formatRandsFromCents(lastRecovered?.amountCents ?? KYC_FEE_CENTS)} - settled from your first top-up (1 credit). Nothing due.`,
+      text: `ID verification fee: ${formatRandsFromCents(settledCents)} - settled from your first top-up (${credits} credit${credits === 1 ? '' : 's'}). Nothing due.`,
     }
   }
   if (status.outstandingCents > 0) {

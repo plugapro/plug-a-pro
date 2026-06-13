@@ -203,9 +203,28 @@ export async function creditPaymentIntent(
   adminUserId: string,
   options: CreditPaymentIntentOptions = {},
 ) {
-  return db.$transaction(async (tx) => (
+  const result = await db.$transaction(async (tx) => (
     creditPaymentIntentInTransaction(tx, paymentIntentId, adminUserId, options)
   ))
+
+  // Every crediting path must attempt KYC fee settlement post-commit. The
+  // production call sites invoke it themselves (they manage their own
+  // transactions); this convenience wrapper bakes it in so a future caller
+  // cannot silently skip recovery.
+  const { settleOutstandingKycFeeAfterTopUp } = await import('./kyc-fee/recovery')
+  await settleOutstandingKycFeeAfterTopUp({
+    providerId: result.intent.providerId,
+    paymentIntentId,
+    createdBy: adminUserId,
+  }).catch((error: unknown) => {
+    console.error('[provider-credit-reconciliation] KYC fee settlement failed post-credit', {
+      alert: true,
+      paymentIntentId,
+      error,
+    })
+  })
+
+  return result
 }
 
 export async function creditPaymentIntentInTransaction(

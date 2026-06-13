@@ -6,6 +6,7 @@ import {
 } from '@prisma/client'
 import { randomUUID } from 'crypto'
 import { db } from './db'
+import { isDebitWalletEntryType } from './wallet-ledger-display'
 
 // Pricing constants live in a browser-safe module (no DB/crypto/secret deps) and
 // are re-exported here for backward compatibility with existing server importers.
@@ -825,17 +826,13 @@ export type RecomputedWalletBalance = {
 }
 
 function ledgerEntryDelta(entryType: string, amountCredits: number): number {
+  if (isDebitWalletEntryType(entryType)) return -amountCredits
   switch (entryType) {
     case 'TOPUP_CREDIT':
     case 'PROMO_CREDIT':
     case 'VOUCHER_REDEMPTION':
     case 'LEAD_REFUND_CREDIT':
       return amountCredits
-    case 'LEAD_UNLOCK_DEBIT':
-    case 'PROMO_EXPIRY':
-    case 'PAYMENT_REVERSAL':
-    case 'FIRST_TOPUP_KYC_DEDUCTION':
-      return -amountCredits
     case 'ADMIN_ADJUSTMENT':
       // amountCredits carries its own sign for adjustments (+/-)
       return amountCredits
