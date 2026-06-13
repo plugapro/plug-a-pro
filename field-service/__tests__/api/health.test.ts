@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { NextRequest } from 'next/server'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -7,6 +8,8 @@ vi.mock('@/lib/db', () => ({
     $queryRaw: vi.fn(),
   },
 }))
+
+vi.mock('@/lib/rate-limit', () => ({ checkHealthProbeLimit: vi.fn() }))
 
 vi.mock('@/lib/flags', () => ({
   FLAG_KEYS: { AUTH_OTP_WHATSAPP: 'auth.otp.whatsapp' },
@@ -19,9 +22,11 @@ vi.mock('@/lib/flags', () => ({
 describe('GET /api/health', () => {
   const originalEnv = { ...process.env }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     vi.resetModules()
+    const { checkHealthProbeLimit } = await import('@/lib/rate-limit')
+    ;(checkHealthProbeLimit as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true })
   })
 
   afterEach(() => {
@@ -144,5 +149,27 @@ describe('GET /api/health', () => {
     expect(body.status).toBe('ok')
     expect(body).not.toHaveProperty('auth')
     expect(body).not.toHaveProperty('build')
+  })
+
+  it('returns 429 with Retry-After when the probe limit is exceeded', async () => {
+    const { checkHealthProbeLimit } = await import('@/lib/rate-limit')
+    ;(checkHealthProbeLimit as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, retryAfterMs: 60_000 })
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET(new NextRequest('http://localhost/api/health'))
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBe('60')
+  })
+
+  it('never leaks raw secret values or internal fields in the public body', async () => {
+    process.env.WHATSAPP_ACCESS_TOKEN = 'SECRET_WA_TOKEN_VALUE'
+    process.env.PEACH_ACCESS_TOKEN = 'SECRET_PEACH_VALUE'
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+    const { GET } = await import('../../app/api/health/route')
+    const text = await (await GET(new NextRequest('http://localhost/api/health'))).text()
+    expect(text).not.toContain('SECRET_WA_TOKEN_VALUE')
+    expect(text).not.toContain('SECRET_PEACH_VALUE')
+    expect(text).not.toContain('supabase_env_complete')
+    expect(text).not.toContain('commitRef')
   })
 })

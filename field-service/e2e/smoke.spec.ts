@@ -160,6 +160,14 @@ test.describe('mobile viewport', () => {
     await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
     await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
   })
+
+  test('status page loads on mobile and shows a status headline', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/status')
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.locator('body')).not.toContainText('commitRef')
+    await expect(page.locator('body')).not.toContainText('supabase_env_complete')
+  })
 })
 
 // ─── Pay@ sprint — unauthenticated route checks ───────────────────────────────
