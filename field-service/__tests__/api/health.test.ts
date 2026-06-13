@@ -125,7 +125,7 @@ describe('GET /api/health', () => {
     const body = await res.json()
 
     expect(body).toHaveProperty('payments')
-    expect(['ok', 'unknown']).toContain(body.payments as string)
+    expect(body.payments).toBe('unknown')
   })
 
   // The public body intentionally omits the internal `auth` observability block

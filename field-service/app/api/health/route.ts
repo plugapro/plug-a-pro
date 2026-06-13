@@ -13,7 +13,7 @@ export async function GET(request?: NextRequest) {
   if (!probeLimit.ok) {
     return NextResponse.json(
       { status: 'rate_limited', timestamp },
-      { status: 429, headers: { 'Retry-After': String(Math.ceil(probeLimit.retryAfterMs / 1000)) } },
+      { status: 429, headers: { 'Cache-Control': 'no-store', 'Retry-After': String(Math.ceil(probeLimit.retryAfterMs / 1000)) } },
     )
   }
 

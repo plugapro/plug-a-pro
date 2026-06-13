@@ -252,6 +252,14 @@ describe('status health model', () => {
     expect(model.overall).toBe('maintenance')
   })
 
+  it('lets staleness override maintenance in overall but keeps platform maintenance', () => {
+    const oldIso = new Date(Date.now() - 5 * 60_000).toISOString()
+    const model = normalizeHealthPayload({ status: 'maintenance', db: 'ok', timestamp: oldIso })
+    expect(model.stale).toBe(true)
+    expect(model.overall).toBe('unknown')
+    expect(model.platform).toBe('maintenance')
+  })
+
   it('does not claim WhatsApp/payments are verified when they are not monitored', () => {
     const model = normalizeHealthPayload({
       status: 'ok', db: 'ok', whatsapp: 'unknown', payments: 'unknown',
