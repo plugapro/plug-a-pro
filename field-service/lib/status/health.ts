@@ -208,26 +208,27 @@ export function summarizeGroups(groups: HealthServiceGroup[]): HealthServiceGrou
   }))
 }
 
-function buildBotMessage(overall: HealthStatus, platform: HealthStatus): string {
+function buildBotMessage(
+  platform: HealthStatus,
+  whatsapp: HealthStatus,
+  payments: HealthStatus,
+): string {
   if (platform === 'maintenance') {
     return 'Plug A Pro is undergoing scheduled maintenance. Some services may be briefly unavailable.'
   }
-
   if (platform === 'down') {
-    return "Login and API checks are not responding. Customer and provider journeys may be affected."
+    return 'Login and API checks are not responding. Customer and provider journeys may be affected.'
   }
-
   if (platform === 'degraded') {
     return 'Some areas may be affected. We are monitoring and will update soon.'
   }
-
   if (platform === 'operational') {
-    if (overall === 'operational') {
-      return 'All core services are running.'
-    }
-    return 'Core services are mostly running, with a few checks still warming up.'
+    const unverified: string[] = []
+    if (whatsapp !== 'operational') unverified.push('WhatsApp updates')
+    if (payments !== 'operational') unverified.push('payments')
+    if (unverified.length === 0) return 'Bookings, search, WhatsApp updates and payments are all running.'
+    return `Core booking and search services are running. ${unverified.join(' and ')} ${unverified.length === 1 ? 'is' : 'are'} not independently verified right now.`
   }
-
   return 'I cannot verify the latest platform health right now, but the latest saved signals are displayed.'
 }
 
@@ -435,7 +436,7 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
     ],
   }
 
-  const botMessage = buildBotMessage(platformStatus, platformStatus)
+  const botMessage = buildBotMessage(platformStatus, whatsappStatus, paymentsStatus)
   const groups = summarizeGroups([
     coreGroup,
     authGroup,

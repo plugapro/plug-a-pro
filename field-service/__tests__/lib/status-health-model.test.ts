@@ -251,4 +251,14 @@ describe('status health model', () => {
     const model = normalizeHealthPayload({ status: 'maintenance', db: 'ok', timestamp: new Date().toISOString() })
     expect(model.overall).toBe('maintenance')
   })
+
+  it('does not claim WhatsApp/payments are verified when they are not monitored', () => {
+    const model = normalizeHealthPayload({
+      status: 'ok', db: 'ok', whatsapp: 'unknown', payments: 'unknown',
+      timestamp: new Date().toISOString(),
+    })
+    expect(model.overall).toBe('operational')
+    expect(model.botMessage).not.toBe('All core services are running.')
+    expect(model.botMessage.toLowerCase()).toContain('not')
+  })
 })
