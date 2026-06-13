@@ -245,6 +245,18 @@ function providerLeadAccessButtonComponent(index: number, jobUrl: string): Whats
   throw new Error('Invalid provider lead access URL for WhatsApp template button')
 }
 
+function providerVerifyButtonComponent(index: number, verificationUrl: string): WhatsAppComponent {
+  try {
+    const url = new URL(verificationUrl)
+    const match = url.pathname.match(/\/provider\/verify\/([^/?#]+)/)
+    if (match?.[1]) return urlButtonComponent(index, match[1])
+  } catch {
+    // Fall through to the raw-url guard below. A malformed URL must never be
+    // sent as visible text, but surfacing the context helps find bad callers.
+  }
+  throw new Error('Invalid provider verification URL for WhatsApp template button')
+}
+
 // ─── High-level messaging functions ──────────────────────────────────────────
 // These are called from booking/job lifecycle hooks.
 
@@ -841,6 +853,40 @@ export async function sendJobOffer(params: {
     bookingId: params.bookingId,
     to: params.providerPhone,
     templateName,
+    externalId,
+    metadata: params.metadata,
+  })
+  return externalId
+}
+
+export async function sendProviderKycNudge(params: {
+  providerPhone: string
+  providerFirstName: string
+  deadline: string
+  verificationUrl: string
+  metadata?: Record<string, unknown>
+}): Promise<string> {
+  // The signed verification link must travel as a URL button parameter only,
+  // mirroring provider job-offer links: the token must never be visible in the
+  // WhatsApp chat transcript as body text.
+  const externalId = await sendTemplate({
+    to: params.providerPhone,
+    template: 'provider_kyc_nudge',
+    metadata: params.metadata,
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.providerFirstName },
+          { type: 'text', text: params.deadline },
+        ],
+      },
+      providerVerifyButtonComponent(0, params.verificationUrl),
+    ],
+  })
+  await logOutboundMessage({
+    to: params.providerPhone,
+    templateName: 'provider_kyc_nudge',
     externalId,
     metadata: params.metadata,
   })
