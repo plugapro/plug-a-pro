@@ -15,7 +15,7 @@ describe('status health model', () => {
     const model = normalizeHealthPayload({
       status: 'ok',
       db: 'ok',
-      timestamp: '2026-01-01T10:00:00.000Z',
+      timestamp: new Date().toISOString(),
       build: {
         commitSha: 'abcdef123456',
         commitShaShort: 'abcdef1',
@@ -49,7 +49,7 @@ describe('status health model', () => {
     const model = normalizeHealthPayload({
       status: 'degraded',
       db: 'error',
-      timestamp: '2026-01-01T10:00:00.000Z',
+      timestamp: new Date().toISOString(),
       build: {
         commitRef: 'main',
       },
@@ -232,5 +232,18 @@ describe('status health model', () => {
       .find((s) => s.id === 'payment-status')
     expect(paymentService?.status).toBe('operational')
     expect(paymentService?.source).toBe('derived')
+  })
+
+  it('marks the model stale and overall unknown when the timestamp exceeds max age', () => {
+    const oldIso = new Date(Date.now() - 5 * 60_000).toISOString()
+    const model = normalizeHealthPayload({ status: 'ok', db: 'ok', timestamp: oldIso })
+    expect(model.stale).toBe(true)
+    expect(model.overall).toBe('unknown')
+  })
+
+  it('is not stale for a fresh timestamp', () => {
+    const model = normalizeHealthPayload({ status: 'ok', db: 'ok', timestamp: new Date().toISOString() })
+    expect(model.stale).toBe(false)
+    expect(model.overall).toBe('operational')
   })
 })

@@ -50,6 +50,7 @@ export interface HealthBuildSummary {
 export interface HealthDashboardModel {
   asOf: string
   overall: HealthStatus
+  stale: boolean
   healthEndpoint: HealthStatus
   database: HealthStatus
   platform: HealthStatus
@@ -61,6 +62,10 @@ export interface HealthDashboardModel {
 }
 
 const BASE_CHECK_DEFAULT = 'unknown'
+
+// A health signal older than this is treated as unverifiable (a frozen edge
+// instance or wedged checker would otherwise show stale green indefinitely).
+const MAX_HEALTH_AGE_MS = 90_000
 
 const defaultBuildSummary: HealthBuildSummary = {
   commitShaShort: null,
@@ -224,6 +229,10 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
   const healthStatus = normalizeStatus(body?.status)
   const endpointStatus = healthStatus
   const platformStatus = derivePlatformStatus(healthStatus, dbStatus)
+  const asOfIso = formatTimestamp(body?.timestamp, nowIso)
+  const ageMs = Date.now() - new Date(asOfIso).getTime()
+  const stale = Number.isFinite(ageMs) && ageMs > MAX_HEALTH_AGE_MS
+  const effectiveOverall: HealthStatus = stale ? 'unknown' : platformStatus
   const build = normalizeBuildSummary(body?.build)
   const whatsappStatus = normalizeProbeStatus(body?.whatsapp)
   const paymentsStatus = normalizeProbeStatus(body?.payments)
@@ -428,8 +437,9 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
   ])
 
   return {
-    asOf: formatTimestamp(body?.timestamp, nowIso),
-    overall: platformStatus,
+    asOf: asOfIso,
+    overall: effectiveOverall,
+    stale,
     healthEndpoint: endpointStatus,
     database: dbStatus,
     platform: platformStatus,
@@ -437,7 +447,7 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
     payments: paymentsStatus,
     groups,
     build,
-    botMessage,
+    botMessage: stale ? 'The latest health signal is out of date; status cannot be confirmed right now.' : botMessage,
   }
 }
 
@@ -669,6 +679,7 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
   return {
     asOf: nowIso,
     overall: unknownBase,
+    stale: true,
     healthEndpoint: unknownBase,
     database: unknownBase,
     platform: unknownBase,
