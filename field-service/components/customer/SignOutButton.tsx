@@ -1,24 +1,14 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { LogOut } from 'lucide-react'
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
+import { signOutClient } from '@/lib/auth-client-signout'
 
 export function SignOutButton() {
   const router = useRouter()
 
   async function handleSignOut() {
-    const supabase = getSupabase()
-    await supabase.auth.signOut().catch(() => undefined)
-    await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => undefined)
-    window.dispatchEvent(new Event('pap:auth-session-changed'))
+    await signOutClient()
     router.push('/sign-in')
   }
 

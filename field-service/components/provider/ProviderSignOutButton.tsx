@@ -2,23 +2,13 @@
 
 import { useRouter } from 'next/navigation'
 import { LogOut } from 'lucide-react'
-import { createClient } from '@supabase/supabase-js'
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
-}
+import { signOutClient } from '@/lib/auth-client-signout'
 
 export function ProviderSignOutButton() {
   const router = useRouter()
 
   async function handleSignOut() {
-    // Invalidate the Supabase session server-side (refresh token revocation)
-    await getSupabase().auth.signOut().catch(() => undefined)
-    // Clear the HttpOnly session cookie written by POST /api/auth/session
-    await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => undefined)
+    await signOutClient()
     router.push('/provider-sign-in')
   }
 
