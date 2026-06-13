@@ -259,6 +259,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.skill_category_review': {
+    description: 'When enabled, adding a skill to an already-existing provider (self-service profile edit or admin profile edit) creates a provider_categories review row — PENDING_REVIEW for non-LOW-risk categories — so high-risk skills added after approval require admin approval before matching surfaces them.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   // ─── Matching engine ─────────────────────────────────────────────────────────
   'matching.v2.candidate_pool': {
     description: 'Use precomputed candidate pool in the matching orchestrator instead of a live DB scan. Speeds up dispatch and reduces query load.',

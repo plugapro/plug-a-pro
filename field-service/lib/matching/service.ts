@@ -29,6 +29,7 @@ import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTrans
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import { isOutsideStandardLeadHours } from './filter'
+import { resolveServiceCategoryTag } from '../service-categories'
 import type {
   CoverageTier,
   DispatchActor,
@@ -1618,8 +1619,29 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
     requiredVehicleTypes: jobRequest.requiredVehicleTypes,
   })
 
+  // Per-category approval gate (mirrors lib/matching/filter.ts). A provider with
+  // an explicit PENDING_REVIEW / REJECTED row for the requested category is
+  // excluded; no row uses the permissive default (provider passes). This is what
+  // holds back high-risk skills added after approval until an admin approves them.
+  const categoryTag = resolveServiceCategoryTag(jobRequest.category) ?? jobRequest.category
+  const approvedCategoryById = new Map(
+    (
+      await db.providerCategory
+        .findMany({
+          where: { providerId: { in: providers.map((p) => p.id) }, categorySlug: categoryTag },
+          select: { providerId: true, approvalStatus: true },
+        })
+        .catch(() => [] as Array<{ providerId: string; approvalStatus: string }>)
+    ).map((row) => [row.providerId, row.approvalStatus]),
+  )
+
   for (const provider of providers) {
     const filteredReasonCodes: string[] = []
+
+    const categoryApprovalStatus = approvedCategoryById.get(provider.id)
+    if (!(categoryApprovalStatus == null || categoryApprovalStatus === 'APPROVED')) {
+      filteredReasonCodes.push('CATEGORY_NOT_APPROVED')
+    }
 
     if (!provider.active) filteredReasonCodes.push('TECHNICIAN_INACTIVE')
     if (!provider.availableNow) filteredReasonCodes.push('TECHNICIAN_NOT_AVAILABLE_NOW')

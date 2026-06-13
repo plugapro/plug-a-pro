@@ -1250,12 +1250,21 @@ export default async function ApplicationsPage({
 
           <div className="space-y-2">
             {approved.map((app) => {
-              const requestedCategories = Array.from(new Set(app.skills.map(resolveCategorySlug)))
-                .filter(Boolean)
-                .filter((slug) => slug.length > 0)
               const providerCategoryStatusBySlug = new Map(
                 (app.provider?.providerCategories ?? []).map((row) => [row.categorySlug, row.approvalStatus]),
               )
+              // Union the categories captured at application time with any rows
+              // created on the live provider afterwards (e.g. a skill added
+              // post-approval), so admins can review/approve categories that were
+              // never part of the original application.
+              const requestedCategories = Array.from(
+                new Set([
+                  ...app.skills.map(resolveCategorySlug),
+                  ...providerCategoryStatusBySlug.keys(),
+                ]),
+              )
+                .filter(Boolean)
+                .filter((slug) => slug.length > 0)
               const categoryStatuses = requestedCategories.map((categorySlug) =>
                 providerCategoryStatusBySlug.get(categorySlug) ?? 'PENDING_REVIEW',
               )
