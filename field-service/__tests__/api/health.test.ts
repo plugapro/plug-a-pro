@@ -57,6 +57,22 @@ describe('GET /api/health', () => {
     expect(body.status).toBe('degraded')
     expect(body.db).toBe('error')
     expect(typeof body.timestamp).toBe('string')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 200 with status maintenance and sanitized body when MAINTENANCE_MODE is set', async () => {
+    process.env.MAINTENANCE_MODE = '1'
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('maintenance')
+    expect(body).not.toHaveProperty('auth')
+    expect(body).not.toHaveProperty('build')
   })
 
   it('includes whatsapp field in response (unknown when credentials not set)', async () => {
