@@ -54,6 +54,10 @@ vi.mock('@/components/shared/bottom-nav', () => ({
   ),
 }))
 
+vi.mock('@/components/shared/AuthRefresh', () => ({
+  AuthRefresh: () => null,
+}))
+
 describe('customer layout auth-aware navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()

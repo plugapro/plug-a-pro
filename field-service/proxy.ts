@@ -180,7 +180,12 @@ export async function proxy(request: NextRequest) {
 
   // Allow public paths (checked against the internal path)
   if (isPublicPath(pathname)) {
-    return buildResponse()
+    // A signed-in view of a public page (e.g. the home greeting "Hi <name>") is
+    // personalised, so it must not be stored by the browser/bfcache — otherwise
+    // a Back navigation after sign-out can restore the stale authenticated view.
+    // Anonymous public responses stay cacheable.
+    const hasSession = Boolean(request.cookies.get('sb-access-token')?.value)
+    return hasSession ? buildResponse({ 'Cache-Control': 'no-store' }) : buildResponse()
   }
 
   // Read auth token from cookie
@@ -282,8 +287,14 @@ export async function proxy(request: NextRequest) {
       }
     }
 
-    // Inject user context into headers for downstream use
-    return buildResponse({ 'x-user-id': user.id, 'x-user-role': effectiveRole })
+    // Inject user context into headers for downstream use. no-store keeps
+    // authenticated pages out of the browser/bfcache so they can't be restored
+    // after sign-out (the cleared cookie then forces a fresh, redirected fetch).
+    return buildResponse({
+      'x-user-id': user.id,
+      'x-user-role': effectiveRole,
+      'Cache-Control': 'no-store',
+    })
   } catch {
     return redirectToSignIn(request, pathname, isAdminDomain)
   }

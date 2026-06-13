@@ -80,13 +80,32 @@ left unchanged because it was already correct.
   above, which together cover the full chain: sign-out → cookie cleared →
   `getSession()` null → no personalised greeting.
 
-## Remaining risks / follow-ups
+## Follow-up implemented same day — post-logout freshness hardening
 
-- Multi-tab: a *second* already-open tab on `/` is server-rendered and won't
-  re-render on the broadcast (bottom-nav re-probes, but the page body keeps its
-  SSR greeting until navigation/refresh). Acceptable for MVP; a follow-up could
-  have `AutoRefresh`/home subscribe to `pap:auth-session-changed`.
-- iOS Safari bfcache: back-nav after sign-out could momentarily show a cached
-  protected page before the cleared cookie forces a re-fetch. Not part of the
-  reported repro; consider `Cache-Control: no-store` on protected provider pages
-  if it surfaces.
+Both edge cases noted below were implemented in the same session (second commit):
+
+1. **Cross-tab / same-tab refresh.** `signOutClient()` now also writes a
+   `pap:auth-session-ping` localStorage key (fires a `storage` event in *other*
+   same-origin tabs). New `components/shared/AuthRefresh.tsx` (mounted in the
+   customer and provider layouts) calls `router.refresh()` on the same-tab
+   `pap:auth-session-changed` event and on the cross-tab `storage` ping, so an
+   already-open home/portal drops the stale "Hi <name>" without manual reload.
+2. **bfcache `no-store`.** `proxy.ts` now sets `Cache-Control: no-store` on (a)
+   all authenticated/protected responses and (b) public pages *when a session
+   cookie is present* (so a signed-in home view isn't bfcached, while anonymous
+   public caching is untouched). After sign-out, a Back navigation re-requests
+   and the cleared cookie forces the neutral/redirected render.
+
+Tests: extended `auth-client-signout.test.ts` (asserts the cross-tab ping),
+extended `proxy.test.ts` (authenticated → no-store; signed-in public home →
+no-store; anonymous public home → cacheable). Full suite: 4332 passed, 1 skipped,
+0 failed. Lint + `tsc --noEmit` clean.
+
+## Remaining risks
+
+- Cross-tab refresh relies on the `storage` event, which does not fire if
+  localStorage is unavailable (private mode / disabled) — falls back to the
+  bottom-nav's existing focus/visibility re-probe when the user returns to the tab.
+- `no-store` on signed-in public pages slightly reduces cache reuse for logged-in
+  users; deliberate trade-off for identity-correctness. Anonymous traffic (the
+  cacheable majority) is unaffected.

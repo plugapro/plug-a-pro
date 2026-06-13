@@ -18,6 +18,7 @@ import { siteConfig } from '@/lib/metadata'
 import { BottomNav, type BottomNavItem } from '@/components/shared/bottom-nav'
 import { BusinessTypePrompt } from '@/components/customer/BusinessTypePrompt'
 import { InstallPrompt } from '@/components/shared/InstallPrompt'
+import { AuthRefresh } from '@/components/shared/AuthRefresh'
 
 export const metadata: Metadata = {
   title: {
@@ -128,6 +129,7 @@ export default async function CustomerLayout({
         }}
       />
       <InstallPrompt />
+      <AuthRefresh />
       {showBusinessPrompt && <BusinessTypePrompt />}
     </div>
   )

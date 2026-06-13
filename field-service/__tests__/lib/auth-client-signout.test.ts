@@ -14,14 +14,16 @@ vi.mock('@supabase/supabase-js', () => ({
 describe('signOutClient', () => {
   let fetchSpy: ReturnType<typeof vi.fn>
   let dispatchSpy: ReturnType<typeof vi.fn>
+  let setItemSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.resetModules()
     signOutSpy.mockReset().mockResolvedValue(undefined)
     fetchSpy = vi.fn().mockResolvedValue({ ok: true })
     dispatchSpy = vi.fn()
+    setItemSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
-    vi.stubGlobal('window', { dispatchEvent: dispatchSpy })
+    vi.stubGlobal('window', { dispatchEvent: dispatchSpy, localStorage: { setItem: setItemSpy } })
   })
 
   afterEach(() => {
@@ -29,7 +31,9 @@ describe('signOutClient', () => {
   })
 
   it('revokes the Supabase session, clears the HttpOnly cookie, and broadcasts the change', async () => {
-    const { signOutClient, AUTH_SESSION_CHANGED_EVENT } = await import('@/lib/auth-client-signout')
+    const { signOutClient, AUTH_SESSION_CHANGED_EVENT, AUTH_SESSION_PING_KEY } = await import(
+      '@/lib/auth-client-signout'
+    )
 
     await signOutClient()
 
@@ -38,6 +42,8 @@ describe('signOutClient', () => {
     expect(fetchSpy).toHaveBeenCalledWith('/api/auth/session', { method: 'DELETE' })
     expect(dispatchSpy).toHaveBeenCalledTimes(1)
     expect(dispatchSpy.mock.calls[0][0]).toMatchObject({ type: AUTH_SESSION_CHANGED_EVENT })
+    // Cross-tab signal so other open tabs drop stale personalised content.
+    expect(setItemSpy).toHaveBeenCalledWith(AUTH_SESSION_PING_KEY, expect.any(String))
   })
 
   it('still clears the cookie when Supabase signOut rejects', async () => {

@@ -7,6 +7,9 @@ import { createClient } from '@supabase/supabase-js'
 // Supabase session and left the HttpOnly cookie intact, so the server-rendered
 // customer home still resolved the old session.
 export const AUTH_SESSION_CHANGED_EVENT = 'pap:auth-session-changed'
+// localStorage key written on sign-out purely to fire a cross-tab `storage`
+// event. The value is a throwaway timestamp; only the change matters.
+export const AUTH_SESSION_PING_KEY = 'pap:auth-session-ping'
 
 export async function signOutClient(): Promise<void> {
   // 1. Revoke the Supabase refresh token and clear the client-side (localStorage)
@@ -36,5 +39,14 @@ export async function signOutClient(): Promise<void> {
   //    auth so they don't keep showing a signed-in account item after sign-out.
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(AUTH_SESSION_CHANGED_EVENT))
+    // Cross-tab: a localStorage write fires a `storage` event in OTHER tabs of
+    // the same origin, so an already-open home/portal there can drop stale
+    // personalised content (e.g. still showing "Hi <name>"). Best-effort:
+    // storage can be unavailable (private mode / disabled).
+    try {
+      window.localStorage.setItem(AUTH_SESSION_PING_KEY, String(Date.now()))
+    } catch {
+      // best-effort
+    }
   }
 }

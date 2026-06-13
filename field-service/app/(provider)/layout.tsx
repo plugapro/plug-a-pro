@@ -3,6 +3,7 @@
 import { Home, Inbox, Briefcase, CircleUser, Coins } from 'lucide-react'
 import { requireProvider } from '@/lib/auth'
 import { BottomNav, type BottomNavItem } from '@/components/shared/bottom-nav'
+import { AuthRefresh } from '@/components/shared/AuthRefresh'
 
 const ICON_SIZE = 20
 
@@ -27,6 +28,7 @@ export default async function ProviderLayout({
         {children}
       </main>
       <BottomNav items={navItems} />
+      <AuthRefresh />
     </div>
   )
 }

@@ -62,6 +62,8 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBeNull()
     expect(res.headers.get('x-user-id')).toBe('user-ops-1')
     expect(res.headers.get('x-user-role')).toBe('ops')
+    // Authenticated pages must not be stored by the browser/bfcache.
+    expect(res.headers.get('cache-control')).toBe('no-store')
   })
 
   it('redirects inactive AdminUser accounts away from admin routes', async () => {
@@ -691,5 +693,35 @@ describe('proxy admin access', () => {
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toContain('/sign-in')
     expect(mockGetUser).not.toHaveBeenCalled()
+  })
+})
+
+describe('proxy bfcache hardening on public pages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost:54321'
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
+  })
+
+  it('marks a signed-in view of the public home no-store so Back after sign-out cannot restore it', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(
+      new NextRequest('http://localhost/', { headers: { cookie: 'sb-access-token=test-token' } }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    // Public branch must not pay the cost of verifying the token.
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('leaves the anonymous public home cacheable (no no-store)', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).not.toBe('no-store')
   })
 })
