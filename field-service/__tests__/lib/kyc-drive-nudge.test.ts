@@ -103,6 +103,7 @@ describe('sendKycDriveNudges', () => {
   function deps() {
     return {
       issueLink: vi.fn().mockResolvedValue({ verificationUrl: 'https://app.example/provider/verify/tok123' }),
+      recordAttempt: vi.fn().mockResolvedValue(undefined),
       send: vi.fn().mockResolvedValue('wamid.1'),
     }
   }
@@ -123,6 +124,18 @@ describe('sendKycDriveNudges', () => {
       deadline: '30 June 2026',
       verificationUrl: 'https://app.example/provider/verify/tok123',
     }))
+    expect(d.recordAttempt).toHaveBeenCalledTimes(2)
+    expect(d.recordAttempt.mock.invocationCallOrder[0]).toBeLessThan(d.send.mock.invocationCallOrder[0])
+  })
+
+  it('never sends when the attempt cannot be recorded', async () => {
+    const client = clientWith([provider({ id: 'a', phone: '+27820000001' })])
+    const d = deps()
+    d.recordAttempt.mockRejectedValue(new Error('db down'))
+    const result = await sendKycDriveNudges(client, { deadline: '30 June 2026', batchCap: 10, deps: d, now: NOW })
+    expect(result.sent).toBe(0)
+    expect(result.errors).toBe(1)
+    expect(d.send).not.toHaveBeenCalled()
   })
 
   it('isolates per-provider failures and keeps sending', async () => {

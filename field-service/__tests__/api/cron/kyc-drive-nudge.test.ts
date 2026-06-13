@@ -14,6 +14,7 @@ const { mockIssueLink, mockSendTemplate } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/kyc-drive/nudge', () => ({
+  KYC_DRIVE_TEMPLATE: 'provider_kyc_nudge',
   listKycNudgeCandidates: mockListCandidates,
   sendKycDriveNudges: mockSendNudges,
   summarizeKycNudgeRows: mockSummarize,

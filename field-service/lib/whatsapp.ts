@@ -869,6 +869,10 @@ export async function sendProviderKycNudge(params: {
   // The signed verification link must travel as a URL button parameter only,
   // mirroring provider job-offer links: the token must never be visible in the
   // WhatsApp chat transcript as body text.
+  //
+  // Deliberately does NOT log a MessageEvent: the kyc-drive orchestrator
+  // records the attempt BEFORE sending so the politeness cadence (max sends,
+  // spacing) can never be lost to a post-send logging failure.
   const externalId = await sendTemplate({
     to: params.providerPhone,
     template: 'provider_kyc_nudge',
@@ -883,12 +887,6 @@ export async function sendProviderKycNudge(params: {
       },
       providerVerifyButtonComponent(0, params.verificationUrl),
     ],
-  })
-  await logOutboundMessage({
-    to: params.providerPhone,
-    templateName: 'provider_kyc_nudge',
-    externalId,
-    metadata: params.metadata,
   })
   return externalId
 }

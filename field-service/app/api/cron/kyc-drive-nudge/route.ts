@@ -8,10 +8,12 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import {
+  KYC_DRIVE_TEMPLATE,
   listKycNudgeCandidates,
   sendKycDriveNudges,
   summarizeKycNudgeRows,
 } from '@/lib/kyc-drive/nudge'
+import { logOutboundMessage } from '@/lib/message-events'
 import { sendProviderKycNudge } from '@/lib/whatsapp'
 
 const DEFAULT_BATCH_CAP = 25
@@ -79,6 +81,8 @@ export async function GET(request: Request) {
       batchCap,
       deps: {
         issueLink: ({ providerId }) => issueProviderIdentityVerificationLink({ providerId, channel: 'WHATSAPP' }),
+        recordAttempt: ({ to, metadata }) =>
+          logOutboundMessage({ to, templateName: KYC_DRIVE_TEMPLATE, metadata }),
         send: sendProviderKycNudge,
       },
     })

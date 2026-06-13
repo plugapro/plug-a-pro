@@ -156,6 +156,12 @@ export function summarizeKycNudgeRows(rows: KycNudgeCandidate[]) {
 
 export type SendKycDriveNudgesDeps = {
   issueLink(input: { providerId: string }): Promise<{ verificationUrl: string | null }>
+  // Writes the cadence MessageEvent. Called BEFORE send: if the attempt cannot
+  // be recorded, the message is not sent. This makes the politeness invariants
+  // (max nudges, spacing) hold even when a run crashes mid-batch or a post-send
+  // write would have failed — a provider can never receive more messages than
+  // recorded attempts.
+  recordAttempt(params: { to: string; metadata: Record<string, unknown> }): Promise<unknown>
   send(params: {
     providerPhone: string
     providerFirstName: string
@@ -188,12 +194,16 @@ export async function sendKycDriveNudges(
         console.error('[kyc-drive] no verification URL issued', { providerId: candidate.providerId })
         continue
       }
+      const metadata = { kycDrive: true, providerId: candidate.providerId }
+      // Attempt-first: consume the nudge slot before any message can go out.
+      // A failed send after this point burns a slot — polite bias by design.
+      await opts.deps.recordAttempt({ to: candidate.phone, metadata })
       await opts.deps.send({
         providerPhone: candidate.phone,
         providerFirstName: candidate.firstName,
         deadline: opts.deadline,
         verificationUrl,
-        metadata: { kycDrive: true, providerId: candidate.providerId },
+        metadata,
       })
       sent += 1
     } catch (error) {
