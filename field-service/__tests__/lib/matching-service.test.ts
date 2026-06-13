@@ -65,6 +65,7 @@ const {
     technicianScheduleItem: { create: vi.fn(), updateMany: vi.fn() },
     match: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
     providerCapacity: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    providerCategory: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },
   mockNotifyProviderNewJob: vi.fn().mockResolvedValue(undefined),
@@ -93,6 +94,9 @@ describe('matching service', () => {
     mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) =>
       callback(mockDb as any)
     )
+    // Default: no per-category review rows ⇒ permissive default (provider passes
+    // the category gate). Individual tests override this to assert blocking.
+    mockDb.providerCategory.findMany.mockResolvedValue([])
     mockDb.dispatchDecision.create.mockResolvedValue({
       id: 'decision-1',
       status: 'RANKED',
@@ -341,6 +345,168 @@ describe('matching service', () => {
         }),
       ]),
     )
+  })
+
+  it('excludes an otherwise-eligible provider whose category approval is PENDING_REVIEW', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      id: 'jr-cat-pending',
+      category: 'electrical',
+      title: 'DB board issue',
+      description: 'Need electrician',
+      requestedWindowStart: new Date('2026-04-14T09:00:00.000Z'),
+      requestedWindowEnd: new Date('2026-04-14T11:00:00.000Z'),
+      requestedArrivalLatest: null,
+      estimatedDurationMinutes: 120,
+      requiredSkillTags: ['electrical'],
+      requiredCertificationCodes: ['WIREMAN'],
+      requiredEquipmentTags: [],
+      requiredVehicleTypes: [],
+      preferredProviderId: null,
+      assignmentMode: 'AUTO_ASSIGN',
+      customerAcceptedAmount: null,
+      customerAcceptedScope: null,
+      autoCreateBookingOnAssignment: false,
+      status: 'OPEN',
+      address: {
+        street: '1 Main St',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        lat: null,
+        lng: null,
+      },
+      customer: { id: 'customer-1', name: 'Alice', phone: '+27820000000' },
+    })
+    mockDb.provider.findMany.mockResolvedValue([
+      {
+        id: 'provider-good',
+        name: 'Good Fit',
+        phone: '+27110000001',
+        active: true,
+        availableNow: true,
+        verified: true,
+        skills: ['electrical'],
+        serviceAreas: ['Sandton'],
+        averageRating: 4.8,
+        reliabilityScore: 0.9,
+        completedJobsCount: 30,
+        onTimeRate: 0.95,
+        acceptanceRate: 0.92,
+        complaintCount: 0,
+        complaintRate: 0,
+        providerCancellationCount: 0,
+        cancellationRate: 0,
+        lateArrivalCount: 0,
+        punctualityScore: 0.98,
+        maxTravelMinutes: 90,
+        lastKnownLat: null,
+        lastKnownLng: null,
+        lastKnownLocationLabel: null,
+        lastKnownLocationAt: null,
+        equipmentTags: ['multimeter'],
+        vehicleTypes: ['van'],
+        technicianSkills: [{ skillTag: 'electrical' }],
+        technicianCertifications: [{ certificationCode: 'WIREMAN', status: 'REVIEWED' }],
+        technicianServiceAreas: [{ label: 'Sandton', city: 'Johannesburg', active: true }],
+        technicianAvailability: { availabilityState: 'AVAILABLE', nextAvailableAt: null, breakUntil: null },
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '17:00', active: true }],
+        scheduleItems: [],
+        matches: [],
+        jobs: [],
+      },
+    ])
+    // A pending review row for this provider+category must block the assign path.
+    mockDb.providerCategory.findMany.mockResolvedValue([
+      { providerId: 'provider-good', approvalStatus: 'PENDING_REVIEW' },
+    ])
+
+    const result = await rankCandidatesForJobRequest('jr-cat-pending')
+
+    expect(result.eligibleCount).toBe(0)
+    expect(result.filteredOut).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: 'provider-good',
+          filteredReasonCodes: expect.arrayContaining(['CATEGORY_NOT_APPROVED']),
+        }),
+      ]),
+    )
+  })
+
+  it('passes a provider with no category review row (permissive default)', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      id: 'jr-cat-none',
+      category: 'electrical',
+      title: 'DB board issue',
+      description: 'Need electrician',
+      requestedWindowStart: new Date('2026-04-14T09:00:00.000Z'),
+      requestedWindowEnd: new Date('2026-04-14T11:00:00.000Z'),
+      requestedArrivalLatest: null,
+      estimatedDurationMinutes: 120,
+      requiredSkillTags: ['electrical'],
+      requiredCertificationCodes: ['WIREMAN'],
+      requiredEquipmentTags: [],
+      requiredVehicleTypes: [],
+      preferredProviderId: null,
+      assignmentMode: 'AUTO_ASSIGN',
+      customerAcceptedAmount: null,
+      customerAcceptedScope: null,
+      autoCreateBookingOnAssignment: false,
+      status: 'OPEN',
+      address: {
+        street: '1 Main St',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        lat: null,
+        lng: null,
+      },
+      customer: { id: 'customer-1', name: 'Alice', phone: '+27820000000' },
+    })
+    mockDb.provider.findMany.mockResolvedValue([
+      {
+        id: 'provider-good',
+        name: 'Good Fit',
+        phone: '+27110000001',
+        active: true,
+        availableNow: true,
+        verified: true,
+        skills: ['electrical'],
+        serviceAreas: ['Sandton'],
+        averageRating: 4.8,
+        reliabilityScore: 0.9,
+        completedJobsCount: 30,
+        onTimeRate: 0.95,
+        acceptanceRate: 0.92,
+        complaintCount: 0,
+        complaintRate: 0,
+        providerCancellationCount: 0,
+        cancellationRate: 0,
+        lateArrivalCount: 0,
+        punctualityScore: 0.98,
+        maxTravelMinutes: 90,
+        lastKnownLat: null,
+        lastKnownLng: null,
+        lastKnownLocationLabel: null,
+        lastKnownLocationAt: null,
+        equipmentTags: ['multimeter'],
+        vehicleTypes: ['van'],
+        technicianSkills: [{ skillTag: 'electrical' }],
+        technicianCertifications: [{ certificationCode: 'WIREMAN', status: 'REVIEWED' }],
+        technicianServiceAreas: [{ label: 'Sandton', city: 'Johannesburg', active: true }],
+        technicianAvailability: { availabilityState: 'AVAILABLE', nextAvailableAt: null, breakUntil: null },
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '17:00', active: true }],
+        scheduleItems: [],
+        matches: [],
+        jobs: [],
+      },
+    ])
+    mockDb.providerCategory.findMany.mockResolvedValue([]) // no row ⇒ passes
+
+    const result = await rankCandidatesForJobRequest('jr-cat-none')
+
+    expect(result.eligibleCount).toBe(1)
+    expect(result.candidates[0].providerId).toBe('provider-good')
   })
 
   it('scores a preferred repeat technician ahead of an equally feasible alternative', async () => {
