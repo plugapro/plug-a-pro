@@ -307,7 +307,7 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'provider.identity.verification': {
-    description: 'Gate paid credit purchases (Pay@, Payfast, Manual EFT) behind HIGH-assurance identity verification. Disable to roll back without a deploy.',
+    description: 'Gate paid credit purchases (Pay@, Manual EFT) behind HIGH-assurance identity verification. Disable to roll back without a deploy.',
     owner: 'eng',
     defaultValue: false,
   },

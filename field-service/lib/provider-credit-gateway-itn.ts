@@ -1,10 +1,9 @@
 /**
  * Gateway ITN crediting service.
  *
- * Called exclusively by the Payfast ITN webhook handler after a payment
- * notification has been fully verified (source IP + signature + COMPLETE
- * status + amount match). This module must NOT be exposed as a public API
- * route or server action.
+ * Called by payment webhook handlers after a payment notification has been fully
+ * verified (signature + complete status + amount match). This module must NOT be
+ * exposed as a public API route or server action.
  *
  * Responsibilities:
  *   - Idempotent crediting of a provider wallet from a verified ITN
@@ -45,16 +44,17 @@ type CreditFromItnResult =
   | { credited: false; reason: string }
 
 type GatewayCreditSource = {
-  gatewayLabel: 'Payfast' | 'Pay@'
-  createdBy: 'payfast-itn' | 'payat-webhook'
+  gatewayLabel: 'Pay@'
+  createdBy: 'payat-webhook'
 }
 
 /**
- * Credit a provider's wallet from a verified Payfast ITN.
+ * Credit a provider's wallet from a verified gateway notification.
  *
  * Returns `{ credited: true }` on success or `{ credited: false, reason }`
  * when the intent is not found, already credited or in a non-creditable state.
- * Never throws - callers (the ITN handler) log failures and return HTTP 200.
+ * Never throws for expected no-op states; callers log unexpected failures and
+ * return the gateway-appropriate HTTP response.
  */
 async function creditProviderWalletFromGatewayIntent(
   intentId: string,
@@ -162,7 +162,8 @@ async function creditProviderWalletFromGatewayIntent(
     if (error instanceof AlreadyCreditedError) {
       return { credited: false, reason: 'already credited (concurrent call)' }
     }
-    // Re-throw so the ITN handler can log the stack and return 200 to Payfast.
+    // Re-throw so the webhook handler can log the stack and return a
+    // gateway-appropriate response.
     throw error
   }
 
@@ -176,16 +177,6 @@ async function creditProviderWalletFromGatewayIntent(
   })
 
   return { credited: true, ledgerEntryId }
-}
-
-export async function creditProviderWalletFromGatewayItn(
-  intentId: string,
-): Promise<CreditFromItnResult> {
-  // Payfast ITNs use the shared gateway crediting path after adapter validation.
-  return creditProviderWalletFromGatewayIntent(intentId, {
-    gatewayLabel: 'Payfast',
-    createdBy: 'payfast-itn',
-  })
 }
 
 export async function creditProviderWalletFromPayatWebhook(

@@ -1,5 +1,5 @@
 /**
- * Tests for the gateway ITN crediting service.
+ * Tests for the gateway webhook crediting service.
  *
  * Verifies idempotency, correct ledger entry creation, wallet balance
  * increments and that post-credit notifications fire outside the transaction.
@@ -78,10 +78,10 @@ function makeIntent(overrides: Record<string, unknown> = {}) {
     providerId: 'provider-1',
     amountCents: 10_000,
     creditsToIssue: 2,
-    paymentReference: 'PF-AABBCC',
+    paymentReference: 'PAT-AABBCC',
     status: 'ITN_RECEIVED',
     creditedAt: null,
-    itnPaymentStatus: 'COMPLETE',
+    itnPaymentStatus: 'PAID',
     provider: { isTestUser: false, cohortName: null },
     ...overrides,
   }
@@ -100,7 +100,7 @@ function makeWallet(overrides: Record<string, unknown> = {}) {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('creditProviderWalletFromGatewayItn', () => {
+describe('creditProviderWalletFromPayatWebhook', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     walletState.intent = makeIntent()
@@ -134,21 +134,21 @@ describe('creditProviderWalletFromGatewayItn', () => {
     })
   })
 
-  it('credits wallet with correct paid credits for a valid ITN_RECEIVED intent', async () => {
-    const { creditProviderWalletFromGatewayItn } = await import(
+  it('credits wallet with correct paid credits for a verified Pay@ intent', async () => {
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    const result = await creditProviderWalletFromGatewayItn('intent-1')
+    const result = await creditProviderWalletFromPayatWebhook('intent-1')
 
     expect(result).toMatchObject({ credited: true })
     expect(walletState.wallet!.paidCreditBalance).toBe(2)
   })
 
   it('creates a ledger entry with correct fields', async () => {
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    await creditProviderWalletFromGatewayItn('intent-1')
+    await creditProviderWalletFromPayatWebhook('intent-1')
 
     expect(walletState.ledgerEntries).toHaveLength(1)
     expect(walletState.ledgerEntries[0]).toMatchObject({
@@ -160,10 +160,10 @@ describe('creditProviderWalletFromGatewayItn', () => {
   })
 
   it('marks the intent as CREDITED', async () => {
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    await creditProviderWalletFromGatewayItn('intent-1')
+    await creditProviderWalletFromPayatWebhook('intent-1')
 
     expect(walletState.intent!.status).toBe('CREDITED')
     expect(walletState.intent!.creditedAt).toBeTruthy()
@@ -171,39 +171,39 @@ describe('creditProviderWalletFromGatewayItn', () => {
 
   it('returns credited: false when intent is not found', async () => {
     mockDb.paymentIntent.findUnique.mockResolvedValue(null)
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    const result = await creditProviderWalletFromGatewayItn('nonexistent')
+    const result = await creditProviderWalletFromPayatWebhook('nonexistent')
     expect(result).toMatchObject({ credited: false, reason: 'intent not found' })
   })
 
   it('returns credited: false when intent is already CREDITED (idempotency)', async () => {
     walletState.intent = makeIntent({ status: 'CREDITED', creditedAt: new Date() })
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    const result = await creditProviderWalletFromGatewayItn('intent-1')
+    const result = await creditProviderWalletFromPayatWebhook('intent-1')
     expect(result).toMatchObject({ credited: false, reason: 'already credited' })
   })
 
   it('does not increment wallet balance on second call for same intent', async () => {
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    await creditProviderWalletFromGatewayItn('intent-1')
+    await creditProviderWalletFromPayatWebhook('intent-1')
     // Now intent is CREDITED - second call should be no-op.
-    const second = await creditProviderWalletFromGatewayItn('intent-1')
+    const second = await creditProviderWalletFromPayatWebhook('intent-1')
     expect(second).toMatchObject({ credited: false })
     // Balance still 2, not 4.
     expect(walletState.wallet!.paidCreditBalance).toBe(2)
   })
 
   it('emits a WhatsApp notification after successful credit', async () => {
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    await creditProviderWalletFromGatewayItn('intent-1')
+    await creditProviderWalletFromPayatWebhook('intent-1')
     // Notification is async fire-and-forget; wait a tick.
     await new Promise((r) => setTimeout(r, 0))
     expect(mockNotify).toHaveBeenCalledWith('intent-1')
@@ -211,20 +211,20 @@ describe('creditProviderWalletFromGatewayItn', () => {
 
   it('does not emit notification when already credited', async () => {
     walletState.intent = makeIntent({ status: 'CREDITED', creditedAt: new Date() })
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    await creditProviderWalletFromGatewayItn('intent-1')
+    await creditProviderWalletFromPayatWebhook('intent-1')
     await new Promise((r) => setTimeout(r, 0))
     expect(mockNotify).not.toHaveBeenCalled()
   })
 
   it('returns credited: false for a non-creditable intent status (FAILED)', async () => {
     walletState.intent = makeIntent({ status: 'FAILED' })
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    const result = await creditProviderWalletFromGatewayItn('intent-1')
+    const result = await creditProviderWalletFromPayatWebhook('intent-1')
     expect(result).toMatchObject({ credited: false, reason: expect.stringContaining('FAILED') })
   })
 
@@ -232,10 +232,10 @@ describe('creditProviderWalletFromGatewayItn', () => {
   // then pays it at the till still receives their credits (money-safe path).
   it('credits wallet for a CANCELLED intent (honor-late-payment)', async () => {
     walletState.intent = makeIntent({ status: 'CANCELLED' })
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
-    const result = await creditProviderWalletFromGatewayItn('intent-1')
+    const result = await creditProviderWalletFromPayatWebhook('intent-1')
 
     expect(result).toMatchObject({ credited: true })
     expect(walletState.wallet!.paidCreditBalance).toBe(2)
@@ -244,15 +244,15 @@ describe('creditProviderWalletFromGatewayItn', () => {
 
   it('does not double-credit a CANCELLED intent on a second webhook call', async () => {
     walletState.intent = makeIntent({ status: 'CANCELLED' })
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
 
-    const first = await creditProviderWalletFromGatewayItn('intent-1')
+    const first = await creditProviderWalletFromPayatWebhook('intent-1')
     expect(first).toMatchObject({ credited: true })
 
     // Second call: intent is now CREDITED - should be idempotent no-op.
-    const second = await creditProviderWalletFromGatewayItn('intent-1')
+    const second = await creditProviderWalletFromPayatWebhook('intent-1')
     expect(second).toMatchObject({ credited: false })
     expect(walletState.wallet!.paidCreditBalance).toBe(2)
   })
@@ -266,13 +266,13 @@ describe('creditProviderWalletFromGatewayItn', () => {
       return { count: 0 }
     })
 
-    const { creditProviderWalletFromGatewayItn } = await import(
+    const { creditProviderWalletFromPayatWebhook } = await import(
       '../../lib/provider-credit-gateway-itn'
     )
 
     const [first, second] = await Promise.all([
-      creditProviderWalletFromGatewayItn('intent-1'),
-      creditProviderWalletFromGatewayItn('intent-1'),
+      creditProviderWalletFromPayatWebhook('intent-1'),
+      creditProviderWalletFromPayatWebhook('intent-1'),
     ])
 
     const creditedCount = [first, second].filter((r) => r.credited).length

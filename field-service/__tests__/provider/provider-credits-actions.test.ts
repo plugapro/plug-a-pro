@@ -42,7 +42,6 @@ vi.mock('../../lib/provider-wallet', () => ({
 vi.mock('../../lib/provider-credit-payment-intents', () => ({
   createPayatTopUpIntent: vi.fn(),
   createManualEftTopUpIntent: vi.fn(),
-  createPayfastTopUpIntent: vi.fn(),
   logBlockedProviderCreditTopUpAttempt: vi.fn(),
   ProviderCreditPaymentIntentError: class ProviderCreditPaymentIntentError extends Error {
     constructor(public readonly code: string, message: string) {
@@ -494,73 +493,6 @@ describe('provider credits server actions', () => {
       ok: false,
       code: 'FORBIDDEN',
       message: 'Top-ups are available after your identity has been verified.',
-    })
-  })
-
-  describe('createProviderPayfastTopUpIntent', () => {
-    it('blocks unverified providers before Payfast intent creation', async () => {
-      const { db } = await arrangeProvider()
-      const { isProviderEligibleForCredits } = await import('../../lib/identity-verification/credit-gate')
-      const { createPayfastTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
-      ;(isProviderEligibleForCredits as any).mockResolvedValue(false)
-
-      const { createProviderPayfastTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
-      const result = await createProviderPayfastTopUpIntent(10_000)
-
-      expect(result).toMatchObject({ ok: false, code: 'IDENTITY_NOT_VERIFIED' })
-      expect(db.paymentIntent.count).not.toHaveBeenCalled()
-      expect(createPayfastTopUpIntent).not.toHaveBeenCalled()
-    })
-
-    it('returns TOO_MANY_PENDING discriminated union (not throw) when count >= 3', async () => {
-      const { db } = await arrangeProvider()
-      ;(db.paymentIntent.count as any).mockResolvedValue(3)
-
-      const { createProviderPayfastTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
-      const result = await createProviderPayfastTopUpIntent(10_000)
-
-      expect(result).toMatchObject({ ok: false, code: 'TOO_MANY_PENDING' })
-    })
-
-    it('returns ok:true with checkout when payment layer succeeds', async () => {
-      const { db } = await arrangeProvider()
-      ;(db.paymentIntent.count as any).mockResolvedValue(0)
-      const { createPayfastTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
-      ;(createPayfastTopUpIntent as any).mockResolvedValue({
-        intent: { id: 'pf-intent-1' },
-        checkout: { action: 'https://sandbox.payfast.co.za/eng/process', fields: {} },
-      })
-
-      const { createProviderPayfastTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
-      const result = await createProviderPayfastTopUpIntent(10_000)
-
-      expect(result).toMatchObject({
-        ok: true,
-        intentId: 'pf-intent-1',
-        checkout: expect.objectContaining({ action: expect.stringContaining('payfast') }),
-      })
-    })
-
-    it('returns IDENTITY_NOT_VERIFIED when payfast is blocked by identity gate', async () => {
-      const { db } = await arrangeProvider()
-      ;(db.paymentIntent.count as any).mockResolvedValue(0)
-      const { createPayfastTopUpIntent, ProviderCreditPaymentIntentError } = await import(
-        '../../lib/provider-credit-payment-intents'
-      )
-      ;(createPayfastTopUpIntent as any).mockRejectedValue(
-        new ProviderCreditPaymentIntentError(
-          'IDENTITY_NOT_VERIFIED',
-          'Identity verification is required before creating a paid top-up.',
-        ),
-      )
-
-      const { createProviderPayfastTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
-      const result = await createProviderPayfastTopUpIntent(10_000)
-
-      expect(result).toMatchObject({ ok: false, code: 'IDENTITY_NOT_VERIFIED' })
-      if (result.ok === false) {
-        expect(result.userMessage).toContain('verification')
-      }
     })
   })
 

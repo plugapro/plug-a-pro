@@ -3,7 +3,6 @@ import {
   buildCustomerIntroMessage,
   buildLeadUnlockedProviderMessage,
   buildLowBalanceWarningMessage,
-  buildPayfastTopUpInitiatedMessage,
   buildPaymentCreditedMessage,
   buildPaymentIntentCreatedMessage,
   buildPayatTopUpInitiatedMessage,
@@ -104,60 +103,6 @@ describe('provider wallet notification message builders', () => {
     expect(buildCustomerIntroMessage({ providerName: 'Sipho Pro' })).toBe(
       'Good news - we matched you with Sipho Pro. They may contact you shortly.',
     )
-  })
-
-  describe('buildPayfastTopUpInitiatedMessage', () => {
-    it('includes the formatted amount and credit count', () => {
-      const message = buildPayfastTopUpInitiatedMessage({
-        amountFormatted: 'R 100,00',
-        creditsToIssue: 2,
-      })
-      expect(message).toContain('R 100,00')
-      expect(message).toContain('2 credits')
-    })
-
-    it('includes the checkout instruction', () => {
-      const message = buildPayfastTopUpInitiatedMessage({
-        amountFormatted: 'R 200,00',
-        creditsToIssue: 4,
-      })
-      expect(message).toContain('Complete your payment on the checkout page')
-    })
-
-    it('includes the pending confirmation note', () => {
-      const message = buildPayfastTopUpInitiatedMessage({
-        amountFormatted: 'R 500,00',
-        creditsToIssue: 10,
-      })
-      expect(message).toContain('Credits will appear in your wallet once Payfast confirms payment')
-      expect(message).toContain('1 credit is used only when a customer selects you')
-    })
-
-    it('does not leak any URL or localhost into the body - URLs travel via CTA buttons only', () => {
-      vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
-      vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
-      vi.stubEnv('NODE_ENV', 'production')
-
-      const messages = [
-        buildLowBalanceWarningMessage(),
-        buildZeroBalanceLeadAvailableMessage(),
-      ].join('\n')
-
-      expect(messages).not.toMatch(/https?:\/\//)
-      expect(messages).not.toContain('app.plugapro.co.za')
-      expect(messages).not.toContain('localhost')
-      expect(messages).not.toContain('127.0.0.1')
-    })
-
-    it('does not contain bank account details', () => {
-      const message = buildPayfastTopUpInitiatedMessage({
-        amountFormatted: 'R 100,00',
-        creditsToIssue: 2,
-      })
-      expect(message).not.toContain('Account name')
-      expect(message).not.toContain('Branch code')
-      expect(message).not.toContain('Use exact reference')
-    })
   })
 
   describe('buildPayatTopUpInitiatedMessage', () => {
