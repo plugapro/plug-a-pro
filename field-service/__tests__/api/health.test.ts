@@ -78,6 +78,8 @@ describe('GET /api/health', () => {
     expect(body.status).toBe('maintenance')
     expect(body).not.toHaveProperty('auth')
     expect(body).not.toHaveProperty('build')
+    // Maintenance must skip all probes — the DB is never queried.
+    expect((db.$queryRaw as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
   })
 
   it('includes whatsapp field in response (unknown when credentials not set)', async () => {
@@ -114,6 +116,24 @@ describe('GET /api/health', () => {
       }),
     )
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain('access_token=')
+  })
+
+  it('trims a trailing newline from the WhatsApp token (Vercel env paste hardening)', async () => {
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-wa-token\n'
+    process.env.WHATSAPP_PHONE_NUMBER_ID = 'phone-id-1'
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+
+    const { GET } = await import('../../app/api/health/route')
+    await GET()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v21.0/phone-id-1?fields=display_phone_number',
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-wa-token' } }),
+    )
   })
 
   it('includes payments field in response (unknown when credentials not set)', async () => {

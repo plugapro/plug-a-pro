@@ -5,7 +5,10 @@ const COMMIT_SHA = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT_S
 const COMMIT_REF = process.env.VERCEL_GIT_COMMIT_REF ?? process.env.GIT_COMMIT_REF ?? null
 const BUILT_AT = process.env.VERCEL_DEPLOYMENT_CREATED_AT ?? null
 
-const WHATSAPP_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN ?? null
+// Mirror lib/whatsapp.ts:83 — strip a trailing newline/whitespace that Vercel
+// env paste can introduce, so a corrupted token doesn't make the probe report a
+// false WhatsApp 'error' while real sends (which strip it) succeed.
+const WHATSAPP_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN?.trim().replace(/\n$/, '') ?? null
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID ?? null
 
 type WhatsAppProbeResult = 'ok' | 'error' | 'unknown'
@@ -53,7 +56,7 @@ function otpSecurityReportConfigStatus(flag: FlagStatus): OtpSecurityReportConfi
 export interface FullHealthResult {
   ok: boolean
   status: 'ok' | 'degraded' | 'maintenance'
-  db: 'ok' | 'error'
+  db: 'ok' | 'error' | 'unknown'
   whatsapp: WhatsAppProbeResult
   payments: 'unknown'
   timestamp: string
@@ -80,6 +83,29 @@ export async function runHealthChecks(): Promise<FullHealthResult> {
     builtAt: BUILT_AT,
   }
 
+  // Maintenance is an intentional pause. Skip every probe so a health request
+  // never hits the DB / WhatsApp / flag store that may be offline for the
+  // maintenance window (e.g. a migration or credential rotation).
+  if (maintenanceModeOn()) {
+    return {
+      ok: true,
+      status: 'maintenance',
+      db: 'unknown',
+      whatsapp: 'unknown',
+      payments: 'unknown',
+      timestamp,
+      auth: {
+        otp_whatsapp_flag: 'unknown',
+        otp_security_report_flag: 'unknown',
+        otp_security_report_config: 'unknown',
+        supabase_env_complete: Boolean(
+          process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        ),
+      },
+      build,
+    }
+  }
+
   const [dbResult, whatsappResult, otpFlagResult, otpSecurityReportFlagResult] = await Promise.allSettled([
     db.$queryRaw`SELECT 1`,
     probeWhatsApp(),
@@ -99,10 +125,6 @@ export async function runHealthChecks(): Promise<FullHealthResult> {
     supabase_env_complete: Boolean(
       process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     ),
-  }
-
-  if (maintenanceModeOn()) {
-    return { ok: true, status: 'maintenance', db: dbOk ? 'ok' : 'error', whatsapp, payments: 'unknown', timestamp, auth, build }
   }
 
   const ok = dbOk

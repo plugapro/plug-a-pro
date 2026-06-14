@@ -234,11 +234,15 @@ describe('status health model', () => {
     expect(paymentService?.source).toBe('derived')
   })
 
-  it('marks the model stale and overall unknown when the timestamp exceeds max age', () => {
+  it('marks the model stale and collapses overall + card statuses to unknown when the timestamp exceeds max age', () => {
     const oldIso = new Date(Date.now() - 5 * 60_000).toISOString()
-    const model = normalizeHealthPayload({ status: 'ok', db: 'ok', timestamp: oldIso })
+    const model = normalizeHealthPayload({ status: 'ok', db: 'ok', whatsapp: 'ok', payments: 'unknown', timestamp: oldIso })
     expect(model.stale).toBe(true)
     expect(model.overall).toBe('unknown')
+    // Staleness must reach the per-journey card fields, not just the hero overall.
+    expect(model.platform).toBe('unknown')
+    expect(model.whatsapp).toBe('unknown')
+    expect(model.payments).toBe('unknown')
   })
 
   it('is not stale for a fresh timestamp', () => {
@@ -252,12 +256,13 @@ describe('status health model', () => {
     expect(model.overall).toBe('maintenance')
   })
 
-  it('lets staleness override maintenance in overall but keeps platform maintenance', () => {
+  it('lets staleness override maintenance across overall and the card statuses', () => {
     const oldIso = new Date(Date.now() - 5 * 60_000).toISOString()
     const model = normalizeHealthPayload({ status: 'maintenance', db: 'ok', timestamp: oldIso })
     expect(model.stale).toBe(true)
     expect(model.overall).toBe('unknown')
-    expect(model.platform).toBe('maintenance')
+    // Stale data can't confirm a maintenance window either — collapse to unknown.
+    expect(model.platform).toBe('unknown')
   })
 
   it('does not claim WhatsApp/payments are verified when they are not monitored', () => {

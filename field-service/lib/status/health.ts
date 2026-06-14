@@ -453,9 +453,12 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
     stale,
     healthEndpoint: endpointStatus,
     database: dbStatus,
-    platform: platformStatus,
-    whatsapp: whatsappStatus,
-    payments: paymentsStatus,
+    // When the signal is stale we cannot vouch for any per-journey status, so
+    // collapse the card-facing fields to 'unknown' too — otherwise the hero
+    // de-greens while the journey cards keep showing a frozen "operational".
+    platform: stale ? 'unknown' : platformStatus,
+    whatsapp: stale ? 'unknown' : whatsappStatus,
+    payments: stale ? 'unknown' : paymentsStatus,
     groups,
     build,
     botMessage: stale ? 'The latest health signal is out of date; status cannot be confirmed right now.' : botMessage,
