@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { NextRequest } from 'next/server'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -7,6 +8,8 @@ vi.mock('@/lib/db', () => ({
     $queryRaw: vi.fn(),
   },
 }))
+
+vi.mock('@/lib/rate-limit', () => ({ checkHealthProbeLimit: vi.fn() }))
 
 vi.mock('@/lib/flags', () => ({
   FLAG_KEYS: { AUTH_OTP_WHATSAPP: 'auth.otp.whatsapp' },
@@ -19,9 +22,11 @@ vi.mock('@/lib/flags', () => ({
 describe('GET /api/health', () => {
   const originalEnv = { ...process.env }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     vi.resetModules()
+    const { checkHealthProbeLimit } = await import('@/lib/rate-limit')
+    ;(checkHealthProbeLimit as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true })
   })
 
   afterEach(() => {
@@ -29,25 +34,20 @@ describe('GET /api/health', () => {
     process.env = { ...originalEnv }
   })
 
-  it('returns 200 with status ok when DB responds', async () => {
+  it('returns 200 with sanitized public body (no build, no auth) when DB responds', async () => {
     const { db } = await import('@/lib/db')
     ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
-
     const { GET } = await import('../../app/api/health/route')
     const res = await GET()
     const body = await res.json()
-
     expect(res.status).toBe(200)
     expect(body.status).toBe('ok')
     expect(body.db).toBe('ok')
     expect(typeof body.timestamp).toBe('string')
-    expect(body).toHaveProperty('build')
-    expect(body.build).toMatchObject({
-      commitSha: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
-      commitShaShort: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
-      commitRef: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
-      builtAt: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
-    })
+    expect(body).not.toHaveProperty('build')
+    expect(body).not.toHaveProperty('auth')
+    expect(body.payments).not.toBe('ok')
+    expect(res.headers.get('cache-control')).toContain('s-maxage=15')
   })
 
   it('returns 503 with status degraded when DB throws', async () => {
@@ -62,6 +62,24 @@ describe('GET /api/health', () => {
     expect(body.status).toBe('degraded')
     expect(body.db).toBe('error')
     expect(typeof body.timestamp).toBe('string')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 200 with status maintenance and sanitized body when MAINTENANCE_MODE is set', async () => {
+    process.env.MAINTENANCE_MODE = '1'
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('maintenance')
+    expect(body).not.toHaveProperty('auth')
+    expect(body).not.toHaveProperty('build')
+    // Maintenance must skip all probes — the DB is never queried.
+    expect((db.$queryRaw as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
   })
 
   it('includes whatsapp field in response (unknown when credentials not set)', async () => {
@@ -100,6 +118,24 @@ describe('GET /api/health', () => {
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain('access_token=')
   })
 
+  it('trims a trailing newline from the WhatsApp token (Vercel env paste hardening)', async () => {
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-wa-token\n'
+    process.env.WHATSAPP_PHONE_NUMBER_ID = 'phone-id-1'
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+
+    const { GET } = await import('../../app/api/health/route')
+    await GET()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v21.0/phone-id-1?fields=display_phone_number',
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-wa-token' } }),
+    )
+  })
+
   it('includes payments field in response (unknown when credentials not set)', async () => {
     const { db } = await import('@/lib/db')
     ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
@@ -109,99 +145,51 @@ describe('GET /api/health', () => {
     const body = await res.json()
 
     expect(body).toHaveProperty('payments')
-    expect(['ok', 'unknown']).toContain(body.payments as string)
+    expect(body.payments).toBe('unknown')
   })
 
-  // ─── auth.* observational fields ────────────────────────────────────────────
-
-  it('reports otp_whatsapp_flag: "enabled" when isEnabled resolves true', async () => {
+  // The public body intentionally omits the internal `auth` observability block
+  // and never degrades on OTP/pepper config; those checks moved to the
+  // CRON_SECRET-gated internal health route (Task 2).
+  it('never exposes the internal auth block on the public body', async () => {
     const { db } = await import('@/lib/db')
     ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
     const flags = await import('@/lib/flags')
     ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
-      async (key: string) => key === 'auth.otp.whatsapp',
+      async (key: string) => key === 'security.otp.report',
     )
-
-    const { GET } = await import('../../app/api/health/route')
-    const res = await GET()
-    const body = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(body).toHaveProperty('auth')
-    expect(body.auth.otp_whatsapp_flag).toBe('enabled')
-    expect(body.auth.otp_security_report_flag).toBe('disabled')
-    expect(body.auth.otp_security_report_config).toBe('disabled')
-  })
-
-  it('reports otp_whatsapp_flag: "unknown" when isEnabled throws, response still 200', async () => {
-    const { db } = await import('@/lib/db')
-    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
-    const flags = await import('@/lib/flags')
-    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('db down'))
-
-    const { GET } = await import('../../app/api/health/route')
-    const res = await GET()
-    const body = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(body.auth.otp_whatsapp_flag).toBe('unknown')
-  })
-
-  it('reports supabase_env_complete: false when supabase env vars are missing', async () => {
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL
-    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-    const { db } = await import('@/lib/db')
-    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
-    const flags = await import('@/lib/flags')
-    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
-
-    const { GET } = await import('../../app/api/health/route')
-    const res = await GET()
-    const body = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(body.auth.supabase_env_complete).toBe(false)
-  })
-
-  it('degrades when OTP security reporting is enabled without OTP_HASH_PEPPER', async () => {
     delete process.env.OTP_HASH_PEPPER
 
-    const { db } = await import('@/lib/db')
-    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
-    const flags = await import('@/lib/flags')
-    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
-      async (key: string) => key === 'security.otp.report',
-    )
-
     const { GET } = await import('../../app/api/health/route')
     const res = await GET()
     const body = await res.json()
 
-    expect(res.status).toBe(503)
-    expect(body.status).toBe('degraded')
-    expect(body.db).toBe('ok')
-    expect(body.auth.otp_security_report_flag).toBe('enabled')
-    expect(body.auth.otp_security_report_config).toBe('missing_otp_hash_pepper')
-  })
-
-  it('reports OTP security reporting as ready when enabled with OTP_HASH_PEPPER', async () => {
-    process.env.OTP_HASH_PEPPER = 'health-test-pepper'
-
-    const { db } = await import('@/lib/db')
-    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
-    const flags = await import('@/lib/flags')
-    ;(flags.isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
-      async (key: string) => key === 'security.otp.report',
-    )
-
-    const { GET } = await import('../../app/api/health/route')
-    const res = await GET()
-    const body = await res.json()
-
+    // OTP/pepper posture no longer drives the public status; DB is fine → 200.
     expect(res.status).toBe(200)
     expect(body.status).toBe('ok')
-    expect(body.auth.otp_security_report_flag).toBe('enabled')
-    expect(body.auth.otp_security_report_config).toBe('ready')
+    expect(body).not.toHaveProperty('auth')
+    expect(body).not.toHaveProperty('build')
+  })
+
+  it('returns 429 with Retry-After when the probe limit is exceeded', async () => {
+    const { checkHealthProbeLimit } = await import('@/lib/rate-limit')
+    ;(checkHealthProbeLimit as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, retryAfterMs: 60_000 })
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET(new NextRequest('http://localhost/api/health'))
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBe('60')
+  })
+
+  it('never leaks raw secret values or internal fields in the public body', async () => {
+    process.env.WHATSAPP_ACCESS_TOKEN = 'SECRET_WA_TOKEN_VALUE'
+    process.env.PEACH_ACCESS_TOKEN = 'SECRET_PEACH_VALUE'
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+    const { GET } = await import('../../app/api/health/route')
+    const text = await (await GET(new NextRequest('http://localhost/api/health'))).text()
+    expect(text).not.toContain('SECRET_WA_TOKEN_VALUE')
+    expect(text).not.toContain('SECRET_PEACH_VALUE')
+    expect(text).not.toContain('supabase_env_complete')
+    expect(text).not.toContain('commitRef')
   })
 })

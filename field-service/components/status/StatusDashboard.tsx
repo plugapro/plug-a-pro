@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   UserCheck,
+  Wrench,
   XCircle,
   Zap,
 } from 'lucide-react'
@@ -31,7 +32,7 @@ import {
 
 const AUTO_REFRESH_INTERVAL_S = 30
 
-type Tone = 'success' | 'warning' | 'danger' | 'neutral'
+type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info'
 
 function tone(status: HealthStatus): Tone {
   return statusToneFromCheck[status]
@@ -67,6 +68,13 @@ const T = {
     dot: 'bg-[var(--tone-neutral-fg)]',
     borderL: 'border-l-[var(--tone-neutral-fg)]',
   },
+  info: {
+    bg: 'bg-[var(--tone-info-bg)]',
+    border: 'border-[var(--tone-info-border)]',
+    fg: 'text-[var(--tone-info-fg)]',
+    dot: 'bg-[var(--tone-info-fg)]',
+    borderL: 'border-l-[var(--tone-info-fg)]',
+  },
 } satisfies Record<Tone, Record<string, string>>
 
 // User-friendly status labels for the public page
@@ -76,6 +84,7 @@ const USER_STATUS_LABELS: Record<HealthStatus, string> = {
   down: 'Currently unavailable',
   unknown: 'Checking status…',
   not_monitored: 'Not separately monitored',
+  maintenance: 'Scheduled maintenance',
 }
 
 // User-friendly headline labels
@@ -85,6 +94,7 @@ function headlineFor(status: HealthStatus): string {
     case 'degraded': return 'Some things are slower than usual'
     case 'down': return "We're experiencing an issue"
     case 'not_monitored': return 'Some checks are not monitored yet'
+    case 'maintenance': return 'Scheduled maintenance in progress'
     default: return 'Checking platform status…'
   }
 }
@@ -185,18 +195,18 @@ function StatusDot({ status, size = 'md' }: { status: HealthStatus; size?: 'sm' 
 
 function StatusIcon({ status, className = 'size-4' }: { status: HealthStatus; className?: string }) {
   const cls = T[tone(status)]
-  switch (status) {
-    case 'operational':
-      return <CheckCircle2 className={`${className} ${cls.fg}`} />
-    case 'not_monitored':
-      return <HelpCircle className={`${className} ${cls.fg}`} />
-    case 'degraded':
-      return <AlertTriangle className={`${className} ${cls.fg}`} />
-    case 'down':
-      return <XCircle className={`${className} ${cls.fg}`} />
-    default:
-      return <HelpCircle className={`${className} ${cls.fg}`} />
-  }
+  const label = STATUS_LABELS[status]
+  const Icon =
+    status === 'operational' ? CheckCircle2
+    : status === 'degraded' ? AlertTriangle
+    : status === 'down' ? XCircle
+    : status === 'maintenance' ? Wrench
+    : HelpCircle
+  return (
+    <span role="img" aria-label={label} className="inline-flex">
+      <Icon className={`${className} ${cls.fg}`} />
+    </span>
+  )
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -241,7 +251,7 @@ function HeroBanner({
           <div className="mt-1 shrink-0">
             <StatusDot status={model.overall} size="lg" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0" role="status" aria-live="polite" aria-atomic="true">
             <h1 className={`text-xl font-bold tracking-tight sm:text-2xl ${cls.fg}`}>
               {headlineFor(model.overall)}
             </h1>
@@ -302,7 +312,7 @@ function JourneyCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Icon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="text-sm font-semibold tracking-tight truncate">{label}</span>
+          <span className="text-sm font-semibold leading-tight tracking-tight line-clamp-2">{label}</span>
         </div>
         <StatusIcon status={effective} className="size-4 shrink-0" />
       </div>
@@ -317,7 +327,7 @@ function JourneyCard({
 function JourneyGrid({ model }: { model: HealthDashboardModel }) {
   return (
     <section aria-label="Service journey status">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">
         Service Status
       </p>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -341,7 +351,7 @@ function JourneyGrid({ model }: { model: HealthDashboardModel }) {
 
 function StatusFooter({ asOf }: { asOf: string }) {
   return (
-    <footer className="pb-2 pt-1 text-center text-[11px] text-muted-foreground/40">
+    <footer className="pb-2 pt-1 text-center text-[11px] text-muted-foreground">
       <p>Public status only - no customer or provider data is shown.</p>
       <p className="mt-0.5">Last checked: {formatDate(asOf)}</p>
     </footer>

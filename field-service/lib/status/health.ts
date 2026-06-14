@@ -4,9 +4,10 @@ export const STATUS_LABELS = {
   down: 'Not running',
   unknown: 'Unknown',
   not_monitored: 'Not separately monitored',
+  maintenance: 'Under maintenance',
 } as const
 
-export type HealthStatus = 'operational' | 'degraded' | 'down' | 'unknown' | 'not_monitored'
+export type HealthStatus = 'operational' | 'degraded' | 'down' | 'unknown' | 'not_monitored' | 'maintenance'
 export type HealthSource = 'live check' | 'derived' | 'not monitored'
 
 interface RawHealthPayload {
@@ -50,6 +51,7 @@ export interface HealthBuildSummary {
 export interface HealthDashboardModel {
   asOf: string
   overall: HealthStatus
+  stale: boolean
   healthEndpoint: HealthStatus
   database: HealthStatus
   platform: HealthStatus
@@ -62,13 +64,17 @@ export interface HealthDashboardModel {
 
 const BASE_CHECK_DEFAULT = 'unknown'
 
+// A health signal older than this is treated as unverifiable (a frozen edge
+// instance or wedged checker would otherwise show stale green indefinitely).
+const MAX_HEALTH_AGE_MS = 90_000
+
 const defaultBuildSummary: HealthBuildSummary = {
   commitShaShort: null,
   commitRef: null,
   builtAt: null,
 }
 
-const groupStatusOrder: HealthStatus[] = ['down', 'degraded', 'unknown', 'not_monitored', 'operational']
+const groupStatusOrder: HealthStatus[] = ['down', 'degraded', 'maintenance', 'unknown', 'not_monitored', 'operational']
 
 function normalizeString(value: unknown): string | null {
   return typeof value === 'string' ? value.trim() : null
@@ -79,6 +85,7 @@ function normalizeStatus(value: unknown): HealthStatus {
   if (normalized === 'ok') return 'operational'
   if (normalized === 'error') return 'down'
   if (normalized === 'degraded') return 'degraded'
+  if (normalized === 'maintenance') return 'maintenance'
   return BASE_CHECK_DEFAULT
 }
 
@@ -119,6 +126,7 @@ function formatTimestamp(value: unknown, fallbackIso: string): string {
 }
 
 function derivePlatformStatus(healthStatus: HealthStatus, dbStatus: HealthStatus): HealthStatus {
+  if (healthStatus === 'maintenance') return 'maintenance'
   return mergeStatus([healthStatus, dbStatus])
 }
 
@@ -157,6 +165,7 @@ function buildGroupStatusSummary(group: HealthServiceGroup): {
   operational: number
   degraded: number
   down: number
+  maintenance: number
   unknown: number
   notMonitored: number
   overall: HealthStatus
@@ -166,11 +175,12 @@ function buildGroupStatusSummary(group: HealthServiceGroup): {
       if (service.status === 'operational') acc.operational += 1
       else if (service.status === 'degraded') acc.degraded += 1
       else if (service.status === 'down') acc.down += 1
+      else if (service.status === 'maintenance') acc.maintenance += 1
       else if (service.status === 'not_monitored') acc.notMonitored += 1
       else acc.unknown += 1
       return acc
     },
-    { operational: 0, degraded: 0, down: 0, unknown: 0, notMonitored: 0 }
+    { operational: 0, degraded: 0, down: 0, maintenance: 0, unknown: 0, notMonitored: 0 }
   )
 
   const ordered: HealthStatus[] = groupStatusOrder.filter(
@@ -179,6 +189,7 @@ function buildGroupStatusSummary(group: HealthServiceGroup): {
       if (status === 'operational') return counts.operational > 0
       if (status === 'degraded') return counts.degraded > 0
       if (status === 'down') return counts.down > 0
+      if (status === 'maintenance') return counts.maintenance > 0
       return counts.unknown > 0
     },
   )
@@ -197,22 +208,27 @@ export function summarizeGroups(groups: HealthServiceGroup[]): HealthServiceGrou
   }))
 }
 
-function buildBotMessage(overall: HealthStatus, platform: HealthStatus): string {
-  if (platform === 'down') {
-    return "Login and API checks are not responding. Customer and provider journeys may be affected."
+function buildBotMessage(
+  platform: HealthStatus,
+  whatsapp: HealthStatus,
+  payments: HealthStatus,
+): string {
+  if (platform === 'maintenance') {
+    return 'Plug A Pro is undergoing scheduled maintenance. Some services may be briefly unavailable.'
   }
-
+  if (platform === 'down') {
+    return 'Login and API checks are not responding. Customer and provider journeys may be affected.'
+  }
   if (platform === 'degraded') {
     return 'Some areas may be affected. We are monitoring and will update soon.'
   }
-
   if (platform === 'operational') {
-    if (overall === 'operational') {
-      return 'All core services are running.'
-    }
-    return 'Core services are mostly running, with a few checks still warming up.'
+    const unverified: string[] = []
+    if (whatsapp !== 'operational') unverified.push('WhatsApp updates')
+    if (payments !== 'operational') unverified.push('payments')
+    if (unverified.length === 0) return 'Bookings, search, WhatsApp updates and payments are all running.'
+    return `Core booking and search services are running. ${unverified.join(' and ')} ${unverified.length === 1 ? 'is' : 'are'} not independently verified right now.`
   }
-
   return 'I cannot verify the latest platform health right now, but the latest saved signals are displayed.'
 }
 
@@ -224,6 +240,10 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
   const healthStatus = normalizeStatus(body?.status)
   const endpointStatus = healthStatus
   const platformStatus = derivePlatformStatus(healthStatus, dbStatus)
+  const asOfIso = formatTimestamp(body?.timestamp, nowIso)
+  const ageMs = Date.now() - new Date(asOfIso).getTime()
+  const stale = Number.isFinite(ageMs) && ageMs > MAX_HEALTH_AGE_MS
+  const effectiveOverall: HealthStatus = stale ? 'unknown' : platformStatus
   const build = normalizeBuildSummary(body?.build)
   const whatsappStatus = normalizeProbeStatus(body?.whatsapp)
   const paymentsStatus = normalizeProbeStatus(body?.payments)
@@ -416,7 +436,7 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
     ],
   }
 
-  const botMessage = buildBotMessage(platformStatus, platformStatus)
+  const botMessage = buildBotMessage(platformStatus, whatsappStatus, paymentsStatus)
   const groups = summarizeGroups([
     coreGroup,
     authGroup,
@@ -428,16 +448,20 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
   ])
 
   return {
-    asOf: formatTimestamp(body?.timestamp, nowIso),
-    overall: platformStatus,
+    asOf: asOfIso,
+    overall: effectiveOverall,
+    stale,
     healthEndpoint: endpointStatus,
     database: dbStatus,
-    platform: platformStatus,
-    whatsapp: whatsappStatus,
-    payments: paymentsStatus,
+    // When the signal is stale we cannot vouch for any per-journey status, so
+    // collapse the card-facing fields to 'unknown' too — otherwise the hero
+    // de-greens while the journey cards keep showing a frozen "operational".
+    platform: stale ? 'unknown' : platformStatus,
+    whatsapp: stale ? 'unknown' : whatsappStatus,
+    payments: stale ? 'unknown' : paymentsStatus,
     groups,
     build,
-    botMessage,
+    botMessage: stale ? 'The latest health signal is out of date; status cannot be confirmed right now.' : botMessage,
   }
 }
 
@@ -669,6 +693,7 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
   return {
     asOf: nowIso,
     overall: unknownBase,
+    stale: true,
     healthEndpoint: unknownBase,
     database: unknownBase,
     platform: unknownBase,
@@ -698,12 +723,13 @@ export function summarizeGroup(services: HealthService[]) {
   })
 }
 
-export const statusToneFromCheck: Record<HealthStatus, 'success' | 'warning' | 'danger' | 'neutral'> = {
+export const statusToneFromCheck: Record<HealthStatus, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
   operational: 'success',
   degraded: 'warning',
   down: 'danger',
-  unknown: 'neutral',
+  unknown: 'info',
   not_monitored: 'neutral',
+  maintenance: 'info',
 }
 
 export const statusSourceLabel: Record<HealthSource, string> = {
