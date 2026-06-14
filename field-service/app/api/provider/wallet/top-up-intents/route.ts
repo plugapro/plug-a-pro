@@ -5,8 +5,6 @@ import {
   ProviderCreditPaymentIntentError,
   createPayatTopUpIntent,
   createManualEftTopUpIntent,
-  createPayfastTopUpIntent,
-  type PayfastTopUpMethod,
 } from '@/lib/provider-credit-payment-intents'
 import { PayatApiError, PayatConfigError, PayatTokenError } from '@/lib/payat'
 import { verifyRequestOrigin } from '@/lib/csrf'
@@ -17,12 +15,10 @@ type CreateTopUpIntentBody = {
   amountCents?: unknown
   /** Backward-compatible JSON client path; normalized then validated as cents. */
   amountRand?: unknown
-  /** Optional payment method: "PAYAT" (default) | "MANUAL_EFT" | "PAYFAST_CARD" | "PAYFAST_EFT" | "PAYFAST_SCODE" */
+  /** Optional payment method: "PAYAT" (default) | "MANUAL_EFT" */
   paymentMethod?: unknown
   metadata?: unknown
 }
-
-const PAYFAST_METHODS = new Set<string>(['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'])
 
 function mapProviderIntentError(error: ProviderCreditPaymentIntentError) {
   switch (error.code) {
@@ -103,20 +99,6 @@ export async function POST(request: NextRequest) {
   const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : 'PAYAT'
 
   try {
-    if (PAYFAST_METHODS.has(paymentMethod)) {
-      const result = await createPayfastTopUpIntent({
-        providerId: provider.id,
-        amountCents,
-        paymentMethod: paymentMethod as PayfastTopUpMethod,
-        providerName: provider.name,
-        providerEmail: provider.email,
-        providerCellphone: session.phone ?? provider.phone,
-        actorUserId: session.id,
-        metadata: parseMetadata(body),
-      })
-      return NextResponse.json(result, { status: 201 })
-    }
-
     if (paymentMethod === 'MANUAL_EFT') {
       const result = await createManualEftTopUpIntent({
         providerId: provider.id,

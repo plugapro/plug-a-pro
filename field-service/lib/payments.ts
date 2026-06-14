@@ -82,17 +82,11 @@ function readPaymentEnv(name: string): string {
 }
 
 function resolvePspProviderName(): string {
-  return readPaymentEnv('PSP_PROVIDER') || 'payfast'
-}
-
-function assertCheckoutProviderConfigured() {
-  const provider = resolvePspProviderName()
-  const payfastSandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
-  const payfastPassphrase = readPaymentEnv('PAYFAST_PASSPHRASE')
-
-  if (provider === 'payfast' && !payfastSandbox && !payfastPassphrase) {
-    throw new Error('Missing required env var: PAYFAST_PASSPHRASE')
-  }
+  // PayFast has been removed as a PSP. A stale `PSP_PROVIDER=payfast` (still set in
+  // some environments) maps to the default so getProvider() never throws on it.
+  const configured = readPaymentEnv('PSP_PROVIDER')
+  if (!configured || configured === 'payfast') return 'peach'
+  return configured
 }
 
 // ─── Provider: Peach Payments (South Africa) ─────────────────────────────────
@@ -220,180 +214,6 @@ class PeachPaymentsProvider implements PspProvider {
   }
 }
 
-// ─── Provider: PayFast (South Africa) ────────────────────────────────────────
-// Docs: https://developers.payfast.co.za/docs
-
-class PayFastProvider implements PspProvider {
-  private baseUrl: string
-  private merchantId: string
-  private merchantKey: string
-  private passphrase: string
-
-  constructor() {
-    const sandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
-    this.baseUrl = sandbox
-      ? 'https://sandbox.payfast.co.za/eng/process'
-      : 'https://www.payfast.co.za/eng/process'
-    this.merchantId = readPaymentEnv('PAYFAST_MERCHANT_ID')
-    this.merchantKey = readPaymentEnv('PAYFAST_MERCHANT_KEY')
-    this.passphrase = readPaymentEnv('PAYFAST_PASSPHRASE')
-
-    if (!this.merchantId || !this.merchantKey) {
-      throw new Error('Missing PayFast credentials (PAYFAST_MERCHANT_ID, PAYFAST_MERCHANT_KEY)')
-    }
-    if (!sandbox && !this.passphrase) {
-      throw new Error('Missing required env var: PAYFAST_PASSPHRASE')
-    }
-  }
-
-  private buildSignature(params: Record<string, string>): string {
-    const crypto = require('crypto')
-    // Sort keys alphabetically, build query string
-    const query = Object.keys(params)
-      .sort()
-      .filter((k) => params[k] !== '')
-      .map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`)
-      .join('&')
-
-    const withPassphrase = this.passphrase ? `${query}&passphrase=${encodeURIComponent(this.passphrase).replace(/%20/g, '+')}` : query
-    return crypto.createHash('md5').update(withPassphrase).digest('hex')
-  }
-
-  async createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
-    const amountFormatted = (params.amount / 100).toFixed(2)
-
-    const pfParams: Record<string, string> = {
-      merchant_id: this.merchantId,
-      merchant_key: this.merchantKey,
-      return_url: params.successUrl,
-      cancel_url: params.cancelUrl,
-      notify_url: params.notifyUrl,
-      m_payment_id: params.bookingId,
-      amount: amountFormatted,
-      item_name: params.description,
-    }
-
-    if (params.customerEmail) pfParams.email_address = params.customerEmail
-    if (params.customerPhone) pfParams.cell_number = params.customerPhone.replace(/\D/g, '')
-    if (params.metadata) {
-      // PayFast allows custom_str1–5 for metadata
-      Object.entries(params.metadata).slice(0, 5).forEach(([, v], i) => {
-        pfParams[`custom_str${i + 1}`] = v
-      })
-    }
-
-    pfParams.signature = this.buildSignature(pfParams)
-
-    const query = Object.entries(pfParams)
-      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-      .join('&')
-
-    return {
-      id: params.bookingId,
-      url: `${this.baseUrl}?${query}`,
-    }
-  }
-
-  verifyWebhook(rawBody: string, _signature: string): boolean {
-    // SECURITY (7a1438d): Fail closed in non-sandbox mode if passphrase is absent.
-    // An empty passphrase lets any caller who knows merchant_id (visible in
-    // checkout URLs) compute a valid MD5 signature and forge an ITN.
-    const isSandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
-    if (!isSandbox && !this.passphrase) {
-      console.error('[PayFastProvider.verifyWebhook] PAYFAST_PASSPHRASE required in live mode')
-      return false
-    }
-
-    // PayFast sends ITN data as a POST body (application/x-www-form-urlencoded)
-    // Signature is included as a field in the body itself, not a header
-    const params = Object.fromEntries(new URLSearchParams(rawBody))
-    const { signature, ...rest } = params
-
-    // Reject if signature field is absent.
-    if (!signature) return false
-
-    // Reject before signature check if payment_status is not COMPLETE — avoids
-    // processing incomplete/cancelled notifications as successes.
-    if (params.payment_status !== 'COMPLETE') return false
-
-    const computed = this.buildSignature(rest as Record<string, string>)
-    const crypto = require('crypto')
-    try {
-      const a = Buffer.from(computed, 'utf8')
-      const b = Buffer.from(signature, 'utf8')
-      if (a.length !== b.length) return false
-      return crypto.timingSafeEqual(a, b)
-    } catch {
-      return false
-    }
-  }
-
-  parseWebhookEvent(rawBody: string): PaymentEvent {
-    const params = Object.fromEntries(new URLSearchParams(rawBody))
-    const status = params.payment_status ?? ''
-    const amount = Math.round(parseFloat(params.amount_gross ?? '0') * 100)
-
-    return {
-      type:
-        status === 'COMPLETE'
-          ? 'payment.success'
-          : status === 'REFUNDED'
-          ? 'payment.refunded'
-          : 'payment.failed',
-      bookingId: params.m_payment_id,
-      pspReference: params.pf_payment_id,
-      amount,
-      currency: 'ZAR',
-      raw: params,
-    }
-  }
-
-  async createRefund(pspReference: string, amountCents: number): Promise<RefundResult> {
-    // PayFast refunds via their API - requires bearer token auth
-    // Docs: https://developers.payfast.co.za/api#tag/Refunds
-    const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0]
-    const version = 'v1'
-    const merchantId = this.merchantId
-    const isSandbox = readPaymentEnv('PAYFAST_SANDBOX') === 'true'
-    const apiBase = isSandbox ? 'https://api.sandbox.payfast.co.za' : 'https://api.payfast.co.za'
-
-    const headerParams: Record<string, string> = {
-      merchant_id: merchantId,
-      passphrase: this.passphrase,
-      timestamp,
-      version,
-    }
-    const crypto = require('crypto')
-    const headerSig = crypto
-      .createHash('md5')
-      .update(
-        Object.keys(headerParams)
-          .sort()
-          .map((k) => `${k}=${encodeURIComponent(headerParams[k]).replace(/%20/g, '+')}`)
-          .join('&')
-      )
-      .digest('hex')
-
-    const response = await fetch(`${apiBase}/refunds/${pspReference}`, {
-      method: 'POST',
-      headers: {
-        'merchant-id': merchantId,
-        timestamp,
-        version,
-        signature: headerSig,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ amount: (amountCents / 100).toFixed(2) }),
-    })
-
-    const data = await response.json().catch(() => ({}))
-    return {
-      success: response.ok,
-      refundReference: data?.data?.uuid ?? pspReference,
-    }
-  }
-}
-
 // ─── Provider: Pay@Go RTP (South Africa) ────────────────────────────────────
 // OpenAPI: https://go.payat.co.za/yapi/swagger-ui/index.html
 // This provider creates RTP links and stores provider references in Payment.
@@ -463,8 +283,6 @@ class PayAtGoProvider implements PspProvider {
 function getProvider(): PspProvider {
   const provider = resolvePspProviderName()
   switch (provider) {
-    case 'payfast':
-      return new PayFastProvider()
     case 'peach':
       return new PeachPaymentsProvider()
     case 'payat_go':
@@ -477,8 +295,6 @@ function getProvider(): PspProvider {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
-  assertCheckoutProviderConfigured()
-
   const providerName = resolvePspProviderName()
   const session = await getProvider().createCheckout(params)
 

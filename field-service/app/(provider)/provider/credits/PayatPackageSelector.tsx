@@ -49,8 +49,8 @@ export function PayatPackageSelector() {
         // the raw error in case Next.js stripped a thrown one in production.
         console.error('[PayatPackageSelector] checkout_threw', err)
         setSelectedAmount(null)
-        setError('Could not start Pay@ checkout. Please try again or use Payfast.')
-        toast.error('Could not start Pay@ checkout. Please try again or use Payfast.')
+        setError('Could not start Pay@ checkout. Please try again.')
+        toast.error('Could not start Pay@ checkout. Please try again.')
       }
     })
   }

@@ -6,7 +6,6 @@ const {
   mockDb,
   mockCreateManualEftTopUpIntent,
   mockCreatePayatTopUpIntent,
-  mockCreatePayfastTopUpIntent,
   mockIssueVerificationLink,
   ProviderCreditPaymentIntentErrorMock,
   PayatConfigErrorMock,
@@ -21,7 +20,6 @@ const {
   },
   mockCreateManualEftTopUpIntent: vi.fn(),
   mockCreatePayatTopUpIntent: vi.fn(),
-  mockCreatePayfastTopUpIntent: vi.fn(),
   mockIssueVerificationLink: vi.fn(),
   ProviderCreditPaymentIntentErrorMock: class ProviderCreditPaymentIntentError extends Error {
     code: string
@@ -66,7 +64,6 @@ vi.mock('@/lib/provider-credit-payment-intents', () => ({
   ProviderCreditPaymentIntentError: ProviderCreditPaymentIntentErrorMock,
   createManualEftTopUpIntent: mockCreateManualEftTopUpIntent,
   createPayatTopUpIntent: mockCreatePayatTopUpIntent,
-  createPayfastTopUpIntent: mockCreatePayfastTopUpIntent,
 }))
 vi.mock('@/lib/identity-verification/link', () => ({
   issueProviderIdentityVerificationLink: mockIssueVerificationLink,
@@ -100,10 +97,6 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
         qrCodeUrl: 'https://go.payat.co.za/qr/intent-payat-1',
         paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
       },
-    })
-    mockCreatePayfastTopUpIntent.mockResolvedValue({
-      intent: { id: 'intent-payfast-1', status: 'PENDING_PAYMENT' },
-      checkout: { action: 'https://sandbox.payfast.co.za/eng/process', fields: {} },
     })
     mockIssueVerificationLink.mockResolvedValue({
       verificationId: 'ver-1',
@@ -180,16 +173,16 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     )
 
     expect(response.status).toBe(201)
-	    expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith({
-	      providerId: 'provider-1',
-	      amountCents: 10_000,
-	      providerCellphone: '+27821234567',
-	      actorUserId: 'user-1',
-	      metadata: undefined,
-	    })
+    expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      providerCellphone: '+27821234567',
+      actorUserId: 'user-1',
+      metadata: undefined,
+    })
   })
 
-  it('keeps Payfast available as an explicit secondary provider path', async () => {
+  it('rejects removed PayFast methods without creating a top-up intent', async () => {
     mockDb.provider.findUnique.mockResolvedValue({
       id: 'provider-1',
       phone: '+27820000000',
@@ -205,17 +198,10 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
       }),
     )
 
-    expect(response.status).toBe(201)
-	    expect(mockCreatePayfastTopUpIntent).toHaveBeenCalledWith({
-	      providerId: 'provider-1',
-	      amountCents: 10_000,
-	      paymentMethod: 'PAYFAST_CARD',
-	      providerName: 'Provider One',
-	      providerEmail: 'provider@example.com',
-	      providerCellphone: '+27821234567',
-	      actorUserId: 'user-1',
-	      metadata: undefined,
-	    })
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Unsupported payment method' })
+    expect(mockCreatePayatTopUpIntent).not.toHaveBeenCalled()
+    expect(mockCreateManualEftTopUpIntent).not.toHaveBeenCalled()
   })
 
   it('rejects non-provider sessions before provider lookup', async () => {

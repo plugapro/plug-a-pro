@@ -29,7 +29,7 @@ const sections = [
   },
   {
     title: 'Top-ups and purchased credits',
-    body: 'Purchased credits are added after the payment is confirmed by Plug A Pro, PayFast, Pay@ / PayAt or the relevant payment process shown in the Worker Portal. Manual EFT top-ups may take longer because finance must match the payment reference.',
+    body: 'Purchased credits are added after the payment is confirmed by Plug A Pro, Pay@ / PayAt or the relevant payment process shown in the Worker Portal. Manual EFT top-ups may take longer because finance must match the payment reference.',
   },
   {
     title: 'Refunds and reversals',

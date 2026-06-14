@@ -27,7 +27,6 @@ vi.mock('@/lib/provider-wallet', () => ({
 vi.mock('@/lib/provider-credit-payment-intents', () => ({
   createPayatTopUpIntent: vi.fn(),
   createManualEftTopUpIntent: vi.fn(),
-  createPayfastTopUpIntent: vi.fn(),
   getManualEftBankAccountInstructions: vi.fn(),
   ProviderCreditPaymentIntentError: class ProviderCreditPaymentIntentError extends Error {
     code: string

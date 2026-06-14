@@ -13,11 +13,9 @@ import {
 import {
   createPayatTopUpIntent,
   createManualEftTopUpIntent,
-  createPayfastTopUpIntent,
   getManualEftBankAccountInstructions,
   logBlockedProviderCreditTopUpAttempt,
   ProviderCreditPaymentIntentError,
-  type PayfastTopUpMethod,
   type PayatTopUpFailureCode,
   type ProviderPayatTopUpResponse,
 } from '@/lib/provider-credit-payment-intents'
@@ -883,10 +881,6 @@ export async function createProviderTopUpIntent(
   return serializeTopUpInstructions(result)
 }
 
-export type ProviderPayfastCheckoutResult =
-  | { ok: true; intentId: string; checkout: import('@/lib/payfast').PayfastCheckoutPayload }
-  | { ok: false; code: string; userMessage: string; verificationUrl?: string | null }
-
 export type ProviderPayatTopUpResult = {
   intentId: string
   amountCents: number
@@ -1154,107 +1148,6 @@ export async function createProviderPayatTopUpIntent(
       ok: false,
       code: 'UNKNOWN' as const,
       userMessage: 'We couldn’t create your Pay@ reference. Please try again.',
-    }
-  }
-}
-
-/**
- * Create a Payfast checkout intent for the authenticated provider.
- * The caller must POST the provider's browser to `result.checkout.action`
- * with `result.checkout.fields`.
- *
- * IMPORTANT: the Payfast return URL is UI-only - wallet crediting only
- * happens after Payfast sends a verified ITN to /api/webhooks/payfast.
- */
-export async function createProviderPayfastTopUpIntent(
-  amountCents: number,
-  paymentMethod: PayfastTopUpMethod = 'PAYFAST_CARD',
-): Promise<ProviderPayfastCheckoutResult> {
-  let providerId: string | null = null
-  let intentId: string | undefined
-  try {
-    const provider = await getAuthenticatedProvider()
-    providerId = provider.id
-    if (!(await isProviderEligibleForCredits(provider.id))) {
-      logBlockedProviderCreditTopUpAttempt({
-        providerId: provider.id,
-        userId: provider.userId,
-        verificationStatus: provider.kycStatus,
-        attemptedAction: 'payfast_top_up_intent_create',
-      })
-      throw new ProviderCreditPaymentIntentError(
-        'IDENTITY_NOT_VERIFIED',
-        'Top-ups are available after your identity has been verified.',
-      )
-    }
-
-    const activeIntentCount = await db.paymentIntent.count({
-      where: {
-        providerId: provider.id,
-        paymentMethod: { in: ['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'] },
-        status: 'PENDING_PAYMENT',
-      },
-    })
-    if (activeIntentCount >= 3) {
-      // Mirror the Pay@ checkout_blocked log shape so log-based alerts can match
-      // a single prefix family across both PSPs.
-      console.warn('[payfast] checkout_blocked: too_many_pending', {
-        providerId: provider.id,
-        amountCents,
-        activeIntentCount,
-      })
-      return {
-        ok: false,
-        code: 'TOO_MANY_PENDING',
-        userMessage: 'You already have 3 pending payments. Complete or cancel one before starting a new top-up.',
-      }
-    }
-    const result = await createPayfastTopUpIntent({
-      providerId: provider.id,
-      amountCents,
-      paymentMethod,
-      providerCellphone: provider.phone,
-      actorUserId: provider.userId,
-    })
-    intentId = result.intent.id
-
-    revalidatePath('/provider/credits')
-    return { ok: true, intentId: result.intent.id, checkout: result.checkout }
-  } catch (err) {
-    if (err instanceof ProviderCreditPaymentIntentError) {
-      console.warn('[payfast] checkout_blocked: payment_intent_error', {
-        providerId, amountCents, intentId, code: err.code, status: 'blocked',
-      })
-      switch (err.code) {
-        case 'INVALID_AMOUNT':
-          return {
-            ok: false,
-            code: 'INVALID_AMOUNT',
-            userMessage: 'That top-up amount is not available. Please pick R100, R200 or R500.',
-          }
-        case 'PROVIDER_NOT_FOUND':
-          return {
-            ok: false,
-            code: 'PROVIDER_NOT_FOUND',
-            userMessage: 'We could not load your provider profile. Sign in again and retry.',
-          }
-        case 'IDENTITY_NOT_VERIFIED':
-          return {
-            ok: false,
-            code: 'IDENTITY_NOT_VERIFIED',
-            userMessage: 'Identity verification is required before purchasing credits. Verify your identity first.',
-            verificationUrl: await issueCreditVerificationUrl(providerId),
-          }
-        default:
-          break
-      }
-    }
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[payfast] checkout_failed', { providerId, amountCents, intentId, error: message })
-    return {
-      ok: false,
-      code: 'UNKNOWN',
-      userMessage: 'Could not start Payfast checkout. Please try again.',
     }
   }
 }
