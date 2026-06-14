@@ -59,7 +59,7 @@ export function checkProviderCanUnlockLead(
 
   if (
     provider.kycStatus !== 'VERIFIED' &&
-    !isKycGrandfathered(provider.createdAt, kycGraceEnabled)
+    !isKycGrandfathered(provider.createdAt, kycGraceEnabled, provider.kycStatus)
   ) {
     return { ok: false, code: 'KYC_REQUIRED' }
   }

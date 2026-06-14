@@ -355,8 +355,20 @@ export async function filterEligibleProviders(
           // permitted relaxation is the scoped, dated legacy grace (lib/matching/
           // kyc-grace.ts): when the grace flag is ON, providers created before the
           // cutoff are admitted without VERIFIED; everyone created after still needs it.
+          // Grace re-admits pre-cutoff providers WITHOUT VERIFIED, but never those
+          // whose KYC actively failed/expired (REJECTED/EXPIRED) — see kyc-grace.ts.
           ...(kycGraceOn
-            ? { OR: [{ kycStatus: 'VERIFIED' }, { createdAt: { lt: KYC_GRACE_CUTOFF } }] }
+            ? {
+                OR: [
+                  { kycStatus: 'VERIFIED' },
+                  {
+                    AND: [
+                      { createdAt: { lt: KYC_GRACE_CUTOFF } },
+                      { kycStatus: { notIn: ['REJECTED', 'EXPIRED'] } },
+                    ],
+                  },
+                ],
+              }
             : { kycStatus: 'VERIFIED' }),
           status: 'ACTIVE',
           isTestUser: Boolean(jobRequest.isTestRequest),

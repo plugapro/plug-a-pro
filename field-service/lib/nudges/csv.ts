@@ -19,6 +19,13 @@ export const CSV_COLUMNS = [
 
 function escapeCell(value: string | null | undefined): string {
   const s = value ?? ''
+  // CSV formula injection: a cell starting with = + - @ (or tab/CR) is treated as
+  // a formula by Excel/Sheets/LibreOffice. Provider-controlled fields (name,
+  // skills, message) flow into this export, so prefix a single quote to force
+  // text interpretation. Always quote such cells so the prefix can't be split.
+  if (/^[=+\-@\t\r]/.test(s)) {
+    return `"'${s.replace(/"/g, '""')}"`
+  }
   if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
     return `"${s.replace(/"/g, '""')}"`
   }

@@ -14,6 +14,7 @@ const {
   mockHead,
   mockResolveJobRequestAccessScope,
   mockResolveProviderLeadAttachmentScope,
+  mockResolveCustomerProviderHandoverToken,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockGetAdminActor: vi.fn(),
@@ -28,6 +29,7 @@ const {
   mockHead: vi.fn(),
   mockResolveJobRequestAccessScope: vi.fn(),
   mockResolveProviderLeadAttachmentScope: vi.fn(),
+  mockResolveCustomerProviderHandoverToken: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
@@ -41,6 +43,9 @@ vi.mock('@/lib/job-request-access', () => ({
 }))
 vi.mock('@/lib/provider-lead-access', () => ({
   resolveProviderLeadAttachmentScope: mockResolveProviderLeadAttachmentScope,
+}))
+vi.mock('@/lib/customer-provider-handover-access', () => ({
+  resolveCustomerProviderHandoverToken: mockResolveCustomerProviderHandoverToken,
 }))
 vi.stubGlobal('fetch', mockFetch)
 
@@ -58,6 +63,9 @@ const makeTokenRequest = (token: string) =>
 
 const makeLeadTokenRequest = (token: string) =>
   new NextRequest(`http://localhost/api/attachments/att-1?leadToken=${token}`)
+
+const makeHandoverTokenRequest = (token: string) =>
+  new NextRequest(`http://localhost/api/attachments/att-1?handoverToken=${token}`)
 
 const makeParams = () =>
   Promise.resolve({ id: 'att-1' }) as Promise<{ id: string }>
@@ -839,5 +847,79 @@ describe('GET /api/attachments/[id] - provider identity document TRUST gate', ()
     expect(res.status).toBe(200)
     // Non-identity labels must not trigger an identity-document lookup
     expect(mockDb.providerIdentityDocument.findFirst).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Regression (finding 4adb580b): handover-token attachment access ──────────
+// The handover path must (1) resolve the token (enforcing lead ACCEPTED + request
+// not cancelled/expired + match still assigned) rather than only verifying the
+// signature, and (2) refuse safeForPreview=false request attachments — like the
+// ticket/lead token paths.
+describe('GET /api/attachments/[id] - handover-token enforcement (finding 4adb580b)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockHead.mockResolvedValue({ downloadUrl: 'https://store.public.blob.vercel-storage.com/download/att-1' })
+    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200, headers: new Headers() })
+    mockGetSession.mockResolvedValue(null)
+    mockResolveJobRequestAccessScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
+    mockDb.lead.findUnique.mockResolvedValue(null)
+  })
+
+  it('allows a valid (active) handover token for a safeForPreview=true request attachment', async () => {
+    mockResolveCustomerProviderHandoverToken.mockResolvedValue({
+      status: 'active',
+      handover: { jobRequest: { id: 'jr-1' } },
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: true,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeHandoverTokenRequest('handover-tok'), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks a handover token for a safeForPreview=false request attachment', async () => {
+    mockResolveCustomerProviderHandoverToken.mockResolvedValue({
+      status: 'active',
+      handover: { jobRequest: { id: 'jr-1' } },
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: false,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeHandoverTokenRequest('handover-tok'), { params: makeParams() })
+
+    // Denied: a handover-only request that isn't allowed falls through to the
+    // generic unauthenticated response (no session, no other recognized scope).
+    // The security guarantee is that the safeForPreview=false attachment is NOT served.
+    expect(res.status).toBe(401)
+  })
+
+  it('blocks a stale/revoked handover token (resolve returns non-active) even for safeForPreview=true', async () => {
+    // resolve() returns 'invalid' when the lead is no longer ACCEPTED / request
+    // cancelled-expired / match reassigned — a signature-only check would leak.
+    mockResolveCustomerProviderHandoverToken.mockResolvedValue({ status: 'invalid', handover: null })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: true,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeHandoverTokenRequest('stale-tok'), { params: makeParams() })
+
+    // A stale/reassigned handover token must not serve the attachment.
+    expect(res.status).toBe(401)
   })
 })

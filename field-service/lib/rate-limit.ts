@@ -569,15 +569,16 @@ export async function checkNotifyInterestLimit(params: {
   phone: string
   ip?: string | null
 }): Promise<CheckNotifyInterestLimitResult> {
-  const ip = params.ip?.trim()
-  if (ip) {
-    const ipDecision = await consume('notifyInterestByIp', `ip:${ip}`)
-    if (!ipDecision.ok) {
-      return {
-        ok: false,
-        code: ipDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
-        retryAfterMs: ipDecision.retryAfterMs,
-      }
+  // Coalesce a missing/untrusted IP to a shared 'unknown' bucket (matching the
+  // otpReportByIp pattern) so a null IP cannot skip the per-source cap entirely
+  // and let an attacker rotate phone numbers under the per-phone bucket alone.
+  const ip = params.ip?.trim() || 'unknown'
+  const ipDecision = await consume('notifyInterestByIp', `ip:${ip}`)
+  if (!ipDecision.ok) {
+    return {
+      ok: false,
+      code: ipDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
+      retryAfterMs: ipDecision.retryAfterMs,
     }
   }
 

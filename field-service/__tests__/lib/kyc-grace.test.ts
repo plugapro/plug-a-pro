@@ -17,6 +17,15 @@ describe('isKycGrandfathered', () => {
   it('handles null createdAt safely', () => {
     expect(isKycGrandfathered(null, true)).toBe(false)
   })
+  it('never grandfathers a terminal-fail KYC status (REJECTED/EXPIRED), even pre-cutoff with grace on', () => {
+    expect(isKycGrandfathered(before, true, 'REJECTED')).toBe(false)
+    expect(isKycGrandfathered(before, true, 'EXPIRED')).toBe(false)
+  })
+  it('still grandfathers a pre-cutoff provider who simply has not completed KYC', () => {
+    expect(isKycGrandfathered(before, true, 'NOT_STARTED')).toBe(true)
+    expect(isKycGrandfathered(before, true, 'IN_PROGRESS')).toBe(true)
+    expect(isKycGrandfathered(before, true, 'SUBMITTED')).toBe(true)
+  })
 })
 
 describe('checkProviderCanUnlockLead KYC grace', () => {
@@ -34,5 +43,13 @@ describe('checkProviderCanUnlockLead KYC grace', () => {
   })
   it('always admits a VERIFIED provider regardless of grace', () => {
     expect(checkProviderCanUnlockLead({ ...approved, kycStatus: 'VERIFIED', createdAt: after }, false)).toEqual({ ok: true })
+  })
+  it('blocks a REJECTED pre-cutoff provider even when grace is on (PII boundary)', () => {
+    const r = checkProviderCanUnlockLead({ ...approved, kycStatus: 'REJECTED', createdAt: before }, true)
+    expect(r).toEqual({ ok: false, code: 'KYC_REQUIRED' })
+  })
+  it('blocks an EXPIRED pre-cutoff provider even when grace is on', () => {
+    const r = checkProviderCanUnlockLead({ ...approved, kycStatus: 'EXPIRED', createdAt: before }, true)
+    expect(r).toEqual({ ok: false, code: 'KYC_REQUIRED' })
   })
 })

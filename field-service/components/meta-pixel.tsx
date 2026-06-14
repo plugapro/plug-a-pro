@@ -3,6 +3,7 @@
 import Script from 'next/script'
 import { usePathname } from 'next/navigation'
 import { useEffect } from 'react'
+import { isSensitiveTokenRoute } from '@/lib/sensitive-token-routes'
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID
 
@@ -16,6 +17,8 @@ declare global {
 function PageViewTracker() {
   const pathname = usePathname()
   useEffect(() => {
+    // Never emit a PageView (which carries the URL) on a tokenized route.
+    if (isSensitiveTokenRoute(pathname)) return
     if (typeof window.fbq === 'function') {
       window.fbq('track', 'PageView')
     }
@@ -24,7 +27,10 @@ function PageViewTracker() {
 }
 
 export function MetaPixel() {
-  if (!PIXEL_ID) return null
+  const pathname = usePathname()
+  // Don't even bootstrap the pixel on a tokenized route, so a direct magic-link
+  // landing never initialises fbq with the token URL in scope.
+  if (!PIXEL_ID || isSensitiveTokenRoute(pathname)) return null
 
   return (
     <>

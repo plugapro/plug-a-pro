@@ -16,10 +16,25 @@ export const KYC_GRACE_FLAG = 'matching.kyc_grace_legacy_providers'
 // and all future sign-ups do not.
 export const KYC_GRACE_CUTOFF = new Date('2026-06-11T00:00:00.000Z')
 
-/** True when a non-VERIFIED provider is grandfathered (grace on AND created before cutoff). */
+// KYC outcomes that must NEVER be grandfathered. Grace only bridges providers who
+// simply haven't completed KYC yet — a provider whose identity check actively
+// FAILED (REJECTED) or lapsed (EXPIRED) is outside the identity boundary and must
+// not be re-admitted to matching or lead-unlock by the date-based grace.
+export const KYC_GRACE_INELIGIBLE_STATUSES = ['REJECTED', 'EXPIRED'] as const
+
+/**
+ * True when a non-VERIFIED provider is grandfathered: grace on, created before the
+ * cutoff, and not in a terminal-fail KYC state (REJECTED/EXPIRED). `kycStatus` is
+ * optional only for legacy callers; always pass it where the value is known.
+ */
 export function isKycGrandfathered(
   createdAt: Date | null | undefined,
   graceEnabled: boolean,
+  kycStatus?: string | null,
 ): boolean {
-  return graceEnabled && createdAt != null && createdAt < KYC_GRACE_CUTOFF
+  if (!graceEnabled || createdAt == null || createdAt >= KYC_GRACE_CUTOFF) return false
+  if (kycStatus && (KYC_GRACE_INELIGIBLE_STATUSES as readonly string[]).includes(kycStatus)) {
+    return false
+  }
+  return true
 }

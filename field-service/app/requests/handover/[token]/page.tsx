@@ -159,13 +159,13 @@ export default async function CustomerProviderHandoverPage({
             <p className="font-medium">{jobRequest.title}</p>
             <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{jobRequest.description}</p>
           </div>
-          {jobRequest.attachments.length > 0 && (
+          {jobRequest.attachments.filter((a) => a.safeForPreview !== false).length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Uploaded photos
               </p>
               <div className="grid grid-cols-2 gap-2">
-                {jobRequest.attachments.map((photo) => {
+                {jobRequest.attachments.filter((a) => a.safeForPreview !== false).map((photo) => {
                   // Use the scoped handover token — never the customer bearer token
                   const src = `/api/attachments/${photo.id}?handoverToken=${encodeURIComponent(token)}`
                   return (

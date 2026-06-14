@@ -17,7 +17,7 @@ import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { resolveJobRequestAccessScope } from '@/lib/job-request-access'
 import { resolveProviderLeadAttachmentScope } from '@/lib/provider-lead-access'
-import { verifyCustomerProviderHandoverToken } from '@/lib/customer-provider-handover-access'
+import { resolveCustomerProviderHandoverToken } from '@/lib/customer-provider-handover-access'
 
 type ImageErrorCode =
   | 'ATTACHMENT_RECORD_MISSING'
@@ -135,13 +135,16 @@ export async function GET(
   const tokenScope = token ? await resolveJobRequestAccessScope(token) : null
   const leadTokenScope = leadToken ? await resolveProviderLeadAttachmentScope(leadToken) : null
 
-  // Resolve handover token scope: validates the HMAC-signed token and extracts the jobRequestId
-  const handoverTokenPayload = handoverToken
-    ? verifyCustomerProviderHandoverToken(handoverToken)
+  // Resolve (not just verify) the handover token so it stops serving attachments
+  // once the lead is no longer ACCEPTED, the request is cancelled/expired, the
+  // match is cancelled, or the provider is reassigned. A signature-only check
+  // would keep exposing customer attachments until the 14-day TTL.
+  const handoverTokenScope = handoverToken
+    ? await resolveCustomerProviderHandoverToken(handoverToken)
     : null
   const handoverTokenJobRequestId =
-    handoverTokenPayload?.status === 'active' && handoverTokenPayload.payload
-      ? handoverTokenPayload.payload.jobRequestId
+    handoverTokenScope?.status === 'active' && handoverTokenScope.handover
+      ? handoverTokenScope.handover.jobRequest.id
       : null
 
   const attachmentJobRequestId =
@@ -173,11 +176,12 @@ export async function GET(
   // request-level attachments scoped to the same jobRequest. Job-level attachments
   // (work evidence) are not served via handover tokens.
   const handoverTokenAllowsAttachment =
-    handoverTokenPayload?.status === 'active' &&
+    handoverTokenScope?.status === 'active' &&
     handoverTokenJobRequestId != null &&
     attachmentJobRequestId != null &&
     handoverTokenJobRequestId === attachmentJobRequestId &&
-    !isJobAttachment
+    !isJobAttachment &&
+    attachment?.safeForPreview !== false
 
   let sessionAllowsAttachment = false
 

@@ -336,3 +336,43 @@ describe('voucher redemption rate limiting', () => {
     await expect(checkVoucherRedemptionLimit(params)).resolves.toEqual({ ok: true })
   })
 })
+
+describe('notify-interest rate limiting', () => {
+  const originalEnv = { ...process.env }
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    process.env = { ...originalEnv }
+    const { resetRateLimitForTests } = await import('@/lib/rate-limit')
+    resetRateLimitForTests()
+  })
+
+  afterEach(async () => {
+    process.env = { ...originalEnv }
+    const { resetRateLimitForTests } = await import('@/lib/rate-limit')
+    resetRateLimitForTests()
+  })
+
+  it('consumes the per-IP bucket even when the IP is null, so phone rotation cannot bypass it (finding 7c95b963)', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+    process.env.NOTIFY_INTEREST_LIMIT_PER_IP_HOUR = '1'
+    // Force the in-memory limiter path (no durable Redis configured).
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
+    delete process.env.UPSTASH_REDIS_KV_REST_API_URL
+    delete process.env.UPSTASH_REDIS_KV_REST_API_TOKEN
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
+
+    const { checkNotifyInterestLimit, resetRateLimitForTests } = await import('@/lib/rate-limit')
+    resetRateLimitForTests()
+
+    // Two DIFFERENT phones but a null IP: both fall into the shared 'unknown' IP
+    // bucket, so the second is capped — previously the null IP skipped the bucket.
+    const first = await checkNotifyInterestLimit({ phone: '+27820000001', ip: null })
+    const second = await checkNotifyInterestLimit({ phone: '+27820000002', ip: null })
+
+    expect(first).toEqual({ ok: true })
+    expect(second).toMatchObject({ ok: false, code: 'ip_limit' })
+  })
+})

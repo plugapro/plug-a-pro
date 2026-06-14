@@ -139,7 +139,7 @@ export async function resolveCustomerProviderHandoverToken(token: string) {
           },
           attachments: {
             orderBy: { createdAt: 'asc' },
-            select: { id: true, caption: true, label: true },
+            select: { id: true, caption: true, label: true, safeForPreview: true },
           },
           match: {
             select: {
