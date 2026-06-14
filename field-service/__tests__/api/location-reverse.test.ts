@@ -16,7 +16,7 @@ const { mockReverseGeocode, mockResolveStructured, mockCheckLimit, mockTrustedIp
 }))
 
 vi.mock('@/lib/geocoding', () => ({ reverseGeocodeCoordinates: mockReverseGeocode }))
-vi.mock('@/lib/location-nodes', () => ({ resolveStructuredAddressByLabels: mockResolveStructured }))
+vi.mock('@/lib/location-nodes', () => ({ resolveStructuredAddressFromReverse: mockResolveStructured }))
 vi.mock('@/lib/rate-limit', () => ({ checkLocationReverseLimit: mockCheckLimit }))
 vi.mock('@/lib/request-ip', () => ({ trustedClientIp: mockTrustedIp }))
 
