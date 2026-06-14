@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { reverseGeocodeCoordinates } from '@/lib/geocoding'
-import { resolveStructuredAddressByLabels } from '@/lib/location-nodes'
+import { resolveStructuredAddressFromReverse } from '@/lib/location-nodes'
 import { checkLocationReverseLimit } from '@/lib/rate-limit'
 import { trustedClientIp } from '@/lib/request-ip'
 
@@ -38,14 +38,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Could not resolve address from location' }, { status: 404 })
   }
 
-  const selection =
-    result.suburb
-      ? await resolveStructuredAddressByLabels({
-          suburb: result.suburb,
-          city: result.city,
-          province: result.province,
-        })
-      : null
+  // Resolve the service-area suburb using every reliable signal — not just the
+  // OSM suburb name (which often doesn't match our taxonomy). Postal code and
+  // the user's coordinates rescue the common "found your street, but couldn't
+  // match the suburb" case.
+  const selection = await resolveStructuredAddressFromReverse({
+    suburb: result.suburb,
+    city: result.city,
+    province: result.province,
+    postalCode: result.postalCode,
+    lat,
+    lng,
+  })
 
   return NextResponse.json({
     street: result.street,

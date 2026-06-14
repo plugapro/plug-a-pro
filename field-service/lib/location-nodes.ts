@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
-import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { normaliseLocationDisplayName, normaliseLocationKey } from '@/lib/location-format'
 import { locationSearchTerms } from '@/lib/location-aliases'
+import { haversineKm } from '@/lib/matching/geography'
 import { LocationNodeType, LocationNode } from '@prisma/client'
 
 // ─── Exported Types ────────────────────────────────────────────────────────────
@@ -555,6 +556,172 @@ export async function resolveStructuredAddressByLabels(input: {
     province: formatNodeLabel(node.parent.parent.parent.label),
     postalCode: node.postalCode,
   }
+}
+
+// ─── Reverse-geocode → service-area resolution ─────────────────────────────────
+// A reverse geocode (OSM/Nominatim) gives us a suburb NAME, a postal code, and
+// the exact coordinates. The suburb name rarely matches our curated taxonomy
+// exactly (OSM returns neighbourhoods/wards/extensions), so name-only matching
+// frequently fails. resolveStructuredAddressFromReverse tries the most reliable
+// signals in order: exact name → postal code → nearest suburb by coordinate.
+
+const MAX_REVERSE_MATCH_KM = 15
+
+type ReverseResolveNode = {
+  id: string
+  label: string
+  postalCode: string | null
+  lat: number | null
+  lng: number | null
+  parent: {
+    label: string | null
+    parent: {
+      label: string | null
+      parent: { label: string | null } | null
+    } | null
+  } | null
+}
+
+const REVERSE_SUBURB_SELECT = {
+  id: true,
+  label: true,
+  postalCode: true,
+  lat: true,
+  lng: true,
+  parent: {
+    select: {
+      label: true,
+      parent: {
+        select: { label: true, parent: { select: { label: true } } },
+      },
+    },
+  },
+}
+
+function reverseNodeToSelection(node: ReverseResolveNode): StructuredAddressSelection | null {
+  if (
+    !node.postalCode ||
+    !node.parent?.label ||
+    !node.parent.parent?.label ||
+    !node.parent.parent.parent?.label
+  ) {
+    return null
+  }
+  return {
+    locationNodeId: node.id,
+    suburb: formatNodeLabel(node.label),
+    region: formatNodeLabel(node.parent.label),
+    city: formatNodeLabel(node.parent.parent.label),
+    province: formatNodeLabel(node.parent.parent.parent.label),
+    postalCode: node.postalCode,
+  }
+}
+
+function nearestReverseNode(
+  nodes: ReverseResolveNode[],
+  point: { lat: number; lng: number },
+  maxKm: number,
+): ReverseResolveNode | null {
+  let best: ReverseResolveNode | null = null
+  let bestKm = Infinity
+  for (const node of nodes) {
+    const km = haversineKm({ lat: node.lat, lng: node.lng }, point)
+    if (km != null && km < bestKm) {
+      bestKm = km
+      best = node
+    }
+  }
+  return best && bestKm <= maxKm ? best : null
+}
+
+// When several suburbs share a postal code, disambiguate by nearest coordinate
+// (if we have a point), then by matching city/province labels, else first.
+function pickPostalCandidate(
+  nodes: ReverseResolveNode[],
+  ctx: { point: { lat: number; lng: number } | null; city?: string | null; province?: string | null },
+): ReverseResolveNode | null {
+  if (nodes.length <= 1) return nodes[0] ?? null
+  if (ctx.point) {
+    const nearest = nearestReverseNode(nodes, ctx.point, Infinity)
+    if (nearest) return nearest
+  }
+  const city = ctx.city?.trim().toLowerCase() || null
+  const province = ctx.province?.trim().toLowerCase() || null
+  return (
+    nodes.find(
+      (n) =>
+        (city ? n.parent?.parent?.label?.toLowerCase() === city : true) &&
+        (province ? n.parent?.parent?.parent?.label?.toLowerCase() === province : true),
+    ) ?? nodes[0]
+  )
+}
+
+/**
+ * Resolve a service-area suburb from a reverse-geocode result, trying the most
+ * reliable signal available in order:
+ *   1. Exact suburb name (unchanged precise path when OSM's name matches).
+ *   2. Postal code (robust to OSM suburb-name mismatch; every suburb node has one).
+ *   3. Nearest suburb by coordinate within the province (name-independent).
+ * Returns null only when none resolve — the caller then prompts manual selection.
+ * Queries are bounded: postcode-scoped, then province-scoped.
+ */
+export async function resolveStructuredAddressFromReverse(input: {
+  suburb?: string | null
+  city?: string | null
+  province?: string | null
+  postalCode?: string | null
+  lat?: number | null
+  lng?: number | null
+}): Promise<StructuredAddressSelection | null> {
+  const suburb = input.suburb?.trim() || null
+  const postalCode = input.postalCode?.trim() || null
+  const province = input.province?.trim() || null
+  const point =
+    Number.isFinite(input.lat) && Number.isFinite(input.lng)
+      ? { lat: input.lat as number, lng: input.lng as number }
+      : null
+
+  // 1) Exact suburb name — keep the precise path that already works.
+  if (suburb) {
+    const byName = await resolveStructuredAddressByLabels({ suburb, city: input.city, province })
+    if (byName) return byName
+  }
+
+  // 2) Postal code.
+  if (postalCode) {
+    const byPostal = (await db.locationNode.findMany({
+      where: {
+        nodeType: 'SUBURB',
+        active: true,
+        postalCode,
+        slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
+      },
+      select: REVERSE_SUBURB_SELECT,
+    })) as ReverseResolveNode[]
+    const picked = pickPostalCandidate(byPostal, { point, city: input.city, province })
+    const selection = picked ? reverseNodeToSelection(picked) : null
+    if (selection) return selection
+  }
+
+  // 3) Nearest suburb by coordinate within the province.
+  if (point && province) {
+    const candidates = (await db.locationNode.findMany({
+      where: {
+        nodeType: 'SUBURB',
+        active: true,
+        provinceKey: normaliseLocationKey(province),
+        lat: { not: null },
+        lng: { not: null },
+        slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
+      },
+      select: REVERSE_SUBURB_SELECT,
+    })) as ReverseResolveNode[]
+    const nearest = nearestReverseNode(candidates, point, MAX_REVERSE_MATCH_KM)
+    const selection = nearest ? reverseNodeToSelection(nearest) : null
+    if (selection) return selection
+  }
+
+  return null
 }
 
 /**
