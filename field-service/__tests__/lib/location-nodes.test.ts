@@ -5,6 +5,7 @@ import {
   getSuburbs,
   getStructuredAddressSelection,
   resolveStructuredAddressByLabels,
+  resolveStructuredAddressFromReverse,
   searchNodes,
   resolveSuburbNodeId,
   isSuburbChildOfRegion,
@@ -655,5 +656,108 @@ describe('isSuburbChildOfRegion (finding 3cc92366 anti-spoof)', () => {
     await expect(isSuburbChildOfRegion('', 'rgn-1')).resolves.toBe(false)
     await expect(isSuburbChildOfRegion('sub-1', null)).resolves.toBe(false)
     expect(mockDb.locationNode.findFirst).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveStructuredAddressFromReverse', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function suburbNode(opts: {
+    id: string
+    label: string
+    postalCode: string | null
+    lat?: number | null
+    lng?: number | null
+    region: string
+    city: string
+    province: string
+  }) {
+    return {
+      id: opts.id,
+      label: opts.label,
+      postalCode: opts.postalCode,
+      lat: opts.lat ?? null,
+      lng: opts.lng ?? null,
+      parent: {
+        label: opts.region,
+        parent: { label: opts.city, parent: { label: opts.province } },
+      },
+    }
+  }
+
+  it('uses the exact suburb-name match first (unchanged precise path)', async () => {
+    mockDb.locationNode.findMany.mockResolvedValueOnce([
+      suburbNode({ id: 'n1', label: 'Sandton', postalCode: '2196', region: 'Sandton', city: 'Johannesburg', province: 'Gauteng' }),
+    ])
+
+    const sel = await resolveStructuredAddressFromReverse({ suburb: 'Sandton', city: 'Johannesburg', province: 'Gauteng' })
+
+    expect(sel?.suburb).toBe('Sandton')
+    expect(sel?.postalCode).toBe('2196')
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to postal code when the OSM suburb name does not match', async () => {
+    mockDb.locationNode.findMany
+      .mockResolvedValueOnce([]) // exact-name query: no match
+      .mockResolvedValueOnce([
+        suburbNode({ id: 'lf', label: 'Little Falls', postalCode: '2040', lat: -26.13, lng: 27.88, region: 'Roodepoort', city: 'Johannesburg', province: 'Gauteng' }),
+      ]) // postal-code query
+
+    const sel = await resolveStructuredAddressFromReverse({
+      suburb: 'Little Falls Ext 1',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+      postalCode: '2040',
+      lat: -26.13,
+      lng: 27.88,
+    })
+
+    expect(sel?.suburb).toBe('Little Falls')
+    expect(sel?.postalCode).toBe('2040')
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledTimes(2)
+  })
+
+  it('disambiguates a shared postal code by nearest coordinate', async () => {
+    mockDb.locationNode.findMany.mockResolvedValueOnce([
+      suburbNode({ id: 'far', label: 'Far Suburb', postalCode: '2000', lat: -26.30, lng: 28.10, region: 'R1', city: 'C1', province: 'Gauteng' }),
+      suburbNode({ id: 'near', label: 'Near Suburb', postalCode: '2000', lat: -26.205, lng: 28.045, region: 'R2', city: 'C2', province: 'Gauteng' }),
+    ])
+
+    const sel = await resolveStructuredAddressFromReverse({ postalCode: '2000', lat: -26.20, lng: 28.04, province: 'Gauteng' })
+
+    expect(sel?.suburb).toBe('Near Suburb')
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to nearest suburb by coordinate within the province', async () => {
+    mockDb.locationNode.findMany.mockResolvedValueOnce([
+      suburbNode({ id: 'a', label: 'Alpha', postalCode: '1', lat: -26.30, lng: 28.30, region: 'R', city: 'C', province: 'Gauteng' }),
+      suburbNode({ id: 'b', label: 'Beta', postalCode: '2', lat: -26.205, lng: 28.045, region: 'R', city: 'C', province: 'Gauteng' }),
+    ])
+
+    const sel = await resolveStructuredAddressFromReverse({ province: 'Gauteng', lat: -26.20, lng: 28.04 })
+
+    expect(sel?.suburb).toBe('Beta')
+  })
+
+  it('returns null when the nearest coordinate candidate is beyond the max distance', async () => {
+    mockDb.locationNode.findMany.mockResolvedValueOnce([
+      suburbNode({ id: 'far', label: 'Far', postalCode: '9', lat: -25.0, lng: 29.0, region: 'R', city: 'C', province: 'Gauteng' }),
+    ])
+
+    const sel = await resolveStructuredAddressFromReverse({ province: 'Gauteng', lat: -26.20, lng: 28.04 })
+
+    expect(sel).toBeNull()
+  })
+
+  it('returns null when no signal resolves a suburb', async () => {
+    mockDb.locationNode.findMany.mockResolvedValue([])
+
+    const sel = await resolveStructuredAddressFromReverse({ suburb: 'Nowhere Place' })
+
+    expect(sel).toBeNull()
   })
 })
