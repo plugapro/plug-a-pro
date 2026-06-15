@@ -20,8 +20,16 @@ const dmMono = DM_Mono({
 })
 import { MobileGate } from '@/components/shared/mobile-gate'
 import { MetaPixel } from '@/components/meta-pixel'
+import { GoogleAnalytics } from '@/components/google-analytics'
+import { ConsentBanner } from '@/components/consent-banner'
 import { UtmCapture } from '@/components/utm-capture'
 import './globals.css'
+
+// GA4 uses the SAME measurement ID as the marketing site so app.plugapro.co.za and
+// plugapro.co.za report to one GA4 property (cross-domain funnel). Env-driven, and
+// loaded only on the production deployment so preview/local traffic never pollutes it.
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID ?? 'G-R3RH07RQ3G'
+const GA_ENABLED = process.env.VERCEL_ENV === 'production' && Boolean(GA_ID)
 
 export const metadata: Metadata = {
   title: {
@@ -82,6 +90,7 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-background font-sans antialiased">
         <MetaPixel />
+        {GA_ENABLED && <GoogleAnalytics gaId={GA_ID} />}
         <UtmCapture />
         <ThemeProvider
           attribute="class"
@@ -93,6 +102,7 @@ export default function RootLayout({
             <MobileGate>{children}</MobileGate>
           </TooltipProvider>
           <Toaster richColors position="top-center" />
+          {GA_ENABLED && <ConsentBanner />}
         </ThemeProvider>
       </body>
     </html>
