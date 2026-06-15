@@ -197,6 +197,27 @@ describe('filterEligibleProviders - cooldown and daily-load', () => {
     )
   })
 
+  it('reports a candidate missing from the KYC-gated metrics set as KYC_NOT_VERIFIED, not TEST_COHORT_MISMATCH', async () => {
+    // The candidate clears the pool prefilter but the metrics query (whose only
+    // extra gate over the pool is KYC) returns no row for them. The reason must
+    // name the real cause (unverified KYC), not the legacy "TEST_COHORT_MISMATCH".
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+    mockDb.provider.findMany.mockResolvedValue([]) // no metrics row for p1
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(0)
+    const filtered = filteredOut.find((f) => f.providerId === 'p1')
+    expect(filtered?.filteredReasonCodes).toContain('KYC_NOT_VERIFIED')
+    expect(filtered?.filteredReasonCodes).not.toContain('TEST_COHORT_MISMATCH')
+  })
+
   it('excludes provider whose only structured service area is coming soon/inactive', async () => {
     mockDb.$queryRaw
       .mockResolvedValueOnce([])   // timedOutRows

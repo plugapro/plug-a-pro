@@ -513,10 +513,14 @@ export async function filterEligibleProviders(
   for (const candidate of rawCandidates) {
     const metrics = metricsById.get(candidate.id)
     if (!metrics) {
+      // The candidate cleared the pool prefilter (active/verified/status/cohort)
+      // but is absent from the metrics query result. That query's only ADDED gate
+      // over the pool is KYC (kycStatus=VERIFIED, or the dated legacy grace), so the
+      // real reason is an unverified KYC identity — not a test-cohort mismatch.
       filteredOut.push({
         providerId: candidate.id,
         providerName: candidate.name,
-        filteredReasonCodes: ['TEST_COHORT_MISMATCH'],
+        filteredReasonCodes: ['KYC_NOT_VERIFIED'],
       })
       continue
     }

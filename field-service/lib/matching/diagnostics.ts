@@ -51,10 +51,14 @@ const STATUS_REASON_CODES = new Set<string>([
   'PROVIDER_PREVIOUSLY_DECLINED',
   'CATEGORY_NOT_APPROVED',
   'TEST_COHORT_MISMATCH',
+  // Candidate cleared the pool prefilter but failed the metrics query's KYC gate
+  // (see lib/matching/filter.ts) — a status/approval reason, not skill/location.
+  'KYC_NOT_VERIFIED',
 ])
 
 const PERMANENT_REASON_FAMILIES = new Set<string>([
   'TEST_COHORT_MISMATCH',
+  'KYC_NOT_VERIFIED',
   'OUTSIDE_SERVICE_AREA',
   'MISSING_REQUIRED_SKILL',
   'MISSING_REQUIRED_CERTIFICATION',
