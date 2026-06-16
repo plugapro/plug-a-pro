@@ -23,6 +23,7 @@ export type CandidatePoolEntry = {
   isTestUser?: boolean
   cohortName?: string | null
   verified: boolean
+  kycStatus: string | null
   availableNow: boolean
   lastKnownLat: number | null
   lastKnownLng: number | null
@@ -87,7 +88,7 @@ async function loadFromPool(params: {
   const rows = await db.$queryRaw<Array<{
     id: string; name: string; phone: string; skills: string[]; serviceAreas: string[]
     maxTravelMinutes: number; reliabilityScore: number; averageRating: number
-    active: boolean; verified: boolean; availableNow: boolean; isTestUser: boolean; cohortName: string | null
+    active: boolean; verified: boolean; kycStatus: string | null; availableNow: boolean; isTestUser: boolean; cohortName: string | null
     lastKnownLat: number | null; lastKnownLng: number | null
     isOnline: boolean | null; liveLocationLat: number | null; liveLocationLng: number | null
     lastHeartbeatAt: Date | null; scoreBase: number
@@ -95,7 +96,7 @@ async function loadFromPool(params: {
     SELECT DISTINCT ON (p.id)
       p.id, p.name, p.phone, p.skills, p."serviceAreas",
       p."maxTravelMinutes", p."reliabilityScore", p."averageRating",
-      p.active, p.verified, p."availableNow", p."isTestUser", p."cohortName",
+      p.active, p.verified, p."kycStatus", p."availableNow", p."isTestUser", p."cohortName",
       p."lastKnownLat", p."lastKnownLng",
       pls."isOnline", pls."lastLocationLat" AS "liveLocationLat",
       pls."lastLocationLng" AS "liveLocationLng", pls."lastHeartbeatAt",
@@ -182,7 +183,7 @@ async function directScanWithConditions(params: {
       id: true, name: true, phone: true, skills: true, serviceAreas: true,
       isTestUser: true, cohortName: true,
       maxTravelMinutes: true, reliabilityScore: true, averageRating: true,
-      active: true, verified: true, availableNow: true,
+      active: true, verified: true, kycStatus: true, availableNow: true,
       lastKnownLat: true, lastKnownLng: true,
       liveStatus: {
         select: {
@@ -197,7 +198,7 @@ async function directScanWithConditions(params: {
   }) as Array<{
     id: string; name: string; phone: string; skills: string[]; serviceAreas: string[]
     maxTravelMinutes: number; reliabilityScore: number; averageRating: number
-    active: boolean; verified: boolean; availableNow: boolean; isTestUser: boolean; cohortName: string | null
+    active: boolean; verified: boolean; kycStatus: string | null; availableNow: boolean; isTestUser: boolean; cohortName: string | null
     lastKnownLat: number | null; lastKnownLng: number | null
     liveStatus?: { isOnline: boolean; lastLocationLat: number | null; lastLocationLng: number | null; lastHeartbeatAt: Date | null } | null
   }>
@@ -215,6 +216,7 @@ async function directScanWithConditions(params: {
     isTestUser: p.isTestUser,
     cohortName: p.cohortName,
     verified: p.verified,
+    kycStatus: p.kycStatus ?? null,
     availableNow: p.availableNow,
     lastKnownLat: p.lastKnownLat,
     lastKnownLng: p.lastKnownLng,

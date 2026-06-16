@@ -1986,8 +1986,57 @@ async function createOfferForAttempt(params: {
 
   const provider = await loadProviderOfferContact(db, params.providerId)
 
+  // CRITICAL: always send the approved template up-front. The interactive paths
+  // below also try to deliver, but Meta returns 200 OK to the API send call
+  // whether or not the 24-hour re-engagement window is open — so a "successful"
+  // sendCtaUrl can still fail asynchronously at delivery time. The previous
+  // `interactiveDelivered` flag was racy in exactly that way: it flipped to
+  // `true` on a successful POST, the template fallback never fired, and the
+  // provider received nothing once Meta rejected the message via webhook.
+  // (Repro: 2026-06-15 Honeydew rotation leads #2-#8, where every provider
+  // got `interactive:new_lead_available` FAILED with "Re-engagement message"
+  // and zero approved-template fallback — see the daily ads-conversion report.)
+  //
+  // The approved template carries the tappable lead link, so even cold providers
+  // who lose the in-chat buttons can still tap through to Accept/Decline on the
+  // lead page. Worst case: ~R0.30 extra per dispatch when the provider IS warm.
+  // Best case: every provider can now actually see the lead.
+  const [{ sendJobOffer }, { getProviderLeadAccessUrl }] = await Promise.all([
+    import('../whatsapp'),
+    import('../provider-lead-access'),
+  ])
+  const scheduledWindow = requestWindow.startAt.toLocaleDateString('en-ZA', {
+    weekday: 'short', day: 'numeric', month: 'short',
+  })
+  // Defensive: getProviderLeadAccessUrl can throw if it cannot sign a URL
+  // (e.g. lead row not yet committed, signing key unavailable). The template
+  // is a delivery upgrade, not a hard prerequisite — log and continue so the
+  // interactive paths and the cascade still run.
+  let signedUrl: string | null = null
+  try {
+    signedUrl = await getProviderLeadAccessUrl({ leadId: lead.id, providerId: params.providerId })
+  } catch (error) {
+    console.error('[matching] Could not derive signed lead URL for job_offer template:', error)
+  }
+  if (!signedUrl) {
+    console.error('[matching] Skipping job_offer template - no signed lead URL available', { leadId: lead.id })
+  } else {
+    await sendJobOffer({
+      providerPhone: provider.phone,
+      providerFirstName: provider.name.split(' ')[0] ?? provider.name,
+      serviceName: jobRequest.category,
+      area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
+      scheduledWindow,
+      jobUrl: signedUrl,
+    }).catch((error) => {
+      console.error('[matching] Failed to send job_offer template to provider:', error)
+    })
+  }
+
+  // Interactive paths run on top of the approved template — they upgrade the
+  // UX for providers inside the 24h re-engagement window. If they fail
+  // (cold provider), the template above already carried the lead link.
   const { notifyProviderNewJob } = await import('../whatsapp-bot')
-  let interactiveDelivered = false
   await notifyProviderNewJob({
     providerPhone: provider.phone,
     leadId: lead.id,
@@ -1997,42 +2046,16 @@ async function createOfferForAttempt(params: {
     description: jobRequest.title || jobRequest.description || jobRequest.category,
     customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
     expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
-  }).then(() => {
-    interactiveDelivered = true
   }).catch((error) => {
-    console.error('[matching] Failed to notify provider of assignment offer:', error)
+    console.error('[matching] Failed to notify provider of assignment offer (template fallback above already covers cold providers):', error)
   })
-
-  // Template fallback - only fires when the interactive CTA message fails (e.g. provider outside 24h session window).
-  // Sending both would duplicate the notification; the interactive message is always preferred.
-  if (!interactiveDelivered) {
-    const [{ sendJobOffer }, { getProviderLeadAccessUrl }] = await Promise.all([
-      import('../whatsapp'),
-      import('../provider-lead-access'),
-    ])
-    const scheduledWindow = requestWindow.startAt.toLocaleDateString('en-ZA', {
-      weekday: 'short', day: 'numeric', month: 'short',
-    })
-    const signedUrl = await getProviderLeadAccessUrl({ leadId: lead.id, providerId: params.providerId })
-    if (!signedUrl) {
-      console.error('[matching] Skipping job_offer template - no signed lead URL available', { leadId: lead.id })
-    } else {
-      sendJobOffer({
-        providerPhone: provider.phone,
-        providerFirstName: provider.name.split(' ')[0] ?? provider.name,
-        serviceName: jobRequest.category,
-        area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
-        scheduledWindow,
-        jobUrl: signedUrl,
-      }).catch((error) => {
-        console.error('[matching] Failed to send job_offer template to provider:', error)
-      })
-    }
-  }
 
   // Quick-response action buttons - same credit copy and Accept Lead / Decline
   // buttons as the dispatch.ts path so providers always see a consistent UI.
-  if (interactiveDelivered) {
+  // Will silently fail for cold providers; the template link above still works,
+  // so any failure here (no wallet, missing balance, send rejected) is non-fatal
+  // and must NOT break the rotation cascade in offerNextRankedCandidate.
+  try {
     const { sendButtons } = await import('../whatsapp-interactive')
     const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
     const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
@@ -2052,8 +2075,10 @@ async function createOfferForAttempt(params: {
         metadata: { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: params.providerId },
       }
     ).catch((error) => {
-      console.error('[matching] Failed to send lead action buttons to provider:', error)
+      console.error('[matching] Failed to send lead action buttons to provider (template above still carries the link):', error)
     })
+  } catch (error) {
+    console.error('[matching] Skipping lead action buttons - non-fatal:', error)
   }
 
   return { hold, lead }

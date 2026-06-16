@@ -43,6 +43,7 @@ function makeCandidate(overrides: Partial<CandidatePoolEntry> = {}): CandidatePo
     phone: '+27800000001',
     active: true,
     verified: true,
+    kycStatus: null,
     availableNow: true,
     skills: ['electrical'],
     serviceAreas: ['Sandton'],

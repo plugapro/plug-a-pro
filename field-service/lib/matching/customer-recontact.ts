@@ -216,6 +216,7 @@ function toCandidate(provider: {
   averageRating: number
   active: boolean
   verified: boolean
+  kycStatus: string | null
   availableNow: boolean
   lastKnownLat: number | null
   lastKnownLng: number | null
@@ -237,6 +238,7 @@ function toCandidate(provider: {
     averageRating: provider.averageRating,
     active: provider.active,
     verified: provider.verified,
+    kycStatus: provider.kycStatus ?? null,
     availableNow: provider.availableNow,
     lastKnownLat: provider.lastKnownLat,
     lastKnownLng: provider.lastKnownLng,
@@ -517,6 +519,7 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
       averageRating: true,
       active: true,
       verified: true,
+      kycStatus: true,
       status: true,
       availableNow: true,
       lastKnownLat: true,

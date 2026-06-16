@@ -138,10 +138,27 @@ function buildScoreBreakdown(
   }
 }
 
+export interface ScoringOptions {
+  /**
+   * When true, candidates with kycStatus=VERIFIED are sorted ABOVE all others
+   * regardless of score. Within each tier, the existing score/travel order
+   * applies. Default false — keeps legacy behaviour where score alone wins.
+   * Controlled by feature flag `matching.verification_trust_tier`.
+   */
+  verificationTrustTier?: boolean
+}
+
 export function scoreAndRankCandidates(
   eligible: EligibleProvider[],
-  jobRequest: MatchingJobRequest
+  jobRequest: MatchingJobRequest,
+  options: ScoringOptions = {}
 ): RankedCandidate[] {
+  // Source of truth for KYC tiering — read from the eligible provider, not
+  // the RankedCandidate (which intentionally doesn't carry kycStatus today).
+  const kycTier = new Map<string, number>(
+    eligible.map((p) => [p.id, p.kycStatus === 'VERIFIED' ? 1 : 0])
+  )
+
   const candidates: RankedCandidate[] = eligible.map((provider) => {
     const scoreBreakdown = buildScoreBreakdown(provider, jobRequest)
     return {
@@ -170,5 +187,11 @@ export function scoreAndRankCandidates(
     }
   })
 
-  return candidates.sort((a, b) => b.score - a.score || a.travelMinutes - b.travelMinutes)
+  return candidates.sort((a, b) => {
+    if (options.verificationTrustTier) {
+      const tierDelta = (kycTier.get(b.providerId) ?? 0) - (kycTier.get(a.providerId) ?? 0)
+      if (tierDelta !== 0) return tierDelta
+    }
+    return b.score - a.score || a.travelMinutes - b.travelMinutes
+  })
 }

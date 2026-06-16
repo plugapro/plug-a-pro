@@ -291,7 +291,8 @@ export async function orchestrateMatch(
     }
 
     // 3. Score and rank (pure - no DB calls)
-    const ranked = scoreAndRankCandidates(eligible, matchingJobRequest)
+    const verificationTrustTier = await isEnabled('matching.verification_trust_tier').catch(() => false)
+    const ranked = scoreAndRankCandidates(eligible, matchingJobRequest, { verificationTrustTier })
     const initialRankedSummary = ranked.map((rc) => ({ ...rc }))
 
     const queuedRanked = ranked.slice(0, MATCHING_CONFIG.quickMatchMaxProviderOffers)

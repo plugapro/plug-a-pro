@@ -84,6 +84,7 @@ async function main() {
       averageRating: true,
       active: true,
       verified: true,
+      kycStatus: true,
       availableNow: true,
       isTestUser: true,
       lastKnownLat: true,

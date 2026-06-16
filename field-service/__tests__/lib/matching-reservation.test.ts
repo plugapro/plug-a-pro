@@ -29,6 +29,7 @@ function makeCandidate(id = 'provider-1') {
     averageRating: 4.5,
     active: true,
     verified: true,
+    kycStatus: null,
     availableNow: true,
     lastKnownLat: -26.1,
     lastKnownLng: 28.05,

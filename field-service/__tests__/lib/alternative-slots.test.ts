@@ -53,6 +53,7 @@ function makeNearMissProvider(overrides: Partial<NearMissProvider> = {}): NearMi
     averageRating: 4.5,
     active: true,
     verified: true,
+    kycStatus: null,
     availableNow: true,
     lastKnownLat: -26.1,
     lastKnownLng: 28.0,
