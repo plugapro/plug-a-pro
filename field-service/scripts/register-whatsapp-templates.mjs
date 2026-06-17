@@ -259,6 +259,68 @@ const TEMPLATES = [
     body: 'Hi {{1}}, thank you for applying to Plug a Pro. Unfortunately we are unable to onboard you {{2}}. You are welcome to apply again in the future.',
     examples: ['Sipho Mokoena', 'at this time'],
   },
+
+  // ─── Provider Quality Uplift nudges (2026-06-17) ─────────────────────────
+  // Drive providers to complete profile photo, evidence of work, certification
+  // for high-risk skills, and remaining items. Pairs with
+  // lib/provider-quality/ + /admin/quality. URL buttons are STATIC so the
+  // template needs no per-send button parameter.
+  {
+    name: 'provider_profile_photo_nudge',
+    category: 'UTILITY',
+    // {{1}} provider first name
+    body: 'Hi {{1}}, thanks for joining Plug A Pro. Please upload a clear profile photo so customers and our operations team can identify you properly. Tap the button below to update your profile - a complete profile gives you a better chance of being considered for work.',
+    examples: ['Sipho'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Update profile',
+        url: 'https://app.plugapro.co.za/provider/profile',
+      },
+    ],
+  },
+  {
+    name: 'provider_evidence_nudge',
+    category: 'UTILITY',
+    // {{1}} provider first name
+    body: 'Hi {{1}}, before we send more customer requests we need to see evidence of your previous work. Please tap the button below to upload clear photos of completed jobs - this helps us understand the quality of your workmanship.',
+    examples: ['Sipho'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Upload evidence',
+        url: 'https://app.plugapro.co.za/provider/profile/evidence',
+      },
+    ],
+  },
+  {
+    name: 'provider_high_risk_cert_nudge',
+    category: 'UTILITY',
+    // {{1}} provider first name
+    body: 'Hi {{1}}, you selected a service that requires extra proof because it can affect customer safety or property. Please tap the button below to upload your certification, qualification, or strong supporting evidence so we can confidently consider you for this type of work.',
+    examples: ['Sipho'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Upload certification',
+        url: 'https://app.plugapro.co.za/provider/profile/evidence',
+      },
+    ],
+  },
+  {
+    name: 'provider_quality_multi_nudge',
+    category: 'UTILITY',
+    // {{1}} provider first name, {{2}} bullet list of missing items
+    body: 'Hi {{1}}, we are improving provider quality before sending more customer requests. Please complete the following on your profile: {{2}} - tap the button below to update your profile. A complete profile helps us assess you properly and gives you a better chance of being considered for work.',
+    examples: ['Sipho', '- Identity verification, - Profile photo'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Update profile',
+        url: 'https://app.plugapro.co.za/provider/profile',
+      },
+    ],
+  },
 ]
 
 // Templates that are intentionally managed outside this script's creation
