@@ -268,6 +268,56 @@ export const TEMPLATES = {
       'Hi {{1}}, Plug A Pro now requires identity verification for all providers. Verify by {{2}} to keep receiving job leads - it takes about 5 minutes. Tap the button below to start.',
   },
 
+  // ─── Provider Quality Uplift nudges ──────────────────────────────────────
+  // Templates submitted to Meta in support of the Quality Uplift admin flow
+  // (lib/provider-quality/). Until each one is APPROVED at Meta, sends will
+  // fail outside the 24h re-engagement window — the admin dry-run preview
+  // works regardless because it never hits the WhatsApp API.
+  provider_profile_photo_nudge: {
+    name: 'provider_profile_photo_nudge',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Quality Uplift nudge - asks provider to upload a clear profile photo. CTA URL button to the profile dashboard.',
+    // {{1}} provider first name; button (url, index 0): path suffix to /provider/profile
+    example:
+      'Hi {{1}}, please upload a clear profile photo so customers and our operations team can identify you. Tap the button below to update your profile - a complete profile gives you a better chance of being considered for work.',
+  },
+
+  provider_evidence_nudge: {
+    name: 'provider_evidence_nudge',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Quality Uplift nudge - asks provider to upload evidence of previous work. CTA URL button to the evidence upload screen.',
+    // {{1}} provider first name; button (url, index 0): path suffix to /provider/profile/evidence
+    example:
+      'Hi {{1}}, before we send more customer requests, we need to see evidence of your previous work. Please tap the button below to upload clear photos of completed jobs - this helps us understand the quality of your workmanship.',
+  },
+
+  provider_high_risk_cert_nudge: {
+    name: 'provider_high_risk_cert_nudge',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Quality Uplift nudge - asks provider to upload certification/qualification or strong supporting evidence for a high-risk or regulated service. CTA URL button to the evidence upload screen.',
+    // {{1}} provider first name; button (url, index 0): path suffix to /provider/profile/evidence
+    example:
+      'Hi {{1}}, you selected a service that requires extra proof because it can affect customer safety or property. Please tap the button below to upload your certification, qualification, or strong supporting evidence.',
+  },
+
+  provider_quality_multi_nudge: {
+    name: 'provider_quality_multi_nudge',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Quality Uplift nudge - asks provider to complete multiple missing profile items (combination of KYC, photo, evidence, cert). CTA URL button to the profile dashboard. {{2}} carries the bullet list of missing items.',
+    // {{1}} provider first name, {{2}} bullet list of missing items (one per line, prefixed with "- ");
+    // button (url, index 0): path suffix to /provider/profile
+    example:
+      'Hi {{1}}, please complete the following on your profile:\n{{2}}\nA complete profile helps us assess you properly and gives you a better chance of being considered for work.',
+  },
+
   technician_job_reminder: {
     name: 'technician_job_reminder',
     language: 'en_ZA',

@@ -265,6 +265,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'admin.quality.uplift': {
+    description: 'Provider Quality Uplift admin view + nudge orchestrator (lib/provider-quality/). When OFF, dry-run preview still works but sendNudges short-circuits with FEATURE_DISABLED. Flip ON per env after the Meta-approved templates (provider_profile_photo_nudge, provider_evidence_nudge, provider_high_risk_cert_nudge, provider_quality_multi_nudge) land in WhatsApp Business.',
+    owner: 'ops',
+    defaultValue: false,
+  },
   'matching.verification_trust_tier': {
     description: 'Hard-tier candidate ranking by KYC verification: kycStatus=VERIFIED providers sort above all others within the same eligible pool, then by score; non-verified ranked by score among themselves. Keeps the legacy grace flag honest (non-verified still match) but ensures truly lead-eligible providers get the first response window. Default OFF — flip on per environment after smoke-testing.',
     owner: 'eng',
