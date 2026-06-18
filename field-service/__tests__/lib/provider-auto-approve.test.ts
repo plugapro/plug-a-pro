@@ -25,6 +25,14 @@ const {
 // Default: kill switch ON so the existing approval-path assertions exercise the logic.
 // The disabled-flag behaviour is covered by its own test.
 vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
+// KYC hardening policy: keep the existing test surface (no KYC gating) by
+// resolving "is KYC required?" to false. Dedicated KYC-gate behaviour is
+// covered by __tests__/lib/provider-auto-approve-kyc-gate.test.ts.
+vi.mock('@/lib/kyc-policy', () => ({
+  isKycRequiredForActivation: vi.fn().mockResolvedValue(false),
+  KYC_REQUIRED_FLAG: 'provider.kyc.required_for_activation',
+  KYC_EXISTING_PROVIDER_GRACE_DAYS: 30,
+}))
 vi.mock('@/lib/provider-record', () => ({ syncProviderRecord: mockSyncProviderRecord }))
 vi.mock('@/lib/provider-promo-awards', () => ({ awardPromoCreditsForMilestone: mockAwardPromoCreditsForMilestone }))
 vi.mock('@/lib/ops-queue', () => ({ OPS_QUEUE_TYPES: { PROVIDER_ONBOARDING: 'PROVIDER_ONBOARDING' }, releaseOpsQueueItem: mockReleaseOpsQueueItem }))

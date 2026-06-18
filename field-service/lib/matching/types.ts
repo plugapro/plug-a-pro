@@ -220,6 +220,12 @@ export type OfferResolutionResult =
         | 'TAKEN'
         | 'INSUFFICIENT_CREDITS'
         | 'PROVIDER_NOT_APPROVED'
+        // Split out from PROVIDER_NOT_APPROVED so the WhatsApp/PWA copy can
+        // tell a provider whose marketplace status is fine but who hasn't
+        // completed KYC to finish verification — instead of the misleading
+        // "your account is not approved" message that the previous collapsed
+        // mapping produced.
+        | 'KYC_REQUIRED'
         | 'WALLET_SUSPENDED'
         | 'CONCURRENT_UNLOCK'
         | 'LEAD_ACCEPTANCE_FAILED'

@@ -8,6 +8,10 @@ import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import { normaliseLocationDisplayNames } from '@/lib/location-format'
 import type { KycStatus, ProviderStatus } from '@prisma/client'
 import { autoApproveLowRiskCategories } from '@/lib/provider-categories'
+import { isKycRequiredForActivation } from '@/lib/kyc-policy'
+import { isEnabled } from '@/lib/flags'
+import { KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
+import { checkCanBeApproved } from '@/lib/provider-lead-eligibility'
 
 const FLAG = 'admin.crud.providers'
 const OPS_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
@@ -60,6 +64,19 @@ const SetProviderKycSchema = z.object({
     'REJECTED',
     'EXPIRED',
   ]),
+})
+
+// Admin KYC override — explicit escape hatch when an operator needs to approve
+// a provider before VERIFIED. Recording the reason is required by policy; the
+// reason is persisted on the provider AND mirrored into AuditLog / AdminAuditEvent
+// by crudAction so the override is durably attributable.
+const SetProviderKycOverrideSchema = z.object({
+  providerId: z.string().min(1),
+  reason: z.string().min(8).max(500),
+})
+
+const ClearProviderKycOverrideSchema = z.object({
+  providerId: z.string().min(1),
 })
 
 const AddProviderNoteSchema = z.object({
@@ -118,6 +135,8 @@ type SetStatusInput = z.infer<typeof SetProviderStatusSchema>
 type CreateProviderInput = z.infer<typeof CreateProviderSchema>
 type UpdateProviderProfileInput = z.infer<typeof UpdateProviderProfileSchema>
 type SetProviderKycInput = z.infer<typeof SetProviderKycSchema>
+type SetProviderKycOverrideInput = z.infer<typeof SetProviderKycOverrideSchema>
+type ClearProviderKycOverrideInput = z.infer<typeof ClearProviderKycOverrideSchema>
 type AddNoteInput = z.infer<typeof AddProviderNoteSchema>
 type AddStrikeInput = z.infer<typeof AddProviderStrikeSchema>
 type VerifyCertInput = z.infer<typeof VerifyCertificationSchema>
@@ -125,6 +144,40 @@ type UpsertCertificationInput = z.infer<typeof UpsertCertificationSchema>
 type DeleteCertificationInput = z.infer<typeof DeleteCertificationSchema>
 type UpsertEquipmentInput = z.infer<typeof UpsertEquipmentSchema>
 type DeleteEquipmentInput = z.infer<typeof DeleteEquipmentSchema>
+
+// ─── KYC pre-flight (reused across verify/setStatus/reactivate) ─────────────
+//
+// Run inside a crudAction's `run` callback after reading the provider but
+// BEFORE the update. Throws CrudActionError('FORBIDDEN') when the KYC gate
+// denies activation, so the admin gets a clean error message instead of a
+// silently-downgraded write. The matching gate's grace flag is read here so
+// legacy providers stay grandfathered while matching.kyc_grace_legacy_providers
+// is ON (see CLAUDE.md / lib/matching/kyc-grace.ts).
+async function preflightProviderActivationKycGate(provider: {
+  kycStatus?: string | null
+  createdAt?: Date | null
+  kycGraceUntil?: Date | null
+  kycOverriddenAt?: Date | null
+}) {
+  const kycRequired = await isKycRequiredForActivation()
+  if (!kycRequired) return
+  const kycGraceEnabled = await isEnabled(KYC_GRACE_FLAG)
+  const gate = checkCanBeApproved(
+    {
+      kycStatus: provider.kycStatus ?? 'NOT_STARTED',
+      createdAt: provider.createdAt ?? null,
+      kycGraceUntil: provider.kycGraceUntil ?? null,
+      kycOverriddenAt: provider.kycOverriddenAt ?? null,
+    },
+    { kycRequired, kycGraceEnabled },
+  )
+  if (!gate.ok) {
+    throw new CrudActionError(
+      'FORBIDDEN',
+      'This provider cannot be activated without verified KYC. Use the Override KYC action with a written reason if you need to override.',
+    )
+  }
+}
 
 // ─── createProvider ───────────────────────────────────────────────────────────
 
@@ -260,9 +313,21 @@ export async function setProviderStatusAction(input: SetStatusInput) {
     run: async (data, tx) => {
       const provider = await tx.provider.findUnique({
         where: { id: data.providerId },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          status: true,
+          kycStatus: true,
+          createdAt: true,
+          kycGraceUntil: true,
+          kycOverriddenAt: true,
+        },
       })
       if (!provider) throw new CrudActionError('NOT_FOUND', `Provider ${data.providerId} not found.`)
+      // KYC gate: only transitions to ACTIVE require KYC; other status moves
+      // (SUSPEND, ARCHIVE, BAN) are not blocked.
+      if (data.status === 'ACTIVE') {
+        await preflightProviderActivationKycGate(provider)
+      }
       const now = new Date()
       await tx.provider.update({
         where: { id: data.providerId },
@@ -315,6 +380,18 @@ export async function verifyProviderAction(providerId: string) {
     schema: VerifyProviderSchema,
     input: { providerId },
     run: async (_data, tx) => {
+      const provider = await tx.provider.findUnique({
+        where: { id: providerId },
+        select: {
+          id: true,
+          kycStatus: true,
+          createdAt: true,
+          kycGraceUntil: true,
+          kycOverriddenAt: true,
+        },
+      })
+      if (!provider) throw new CrudActionError('NOT_FOUND', `Provider ${providerId} not found.`)
+      await preflightProviderActivationKycGate(provider)
       await tx.provider.update({
         where: { id: providerId },
         data: { verified: true, status: 'ACTIVE', active: true },
@@ -352,6 +429,18 @@ export async function reactivateProviderAction(providerId: string) {
     schema: VerifyProviderSchema,
     input: { providerId },
     run: async (_data, tx) => {
+      const provider = await tx.provider.findUnique({
+        where: { id: providerId },
+        select: {
+          id: true,
+          kycStatus: true,
+          createdAt: true,
+          kycGraceUntil: true,
+          kycOverriddenAt: true,
+        },
+      })
+      if (!provider) throw new CrudActionError('NOT_FOUND', `Provider ${providerId} not found.`)
+      await preflightProviderActivationKycGate(provider)
       await tx.provider.update({
         where: { id: providerId },
         data: {
@@ -395,6 +484,71 @@ export async function setProviderKycAction(input: SetProviderKycInput) {
       await tx.provider.update({
         where: { id: data.providerId },
         data: { kycStatus: data.kycStatus as KycStatus },
+      })
+      return { id: data.providerId }
+    },
+  })
+  revalidatePath(`/admin/providers/${input.providerId}`)
+  revalidatePath(`/admin/technicians/${input.providerId}`)
+  return result
+}
+
+// ─── setProviderKycOverride — escape hatch with required reason ─────────────
+//
+// Writes the per-provider override audit trio (kycOverriddenBy/At/Reason) and
+// lets the provider be activated without VERIFIED. crudAction also writes the
+// AuditLog + AdminAuditEvent rows, so the override is traceable beyond the
+// provider's own record. TRUST+ only — mirrors setProviderKycAction.
+export async function setProviderKycOverrideAction(input: SetProviderKycOverrideInput) {
+  const admin = await import('@/lib/auth').then((m) => m.requireAdmin())
+  const adminUserId = admin.adminUserId ?? admin.id
+
+  const result = await crudAction<SetProviderKycOverrideInput, { id: string }>({
+    entity: 'Provider',
+    entityId: input.providerId,
+    action: 'provider.kyc.override.set',
+    requiredRole: ['TRUST', 'ADMIN', 'OWNER'],
+    requiredFlag: FLAG,
+    schema: SetProviderKycOverrideSchema,
+    input,
+    run: async (data, tx) => {
+      await tx.provider.update({
+        where: { id: data.providerId },
+        data: {
+          kycOverriddenAt: new Date(),
+          kycOverriddenBy: adminUserId,
+          kycOverrideReason: data.reason,
+        },
+      })
+      return { id: data.providerId }
+    },
+  })
+  revalidatePath(`/admin/providers/${input.providerId}`)
+  revalidatePath(`/admin/technicians/${input.providerId}`)
+  return result
+}
+
+// Clearing the override does NOT itself re-block — the provider's status
+// fields (verified/active/status) are unchanged. The intended workflow is to
+// also flip the provider back to APPLICATION_PENDING via setProviderStatus if
+// the override is being retracted because the provider should not be active.
+export async function clearProviderKycOverrideAction(input: ClearProviderKycOverrideInput) {
+  const result = await crudAction<ClearProviderKycOverrideInput, { id: string }>({
+    entity: 'Provider',
+    entityId: input.providerId,
+    action: 'provider.kyc.override.clear',
+    requiredRole: ['TRUST', 'ADMIN', 'OWNER'],
+    requiredFlag: FLAG,
+    schema: ClearProviderKycOverrideSchema,
+    input,
+    run: async (data, tx) => {
+      await tx.provider.update({
+        where: { id: data.providerId },
+        data: {
+          kycOverriddenAt: null,
+          kycOverriddenBy: null,
+          kycOverrideReason: null,
+        },
       })
       return { id: data.providerId }
     },
@@ -696,6 +850,29 @@ export async function setProviderKycFromFormAction(formData: FormData) {
   } catch (err) {
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
     return { ok: false as const, error: 'Failed to update KYC status' }
+  }
+}
+
+export async function setProviderKycOverrideFromFormAction(formData: FormData) {
+  try {
+    return await setProviderKycOverrideAction({
+      providerId: formData.get('providerId') as string,
+      reason: ((formData.get('reason') as string) ?? '').trim(),
+    })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to set KYC override' }
+  }
+}
+
+export async function clearProviderKycOverrideFromFormAction(formData: FormData) {
+  try {
+    return await clearProviderKycOverrideAction({
+      providerId: formData.get('providerId') as string,
+    })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to clear KYC override' }
   }
 }
 

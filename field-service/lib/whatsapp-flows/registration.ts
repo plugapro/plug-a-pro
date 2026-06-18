@@ -1,8 +1,16 @@
 // ─── Service provider registration flow via WhatsApp ──────────────────────────
 // Journey: trigger → name → skills (multi-select) → area → experience → availability → submit → pending review
 // No direct connection given to customer - all mediated through Plug A Pro
+//
+// KYC hardening: when provider.kyc.required_for_activation is ON, the
+// "Verify later" / "skip" branches in handleCollectId / handleVerifyEnterId /
+// handleVerifyUploadDoc / handleVerifyUploadSelfie are blocked — the provider
+// must send their ID number, ID document, and selfie before the flow advances
+// to skills capture. When the flag is OFF the legacy skip-allowed behavior
+// is preserved so the rollout can be flipped per environment.
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
+import { isKycRequiredForActivation } from '../kyc-policy'
 import { WHATSAPP_COPY, ctaLabelFor } from '../whatsapp-copy'
 import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import { sendWhatsAppJourneyRecovery } from '../journey-recovery'
@@ -616,7 +624,7 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
       await sendText(ctx.phone, buildSkillPromptText(`👤 Name updated to *${name}*.\n\n🔧 *What type of work do you do?*`))
       return { nextStep: 'reg_collect_skills_more', nextData: { name } }
     }
-    await sendVerificationChoicePrompt(ctx.phone)
+    await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
     return { nextStep: 'reg_collect_id', nextData: { name } }
   }
 
@@ -641,7 +649,7 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills_more', nextData: { name } }
   }
 
-  await sendVerificationChoicePrompt(ctx.phone)
+  await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
   return { nextStep: 'reg_collect_id', nextData: { name } }
 }
 
@@ -652,14 +660,38 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 async function handleMigratedEmailStep(ctx: FlowContext): Promise<FlowResult> {
   const raw = ctx.reply.text?.trim() ?? ''
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)
-  await sendVerificationChoicePrompt(ctx.phone)
+  await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
   return {
     nextStep: 'reg_collect_id',
     nextData: isValidEmail ? { providerEmail: raw.toLowerCase() } : {},
   }
 }
 
-async function sendVerificationChoicePrompt(phone: string) {
+async function sendVerificationChoicePrompt(phone: string, kycMandatory: boolean) {
+  if (kycMandatory) {
+    // Mandatory copy: no "Verify later" button is offered. Selfie + ID upload
+    // are required before the provider can receive any work.
+    await sendButtons(
+      phone,
+      [
+        '🪪 *Identity verification required*',
+        '',
+        'Before you can receive any work on Plug A Pro, we need to verify your identity. Your details are never shared with customers.',
+        '',
+        'You will need to send:',
+        '• Your SA ID or passport number',
+        '• A photo of your ID document',
+        '• A selfie holding your ID',
+        '',
+        'Choose how to start:',
+      ].join('\n'),
+      [
+        { id: 'verify_enter_id', title: 'Enter ID/passport' },
+        { id: 'verify_upload_doc', title: 'Upload document' },
+      ],
+    )
+    return
+  }
   await sendButtons(
     phone,
     [
@@ -688,6 +720,21 @@ function isVerifyLaterReply(ctx: FlowContext): boolean {
 
 async function sendVerificationDeferredMessage(phone: string) {
   await sendText(phone, 'Identity verification deferred. Credit top-ups will stay locked until your identity is verified.')
+}
+
+// Sent when a provider tries to skip / type "later" while mandatory KYC is on.
+// We do NOT mark verificationMethod=skipped (that would let them advance);
+// we just re-prompt with the same step so the only forward path is sending
+// the requested document / number / selfie.
+async function sendKycMandatoryReminder(phone: string) {
+  await sendText(
+    phone,
+    [
+      '🪪 Identity verification is required before you can receive work on Plug A Pro.',
+      '',
+      'Please continue with the requested step — you can\'t skip it. Your details are never shared with customers.',
+    ].join('\n'),
+  )
 }
 
 // Standard Luhn check (rightmost digit = position 1, not doubled).
@@ -729,11 +776,17 @@ function validatePassportNumber(raw: string): string | null {
 
 // Migration handler for in-progress users still on the old mandatory ID step.
 // Accepts a typed ID/passport number for backward compatibility; shows the
-// deferred verification prompt for any other reply.
+// deferred verification prompt for any other reply. Skip paths are blocked
+// when provider.kyc.required_for_activation is ON — see sendKycMandatoryReminder.
 async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
+  const kycMandatory = await isKycRequiredForActivation()
+
   // Handle button replies from the deferred verification prompt or from error re-prompts.
   if (ctx.reply.id === 'verify_enter_id') {
-    await sendText(ctx.phone, '🪪 Please send your *SA ID number* (13 digits) or *passport number*.\n\nType *later* at any time to verify later. Credit top-ups stay locked until verification is complete.')
+    const idPrompt = kycMandatory
+      ? '🪪 Please send your *SA ID number* (13 digits) or *passport number*. This is required before you can receive any work.'
+      : '🪪 Please send your *SA ID number* (13 digits) or *passport number*.\n\nType *later* at any time to verify later. Credit top-ups stay locked until verification is complete.'
+    await sendText(ctx.phone, idPrompt)
     return { nextStep: 'reg_verify_enter_id' }
   }
 
@@ -743,6 +796,11 @@ async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (isVerifyLaterReply(ctx)) {
+    if (kycMandatory) {
+      await sendKycMandatoryReminder(ctx.phone)
+      await sendVerificationChoicePrompt(ctx.phone, true)
+      return { nextStep: 'reg_collect_id' }
+    }
     await sendVerificationDeferredMessage(ctx.phone)
     await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
@@ -752,23 +810,40 @@ async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
   const raw = ctx.reply.text?.trim() ?? ''
   const saId = validateSaId(raw)
   if (saId) {
+    // When mandatory KYC is on, an ID number alone is not enough — we still
+    // need the document photo + selfie. Route to upload-doc instead of skills.
+    if (kycMandatory) {
+      await sendText(ctx.phone, '✅ ID number saved.\n\n📄 Now please send a *photo of your ID document* (SA ID card or passport).')
+      return { nextStep: 'reg_verify_upload_doc', nextData: { providerIdNumber: saId, verificationMethod: 'id_number' } }
+    }
     await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: saId, verificationMethod: 'id_number', skills: [] } }
   }
   const passport = validatePassportNumber(raw)
   if (passport) {
+    if (kycMandatory) {
+      await sendText(ctx.phone, '✅ Passport number saved.\n\n📄 Now please send a *photo of your passport* (the photo page).')
+      return { nextStep: 'reg_verify_upload_doc', nextData: { providerIdNumber: passport, verificationMethod: 'id_number' } }
+    }
     await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: passport, verificationMethod: 'id_number', skills: [] } }
   }
 
   // Any other input (including old 6-char alphanumeric IDs in flight) - re-show the choice.
-  await sendVerificationChoicePrompt(ctx.phone)
+  await sendVerificationChoicePrompt(ctx.phone, kycMandatory)
   return { nextStep: 'reg_collect_id' }
 }
 
 async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
-  // Defer escape hatch so users with unusual IDs are never trapped.
+  const kycMandatory = await isKycRequiredForActivation()
+
+  // Defer escape hatch so users with unusual IDs are never trapped — disabled
+  // when mandatory KYC is on (the user must complete verification).
   if (isVerifyLaterReply(ctx)) {
+    if (kycMandatory) {
+      await sendKycMandatoryReminder(ctx.phone)
+      return { nextStep: 'reg_verify_enter_id' }
+    }
     await sendVerificationDeferredMessage(ctx.phone)
     await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
@@ -781,12 +856,26 @@ async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
   if (/^\d{13}$/.test(noSpace)) {
     const saId = validateSaId(noSpace)
     if (!saId) {
-      await sendButtons(
-        ctx.phone,
-        "❌ That SA ID number didn't pass the checksum check. Please check and try again or send your passport number instead.",
-        [{ id: 'verify_skip', title: 'Verify later' }],
-      )
+      const retryButtons = kycMandatory
+        ? []
+        : [{ id: 'verify_skip', title: 'Verify later' }]
+      if (retryButtons.length > 0) {
+        await sendButtons(
+          ctx.phone,
+          "❌ That SA ID number didn't pass the checksum check. Please check and try again or send your passport number instead.",
+          retryButtons,
+        )
+      } else {
+        await sendText(
+          ctx.phone,
+          "❌ That SA ID number didn't pass the checksum check. Please check and try again or send your passport number instead.",
+        )
+      }
       return { nextStep: 'reg_verify_enter_id' }
+    }
+    if (kycMandatory) {
+      await sendText(ctx.phone, '✅ ID number saved.\n\n📄 Now please send a *photo of your ID document* (SA ID card or passport).')
+      return { nextStep: 'reg_verify_upload_doc', nextData: { providerIdNumber: saId, verificationMethod: 'id_number' } }
     }
     await sendText(ctx.phone, buildSkillPromptText(`✅ ID verified.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: saId, verificationMethod: 'id_number', skills: [] } }
@@ -795,20 +884,35 @@ async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
   // Passport number: 6-30 alphanumeric. Foreign passport numbers can be numeric-only.
   const passport = validatePassportNumber(raw)
   if (passport) {
+    if (kycMandatory) {
+      await sendText(ctx.phone, '✅ Passport number saved.\n\n📄 Now please send a *photo of your passport* (the photo page).')
+      return { nextStep: 'reg_verify_upload_doc', nextData: { providerIdNumber: passport, verificationMethod: 'id_number' } }
+    }
     await sendText(ctx.phone, buildSkillPromptText(`✅ Passport number saved.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: passport, verificationMethod: 'id_number', skills: [] } }
   }
 
-  await sendButtons(
-    ctx.phone,
-    '❌ Please send a valid *SA ID number* (13 digits) or *passport number* (6–30 alphanumeric characters). Or tap below to verify later.',
-    [{ id: 'verify_skip', title: 'Verify later' }],
-  )
+  const errorButtons = kycMandatory ? [] : [{ id: 'verify_skip', title: 'Verify later' }]
+  const errorText = kycMandatory
+    ? '❌ Please send a valid *SA ID number* (13 digits) or *passport number* (6–30 alphanumeric characters).'
+    : '❌ Please send a valid *SA ID number* (13 digits) or *passport number* (6–30 alphanumeric characters). Or tap below to verify later.'
+  if (errorButtons.length > 0) {
+    await sendButtons(ctx.phone, errorText, errorButtons)
+  } else {
+    await sendText(ctx.phone, errorText)
+  }
   return { nextStep: 'reg_verify_enter_id' }
 }
 
 async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
+  const kycMandatory = await isKycRequiredForActivation()
+
   if (isVerifyLaterReply(ctx)) {
+    if (kycMandatory) {
+      await sendKycMandatoryReminder(ctx.phone)
+      await sendText(ctx.phone, '📄 Please send a *photo of your ID document* (SA ID card or passport).')
+      return { nextStep: 'reg_verify_upload_doc' }
+    }
     await sendVerificationDeferredMessage(ctx.phone)
     await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
@@ -850,16 +954,27 @@ async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  await sendButtons(
-    ctx.phone,
-    '📄 Please send a *photo of your ID document* (SA ID card or passport).',
-    [{ id: 'verify_skip', title: 'Verify later' }],
-  )
+  if (kycMandatory) {
+    await sendText(ctx.phone, '📄 Please send a *photo of your ID document* (SA ID card or passport). This is required before you can receive any work.')
+  } else {
+    await sendButtons(
+      ctx.phone,
+      '📄 Please send a *photo of your ID document* (SA ID card or passport).',
+      [{ id: 'verify_skip', title: 'Verify later' }],
+    )
+  }
   return { nextStep: 'reg_verify_upload_doc' }
 }
 
 async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
+  const kycMandatory = await isKycRequiredForActivation()
+
   if (isVerifyLaterReply(ctx)) {
+    if (kycMandatory) {
+      await sendKycMandatoryReminder(ctx.phone)
+      await sendText(ctx.phone, '🤳🏽 Please send a *selfie holding your ID document*.')
+      return { nextStep: 'reg_verify_upload_selfie' }
+    }
     await sendText(ctx.phone, 'Selfie deferred. Credit top-ups will stay locked until identity verification is complete.')
     await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
     return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'documents', skills: [] } }
@@ -906,11 +1021,15 @@ async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
     }
   }
 
-  await sendButtons(
-    ctx.phone,
-    '🤳🏽 Please send a *selfie holding your ID document*.',
-    [{ id: 'verify_skip', title: 'Skip selfie' }],
-  )
+  if (kycMandatory) {
+    await sendText(ctx.phone, '🤳🏽 Please send a *selfie holding your ID document*. This is the last step — required before you can receive any work.')
+  } else {
+    await sendButtons(
+      ctx.phone,
+      '🤳🏽 Please send a *selfie holding your ID document*.',
+      [{ id: 'verify_skip', title: 'Skip selfie' }],
+    )
+  }
   return { nextStep: 'reg_verify_upload_selfie' }
 }
 

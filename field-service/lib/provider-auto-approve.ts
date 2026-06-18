@@ -19,6 +19,9 @@ import { checkJobsForNewProviderAvailability } from './matching/customer-reconta
 import { findConflictingActiveProviderApplications } from './provider-applications'
 import { resolveServiceCategoryTag } from './service-categories'
 import { recordAuditLog } from './audit'
+import { isKycRequiredForActivation } from './kyc-policy'
+import { KYC_GRACE_FLAG } from './matching/kyc-grace'
+import { checkCanBeApproved } from './provider-lead-eligibility'
 
 // Kind-level side-effects that can be retried after the core approval commit.
 type SideEffectKind = 'PROMO_AWARD' | 'NOTIFICATION' | 'MATCH_RECHECK'
@@ -68,6 +71,18 @@ type AutoApproveDb = {
     findMany: (args: any) => Promise<ProviderApplicationRow[]>
     findUnique?: (args: any) => Promise<ProviderApplicationLookup | null>
     updateMany: (args: any) => Promise<{ count: number }>
+  }
+  // Optional — used by the KYC pre-flight to read the linked provider's KYC
+  // snapshot (kycStatus, createdAt, kycGraceUntil, kycOverriddenAt). Test
+  // doubles may omit this; when missing, the pre-flight assumes NOT_STARTED
+  // and the gate denies (correct fail-closed behavior under mandatory KYC).
+  provider?: {
+    findUnique?: (args: any) => Promise<{
+      kycStatus?: string | null
+      createdAt?: Date | null
+      kycGraceUntil?: Date | null
+      kycOverriddenAt?: Date | null
+    } | null>
   }
   providerAutoApproveSideEffectMarker?: SideEffectMarkerClient
   providerPromoAward?: {
@@ -759,6 +774,12 @@ export async function autoApproveProviderApplications(
     sourceRefType: AUTO_APPROVE_SOURCE_TYPE,
   }
 
+  // Resolve the KYC policy ONCE for the whole batch. Both isKycRequiredForActivation
+  // and the grace-flag lookup are tiny (env / cached flag read) but we don't want
+  // to pay for them per application in a 100-row batch.
+  const kycRequired = await isKycRequiredForActivation()
+  const kycGraceEnabled = kycRequired ? await isEnabled(KYC_GRACE_FLAG) : false
+
   for (const app of applications) {
     // Enforce field completeness and policy guardrails before any writes.
     const assessment = assessProviderApplicationForOpsReview(app)
@@ -768,6 +789,41 @@ export async function autoApproveProviderApplications(
       result.skipped += 1
       result.skippedReasons.push(hasMissingFields ? `ASSESSMENT_${assessment.reasonCodes.join('+')}` : 'ASSESSMENT_HIGH_RISK_CATEGORY')
       continue
+    }
+
+    // KYC pre-flight. The cron auto-approves whatever the field-completeness
+    // check allows, so without this gate a brand-new provider with NOT_STARTED
+    // KYC would be auto-promoted to active/verified the moment they submitted
+    // their application. When KYC is mandatory, only providers who already
+    // have VERIFIED, an admin override, or a live grace window are eligible.
+    // Skipped applications stay PENDING for the existing admin worklist.
+    if (kycRequired) {
+      const linkedProvider =
+        app.providerId && client.provider?.findUnique
+          ? await client.provider.findUnique({
+              where: { id: app.providerId },
+              select: {
+                kycStatus: true,
+                createdAt: true,
+                kycGraceUntil: true,
+                kycOverriddenAt: true,
+              },
+            })
+          : null
+      const gate = checkCanBeApproved(
+        {
+          kycStatus: linkedProvider?.kycStatus ?? 'NOT_STARTED',
+          createdAt: linkedProvider?.createdAt ?? null,
+          kycGraceUntil: linkedProvider?.kycGraceUntil ?? null,
+          kycOverriddenAt: linkedProvider?.kycOverriddenAt ?? null,
+        },
+        { kycRequired, kycGraceEnabled },
+      )
+      if (!gate.ok) {
+        result.skipped += 1
+        result.skippedReasons.push('NEEDS_KYC')
+        continue
+      }
     }
 
     // Avoid duplicates for duplicate active applications on same phone.

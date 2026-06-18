@@ -13,7 +13,14 @@ export class CrudActionError extends Error {
       | 'FLAG_DISABLED'
       | 'VALIDATION'
       | 'NOT_FOUND'
-      | 'CONFLICT',
+      | 'CONFLICT'
+      // FORBIDDEN — used when the actor is authenticated and has the role,
+      // but the action is denied by a domain policy (e.g. the KYC approval
+      // gate refuses to flip verified=true on a non-VERIFIED provider).
+      // Distinct from UNAUTHORIZED so callers can surface a different
+      // message ("you don't have permission" vs. "this provider isn't
+      // eligible for this action").
+      | 'FORBIDDEN',
     message: string
   ) {
     super(message)

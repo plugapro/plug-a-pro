@@ -26,6 +26,9 @@ import { sendText } from '../whatsapp-interactive'
 import { hasSuccessfulMessageForRecipient } from '../message-events'
 import { createTraceId } from '../support-diagnostics'
 import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
+import { isEnabled } from '../flags'
+import { KYC_GRACE_FLAG } from './kyc-grace'
+import { checkProviderCanUnlockLead } from '../provider-lead-eligibility'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import { isOutsideStandardLeadHours } from './filter'
@@ -2419,6 +2422,15 @@ export async function acceptAssignmentOffer(params: {
           active: true,
           verified: true,
           status: true,
+          // KYC fields are read so the inline gate below can produce a
+          // KYC_REQUIRED reason that's distinct from PROVIDER_NOT_APPROVED.
+          // The underlying credit-spend in unlockLeadForProviderInTransaction
+          // already enforces KYC, but its error code was being collapsed by
+          // the outer catch into PROVIDER_NOT_APPROVED, which surfaced the
+          // wrong WhatsApp/PWA copy ("your account is not approved" vs.
+          // "you still need to verify your identity").
+          kycStatus: true,
+          createdAt: true,
         },
       })
       if (!provider) return { ok: false as const, reason: 'FORBIDDEN' }
@@ -2432,6 +2444,30 @@ export async function acceptAssignmentOffer(params: {
           provider_status: provider.status,
         })
         return { ok: false as const, reason: 'PROVIDER_NOT_APPROVED' }
+      }
+      // KYC pre-check. Mirrors the unlock-time gate in
+      // lib/lead-unlocks.ts#assertProviderCanUnlock, but distinct from the
+      // approval check above so the failure reason stays specific. We honor
+      // the legacy grace flag the same way checkProviderCanUnlockLead does.
+      const kycGraceEnabledForAccept = await isEnabled(KYC_GRACE_FLAG)
+      const kycEligibility = checkProviderCanUnlockLead(
+        {
+          active: provider.active,
+          verified: provider.verified,
+          status: provider.status,
+          kycStatus: provider.kycStatus ?? 'NOT_STARTED',
+          createdAt: provider.createdAt ?? null,
+        },
+        kycGraceEnabledForAccept,
+      )
+      if (!kycEligibility.ok && kycEligibility.code === 'KYC_REQUIRED') {
+        console.warn('[matching] provider blocked from accepting lead by KYC gate', {
+          trace_id: traceId,
+          provider_id: params.providerId,
+          lead_id: params.leadId,
+          kyc_status: provider.kycStatus,
+        })
+        return { ok: false as const, reason: 'KYC_REQUIRED' }
       }
 
       const existingMatch = await tx.match.findUnique({
@@ -2751,15 +2787,20 @@ export async function acceptAssignmentOffer(params: {
         ? 'EXPIRED'
         : error.code === 'INSUFFICIENT_CREDITS'
           ? 'INSUFFICIENT_CREDITS'
-          : error.code === 'PROVIDER_NOT_APPROVED' || error.code === 'PROVIDER_NOT_ACTIVE' || error.code === 'KYC_REQUIRED'
-            ? 'PROVIDER_NOT_APPROVED'
-            : error.code === 'WALLET_SUSPENDED'
-              ? 'WALLET_SUSPENDED'
-              : error.code === 'CONCURRENT_UNLOCK'
-                ? 'CONCURRENT_UNLOCK'
-                : error.code === 'FORBIDDEN' || error.code === 'CONFIRMATION_REQUIRED'
-                  ? 'FORBIDDEN'
-                  : 'TAKEN'
+          : error.code === 'KYC_REQUIRED'
+            // Preserve KYC_REQUIRED end-to-end so WhatsApp/PWA copy can tell
+            // the provider to finish verification — instead of the generic
+            // "your account is not approved" that the previous collapse gave.
+            ? 'KYC_REQUIRED'
+            : error.code === 'PROVIDER_NOT_APPROVED' || error.code === 'PROVIDER_NOT_ACTIVE'
+              ? 'PROVIDER_NOT_APPROVED'
+              : error.code === 'WALLET_SUSPENDED'
+                ? 'WALLET_SUSPENDED'
+                : error.code === 'CONCURRENT_UNLOCK'
+                  ? 'CONCURRENT_UNLOCK'
+                  : error.code === 'FORBIDDEN' || error.code === 'CONFIRMATION_REQUIRED'
+                    ? 'FORBIDDEN'
+                    : 'TAKEN'
       console.info('[matching] lead unlock/accept blocked', {
         provider_id: params.providerId,
         lead_id: params.leadId,
@@ -2817,6 +2858,7 @@ export async function acceptAssignmentOffer(params: {
         | 'TAKEN'
         | 'INSUFFICIENT_CREDITS'
         | 'PROVIDER_NOT_APPROVED'
+        | 'KYC_REQUIRED'
         | 'WALLET_SUSPENDED'
         | 'CONCURRENT_UNLOCK'
         | 'LEAD_ACCEPTANCE_FAILED',
@@ -3378,12 +3420,65 @@ export async function getDispatchHistory(jobRequestId: string): Promise<Dispatch
   }))
 }
 
+export class ManualOverrideKycBlockedError extends Error {
+  readonly code = 'KYC_REQUIRED' as const
+  constructor(message?: string) {
+    super(
+      message ??
+        'Manual override blocked: this provider has not completed identity verification (KYC). Set kycOverrideReason on the provider profile first (TRUST+ role) and retry, or pick a different provider.',
+    )
+    this.name = 'ManualOverrideKycBlockedError'
+  }
+}
+
 export async function manualOverrideAssignment(params: {
   jobRequestId: string
   providerId: string
   actor: DispatchActor
   overrideReason: string
 }) {
+  // KYC pre-flight. Without this gate an admin can force-assign a provider
+  // whose identity check actively failed (REJECTED) or lapsed (EXPIRED) and
+  // the lead-offer flow downstream would only block at unlock time, after
+  // the WhatsApp lead notification and the assignment hold have already
+  // fired. We deliberately use the same predicate the lead-unlock path uses
+  // (checkProviderCanUnlockLead) so an admin "override" cannot escalate a
+  // REJECTED/EXPIRED provider through a path the matcher would otherwise
+  // exclude. Approved overrides should be expressed by setting the
+  // per-provider kyc override (setProviderKycOverrideAction), not by routing
+  // around this gate.
+  const overriddenProvider = await db.provider.findUnique({
+    where: { id: params.providerId },
+    select: {
+      id: true,
+      active: true,
+      verified: true,
+      status: true,
+      kycStatus: true,
+      createdAt: true,
+    },
+  })
+  if (overriddenProvider) {
+    const kycGraceEnabledForOverride = await isEnabled(KYC_GRACE_FLAG)
+    const eligibility = checkProviderCanUnlockLead(
+      {
+        active: overriddenProvider.active,
+        verified: overriddenProvider.verified,
+        status: overriddenProvider.status,
+        kycStatus: overriddenProvider.kycStatus ?? 'NOT_STARTED',
+        createdAt: overriddenProvider.createdAt ?? null,
+      },
+      kycGraceEnabledForOverride,
+    )
+    if (!eligibility.ok && eligibility.code === 'KYC_REQUIRED') {
+      console.warn('[matching] manual override blocked by KYC gate', {
+        provider_id: params.providerId,
+        job_request_id: params.jobRequestId,
+        kyc_status: overriddenProvider.kycStatus,
+      })
+      throw new ManualOverrideKycBlockedError()
+    }
+  }
   const ranking = await rankCandidatesForJobRequest(params.jobRequestId)
   const decision = await persistDispatchDecision({
     ranking,

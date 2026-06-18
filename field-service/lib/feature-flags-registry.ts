@@ -287,6 +287,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: true,
   },
+  'provider.kyc.required_for_activation': {
+    description: 'Mandatory KYC gate at the *approval* boundary. When ON, syncProviderRecord refuses to flip verified=true / status=ACTIVE unless the provider is kycStatus=VERIFIED, has an admin override, or is within a per-provider kycGraceUntil window. Same rule guards admin verify/setStatus(ACTIVE)/approveApplication and autoApproveProviderApplications. Default OFF so the flag can be flipped in DB per environment after the backfill (scripts/backfill-kyc-grace-windows.ts). REQUIRE_PROVIDER_KYC=true|false env var overrides the flag (env wins). Existing legacy providers (created before KYC_GRACE_CUTOFF) stay grandfathered while matching.kyc_grace_legacy_providers is ON.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'launch.west_rand_pilot.electrical_gate': {
     description: 'Independent gate for the electrical-readiness check. Dead path in v1 (electrical is not in the pilot allowlist); reserved for the future re-introduction of Electrical once threshold approved providers exist.',
     owner: 'eng',
