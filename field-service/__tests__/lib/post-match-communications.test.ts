@@ -6,6 +6,7 @@ vi.mock('@/lib/db', () => ({
     messageEvent: { findFirst: vi.fn(), create: vi.fn() },
     customer: { findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
+    inboundWhatsAppMessage: { findFirst: vi.fn() },
   },
 }))
 
@@ -13,6 +14,14 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: vi.fn().mockResolvedValue('wamid.customer'),
   sendCtaUrl: vi.fn().mockResolvedValue('wamid.provider'),
   sendButtons: vi.fn().mockResolvedValue('wamid.provider-actions'),
+}))
+
+vi.mock('@/lib/whatsapp', () => ({
+  sendTemplate: vi.fn().mockResolvedValue('wamid.template'),
+}))
+
+vi.mock('@/lib/message-events', () => ({
+  logOutboundMessage: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/provider-lead-access', async () => {
@@ -45,6 +54,8 @@ vi.mock('@/lib/provider-wallet', () => ({
 
 import { db } from '@/lib/db'
 import { sendButtons, sendCtaUrl, sendText } from '@/lib/whatsapp-interactive'
+import { sendTemplate } from '@/lib/whatsapp'
+import { logOutboundMessage } from '@/lib/message-events'
 import { getProviderSignedJobHandoverUrlByLeadId, resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
 import { getCustomerProviderHandoverUrl } from '@/lib/customer-provider-handover-access'
 import {
@@ -52,6 +63,10 @@ import {
   buildAcceptedLeadContactUrlForProvider,
   notifyPostMatchAcceptance,
 } from '@/lib/post-match-communications'
+
+function templateNotApprovedError(template: string) {
+  return new Error(`[TEMPLATE_NOT_APPROVED] Template "${template}" is not approved or does not exist in Meta Business Manager. Approve it before deploying. code=132000`)
+}
 
 const mockLead = {
   id: 'lead-1',
@@ -80,28 +95,50 @@ describe('post-match communications', () => {
     ;(db.messageEvent.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
     ;(db.customer.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'cust-1' })
     ;(db.auditLog.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
+    ;(db.inboundWhatsAppMessage.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
     ;(sendText as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.customer')
     ;(sendCtaUrl as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.provider')
     ;(sendButtons as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.provider-actions')
+    ;(sendTemplate as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.template')
+    ;(logOutboundMessage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
     ;(getProviderSignedJobHandoverUrlByLeadId as ReturnType<typeof vi.fn>).mockResolvedValue('https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token')
     ;(getCustomerProviderHandoverUrl as ReturnType<typeof vi.fn>).mockResolvedValue('https://app.plugapro.co.za/customer/requests/jr-12345678/provider-handover?token=customer-token')
   })
 
-  it('sends a named customer notification and provider post-acceptance job message', async () => {
+  it('sends the customer notification via sendTemplate (primary template) and provider post-acceptance job message via sendCtaUrl', async () => {
     await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
 
-    expect(sendText).not.toHaveBeenCalled()
-    expect(sendCtaUrl).toHaveBeenCalledWith(
-      '+27820000001',
-      expect.stringContaining('Jacob Hesser from Plug A Pro'),
-      'WhatsApp Provider',
-      'https://wa.me/27770000001',
-      expect.objectContaining({ footer: 'Chat directly with your provider.' }),
-      expect.objectContaining({
-        templateName: 'post_match_customer_provider_accepted',
-        metadata: expect.objectContaining({ leadId: 'lead-1', matchId: 'match-1' }),
-      }),
-    )
+    // Customer notification MUST go via sendTemplate (works outside the 24h window).
+    // sendText / sendCtaUrl to the customer phone MUST NOT be called on the happy path.
+    expect(sendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27820000001',
+      template: 'post_match_customer_provider_accepted',
+      components: expect.arrayContaining([
+        expect.objectContaining({
+          type: 'body',
+          parameters: [
+            { type: 'text', text: 'Stephanie' },
+            { type: 'text', text: 'Jacob' },
+            { type: 'text', text: 'Plumbing' },
+          ],
+        }),
+        expect.objectContaining({
+          type: 'button',
+          sub_type: 'url',
+          index: 0,
+          parameters: [{ type: 'text', text: 'jr-12345678' }],
+        }),
+      ]),
+      metadata: expect.objectContaining({ leadId: 'lead-1', matchId: 'match-1', deliveryPath: 'primary_template' }),
+    }))
+    expect(logOutboundMessage).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27820000001',
+      templateName: 'post_match_customer_provider_accepted',
+      externalId: 'wamid.template',
+      metadata: expect.objectContaining({ deliveryPath: 'primary_template' }),
+    }))
+    expect(sendText).not.toHaveBeenCalledWith('+27820000001', expect.anything(), expect.anything())
+    expect(sendCtaUrl).not.toHaveBeenCalledWith('+27820000001', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything())
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
       expect.stringContaining('1 credit used.'),
@@ -146,6 +183,7 @@ describe('post-match communications', () => {
 
     await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
 
+    expect(sendTemplate).not.toHaveBeenCalled()
     expect(sendText).not.toHaveBeenCalled()
     expect(sendCtaUrl).not.toHaveBeenCalled()
     expect(sendButtons).not.toHaveBeenCalled()
@@ -188,6 +226,7 @@ describe('post-match communications', () => {
 
     await notifyPostMatchAcceptance({ leadId: 'lead-missing', providerId: 'provider-1', matchId: 'match-1' })
 
+    expect(sendTemplate).not.toHaveBeenCalled()
     expect(sendText).not.toHaveBeenCalled()
     expect(sendCtaUrl).not.toHaveBeenCalled()
     expect(sendButtons).not.toHaveBeenCalled()
@@ -201,6 +240,7 @@ describe('post-match communications', () => {
 
     await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
 
+    expect(sendTemplate).not.toHaveBeenCalled()
     expect(sendText).not.toHaveBeenCalled()
     expect(sendCtaUrl).not.toHaveBeenCalled()
     expect(sendButtons).not.toHaveBeenCalled()
@@ -219,22 +259,23 @@ describe('post-match communications', () => {
     )
   })
 
-  it('falls back to sendText for customer message when handover URL is unavailable', async () => {
+  it('still notifies the customer via sendTemplate when the rich handover URL is unavailable', async () => {
+    // Handover URL is only used by the inside-window text fallback; the primary
+    // template path is independent of it and works regardless of the URL.
     ;(getCustomerProviderHandoverUrl as ReturnType<typeof vi.fn>).mockResolvedValue(null)
 
     await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
 
-    expect(sendText).toHaveBeenCalledWith(
-      '+27820000001',
-      expect.stringContaining('Plumbing'),
-      expect.objectContaining({ templateName: 'post_match_customer_provider_accepted' }),
-    )
+    expect(sendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27820000001',
+      template: 'post_match_customer_provider_accepted',
+    }))
+    expect(sendText).not.toHaveBeenCalledWith('+27820000001', expect.anything(), expect.anything())
   })
 
-  it('still sends the provider confirmation when the customer notification fails', async () => {
-    ;(sendCtaUrl as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new Error('Meta rejected customer message'))
-      .mockResolvedValueOnce('wamid.provider')
+  it('still sends the provider confirmation when the customer template send fails', async () => {
+    // Generic (non-TEMPLATE_NOT_APPROVED) send error on the customer template.
+    ;(sendTemplate as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Meta rejected customer message'))
 
     const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
 
@@ -250,9 +291,8 @@ describe('post-match communications', () => {
   })
 
   it('returns providerNotified false instead of throwing when provider confirmation fails', async () => {
-    ;(sendCtaUrl as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce('wamid.customer')
-      .mockRejectedValueOnce(new Error('Meta rejected provider message'))
+    // Customer template succeeds; provider sendCtaUrl rejects.
+    ;(sendCtaUrl as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Meta rejected provider message'))
 
     const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
 
@@ -264,5 +304,102 @@ describe('post-match communications', () => {
       expect.any(Object),
       expect.objectContaining({ templateName: 'post_match_provider_next_actions' }),
     )
+  })
+
+  // ─── Regression: 24h-window failure (the JR-B Ishmael bug) ──────────────────
+  // The primary post_match_customer_provider_accepted template is not yet
+  // approved at Meta. The legacy code path sent a free-form interactive message
+  // to the customer, which Meta rejected with "Re-engagement message" whenever
+  // the customer's last inbound was >24h old. The fix is a template-first chain
+  // that falls back to free-form ONLY inside the 24h window.
+
+  describe('customer 24h-window fallback chain', () => {
+    it('falls through to customer_match_found when the primary template is not approved', async () => {
+      ;(sendTemplate as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(templateNotApprovedError('post_match_customer_provider_accepted'))
+        .mockResolvedValueOnce('wamid.fallback-template')
+
+      const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+      expect(result.customerNotified).toBe(true)
+      expect(sendTemplate).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        to: '+27820000001',
+        template: 'customer_match_found',
+        components: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'body',
+            parameters: [
+              { type: 'text', text: 'Jacob' },
+              { type: 'text', text: 'Plumbing' },
+            ],
+          }),
+          expect.objectContaining({
+            type: 'button',
+            sub_type: 'url',
+            index: 0,
+            parameters: [{ type: 'text', text: 'jr-12345678' }],
+          }),
+        ]),
+        metadata: expect.objectContaining({ deliveryPath: 'fallback_template' }),
+      }))
+      expect(sendText).not.toHaveBeenCalledWith('+27820000001', expect.anything(), expect.anything())
+    })
+
+    it('uses the rich interactive message ONLY when inside the 24h window', async () => {
+      ;(sendTemplate as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(templateNotApprovedError('post_match_customer_provider_accepted'))
+        .mockRejectedValueOnce(templateNotApprovedError('customer_match_found'))
+      ;(db.inboundWhatsAppMessage.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'inb-recent' })
+
+      const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+      expect(result.customerNotified).toBe(true)
+      expect(sendCtaUrl).toHaveBeenCalledWith(
+        '+27820000001',
+        expect.stringContaining('has accepted your *Plumbing* request'),
+        'WhatsApp Provider',
+        'https://wa.me/27770000001',
+        expect.objectContaining({ footer: 'Chat directly with your provider.' }),
+        expect.objectContaining({ templateName: 'post_match_customer_provider_accepted' }),
+      )
+    })
+
+    it('does NOT send any free-form message when outside the 24h window (the JR-B bug)', async () => {
+      ;(sendTemplate as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(templateNotApprovedError('post_match_customer_provider_accepted'))
+        .mockRejectedValueOnce(templateNotApprovedError('customer_match_found'))
+      ;(db.inboundWhatsAppMessage.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+      const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+      expect(result.customerNotified).toBe(false)
+      expect(sendText).not.toHaveBeenCalledWith('+27820000001', expect.anything(), expect.anything())
+      expect(sendCtaUrl).not.toHaveBeenCalledWith('+27820000001', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything())
+      expect(db.messageEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          to: '+27820000001',
+          status: 'FAILED',
+          failureReason: 'NO_ACTIVE_WHATSAPP_SERVICE_WINDOW',
+          templateName: 'post_match_customer_provider_accepted',
+        }),
+      }))
+    })
+
+    it('falls back to plain sendText when inside the 24h window and the rich handover URL is unavailable', async () => {
+      ;(sendTemplate as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(templateNotApprovedError('post_match_customer_provider_accepted'))
+        .mockRejectedValueOnce(templateNotApprovedError('customer_match_found'))
+      ;(db.inboundWhatsAppMessage.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'inb-recent' })
+      ;(getCustomerProviderHandoverUrl as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+      const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+      expect(result.customerNotified).toBe(true)
+      expect(sendText).toHaveBeenCalledWith(
+        '+27820000001',
+        expect.stringContaining('has accepted your *Plumbing* request'),
+        expect.objectContaining({ templateName: 'post_match_customer_provider_accepted' }),
+      )
+    })
   })
 })

@@ -3,7 +3,10 @@ import { db } from './db'
 import { hasSuccessfulMessageForRecipient } from './message-events'
 import type { TemplateName } from './messaging-templates'
 import { sendTemplate, sendText as sendWhatsAppText } from './whatsapp'
-import { phoneLookupVariants } from './whatsapp-identity'
+import {
+  hasRecentInboundWhatsappSession,
+  isTemplateNotApprovedError,
+} from './whatsapp-policy'
 import { sendPostMatchIntroductions } from './post-match-intro'
 import { notifyPostMatchAcceptance } from './post-match-communications'
 import { notifyLeadUnlocked } from './provider-wallet-notifications'
@@ -16,7 +19,6 @@ const CREDIT_APPLICATION_REFERENCE_TYPES = [
 
 const ACCEPTED_LOCK_CUSTOMER_TEMPLATE = 'mvp1_accepted_lock_customer_confirmation'
 const ACCEPTED_LOCK_PROVIDER_TEMPLATE = 'mvp1_accepted_lock_provider_confirmation'
-const WHATSAPP_FREEFORM_FALLBACK_WINDOW_MS = 23 * 60 * 60 * 1000
 
 type AcceptedLockErrorCode =
   | 'NOT_FOUND'
@@ -759,22 +761,6 @@ async function markAcceptedLockConfirmationFailed(params: {
       sentAt: new Date(),
     },
   })
-}
-
-function isTemplateNotApprovedError(error: unknown) {
-  return error instanceof Error && error.message.includes('[TEMPLATE_NOT_APPROVED]')
-}
-
-async function hasRecentInboundWhatsappSession(to: string) {
-  const cutoff = new Date(Date.now() - WHATSAPP_FREEFORM_FALLBACK_WINDOW_MS)
-  const inbound = await db.inboundWhatsAppMessage.findFirst({
-    where: {
-      phone: { in: phoneLookupVariants(to) },
-      firstSeenAt: { gte: cutoff },
-    },
-    select: { id: true },
-  })
-  return Boolean(inbound)
 }
 
 async function recordAcceptedLockConfirmationFailure(params: {
