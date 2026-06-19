@@ -1,0 +1,148 @@
+name: migrate preview branch
+
+# Apply Prisma migrations to the Supabase Database Branch attached to this PR.
+# Mirrors .github/workflows/migrate-deploy.yml but targets per-PR branch DBs
+# instead of production. Without this, every PR with a schema change would land
+# on a preview deployment pointing at a branch DB whose schema is still the
+# previous main — the app would crash at runtime on the new columns.
+#
+# Differences from migrate-deploy.yml:
+#   - Triggers on PR push/sync, not main push.
+#   - Resolves DIRECT_URL dynamically per PR via Supabase Management API,
+#     using SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF.
+#   - Does NOT gate preview Vercel builds. A failed preview migration is
+#     surfaced as a red workflow check on the PR; the preview deploy still
+#     happens (engineers see DB errors and fix forward). Production is
+#     unaffected because branch DBs are isolated by design.
+#
+# See: field-service/docs/preview-env.md for the full architecture.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'field-service/prisma/migrations/**'
+      - 'field-service/prisma/schema.prisma'
+      - '.github/workflows/migrate-preview.yml'
+
+concurrency:
+  group: migrate-preview-${{ github.head_ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: field-service
+
+env:
+  TZ: Africa/Johannesburg
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  migrate:
+    name: Apply pending migrations to PR branch DB
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # NOT bound to the production GitHub Environment. Preview branch DBs are
+    # disposable per-PR; production deployment-approval rules do not apply.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Supabase Management API secrets
+        run: |
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set. See field-service/docs/preview-env.md §3."
+            exit 1
+          fi
+          if [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "::error::SUPABASE_PROJECT_REF is not set (should be a repo variable)."
+            exit 1
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+
+      - name: Resolve PR branch DB connection string
+        id: branch
+        # SECURITY: github.head_ref is attacker-controlled (a contributor can
+        # name their branch with shell metacharacters). Pull it through env:
+        # rather than interpolating into the script body, validate the shape
+        # against the GitHub-allowed ref character set, and pass it to node
+        # via the environment (never via string interpolation into JS source).
+        env:
+          PR_BRANCH: ${{ github.head_ref }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+        run: |
+          # Defense-in-depth: refuse to proceed if PR_BRANCH contains anything
+          # outside [A-Za-z0-9._/-]. GitHub's own validator already enforces
+          # this on push, but a refusal here means a regression in upstream
+          # validation cannot turn into a workflow-injection bug for us.
+          if ! printf '%s' "$PR_BRANCH" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+            echo "::error::PR branch name failed safety validation: contains characters outside [A-Za-z0-9._/-]"
+            exit 1
+          fi
+          echo "Looking up Supabase branch for PR branch: $PR_BRANCH"
+
+          BRANCHES_JSON=$(curl -sS -f \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/branches")
+
+          # Pass PR_BRANCH and BRANCHES_JSON to node ONLY via env vars; never
+          # via string interpolation, which would re-introduce the injection
+          # vector inside the JS source.
+          DIRECT_URL=$(BRANCHES_JSON="$BRANCHES_JSON" PR_BRANCH="$PR_BRANCH" node -e '
+            const branches = JSON.parse(process.env.BRANCHES_JSON);
+            const target = process.env.PR_BRANCH;
+            const match = branches.find(b => b.git_branch === target);
+            if (!match) {
+              console.error("::error::No Supabase branch matches PR branch " + target + ". Confirm Branching is enabled and the integration created a branch for this PR.");
+              process.exit(1);
+            }
+            if (!match.db_direct_connection_string) {
+              console.error("::error::Branch " + target + " has no db_direct_connection_string yet — Supabase may still be provisioning it. Re-run this workflow in ~30s.");
+              process.exit(1);
+            }
+            console.log(match.db_direct_connection_string);
+          ')
+
+          # Mask the URL in logs as a defense-in-depth step.
+          echo "::add-mask::$DIRECT_URL"
+          echo "DIRECT_URL=$DIRECT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Migration status (pre-apply)
+        run: pnpm exec prisma migrate status || true
+        env:
+          # Use the branch DIRECT_URL for both — Prisma's migrate command always
+          # uses DIRECT_URL when defined; we keep DATABASE_URL aligned for the
+          # status reporter so Prisma doesn't complain about config drift.
+          DATABASE_URL: ${{ steps.branch.outputs.DIRECT_URL }}
+          DIRECT_URL: ${{ steps.branch.outputs.DIRECT_URL }}
+
+      - name: Apply pending migrations
+        run: pnpm exec prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ steps.branch.outputs.DIRECT_URL }}
+          DIRECT_URL: ${{ steps.branch.outputs.DIRECT_URL }}
+
+      - name: Migration status (post-apply)
+        run: pnpm exec prisma migrate status
+        env:
+          DATABASE_URL: ${{ steps.branch.outputs.DIRECT_URL }}
+          DIRECT_URL: ${{ steps.branch.outputs.DIRECT_URL }}
