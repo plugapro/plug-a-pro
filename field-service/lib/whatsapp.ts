@@ -873,6 +873,52 @@ export async function sendPleaseConfirmWithProvider(params: {
   await logOutboundMessage({ to: params.customerPhone, templateName: 'please_confirm_with_provider', externalId })
 }
 
+/**
+ * Nudge a customer who abandoned a service-request flow mid-way to come back and finish.
+ *
+ * UTILITY template, works outside the 24h window. Send only to phones that started
+ * `flow=job_request` but did not reach `submit` and have not received this nudge already.
+ *
+ * Requires the `customer_abandoned_recovery` template to be APPROVED in Meta Business
+ * Manager. If not yet approved, sendTemplate throws [TEMPLATE_NOT_APPROVED]; callers
+ * should treat that as a soft failure and try again on the next cron cycle.
+ */
+export async function sendCustomerAbandonedRecovery(params: {
+  customerPhone: string
+  customerName: string
+  serviceCategory: string
+  pickupUrl: string
+  conversationId?: string
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'customer_abandoned_recovery')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) - suppressing send. phone=${maskPhone(params.customerPhone)} template: customer_abandoned_recovery`)
+    } else {
+      console.warn(`[whatsapp] blocked phone=${maskPhone(params.customerPhone)}: ${check.reason} (template: customer_abandoned_recovery)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'customer_abandoned_recovery',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceCategory },
+          { type: 'text', text: params.pickupUrl },
+        ],
+      },
+    ],
+    metadata: {
+      conversationId: params.conversationId,
+    },
+  })
+  await logOutboundMessage({ to: params.customerPhone, templateName: 'customer_abandoned_recovery', externalId })
+}
+
 export async function sendJobOffer(params: {
   providerPhone: string
   providerFirstName: string

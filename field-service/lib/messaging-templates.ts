@@ -219,6 +219,17 @@ export const TEMPLATES = {
       'Hi {{1}}, {{2}} has accepted your {{3}} request and is waiting to hear back from you. Please reply here or message them with a preferred date and time — request: {{4}} — they will keep your slot open today.',
   },
 
+  customer_abandoned_recovery: {
+    name: 'customer_abandoned_recovery',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Sent to customers who started a service request and abandoned mid-flow (e.g. browse_categories, addr_confirm, collect_issue_description) so they can pick up where they left off. UTILITY so it works outside the 24h window. Inline pickup URL in body, no button.',
+    // {{1}} customer name (or "there"), {{2}} service category, {{3}} pickup URL (inline body text)
+    example:
+      'Hi {{1}}, you started a {{2}} request with us earlier and didn\'t finish. Tap to pick it up here — {{3}} — your details are saved.',
+  },
+
   // ─── Technician - job matching & dispatch ────────────────────────────────
 
   job_offer: {

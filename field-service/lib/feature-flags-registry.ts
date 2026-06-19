@@ -321,6 +321,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'customer.match_confirmation_nudge.cron': {
+    description: 'Enable the customer-match-confirmation-nudge cron — sends please_confirm_with_provider to MATCHED customers who have not been contacted, when their 24h WhatsApp window is closed. OFF = the cron is a no-op.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.identity.verification': {
     description: 'Gate paid credit purchases (Pay@, Manual EFT) behind HIGH-assurance identity verification. Disable to roll back without a deploy.',
     owner: 'eng',
