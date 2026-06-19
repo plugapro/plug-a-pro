@@ -98,7 +98,9 @@ const TEMPLATES = [
     name: 'no_technician_available',
     category: 'UTILITY',
     // {{1}} name, {{2}} service, {{3}} date, {{4}} reschedule URL
-    body: 'Hi {{1}}, we could not find a technician for your {{2}} on {{3}}. Please reschedule here — {{4}} — or we will contact you when one is available.',
+    // Body wording follows the currently APPROVED live Meta version ("match a provider")
+    // and intentionally does not include a URL button — {{4}} is inline body text.
+    body: 'Hi {{1}}, we could not match a provider for your {{2}} on {{3}}. Please reschedule here — {{4}} — or we will contact you when one is available.',
     examples: ['Thabo', 'Electrical Installation', 'Mon 14 Apr', 'https://app.plugapro.co.za/bookings/B001/reschedule'],
   },
   {
@@ -307,6 +309,26 @@ const TEMPLATES = [
       },
     ],
   },
+  // ─── Post-match customer notification (2026-06-18) ───────────────────────
+  // Replaces the legacy interactive 24h-window-bound message that failed Meta
+  // Re-engagement when the customer's last inbound was >24h old (JR-B Ishmael
+  // incident). Submitted standalone via scripts/submit-post-match-customer-template.ts;
+  // included here for audit coverage so --audit-coverage continues to pass.
+  {
+    name: 'post_match_customer_provider_accepted',
+    category: 'UTILITY',
+    // {{1}} customer first name, {{2}} provider first name, {{3}} service label
+    body: 'Hi {{1}}, great news — {{2}} has accepted your {{3}} request and will contact you shortly to confirm the visit. Tap below to view the details.',
+    examples: ['Stephanie', 'Sipho', 'Plumbing'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'View request',
+        url: 'https://app.plugapro.co.za/requests/{{1}}',
+        example: ['https://app.plugapro.co.za/requests/demo-job-request-id'],
+      },
+    ],
+  },
   {
     name: 'provider_quality_multi_nudge',
     category: 'UTILITY',
@@ -320,6 +342,15 @@ const TEMPLATES = [
         url: 'https://app.plugapro.co.za/provider/profile',
       },
     ],
+  },
+  {
+    name: 'please_confirm_with_provider',
+    category: 'UTILITY',
+    // {{1}} customer name, {{2}} provider name, {{3}} service, {{4}} request URL (inline body text)
+    // Closes the customer-side gap when post-match notifications fail Re-engagement
+    // outside the 24h window. URL is inline (no button) to match no_technician_available's shape.
+    body: 'Hi {{1}}, {{2}} has accepted your {{3}} request and is waiting to hear back from you. Please reply here or message them with a preferred date and time — request: {{4}} — they will keep your slot open today.',
+    examples: ['Ishmael', 'Vigilance Chauke', 'handyman', 'https://app.plugapro.co.za/requests/cmqf77w0o'],
   },
 ]
 

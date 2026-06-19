@@ -202,10 +202,21 @@ export const TEMPLATES = {
     name: 'no_technician_available',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'Sent when no technician can be matched - ask to reschedule or wait',
-    // {{1}} customer name, {{2}} service, {{3}} original date; reschedule URL is a button
+    description: 'Sent when no provider can be matched - ask to reschedule or wait',
+    // {{1}} customer name, {{2}} service, {{3}} original date, {{4}} reschedule URL (inline body text, NOT a button)
     example:
-      'Hi {{1}}, we could not find a technician for your {{2}} on {{3}}. Please reschedule using the button below or we will contact you when one is available.',
+      'Hi {{1}}, we could not match a provider for your {{2}} on {{3}}. Please reschedule here — {{4}} — or we will contact you when one is available.',
+  },
+
+  please_confirm_with_provider: {
+    name: 'please_confirm_with_provider',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Sent after a provider has accepted a customer match, to prompt the customer to confirm a date/time with them. Used when the platform-side post-match notice may not have reached the customer (e.g. 24h-window failure) or when the customer has not engaged after the assignment notice. Inline reschedule URL in body, no button.',
+    // {{1}} customer name, {{2}} provider name, {{3}} service, {{4}} request URL (inline body text)
+    example:
+      'Hi {{1}}, {{2}} has accepted your {{3}} request and is waiting to hear back from you. Please reply here or message them with a preferred date and time — request: {{4}} — they will keep your slot open today.',
   },
 
   // ─── Technician - job matching & dispatch ────────────────────────────────
@@ -462,6 +473,23 @@ export const TEMPLATES = {
     // button (url, index 0): {{1}} job request ID (appended to https://app.plugapro.co.za/requests/)
     example:
       'Good news! {{1}} is reviewing your {{2}} request and will send a quote shortly. Tap below to view your request.',
+  },
+
+  // Sent to a customer when a provider has ACCEPTED their job request (post-match
+  // handover). Replaces an interactive 24h-window-bound message that previously
+  // failed Re-engagement when the customer's last inbound was >24h old.
+  // Until APPROVED at Meta, sends will throw [TEMPLATE_NOT_APPROVED]; the
+  // post-match sender catches that and falls through to `customer_match_found`
+  // and then to the rich CTA-URL inside-window path.
+  post_match_customer_provider_accepted: {
+    name: 'post_match_customer_provider_accepted',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer when a provider has accepted their job request (post-match handover).',
+    // body: {{1}} customer first name, {{2}} provider first name, {{3}} service label
+    // button (url, index 0): {{1}} job request ID (appended to https://app.plugapro.co.za/requests/)
+    example:
+      'Hi {{1}}, great news — {{2}} has accepted your {{3}} request and will contact you shortly to confirm the visit. Tap below to view the details.',
   },
 
   provider_invoice_send: {
