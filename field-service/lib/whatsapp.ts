@@ -799,6 +799,11 @@ export async function sendNoProviderAvailable(params: {
     }
     return
   }
+  // The live Meta template body is:
+  //   "Hi {{1}}, we could not match a provider for your {{2}} on {{3}}.
+  //    Please reschedule here — {{4}} — or we will contact you when one is available."
+  // {{4}} is an inline URL in the body text, NOT a template URL button. Sending a button
+  // component or fewer than 4 body params fails Meta error 132000.
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'no_technician_available',
@@ -809,12 +814,63 @@ export async function sendNoProviderAvailable(params: {
           { type: 'text', text: params.customerName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.originalDate },
+          { type: 'text', text: params.bookingUrl },
         ],
       },
-      urlButtonComponent(0, params.bookingUrl),
     ],
   })
   await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'no_technician_available', externalId })
+}
+
+/**
+ * Prompt a customer to confirm a date with the provider who has accepted their request.
+ *
+ * Closes the gap when the post-match auto-notification (`post_match_customer_provider_accepted`)
+ * fails Re-engagement because the customer's last inbound was >24h ago. UTILITY template,
+ * works outside the 24h window. Send only after the provider has accepted (Match.status='MATCHED').
+ *
+ * Requires the `please_confirm_with_provider` template to be APPROVED in Meta Business Manager.
+ * If the template is not yet approved, sendTemplate will throw [TEMPLATE_NOT_APPROVED]; the
+ * caller should fall back to manual ops outreach until then.
+ */
+export async function sendPleaseConfirmWithProvider(params: {
+  customerPhone: string
+  customerName: string
+  providerName: string
+  serviceName: string
+  requestUrl: string
+  jobRequestId?: string
+  matchId?: string
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'please_confirm_with_provider')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) - suppressing send. phone=${maskPhone(params.customerPhone)} template: please_confirm_with_provider`)
+    } else {
+      console.warn(`[whatsapp] blocked phone=${maskPhone(params.customerPhone)}: ${check.reason} (template: please_confirm_with_provider)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'please_confirm_with_provider',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.providerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.requestUrl },
+        ],
+      },
+    ],
+    metadata: {
+      jobRequestId: params.jobRequestId,
+      matchId: params.matchId,
+    },
+  })
+  await logOutboundMessage({ to: params.customerPhone, templateName: 'please_confirm_with_provider', externalId })
 }
 
 export async function sendJobOffer(params: {
