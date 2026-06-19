@@ -257,13 +257,23 @@ model Provider {
   payoutVerifiedAt DateTime? // set when payout banking details are verified
 
   // Moderation / lifecycle
-  status          ProviderStatus @default(ACTIVE)
-  kycStatus       KycStatus      @default(NOT_STARTED)
-  suspendedUntil  DateTime?
-  suspendedReason String?
-  strikes         Int            @default(0)
-  archivedAt      DateTime?
-  archiveReason   String?
+  status            ProviderStatus @default(ACTIVE)
+  kycStatus         KycStatus      @default(NOT_STARTED)
+  // KYC hardening — per-provider grace + override audit. All nullable for safe
+  // additive rollout; meaning is enforced by lib/provider-lead-eligibility.ts
+  // (checkCanBeApproved). `kycGraceUntil` lets a provider be approved/activated
+  // without VERIFIED until that timestamp; `kycOverridden*` records a TRUST+
+  // override that bypasses the gate with a written reason.
+  kycRequiredFrom   DateTime?
+  kycGraceUntil     DateTime?
+  kycOverriddenBy   String?
+  kycOverriddenAt   DateTime?
+  kycOverrideReason String?
+  suspendedUntil    DateTime?
+  suspendedReason   String?
+  strikes           Int            @default(0)
+  archivedAt        DateTime?
+  archiveReason     String?
 
   schedule                             ProviderSchedule[]
   technicianSkills                     TechnicianSkill[]
@@ -310,6 +320,7 @@ model Provider {
   @@index([isTestUser])
   @@index([status, createdAt])
   @@index([kycStatus, status])
+  @@index([kycGraceUntil])
   @@index([completedJobsCount])
   @@map("providers")
 }
@@ -429,7 +440,7 @@ model ProviderApplicationDraft {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  submittedApplication    ProviderApplication?      @relation(fields: [submittedApplicationId], references: [id], onDelete: SetNull)
+  submittedApplication     ProviderApplication?      @relation(fields: [submittedApplicationId], references: [id], onDelete: SetNull)
   registrationResumeTokens RegistrationResumeToken[]
 
   @@index([phone])
@@ -2653,11 +2664,11 @@ model AdminUser {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  invitedBy                    AdminUser?           @relation("AdminInvitedBy", fields: [invitedById], references: [id])
-  invitees                     AdminUser[]          @relation("AdminInvitedBy")
-  auditEvents                  AdminAuditEvent[]
-  voucherBatches               VoucherBatch[]
-  issuedProviderResumeTokens   ProviderResumeToken[]
+  invitedBy                  AdminUser?            @relation("AdminInvitedBy", fields: [invitedById], references: [id])
+  invitees                   AdminUser[]           @relation("AdminInvitedBy")
+  auditEvents                AdminAuditEvent[]
+  voucherBatches             VoucherBatch[]
+  issuedProviderResumeTokens ProviderResumeToken[]
 
   @@map("admin_users")
 }
@@ -3067,45 +3078,45 @@ model ApplicationErrorEvent {
 // Written by the /api/internal/cron/daily-provider-snapshot endpoint, one row
 // per calendar day. Holds only derived aggregate counts (no client PII).
 model DailyProviderSnapshot {
-  id                  String   @id @default(cuid())
-  snapshotDate        DateTime @db.Date
-  capturedAt          DateTime @default(now())
+  id           String   @id @default(cuid())
+  snapshotDate DateTime @db.Date
+  capturedAt   DateTime @default(now())
 
   // Application funnel (current state, prod cohort only)
-  appsApproved        Int      @default(0)
-  appsPending         Int      @default(0)
-  appsMoreInfo        Int      @default(0)
+  appsApproved Int @default(0)
+  appsPending  Int @default(0)
+  appsMoreInfo Int @default(0)
 
   // Provider fleet (current state, prod cohort only)
-  providersActive     Int      @default(0)
-  providersVerified   Int      @default(0)
+  providersActive   Int @default(0)
+  providersVerified Int @default(0)
 
   // Pending queue health
-  pendingBreachingSla Int      @default(0)
+  pendingBreachingSla Int @default(0)
 
   // Approval SLA (rolling 30 days)
-  approvalP50Minutes  Decimal? @db.Decimal(10, 2)
-  approvalP90Minutes  Decimal? @db.Decimal(10, 2)
-  approvalSlaHitRate  Decimal? @db.Decimal(5, 4)
+  approvalP50Minutes Decimal? @db.Decimal(10, 2)
+  approvalP90Minutes Decimal? @db.Decimal(10, 2)
+  approvalSlaHitRate Decimal? @db.Decimal(5, 4)
 
   // Communication volume (rolling 30 days)
-  whatsappOutbound30d Int      @default(0)
-  otpAttempts30d      Int      @default(0)
+  whatsappOutbound30d Int @default(0)
+  otpAttempts30d      Int @default(0)
 
   // Wallet state (current)
-  promoCreditsHeld    Int      @default(0)
-  paidCreditsHeld     Int      @default(0)
+  promoCreditsHeld Int @default(0)
+  paidCreditsHeld  Int @default(0)
 
   // Demand side (rolling 30 days)
-  leadUnlocks30d      Int      @default(0)
-  jobRequests30d      Int      @default(0)
+  leadUnlocks30d Int @default(0)
+  jobRequests30d Int @default(0)
 
   // Acquisition window (rolling 7 days)
-  applicationsLast7d  Int      @default(0)
-  approvedLast7d      Int      @default(0)
+  applicationsLast7d Int @default(0)
+  approvedLast7d     Int @default(0)
 
   // Raw metrics + future fields (pending age buckets, draft funnel by step, etc.)
-  rawMetricsJson      Json     @default("{}")
+  rawMetricsJson Json @default("{}")
 
   @@unique([snapshotDate])
   @@index([capturedAt])

@@ -25,6 +25,11 @@ export function getApplicationsAdminMessage(code?: string | null) {
         tone: 'error' as const,
         text: 'Approval blocked because required onboarding fields are missing. Ask the provider for more information and review again.',
       }
+    case 'kyc_required_for_approval':
+      return {
+        tone: 'error' as const,
+        text: 'Approval blocked: this provider has not completed identity verification (KYC). Ask them to finish the verification link, or use the Override KYC action (with a written reason) on the provider profile if you must approve anyway.',
+      }
     case 'application_approval_failed':
       return {
         tone: 'error' as const,

@@ -16,6 +16,9 @@ import { isEnabled } from '@/lib/flags'
 import { sendTemplate } from '@/lib/whatsapp'
 import { crudAction } from '@/lib/crud-action'
 import { syncProviderRecord } from '@/lib/provider-record'
+import { isKycRequiredForActivation } from '@/lib/kyc-policy'
+import { KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
+import { checkCanBeApproved } from '@/lib/provider-lead-eligibility'
 import { createOrResolveProviderApprovalAuthUser } from '@/lib/provider-approval-auth-user'
 import {
   findConflictingActiveProviderApplications,
@@ -214,6 +217,44 @@ async function approveApplication(formData: FormData) {
       conflictingApplicationIds: conflictingApplications.map((candidate) => candidate.id),
     })
     redirect('/admin/applications?message=duplicate_active_application')
+  }
+
+  // KYC pre-flight. syncProviderRecord would silently downgrade verified=true
+  // → verified=false on a missing-KYC provider; admins clicked "Approve" so
+  // they need to know the action did NOT activate the provider. Pre-check
+  // here against the application's linked provider (if any) so we can show
+  // a clear admin message and bail before any auth/DB writes.
+  const kycRequired = await isKycRequiredForActivation()
+  if (kycRequired && app.providerId) {
+    const linkedProvider = await db.provider.findUnique({
+      where: { id: app.providerId },
+      select: {
+        kycStatus: true,
+        createdAt: true,
+        kycGraceUntil: true,
+        kycOverriddenAt: true,
+      },
+    })
+    if (linkedProvider) {
+      const kycGraceEnabled = await isEnabled(KYC_GRACE_FLAG)
+      const gate = checkCanBeApproved(
+        {
+          kycStatus: linkedProvider.kycStatus ?? 'NOT_STARTED',
+          createdAt: linkedProvider.createdAt ?? null,
+          kycGraceUntil: linkedProvider.kycGraceUntil ?? null,
+          kycOverriddenAt: linkedProvider.kycOverriddenAt ?? null,
+        },
+        { kycRequired, kycGraceEnabled },
+      )
+      if (!gate.ok) {
+        console.warn('[applications] Approval blocked: provider has not completed KYC', {
+          applicationId: app.id,
+          providerId: app.providerId,
+          kycStatus: linkedProvider.kycStatus,
+        })
+        redirect('/admin/applications?message=kyc_required_for_approval')
+      }
+    }
   }
 
   let approvedNow = false

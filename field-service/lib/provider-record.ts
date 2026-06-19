@@ -4,10 +4,26 @@ import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-gua
 import { INTERNAL_TEST_COHORT_NAME, createTestCohortContext } from './internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 import { canonicalizeServiceCategoryValues } from './service-category-canonicalization'
+import { isKycRequiredForActivation } from './kyc-policy'
+import { isEnabled } from './flags'
+import { KYC_GRACE_FLAG } from './matching/kyc-grace'
+import { checkCanBeApproved } from './provider-lead-eligibility'
+
+type ProviderKycSnapshot = {
+  id: string
+  kycStatus?: string | null
+  createdAt?: Date | null
+  kycGraceUntil?: Date | null
+  kycOverriddenAt?: Date | null
+}
 
 type ProviderRecordSyncClient = {
   provider: {
-    findUnique: (...args: any[]) => Promise<{ id: string } | null>
+    // The KYC gate (see below) needs to read the live KYC state to decide
+    // whether `verified: true` is allowed; callers may pass a narrower client
+    // shape, in which case any extra fields returned by the real Prisma model
+    // are still safe to ignore.
+    findUnique: (...args: any[]) => Promise<ProviderKycSnapshot | { id: string } | null>
     updateMany: (...args: any[]) => Promise<unknown>
     createMany: (...args: any[]) => Promise<unknown>
   }
@@ -192,13 +208,57 @@ export async function syncProviderRecord(
   const phoneCohort = createTestCohortContext(phone)
   const isTestUser = input.isTestUser ?? phoneCohort.isTestUser
   const cohortName = input.cohortName ?? (isTestUser ? phoneCohort.cohortName ?? INTERNAL_TEST_COHORT_NAME : null)
-  const leadEligible = input.active && input.verified
   const skills = canonicalizeServiceCategoryValues(input.skills)
   const serviceAreas = normaliseLocationDisplayNames(input.serviceAreas)
+  // Fetch the KYC context alongside the id so the gate can run without a
+  // second query. Older callers may pass a client whose findUnique only
+  // returns { id } — that still works (the guard treats unknown values as
+  // NOT_STARTED and the per-provider grace/override fields default to null).
   const existing = await client.provider.findUnique({
     where: { phone },
-    select: { id: true },
+    select: {
+      id: true,
+      kycStatus: true,
+      createdAt: true,
+      kycGraceUntil: true,
+      kycOverriddenAt: true,
+    },
   })
+
+  // KYC approval gate. When provider.kyc.required_for_activation is OFF this
+  // resolves to verified=true unchanged (backwards compatible). When ON, a
+  // requested verified=true is downgraded to verified=false / status=
+  // APPLICATION_PENDING unless the provider passes the gate (VERIFIED, admin
+  // override, per-provider grace window, or legacy cohort grace). This is the
+  // single most important gate in this PR — every approval path eventually
+  // flows through syncProviderRecord, so closing it here closes the whole
+  // approval-without-KYC class of bypass.
+  const kycRequired = await isKycRequiredForActivation()
+  const kycGraceEnabled = kycRequired ? await isEnabled(KYC_GRACE_FLAG) : false
+  let allowVerified = input.verified
+  if (input.verified && kycRequired) {
+    const snapshot = (existing as ProviderKycSnapshot | null) ?? null
+    const gateResult = checkCanBeApproved(
+      {
+        kycStatus: snapshot?.kycStatus ?? 'NOT_STARTED',
+        createdAt: snapshot?.createdAt ?? null,
+        kycGraceUntil: snapshot?.kycGraceUntil ?? null,
+        kycOverriddenAt: snapshot?.kycOverriddenAt ?? null,
+      },
+      { kycRequired, kycGraceEnabled },
+    )
+    if (!gateResult.ok) {
+      allowVerified = false
+      console.warn('[provider-record] verified=true downgraded by KYC gate', {
+        phone: phone.slice(-4),
+        existingId: snapshot?.id,
+        kycStatus: snapshot?.kycStatus ?? 'NOT_STARTED',
+        reason: gateResult.code,
+      })
+    }
+  }
+  const effectiveVerified = allowVerified
+  const leadEligible = input.active && effectiveVerified
 
   if (existing) {
     const data: Record<string, unknown> = {
@@ -210,8 +270,8 @@ export async function syncProviderRecord(
       isTestUser,
       cohortName,
       availableNow: leadEligible && input.availableNow,
-      verified: input.verified,
-      status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
+      verified: effectiveVerified,
+      status: effectiveVerified ? 'ACTIVE' : 'APPLICATION_PENDING',
     }
 
     if (input.avatarUrl) {
@@ -243,7 +303,7 @@ export async function syncProviderRecord(
       }
     }
 
-    if (input.verified) {
+    if (effectiveVerified) {
       await ensureDefaultProviderAvailability(client, existing.id)
     }
 
@@ -264,8 +324,8 @@ export async function syncProviderRecord(
       isTestUser,
       cohortName,
       availableNow: leadEligible && input.availableNow,
-      verified: input.verified,
-      status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
+      verified: effectiveVerified,
+      status: effectiveVerified ? 'ACTIVE' : 'APPLICATION_PENDING',
       ...(input.avatarUrl ? { avatarUrl: input.avatarUrl } : {}),
     },
   })
@@ -286,7 +346,7 @@ export async function syncProviderRecord(
     }
   }
 
-  if (input.verified) {
+  if (effectiveVerified) {
     await ensureDefaultProviderAvailability(client, id)
   }
 

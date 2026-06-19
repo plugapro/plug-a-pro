@@ -271,7 +271,7 @@ describe('syncProviderRecord - phone normalization', () => {
 
     expect(client.provider.findUnique).toHaveBeenCalledWith({
       where: { phone: '+27821234567' },
-      select: { id: true },
+      select: expect.objectContaining({ id: true }),
     })
     expect(client.provider.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
