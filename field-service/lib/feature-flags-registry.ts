@@ -326,6 +326,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'customer.abandoned_recovery.cron': {
+    description: 'Enable the customer-abandoned-recovery cron — sends customer_abandoned_recovery to phones that started a job_request flow and dropped mid-way (4h-7d ago). OFF = the cron is a no-op. Keep OFF until the customer_abandoned_recovery Meta template is APPROVED.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.identity.verification': {
     description: 'Gate paid credit purchases (Pay@, Manual EFT) behind HIGH-assurance identity verification. Disable to roll back without a deploy.',
     owner: 'eng',
