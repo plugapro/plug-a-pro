@@ -301,6 +301,22 @@ function FiltersRow({ filters }: { filters: WorklistFilters }) {
       />
 
       <FilterChipGroup
+        label="KYC"
+        options={[
+          { value: null, label: 'Any' },
+          { value: 'NOT_STARTED', label: 'Not started' },
+          { value: 'IN_PROGRESS', label: 'In progress' },
+          { value: 'SUBMITTED', label: 'Submitted' },
+          { value: 'VERIFIED', label: 'Verified' },
+          { value: 'REJECTED', label: 'Rejected' },
+          { value: 'EXPIRED', label: 'Expired' },
+        ]}
+        active={filters.kyc ?? null}
+        filterKey="kyc"
+        filters={filters}
+      />
+
+      <FilterChipGroup
         label="ID"
         options={[
           { value: null, label: 'Any' },
@@ -351,7 +367,7 @@ function FilterChipGroup({
   label: string
   options: Array<{ value: string | null; label: string }>
   active: string | null
-  filterKey: 'src' | 'id' | 'photo' | 'claim'
+  filterKey: 'src' | 'id' | 'photo' | 'claim' | 'kyc'
   filters: WorklistFilters
 }) {
   function hrefFor(value: string | null) {
@@ -366,6 +382,9 @@ function FilterChipGroup({
     if (filterKey === 'claim') {
       next.claimedOnly = value === 'claimed' ? true : null
       next.unclaimedOnly = value === 'unclaimed' ? true : null
+    }
+    if (filterKey === 'kyc') {
+      next.kyc = (value as WorklistFilters['kyc']) ?? null
     }
     return hrefForFilters(next)
   }
