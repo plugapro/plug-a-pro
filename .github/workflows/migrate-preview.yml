@@ -55,31 +55,40 @@ jobs:
         with:
           version: 10.32.1
 
+      - name: Check Supabase Management API secrets
+        id: secrets
+        # Graceful no-op when secrets aren't configured yet. This lets the
+        # workflow file itself merge into main BEFORE Branching has been
+        # enabled in the Supabase dashboard — otherwise every PR that
+        # touches schema would block on a chicken-and-egg setup ordering.
+        # Once the operator follows field-service/docs/preview-env.md §3 and
+        # adds SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_REF, this check
+        # passes and the rest of the job runs normally.
+        run: |
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "::notice::Supabase Branching not configured yet (SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF missing). Skipping migrate-preview — schema changes will not be applied to a preview DB until setup completes. See field-service/docs/preview-env.md §One-time setup."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+
       - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.configured == 'true'
         with:
           node-version: '20'
           cache: 'pnpm'
           cache-dependency-path: field-service/pnpm-lock.yaml
 
       - name: Install dependencies
+        if: steps.secrets.outputs.configured == 'true'
         run: pnpm install --frozen-lockfile
-
-      - name: Verify Supabase Management API secrets
-        run: |
-          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo "::error::SUPABASE_ACCESS_TOKEN is not set. See field-service/docs/preview-env.md §3."
-            exit 1
-          fi
-          if [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
-            echo "::error::SUPABASE_PROJECT_REF is not set (should be a repo variable)."
-            exit 1
-          fi
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
 
       - name: Resolve PR branch DB connection string
         id: branch
+        if: steps.secrets.outputs.configured == 'true'
         # SECURITY: github.head_ref is attacker-controlled (a contributor can
         # name their branch with shell metacharacters). Pull it through env:
         # rather than interpolating into the script body, validate the shape
@@ -127,6 +136,7 @@ jobs:
           echo "DIRECT_URL=$DIRECT_URL" >> "$GITHUB_OUTPUT"
 
       - name: Migration status (pre-apply)
+        if: steps.secrets.outputs.configured == 'true'
         run: pnpm exec prisma migrate status || true
         env:
           # Use the branch DIRECT_URL for both — Prisma's migrate command always
@@ -136,12 +146,14 @@ jobs:
           DIRECT_URL: ${{ steps.branch.outputs.DIRECT_URL }}
 
       - name: Apply pending migrations
+        if: steps.secrets.outputs.configured == 'true'
         run: pnpm exec prisma migrate deploy
         env:
           DATABASE_URL: ${{ steps.branch.outputs.DIRECT_URL }}
           DIRECT_URL: ${{ steps.branch.outputs.DIRECT_URL }}
 
       - name: Migration status (post-apply)
+        if: steps.secrets.outputs.configured == 'true'
         run: pnpm exec prisma migrate status
         env:
           DATABASE_URL: ${{ steps.branch.outputs.DIRECT_URL }}
