@@ -25,6 +25,11 @@
  * Output: a JSON line on stdout with { id, status, category } on success.
  */
 
+// Make this file an ES module so its top-level `const`s are file-scoped under
+// `isolatedModules`. Without this, tsc treats the file as a script and the
+// constants here collide with the same-named ones in submit-post-match-customer-template.ts.
+export {}
+
 const DEFAULT_WABA_ID = '104200042667877' // Approved otp_security_check WABA, 2026-06-02.
 const GRAPH_API_VERSION = 'v18.0'
 
