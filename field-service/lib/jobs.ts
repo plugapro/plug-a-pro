@@ -140,9 +140,17 @@ async function triggerSideEffects(params: {
 
   const customer = job.booking.match.jobRequest.customer
   const appUrl = getPublicAppUrl()
-  const ticketUrl = appUrl ? await getJobRequestAccessUrl(job.booking.match.jobRequest.id) : null
 
   try {
+    // Pulled inside the try/catch so a DB hiccup on the JobRequest lookup
+    // (the only DB read in this side-effect chain) can never abort the
+    // status transition — it's a UX nice-to-have, not a correctness gate.
+    // Was previously above the try block, which made messaging best-effort
+    // but ticket-URL fatal; that asymmetry surfaced as a wall of test
+    // failures in jobs.test.ts the moment any caller's mock omitted
+    // db.jobRequest.
+    const ticketUrl = appUrl ? await getJobRequestAccessUrl(job.booking.match.jobRequest.id) : null
+
     const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
     const { sendCtaUrl } = await import('./whatsapp-interactive')
     const { ctaLabelFor } = await import('./whatsapp-copy')

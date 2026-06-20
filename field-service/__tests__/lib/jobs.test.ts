@@ -20,8 +20,13 @@ const { mockJob } = vi.hoisted(() => ({
       bookingId: 'booking_1',
       match: {
         jobRequest: {
+          // id + customer.id added so triggerSideEffects can resolve the
+          // customer-tracker URL (getJobRequestAccessUrl) and the completion
+          // sign-off URL (getJobCompletionUrl) — both are required by the
+          // production type signature on triggerSideEffects in lib/jobs.ts.
+          id: 'jr_1',
           category: 'Plumbing',
-          customer: { name: 'Alice Smith', phone: '+27821234567' },
+          customer: { id: 'cust_1', name: 'Alice Smith', phone: '+27821234567' },
           address: { street: '1 Main St', suburb: 'Sandton', city: 'Johannesburg' },
         },
       },
@@ -48,12 +53,31 @@ vi.mock('@/lib/db', () => ({
       findUnique: vi.fn().mockResolvedValue({ matchId: 'match_1' }),
       update: vi.fn().mockResolvedValue({}),
     },
+    // jobRequest read by triggerSideEffects → getJobRequestAccessUrl →
+    // ensureJobRequestAccessToken. Returning a row with a usable token
+    // short-circuits the updateMany write path.
+    jobRequest: {
+      findUnique: vi.fn().mockResolvedValue({
+        customerAccessToken: 'jra_test_token',
+        customerAccessTokenExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        customerAccessTokenRevokedAt: null,
+      }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     invoice: {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({}),
     },
     rating: {
       findFirst: vi.fn().mockResolvedValue(null),
+    },
+    // openCase('FIELD_EXCEPTION') fires for FAILED/CALLBACK_REQUIRED
+    // transitions (fire-and-forget at lib/jobs.ts:124). The call is wrapped
+    // in .catch() so a missing mock cannot reject the transition itself,
+    // but stubbing it cleans up the test log noise.
+    case: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: 'case_1' }),
     },
   },
 }))
