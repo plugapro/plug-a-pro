@@ -53,7 +53,9 @@ export interface AttributionSnapshot {
   msclkid?: string
   referrer?: string
   landing_path?: string
-  captured_at: string
+  // Optional: legacy snapshots migrated from pap_utm_first_touch have no known
+  // capture time and deliberately omit this rather than fabricate one.
+  captured_at?: string
 }
 
 export interface AttributionState {
@@ -121,9 +123,20 @@ function readSnapshotFromUrl(): AttributionSnapshot | null {
   }
 
   const referrer = trim(document.referrer)
-  if (referrer && !isSelfReferrer(referrer)) captured.referrer = referrer
+  // Symmetric to sanitizeSnapshot — only persist http(s) referrers and
+  // same-site paths. Browser already constrains both but the JSON we POST
+  // crosses a trust boundary into the admin display path.
+  if (
+    referrer &&
+    !isSelfReferrer(referrer) &&
+    (referrer.startsWith('http://') || referrer.startsWith('https://'))
+  ) {
+    captured.referrer = referrer
+  }
   const landing = trim(window.location.pathname)
-  if (landing) captured.landing_path = landing
+  if (landing && landing.startsWith('/') && !landing.startsWith('//')) {
+    captured.landing_path = landing
+  }
 
   // Empty visit — no UTMs, no click IDs, no external referrer — skip so we
   // don't reset last_touch every time the user clicks around the site.
@@ -143,9 +156,10 @@ function migrateLegacyUtmKey(): void {
   const legacy = readJson<Partial<Record<(typeof UTM_KEYS)[number], string>>>(LEGACY_UTM_KEY)
   if (!legacy) return
   const snap: AttributionSnapshot = {
-    // Unknown true captured_at — mark as pre-migration with epoch so it's
-    // distinguishable but doesn't crash any downstream date parsing.
-    captured_at: new Date(0).toISOString(),
+    // True first-touch time is unknown for migrated visitors — omit captured_at
+    // rather than fabricate one. Stamping epoch (or now) here would propagate
+    // into Customer.firstTouchAt / JobRequest.firstTouchAt and render as a real
+    // (wrong) acquisition date; safeIsoToDate() treats the absence as "unknown".
     ...(legacy.utm_source ? { utm_source: legacy.utm_source } : {}),
     ...(legacy.utm_medium ? { utm_medium: legacy.utm_medium } : {}),
     ...(legacy.utm_campaign ? { utm_campaign: legacy.utm_campaign } : {}),
@@ -231,14 +245,24 @@ function sanitizeSnapshot(input: unknown): AttributionSnapshot | null {
   }
   if (typeof v.referrer === 'string') {
     const t = trim(v.referrer)
-    if (t) {
+    // Referrer is captured from document.referrer (a full URL). Only allow
+    // http/https — refuse javascript:, data:, file:, vbscript: etc. so a
+    // tampered POST can't smuggle an executable URL into the admin display
+    // pipeline (admin currently renders referrer as text, but this is
+    // defence-in-depth for any future link rendering).
+    if (t && (t.startsWith('http://') || t.startsWith('https://'))) {
       result.referrer = t
       hasField = true
     }
   }
   if (typeof v.landing_path === 'string') {
     const t = trim(v.landing_path)
-    if (t) {
+    // landing_path is always a same-site pathname captured from
+    // window.location.pathname. Require it to start with `/` and reject
+    // protocol-relative URLs (`//evil.com`) so the admin <Link href> in
+    // /admin/customers/[id] + /admin/bookings/[id] cannot be hijacked to
+    // navigate to an external site or execute a `javascript:` payload.
+    if (t && t.startsWith('/') && !t.startsWith('//')) {
       result.landing_path = t
       hasField = true
     }

@@ -46,7 +46,9 @@ export interface AttributionSnapshot {
   msclkid?: string;
   referrer?: string;
   landing_path?: string;
-  captured_at: string;
+  // Optional: legacy snapshots migrated from pap_utm_first_touch have no known
+  // capture time and deliberately omit this rather than fabricate one.
+  captured_at?: string;
 }
 
 export interface AttributionState {
@@ -114,9 +116,20 @@ function readSnapshotFromUrl(): AttributionSnapshot | null {
   }
 
   const referrer = trim(document.referrer);
-  if (referrer && !isSelfReferrer(referrer)) captured.referrer = referrer;
+  // Mirror the field-service guard: only persist http(s) referrers and
+  // same-site paths. Browser already constrains both but the JSON crosses a
+  // trust boundary into the admin display on app.plugapro.co.za.
+  if (
+    referrer &&
+    !isSelfReferrer(referrer) &&
+    (referrer.startsWith("http://") || referrer.startsWith("https://"))
+  ) {
+    captured.referrer = referrer;
+  }
   const landing = trim(window.location.pathname);
-  if (landing) captured.landing_path = landing;
+  if (landing && landing.startsWith("/") && !landing.startsWith("//")) {
+    captured.landing_path = landing;
+  }
 
   if (!hasAttributionParam && !captured.referrer) return null;
 
@@ -131,7 +144,9 @@ function migrateLegacyUtmKey(): void {
   const legacy = readJson<Partial<Record<(typeof UTM_KEYS)[number], string>>>(LEGACY_UTM_KEY);
   if (!legacy) return;
   const snap: AttributionSnapshot = {
-    captured_at: new Date(0).toISOString(),
+    // True first-touch time is unknown for migrated visitors — omit captured_at
+    // rather than fabricate one. This blob is POSTed to the booking API and would
+    // otherwise stamp a bogus (1970) firstTouchAt on Customer/JobRequest.
     ...(legacy.utm_source ? { utm_source: legacy.utm_source } : {}),
     ...(legacy.utm_medium ? { utm_medium: legacy.utm_medium } : {}),
     ...(legacy.utm_campaign ? { utm_campaign: legacy.utm_campaign } : {}),

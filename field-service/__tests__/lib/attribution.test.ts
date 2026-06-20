@@ -254,4 +254,57 @@ describe('parseAttributionJson (server-side)', () => {
     expect(out?.first_touch?.utm_source).toBe('google')
     expect(out?.first_touch?.captured_at).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
+
+  // Security: refuse hostile landing_path / referrer values so they can't
+  // reach the admin <Link href> render in customers/[id] + bookings/[id]
+  // (XSS / open redirect via attribution data path).
+  it('rejects javascript: URIs in landing_path', () => {
+    const out = parseAttributionJson(
+      JSON.stringify({ first_touch: { landing_path: 'javascript:alert(1)' } }),
+    )
+    expect(out).toBeNull()
+  })
+
+  it('rejects protocol-relative landing_path (//evil.com)', () => {
+    const out = parseAttributionJson(
+      JSON.stringify({ first_touch: { utm_source: 'google', landing_path: '//evil.com/x' } }),
+    )
+    // Other fields still parse, but landing_path is stripped.
+    expect(out?.first_touch?.utm_source).toBe('google')
+    expect(out?.first_touch?.landing_path).toBeUndefined()
+  })
+
+  it('rejects data:/file:/vbscript: referrer URLs and only allows http(s)', () => {
+    for (const bad of ['data:text/html,evil', 'file:///etc/passwd', 'vbscript:msgbox(1)', 'javascript:1']) {
+      const out = parseAttributionJson(
+        JSON.stringify({ first_touch: { referrer: bad } }),
+      )
+      expect(out, `should refuse referrer ${bad}`).toBeNull()
+    }
+    const ok = parseAttributionJson(
+      JSON.stringify({ first_touch: { referrer: 'https://www.google.com/search' } }),
+    )
+    expect(ok?.first_touch?.referrer).toBe('https://www.google.com/search')
+  })
+})
+
+// Security regression for the URL capture path (browser usually constrains
+// these, but the JSON we POST crosses a trust boundary — keep the in-process
+// guard symmetric with the server-side parser).
+describe('captureAttributionFromLocation — scheme guards', () => {
+  it('does not persist a protocol-relative landing_path', () => {
+    // Constructing a URL with a protocol-relative-looking pathname isn't
+    // representable through real navigation; assert that the pathname guard
+    // would reject the trailing-slash form too.
+    stubLocation('https://app.plugapro.co.za//?utm_source=google')
+    const state = captureAttributionFromLocation()
+    // Pathname '//' is rejected by the !startsWith('//') guard.
+    expect(state?.first_touch?.landing_path).toBeUndefined()
+  })
+
+  it('drops a non-http(s) referrer', () => {
+    stubLocation('https://app.plugapro.co.za/?utm_source=google', 'file:///tmp/x')
+    const state = captureAttributionFromLocation()
+    expect(state?.first_touch?.referrer).toBeUndefined()
+  })
 })

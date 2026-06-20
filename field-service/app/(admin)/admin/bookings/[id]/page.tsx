@@ -658,19 +658,34 @@ function BookingAcquisitionBlock({
           <dd className="col-span-2 text-xs break-all">{referrer}</dd>
         </>
       )}
-      {landingPath && (
-        <>
-          <dt className="text-muted-foreground font-medium">Landing page</dt>
-          <dd className="col-span-2">
-            <Link
-              href={landingPath}
-              className="text-primary underline-offset-4 hover:underline break-all"
-            >
-              {landingPath}
-            </Link>
-          </dd>
-        </>
-      )}
+      {(() => {
+        // Defence-in-depth: even though parseAttributionJson rejects non-same-
+        // site paths, any rows persisted before that validation landed could
+        // carry a hostile href. Render plain text if the path doesn't look
+        // like a safe same-site pathname.
+        const safeLanding =
+          landingPath && landingPath.startsWith('/') && !landingPath.startsWith('//')
+            ? landingPath
+            : null
+        if (!landingPath) return null
+        return (
+          <>
+            <dt className="text-muted-foreground font-medium">Landing page</dt>
+            <dd className="col-span-2">
+              {safeLanding ? (
+                <Link
+                  href={safeLanding}
+                  className="text-primary underline-offset-4 hover:underline break-all"
+                >
+                  {safeLanding}
+                </Link>
+              ) : (
+                <span className="text-xs break-all text-muted-foreground">{landingPath}</span>
+              )}
+            </dd>
+          </>
+        )
+      })()}
     </dl>
   )
 }
