@@ -449,6 +449,27 @@ describe('notifyTerminalVerificationStatus', () => {
     )
   })
 
+  it('sends a session-expired message on EXPIRED', async () => {
+    // Before this fix EXPIRED was silently dropped — providers whose Didit
+    // session lapsed got no follow-up message and the funnel went dark.
+    await notifyTerminalVerificationStatus('ver_1', 'EXPIRED')
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('expired'),
+    )
+  })
+
+  it('sends a cancellation message on CANCELLED', async () => {
+    // Admin-initiated cancellation (via NEEDS_MANUAL_REVIEW → CANCELLED) or
+    // session-cleanup. Provider needs to know the verification stopped so they
+    // can contact support if it was unexpected.
+    await notifyTerminalVerificationStatus('ver_1', 'CANCELLED')
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('cancelled'),
+    )
+  })
+
   it('skips non-terminal statuses without sending', async () => {
     await notifyTerminalVerificationStatus('ver_1', 'PROCESSING')
     expect(mocks.dbFindUnique).not.toHaveBeenCalled()
