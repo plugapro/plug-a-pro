@@ -3150,3 +3150,180 @@ model DailyProviderSnapshot {
   @@index([capturedAt])
   @@map("daily_provider_snapshots")
 }
+
+// ---------------------------------------------------------------------------
+// Ops Agent Workflow Team
+// Six operational monitoring agents. Pure evaluators classify/score entities;
+// the runner persists OpsAgentRun + OpsRecommendation (+ optional draft WhatsApp
+// messages) for admin review. No agent sends WhatsApp directly — drafts are
+// surfaced for human approval (or a flag-gated auto-send worker in Phase 3).
+// All additive; see outputs/ops-agent-workflow-team/.
+// ---------------------------------------------------------------------------
+
+enum OpsAgentKey {
+  PROVIDER_APPLICATION_REVIEW
+  PROVIDER_PROFILE_COACH
+  SERVICE_REQUEST_FRICTION
+  MATCHING_JOURNEY_MONITOR
+  POST_MATCH_FOLLOW_UP
+  OPS_DAILY_BRIEFING
+}
+
+enum OpsAgentRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL // completed but some candidates errored
+  FAILED
+}
+
+enum OpsRecommendationStatus {
+  PENDING // awaiting ops review
+  ACKNOWLEDGED // ops saw it, no message needed
+  ACTIONED // ops took a non-message action
+  DISMISSED // not relevant
+  SUPERSEDED // replaced by a newer run (dedupe)
+}
+
+enum OpsRecommendationSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum OpsDraftStatus {
+  PENDING_APPROVAL
+  BLOCKED_POLICY // canSend() = false (opt-out / no open session)
+  APPROVED // approved, not yet sent
+  SENT
+  REJECTED
+  EXPIRED // session/template window passed before approval
+  FAILED // send attempted, Meta returned an error
+}
+
+model OpsAgentRun {
+  id            String            @id @default(cuid())
+  agentKey      OpsAgentKey
+  trigger       String // "cron" | "event" | "manual"
+  status        OpsAgentRunStatus @default(RUNNING)
+  startedAt     DateTime          @default(now())
+  finishedAt    DateTime?
+  windowFrom    DateTime? // candidate selection lower bound
+  windowTo      DateTime?
+  candidates    Int               @default(0)
+  recommended   Int               @default(0)
+  draftsCreated Int               @default(0)
+  error         String?
+  metadata      Json              @default("{}")
+
+  recommendations OpsRecommendation[]
+
+  @@index([agentKey, startedAt])
+  @@map("ops_agent_runs")
+}
+
+model OpsRecommendation {
+  id                 String                    @id @default(cuid())
+  runId              String
+  agentKey           OpsAgentKey
+  entityType         String // PROVIDER_APPLICATION | PROVIDER | JOB_REQUEST | MATCH | BOOKING | OPS_BRIEFING
+  entityId           String
+  classification     String
+  score              Int? // 0–100 where applicable
+  severity           OpsRecommendationSeverity @default(MEDIUM)
+  signals            Json                      @default("[]") // Signal[]
+  summary            String // internal ops recommendation
+  recommendedActions Json                      @default("[]") // RecommendedAction[]
+  status             OpsRecommendationStatus   @default(PENDING)
+  dedupeKey          String // (agentKey:entityId:intent)
+  caseId             String? // optional link to a Case (loose, no FK)
+  reviewedById       String?
+  reviewedAt         DateTime?
+  reviewNote         String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  run    OpsAgentRun       @relation(fields: [runId], references: [id])
+  drafts OpsDraftMessage[]
+
+  @@unique([dedupeKey])
+  @@index([agentKey, status, severity])
+  @@index([entityType, entityId])
+  @@index([runId])
+  @@map("ops_recommendations")
+}
+
+model OpsDraftMessage {
+  id               String         @id @default(cuid())
+  recommendationId String
+  recipientRole    String // PROVIDER | CUSTOMER
+  recipientPhone   String
+  channel          String         @default("WHATSAPP")
+  templateName     String? // null => freeform (open session only)
+  templateParams   Json           @default("{}")
+  freeformBody     String?
+  renderedPreview  String // exactly what ops sees / what will send
+  rationale        String
+  status           OpsDraftStatus @default(PENDING_APPROVAL)
+  policyReason     String? // populated when BLOCKED_POLICY
+  approvedById     String?
+  approvedAt       DateTime?
+  sentAt           DateTime?
+  messageEventId   String? // link to MessageEvent.id after send (loose, no FK)
+  failureReason    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  recommendation OpsRecommendation @relation(fields: [recommendationId], references: [id])
+
+  @@index([status, recipientRole])
+  @@index([recommendationId])
+  @@map("ops_draft_messages")
+}
+
+model ProviderProfileScore {
+  id                 String    @id @default(cuid())
+  providerId         String
+  attractiveness     Int // 0–100
+  signals            Json      @default("[]")
+  missingItems       Json      @default("[]")
+  nudgedAt           DateTime?
+  improvedSinceNudge Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  provider Provider @relation(fields: [providerId], references: [id])
+
+  @@index([providerId, createdAt])
+  @@map("provider_profile_scores")
+}
+
+model RequestFrictionSignal {
+  id           String   @id @default(cuid())
+  jobRequestId String
+  dropoffStage String // category|address|description|photo|urgency|slot|quote_payment|whatsapp_handoff
+  reasonCode   String
+  detail       String?
+  resolved     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id])
+
+  @@index([dropoffStage, reasonCode, createdAt])
+  @@index([jobRequestId])
+  @@map("request_friction_signals")
+}
+
+model OpsDailyBriefing {
+  id                    String   @id @default(cuid())
+  forDate               DateTime @db.Date
+  markdown              String
+  metrics               Json     @default("{}")
+  topFriction           Json     @default("[]")
+  acquisitionPriorities Json     @default("[]")
+  openbrainRef          String? // observationId from safeCapture
+  createdAt             DateTime @default(now())
+
+  @@unique([forDate])
+  @@map("ops_daily_briefings")
+}
