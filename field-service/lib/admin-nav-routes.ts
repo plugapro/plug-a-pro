@@ -11,6 +11,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: '/admin/applications', label: 'Applications', icon: 'applications' as const },
   { href: '/admin/verifications', label: 'Verifications', icon: 'workflow' as const },
   { href: '/admin/providers', label: 'Providers', icon: 'users' as const },
+  { href: '/admin/quality', label: 'Provider Quality', icon: 'workflow' as const },
   { href: '/admin/customers', label: 'Customers', icon: 'users' as const },
   { href: '/admin/categories', label: 'Categories', icon: 'categories' as const },
   { href: '/admin/locations', label: 'Locations', icon: 'categories' as const },
