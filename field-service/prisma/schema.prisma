@@ -1,6 +1,10 @@
 // Plug A Pro — Marketplace Schema
 // Domain model: homeowners post job requests → platform matches to independent providers
 // → providers accept leads → quote → book → execute → pay → review
+//
+// Migrations live under prisma/migrations/. Production: applied via
+// .github/workflows/migrate-deploy.yml. Preview: applied per-PR-branch via
+// .github/workflows/migrate-preview.yml — see field-service/docs/preview-env.md.
 
 generator client {
   provider = "prisma-client-js"
