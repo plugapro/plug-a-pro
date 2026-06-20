@@ -73,6 +73,10 @@
     {
       "path": "/api/cron/customer-match-confirmation-nudge",
       "schedule": "15 6-20 * * *"
+    },
+    {
+      "path": "/api/cron/customer-abandoned-recovery",
+      "schedule": "30 7,12,17 * * *"
     }
   ]
 }
