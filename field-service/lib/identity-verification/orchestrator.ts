@@ -485,6 +485,14 @@ const TERMINAL_NOTIFICATION_STATUSES = new Set<VerificationStatus>([
   'PASSED',
   'NEEDS_MANUAL_REVIEW',
   'FAILED',
+  // EXPIRED + CANCELLED added so providers whose Didit session lapses
+  // (timeout) or is admin-cancelled get a follow-up message instead of
+  // silently falling off the funnel. WhatsApp delivery is still bounded by
+  // the 24h re-engagement window because this path uses sendText (free-text)
+  // rather than a Meta-approved template — same constraint as the existing
+  // PASSED/NEEDS_MANUAL_REVIEW/FAILED notifications.
+  'EXPIRED',
+  'CANCELLED',
 ])
 
 function terminalNotificationText(status: VerificationStatus): string | null {
@@ -496,6 +504,19 @@ function terminalNotificationText(status: VerificationStatus): string | null {
   }
   if (status === 'FAILED') {
     return 'We could not approve your identity verification. Please contact Plug A Pro support so we can help with next steps.'
+  }
+  if (status === 'EXPIRED') {
+    // No fault, just timed out. The kyc-drive cron will re-engage with a
+    // signed link in due course; we don't include one here because sendText
+    // is free-text (no URL button) and an unsigned link would dead-end at
+    // sign-in.
+    return 'Your identity verification session expired before you finished. Reply VERIFY to start again, or wait for us to send you a new link.'
+  }
+  if (status === 'CANCELLED') {
+    // Usually admin-initiated (NEEDS_MANUAL_REVIEW → CANCELLED) or
+    // auto-cleanup. Telling the provider it was "cancelled" without context
+    // would alarm them; direct to support so ops can explain or restart.
+    return 'Your identity verification has been cancelled. Please contact Plug A Pro support if this was unexpected and we can help you continue.'
   }
   return null
 }
