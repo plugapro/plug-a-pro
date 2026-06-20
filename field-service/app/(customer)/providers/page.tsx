@@ -14,6 +14,7 @@ import {
 } from '@/lib/customer-search-routing'
 import { ProviderSearchInput } from '@/components/customer/ProviderSearchInput'
 import { buildMetadata } from '@/lib/metadata'
+import { buildProviderKycVisibilityWhere, KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
 import { Prisma } from '@prisma/client'
 
 export const metadata = buildMetadata({ title: 'Find a Provider' })
@@ -101,6 +102,13 @@ export default async function ProviderCataloguePage({
   const flagEnabled = await isEnabled('feature.customer.provider_browse')
   if (!flagEnabled) redirect(requestUrl ?? '/')
 
+  // Defense-in-depth: today's transitive safety (verified=true is set only
+  // when KYC is VERIFIED — PR #114, behind provider.kyc.required_for_activation)
+  // is preserved. We additionally pin an explicit kycStatus filter so customer
+  // visibility cannot regress if the approval pipeline or that flag changes.
+  const kycGraceOn = await isEnabled(KYC_GRACE_FLAG)
+  const kycVisibilityWhere = buildProviderKycVisibilityWhere(kycGraceOn)
+
   const now = new Date()
   const queryResolvedCategory = resolvePilotServiceCategoryTag(q)
   const normalizedCategory =
@@ -124,6 +132,8 @@ export default async function ProviderCataloguePage({
         // dynamic OR spread below - prior bug allowed suspended providers to
         // appear in results when category + query filters were both active.
         { OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: now } }] },
+        // KYC visibility (defense-in-depth on top of verified=true).
+        kycVisibilityWhere,
         ...(normalizedCategory
           ? [
               {

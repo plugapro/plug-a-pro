@@ -38,3 +38,34 @@ export function isKycGrandfathered(
   }
   return true
 }
+
+/**
+ * Prisma `where` fragment that enforces KYC at provider visibility / lookup time.
+ *
+ * Always-on rule: kycStatus === 'VERIFIED'. When the legacy grace flag is ON,
+ * additionally admit providers created before KYC_GRACE_CUTOFF whose KYC has
+ * NOT actively failed (REJECTED/EXPIRED stay excluded). Mirrors the matching
+ * filter (lib/matching/filter.ts) so customer-facing visibility cannot drift.
+ *
+ * This is defense-in-depth: today the provider.verified=true approval gate is
+ * KYC-aware (PR #114, behind provider.kyc.required_for_activation), but an
+ * explicit kycStatus condition on the where clause means that even if a future
+ * change weakens the approval pipeline, customers still cannot see or pick a
+ * provider whose identity has not been verified.
+ */
+export function buildProviderKycVisibilityWhere(graceEnabled: boolean): Record<string, unknown> {
+  if (!graceEnabled) {
+    return { kycStatus: 'VERIFIED' }
+  }
+  return {
+    OR: [
+      { kycStatus: 'VERIFIED' },
+      {
+        AND: [
+          { createdAt: { lt: KYC_GRACE_CUTOFF } },
+          { kycStatus: { notIn: [...KYC_GRACE_INELIGIBLE_STATUSES] } },
+        ],
+      },
+    ],
+  }
+}

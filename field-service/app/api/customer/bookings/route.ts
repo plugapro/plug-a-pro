@@ -29,6 +29,7 @@ import {
 } from '@/lib/customer-serviceability'
 import { apiError } from '@/lib/api-response'
 import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
+import { buildProviderKycVisibilityWhere, KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
 
 const MAX_REQUEST_PHOTOS = 5
 const MAX_REQUEST_PHOTO_SIZE = 10 * 1024 * 1024
@@ -359,6 +360,13 @@ export async function POST(req: NextRequest) {
 
     let sanitizedPreferredProviderId: string | null = null
     if (preferredProviderId?.trim()) {
+      // Defense-in-depth: today's transitive safety (verified=true requires
+      // VERIFIED KYC via the approval pipeline — PR #114) is preserved AND
+      // we pin an explicit kycStatus filter so a non-verified provider can
+      // never be persisted as preferredProviderId regardless of any future
+      // change to the approval pipeline or the kyc-required flag.
+      const kycGraceOn = await isEnabled(KYC_GRACE_FLAG)
+      const kycVisibilityWhere = buildProviderKycVisibilityWhere(kycGraceOn)
       const preferredProvider = await db.provider.findFirst({
         where: {
           id: preferredProviderId.trim(),
@@ -367,6 +375,7 @@ export async function POST(req: NextRequest) {
           status: 'ACTIVE',
           AND: [
             { OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: new Date() } }] },
+            kycVisibilityWhere,
             {
               OR: [
                 {
