@@ -11,6 +11,7 @@
 
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
+import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import {
   isRecentlyNudged,
   NUDGE_MAX_PER_DIMENSION,
@@ -21,6 +22,14 @@ import {
 import { loadProviderQualityRows, type QualityFilter } from './queries'
 
 export const QUALITY_UPLIFT_FLAG = 'admin.quality.uplift'
+
+// The provider_kyc_nudge Meta template has a URL button with a {{1}} parameter
+// (see lib/messaging-templates.ts:259 — "{{1}} signed verification token suffix
+// appended to /provider/verify/"). It also has a {{2}} body parameter for the
+// completion deadline. Sending it via the generic sendTemplate without those
+// parameters would fail at Meta with a parameter-mismatch — we route it
+// through sendProviderKycNudge (which already handles both) instead.
+const KYC_NUDGE_TEMPLATE = 'provider_kyc_nudge' as const
 
 const PROVIDER_DASHBOARD_PATH = '/provider/profile'
 const KYC_RESUME_PATH = '/provider/verify'
@@ -207,9 +216,9 @@ export async function sendNudges(args: {
   let failedCount = 0
   const failures: NudgeSendResult['failures'] = []
 
-  // Import the real send adapter lazily so tests can mock without touching
+  // Import the real send adapters lazily so tests can mock without touching
   // the module graph that this orchestrator imports.
-  const { sendTemplate } = await import('@/lib/whatsapp')
+  const { sendTemplate, sendProviderKycNudge } = await import('@/lib/whatsapp')
 
   for (const item of candidates) {
     if (item.blockedReason) {
@@ -228,8 +237,57 @@ export async function sendNudges(args: {
       continue
     }
 
+    const firstName = (item.providerName ?? '').split(' ')[0] || 'there'
+    const metadata = {
+      providerId: item.providerId,
+      ...item.plan.metadata,
+      actorId: args.actorId,
+      actorRole: args.actorRole,
+    }
+
+    // KYC nudge needs a signed verification URL + deadline (the template's
+    // URL button is parameterised {{1}} = signed token suffix, and the body
+    // has a {{2}} = deadline). Route it through sendProviderKycNudge which
+    // already handles both, mirroring lib/kyc-drive/nudge.ts.
+    if (item.plan.templateName === KYC_NUDGE_TEMPLATE) {
+      const deadline = process.env.KYC_DRIVE_NUDGE_DEADLINE?.trim()
+      if (!deadline) {
+        // Fail closed BEFORE minting a token — minting writes a row to
+        // provider_identity_verifications and would be wasted work.
+        failedCount++
+        failures.push({ providerId: item.providerId, reason: 'MISSING_DEADLINE' })
+        continue
+      }
+
+      try {
+        const { verificationUrl } = await issueProviderIdentityVerificationLink({
+          providerId: item.providerId,
+          channel: 'WHATSAPP',
+        })
+        if (!verificationUrl) {
+          failedCount++
+          failures.push({ providerId: item.providerId, reason: 'NO_VERIFICATION_URL' })
+          continue
+        }
+        await sendProviderKycNudge({
+          providerPhone: item.phone!,
+          providerFirstName: firstName,
+          deadline,
+          verificationUrl,
+          metadata,
+        })
+        sentCount++
+      } catch (error) {
+        failedCount++
+        failures.push({
+          providerId: item.providerId,
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
+      continue
+    }
+
     try {
-      const firstName = (item.providerName ?? '').split(' ')[0] || 'there'
       const baseBody = {
         type: 'body' as const,
         parameters: [{ type: 'text' as const, text: firstName }],
@@ -261,12 +319,7 @@ export async function sendNudges(args: {
         // Every templateName used here was registered in that registry.
         template: item.plan.templateName as Parameters<typeof sendTemplate>[0]['template'],
         components,
-        metadata: {
-          providerId: item.providerId,
-          ...item.plan.metadata,
-          actorId: args.actorId,
-          actorRole: args.actorRole,
-        },
+        metadata,
       })
       sentCount++
     } catch (error) {
