@@ -396,6 +396,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.kyc.promote_in_channel_captures': {
+    description: 'When ON, approving a ProviderApplication that already carries WhatsApp in-channel KYC captures (idNumber + ID document + selfie attachments) will create a ProviderIdentityVerification row in SUBMITTED status so the admin identity-review queue can act on it. Default OFF; turn ON only after the admin review queue is live and you want WhatsApp-captured data to flow into it.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.identity.vendor.didit.persist_documents': {
     description: 'Persist Didit decision fields and private document images after terminal vendor verdicts or admin backfills.',
     owner: 'eng',

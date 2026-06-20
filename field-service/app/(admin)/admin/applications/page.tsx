@@ -445,6 +445,35 @@ async function approveApplication(formData: FormData) {
     })
   }
 
+  // Promote WhatsApp in-channel KYC captures (idNumber + ID doc + selfie) into
+  // a real ProviderIdentityVerification row so the admin identity-review queue
+  // can act on it. Flag-gated (default OFF), idempotent and fail-safe: any
+  // failure here is logged but never breaks approval, since the approval crud
+  // transaction has already committed by this point.
+  if (approvedNow && approvedProviderId) {
+    const { promoteApplicationCapturesToVerification } = await import(
+      '@/lib/identity-verification/promote-application-captures'
+    )
+    const promotion = await promoteApplicationCapturesToVerification({
+      applicationId: app.id,
+      providerId: approvedProviderId,
+    }).catch((error) => {
+      console.error('[applications] promoteApplicationCapturesToVerification threw', {
+        applicationId: app.id,
+        providerId: approvedProviderId,
+        error,
+      })
+      return { outcome: 'error' as const, error: String(error) }
+    })
+    if (promotion.outcome === 'created') {
+      console.info('[applications] WhatsApp in-channel KYC captures promoted to verification', {
+        applicationId: app.id,
+        providerId: approvedProviderId,
+        verificationId: promotion.verificationId,
+      })
+    }
+  }
+
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
   if (approvedNow) {
