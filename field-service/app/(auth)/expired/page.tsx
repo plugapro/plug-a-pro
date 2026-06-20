@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Clock, ArrowRight } from 'lucide-react'
 import { AuthShell } from '@/components/shared/auth-shell'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
 
 const WA_NUMBER = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
@@ -88,10 +89,10 @@ export default function LinkExpiredPage() {
           </Link>
 
           {WA_ENABLED && waHref && (
-            <a
+            <WhatsAppLink
               href={waHref}
-              target="_blank"
-              rel="noopener noreferrer"
+              source="auth_expired_reopen"
+              ctaLabel="Reopen WhatsApp chat"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 height: 44, borderRadius: 16, border: 'none', cursor: 'pointer',
@@ -101,7 +102,7 @@ export default function LinkExpiredPage() {
             >
               <WhatsAppIcon />
               Reopen WhatsApp chat
-            </a>
+            </WhatsAppLink>
           )}
         </div>
       </div>

@@ -106,6 +106,7 @@ export default async function BookingDetailPage({
   const address         = booking.match?.jobRequest?.address
   const jobRequestTitle = booking.match?.jobRequest?.title ?? '-'
   const jobRequestCategory = booking.match?.jobRequest?.category ?? '-'
+  const jobRequest      = booking.match?.jobRequest ?? null
 
   return (
     <div className="space-y-6">
@@ -284,6 +285,24 @@ export default async function BookingDetailPage({
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Acquisition</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <BookingAcquisitionBlock
+                source={jobRequest?.utmSource ?? null}
+                medium={jobRequest?.utmMedium ?? null}
+                campaign={jobRequest?.utmCampaign ?? null}
+                content={jobRequest?.utmContent ?? null}
+                gclid={jobRequest?.gclid ?? null}
+                fbclid={jobRequest?.fbclid ?? null}
+                referrer={jobRequest?.referrer ?? null}
+                landingPath={jobRequest?.landingPath ?? null}
+              />
             </CardContent>
           </Card>
 
@@ -569,6 +588,90 @@ function PaymentStatusBadge({
     <Badge variant={map[status] ?? 'neutral'}>
       {label}
     </Badge>
+  )
+}
+
+function BookingAcquisitionBlock({
+  source,
+  medium,
+  campaign,
+  content,
+  gclid,
+  fbclid,
+  referrer,
+  landingPath,
+}: {
+  source: string | null
+  medium: string | null
+  campaign: string | null
+  content: string | null
+  gclid: string | null
+  fbclid: string | null
+  referrer: string | null
+  landingPath: string | null
+}) {
+  const hasAny = source || medium || campaign || content || gclid || fbclid || referrer || landingPath
+  if (!hasAny) {
+    return <p className="text-muted-foreground">No attribution captured</p>
+  }
+  return (
+    <dl className="grid grid-cols-3 gap-2">
+      {source && (
+        <>
+          <dt className="text-muted-foreground font-medium">Source</dt>
+          <dd className="col-span-2">{source}</dd>
+        </>
+      )}
+      {medium && (
+        <>
+          <dt className="text-muted-foreground font-medium">Medium</dt>
+          <dd className="col-span-2">{medium}</dd>
+        </>
+      )}
+      {campaign && (
+        <>
+          <dt className="text-muted-foreground font-medium">Campaign</dt>
+          <dd className="col-span-2">{campaign}</dd>
+        </>
+      )}
+      {content && (
+        <>
+          <dt className="text-muted-foreground font-medium">Content</dt>
+          <dd className="col-span-2">{content}</dd>
+        </>
+      )}
+      {gclid && (
+        <>
+          <dt className="text-muted-foreground font-medium">Google click ID</dt>
+          <dd className="col-span-2 font-mono text-xs break-all">{gclid}</dd>
+        </>
+      )}
+      {fbclid && (
+        <>
+          <dt className="text-muted-foreground font-medium">Meta click ID</dt>
+          <dd className="col-span-2 font-mono text-xs break-all">{fbclid}</dd>
+        </>
+      )}
+      {referrer && (
+        <>
+          <dt className="text-muted-foreground font-medium">Referrer</dt>
+          <dd className="col-span-2 text-xs break-all">{referrer}</dd>
+        </>
+      )}
+      {landingPath && (
+        <>
+          <dt className="text-muted-foreground font-medium">Landing page</dt>
+          <dd className="col-span-2">
+            <Link
+              href={landingPath}
+              className="text-primary underline-offset-4 hover:underline break-all"
+            >
+              {landingPath}
+            </Link>
+          </dd>
+        </>
+      )}
+    </dl>
   )
 }
 

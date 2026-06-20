@@ -11,6 +11,7 @@ import { requireProvider } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { PhoneLink } from '@/components/shared/PhoneLink'
 import { buildMetadata } from '@/lib/metadata'
 import { JobStatusControls } from '@/components/technician/StatusControls'
 import { EvidenceUploader } from '@/components/technician/EvidenceUploader'
@@ -177,13 +178,15 @@ export default async function JobDetailPage({
           <Row label="Customer">{customerFirstName}</Row>
           {customerPhone ? (
             <Row label="Contact">
-              <a
+              <PhoneLink
                 href={`tel:${customerPhone}`}
+                source="provider_job_call_customer"
+                ctaLabel="Call customer"
                 className="underline-offset-4 hover:underline"
                 aria-label={`Call ${customerFirstName}`}
               >
                 {customerPhone}
-              </a>
+              </PhoneLink>
             </Row>
           ) : null}
           {addressDisplay && (

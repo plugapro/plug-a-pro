@@ -21,6 +21,7 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import type { BottomNavAuthRole } from '@/lib/bottom-nav-auth'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 import {
@@ -302,7 +303,7 @@ export default async function TicketAccessPage({
         </Card>
         <div className="grid grid-cols-1 gap-2">
           <Button asChild variant="outline" className="w-full">
-            <a href="https://wa.me/" target="_blank" rel="noopener noreferrer">Return to WhatsApp</a>
+            <WhatsAppLink href="https://wa.me/" source="requests_access_return" ctaLabel="Return to WhatsApp">Return to WhatsApp</WhatsAppLink>
           </Button>
           <Button asChild className="w-full">
             <Link href="/services">Start a new request</Link>

@@ -10,6 +10,7 @@ import { recordAuditLog } from './audit'
 import { getJobRequestAccessUrl } from './job-request-access'
 import { openCase } from './cases'
 import { getPublicAppUrl } from './provider-credit-copy'
+import { emitServerConversion } from './marketing/server-events'
 
 // ─── Valid transitions ────────────────────────────────────────────────────────
 
@@ -109,6 +110,14 @@ export async function transitionJob(params: {
       })
     }
   })
+
+  // Server-side conversion event — fired on the COMPLETED transition. The
+  // transaction's updateMany({where: {status: job.status}}) guard already
+  // throws on concurrent transitions, so a retry can't double-emit; CAPI/MP
+  // also dedupe via eventId('job_completed', jobId).
+  if (toStatus === 'COMPLETED') {
+    void emitServerConversion({ name: 'job_completed', entityId: jobId })
+  }
 
   // Open FIELD_EXCEPTION case for jobs that enter exception states
   if (toStatus === 'FAILED' || toStatus === 'CALLBACK_REQUIRED') {

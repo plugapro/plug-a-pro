@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { buildMetadata } from "@/lib/metadata";
+import { buildMetadata, siteConfig } from "@/lib/metadata";
+import { breadcrumbLd, jsonLdScript, serviceLd } from "@/lib/jsonld";
 import { Button } from "@/components/ui/button";
 import { ServiceScopeCard } from "@/components/services/ServiceScopeCard";
 import {
@@ -35,6 +36,7 @@ export async function generateMetadata({ params }: ServicePageProps): Promise<Me
   return buildMetadata({
     title: `${service.name} Scope`,
     description: service.customerDescription,
+    canonical: `/services/${service.slug}`,
   });
 }
 
@@ -46,8 +48,31 @@ export default async function ServiceDetailPage({ params }: ServicePageProps) {
 
   const resolvedService = getServiceScopeBySlug(slug);
 
+  // Service + BreadcrumbList markup so Google can render this page as a
+  // rich Service result for queries like "{service.name} near me". Payload
+  // is built from typed siteConfig + serviceScopeMatrix values; jsonLdScript
+  // escapes `<` for the same `</script>` safety as the layout-level marker.
+  const serviceJsonLd = serviceLd({
+    name: resolvedService.name,
+    description: resolvedService.customerDescription,
+    slug: resolvedService.slug,
+  });
+  const breadcrumbJsonLd = breadcrumbLd([
+    { name: "Home", url: siteConfig.url },
+    { name: "Services", url: `${siteConfig.url}/services` },
+    { name: resolvedService.name, url: `${siteConfig.url}/services/${resolvedService.slug}` },
+  ]);
+
   return (
     <main className="px-4 py-12">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(serviceJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(breadcrumbJsonLd) }}
+      />
       <div className="mx-auto max-w-5xl">
         <Button nativeButton={false} render={<Link href="/services" />} variant="outline" size="sm">
           {serviceScopePageContent.detail.backLabel}

@@ -17,6 +17,7 @@ import {
   verifyProviderLeadAccessToken,
 } from '@/lib/provider-lead-access'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { LEAD_UNLOCK_COST_CREDITS } from '@/lib/lead-unlocks'
 import {
   deriveDefaultArrivalWindow,
@@ -922,7 +923,7 @@ export default async function ProviderLeadAccessPage({
             <div className="mt-4 grid gap-2">
               {backToWhatsAppHref ? (
                 <Button asChild size="sm" className="bg-[var(--tone-success-fg)] hover:opacity-90 text-white">
-                  <a href={backToWhatsAppHref}>Back to WhatsApp</a>
+                  <WhatsAppLink href={backToWhatsAppHref} source="leads_access_back_to_whatsapp" ctaLabel="Back to WhatsApp">Back to WhatsApp</WhatsAppLink>
                 </Button>
               ) : null}
               <Button asChild size="sm" variant="outline" className="bg-background">
@@ -942,7 +943,7 @@ export default async function ProviderLeadAccessPage({
             <div className="mt-4 grid gap-2">
               {backToWhatsAppHref ? (
                 <Button asChild size="sm" className="bg-[var(--tone-warning-fg)] hover:opacity-90 text-white">
-                  <a href={backToWhatsAppHref}>Back to WhatsApp</a>
+                  <WhatsAppLink href={backToWhatsAppHref} source="leads_access_back_to_whatsapp" ctaLabel="Back to WhatsApp">Back to WhatsApp</WhatsAppLink>
                 </Button>
               ) : null}
               <Button asChild size="sm" variant="outline" className="bg-background">
@@ -1371,7 +1372,7 @@ export default async function ProviderLeadAccessPage({
             <>
               {backToWhatsAppHref ? (
                 <Button asChild size="lg" className="w-full">
-                  <a href={backToWhatsAppHref}>Back to WhatsApp</a>
+                  <WhatsAppLink href={backToWhatsAppHref} source="leads_access_back_to_whatsapp" ctaLabel="Back to WhatsApp">Back to WhatsApp</WhatsAppLink>
                 </Button>
               ) : null}
               <Button asChild size="lg" variant={backToWhatsAppHref ? 'outline' : 'default'} className="w-full">

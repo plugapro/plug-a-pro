@@ -24,7 +24,9 @@ import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker, type Selection as SuburbSelection } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { trackJobRequestSubmitted } from '@/lib/meta-pixel'
-import { getStoredUtm } from '@/lib/utm'
+import { analytics } from '@/lib/analytics'
+import { fireGoogleAdsConversion } from '@/lib/marketing/google-ads'
+import { getStoredAttribution, getStoredUtm } from '@/lib/attribution'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
 import { getPilotServiceCategories } from '@/lib/service-categories'
 import {
@@ -216,7 +218,19 @@ export function BookingFlow({
       source: 'pwa',
     })
     trackJobRequestSubmitted(jobRequestId)
-  }, [hasProviderResponses, jobRequestId, preferredProviderId, selectedMatchingMode, step, ticketUrl])
+    analytics.requestSubmitted({ job_request_id: jobRequestId, category: category.slug })
+    fireGoogleAdsConversion('quote', { transactionId: jobRequestId })
+  }, [category.slug, hasProviderResponses, jobRequestId, preferredProviderId, selectedMatchingMode, step, ticketUrl])
+
+  // Funnel-top event — fires once on first mount even if the user bails
+  // before reaching /api/customer/bookings.
+  useEffect(() => {
+    analytics.quoteStarted({
+      service_slug: category.slug,
+      category: category.slug,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (hasInitialDraft) return
@@ -472,6 +486,9 @@ export function BookingFlow({
       return
     }
     setError(null)
+    // No job_request_id yet — draftStorageKey is stable per category for the
+    // session and gives the dedup helper something to anchor on.
+    analytics.bookingStarted({ job_request_id: draftStorageKey })
     setStep('confirm')
   }
 
@@ -534,6 +551,12 @@ export function BookingFlow({
       if (utm?.utm_campaign) formData.set('utmCampaign', utm.utm_campaign)
       if (utm?.utm_content) formData.set('utmContent', utm.utm_content)
 
+      // Forward-compat: the richer attribution blob (click IDs, referrer,
+      // landing path, first/last touch). The bookings API ignores unknown
+      // form fields today; a follow-up Prisma migration will persist this.
+      const attribution = getStoredAttribution()
+      if (attribution) formData.set('attributionJson', JSON.stringify(attribution))
+
       // Urgency → timing window fields (extracted by the bookings API route)
       if (timing.requestedWindowStart) formData.set('requestedWindowStart', timing.requestedWindowStart.toISOString())
       if (timing.requestedWindowEnd) formData.set('requestedWindowEnd', timing.requestedWindowEnd.toISOString())
@@ -574,6 +597,14 @@ export function BookingFlow({
 
       setJobRequestId(data.jobRequestId)
       setTicketUrl(data.ticketUrl ?? null)
+      // Timing window is only fully resolved after handleConfirm runs the
+      // urgency → window calc; fire slot_selected here so it carries a real
+      // job_request_id for dedup downstream.
+      analytics.slotSelected({
+        job_request_id: data.jobRequestId,
+        window_start: timing.requestedWindowStart?.toISOString(),
+        window_end: timing.requestedWindowEnd?.toISOString(),
+      })
       window.localStorage.removeItem(draftStorageKey)
       setStep('submitted')
     } catch (err) {
@@ -1126,6 +1157,7 @@ export function BookingFlow({
                 return
               }
               setError(null)
+              analytics.bookingStarted({ job_request_id: draftStorageKey })
               setStep('confirm')
             }}
           >

@@ -1,11 +1,13 @@
 import { siteConfig } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 
 interface Props {
   message?: string
   phone?: string
   variant?: 'icon' | 'full'
   className?: string
+  source?: string
 }
 
 export function WhatsAppButton({
@@ -13,9 +15,11 @@ export function WhatsAppButton({
   phone = siteConfig.whatsappNumber,
   variant = 'full',
   className = '',
+  source = 'whatsapp_button',
 }: Props) {
   const encodedMsg = message ? encodeURIComponent(message) : ''
   const href = `https://wa.me/${phone.replace(/\D/g, '')}${encodedMsg ? `?text=${encodedMsg}` : ''}`
+  const ctaLabel = variant === 'icon' ? 'Chat on WhatsApp (icon)' : 'Chat on WhatsApp'
 
   if (variant === 'icon') {
     return (
@@ -25,14 +29,14 @@ export function WhatsAppButton({
         className={`rounded-full bg-[var(--color-whatsapp)] border-[var(--color-whatsapp)] text-white hover:bg-[var(--color-whatsapp-hover)] hover:border-[var(--color-whatsapp-hover)] hover:text-white ${className}`}
         asChild
       >
-        <a
+        <WhatsAppLink
           href={href}
-          target="_blank"
-          rel="noopener noreferrer"
+          source={source}
+          ctaLabel={ctaLabel}
           aria-label="Chat on WhatsApp"
         >
           <WhatsAppIcon />
-        </a>
+        </WhatsAppLink>
       </Button>
     )
   }
@@ -43,14 +47,10 @@ export function WhatsAppButton({
       className={`bg-[var(--color-whatsapp)] border-[var(--color-whatsapp)] text-white hover:bg-[var(--color-whatsapp-hover)] hover:border-[var(--color-whatsapp-hover)] hover:text-white ${className}`}
       asChild
     >
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
+      <WhatsAppLink href={href} source={source} ctaLabel={ctaLabel}>
         <WhatsAppIcon />
         Chat on WhatsApp
-      </a>
+      </WhatsAppLink>
     </Button>
   )
 }

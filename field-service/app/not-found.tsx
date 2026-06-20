@@ -1,9 +1,11 @@
 import Link from 'next/link'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 
 const WA_NUMBER = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
 const WA_HREF = WA_NUMBER
   ? `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hi, I found a broken link on Plug A Pro')}`
   : `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Broken link report')}`
+const IS_WHATSAPP_HREF = WA_HREF.startsWith('https://wa.me/')
 
 export default function NotFound() {
   return (
@@ -61,20 +63,37 @@ export default function NotFound() {
         >
           Back to home
         </Link>
-        <a
-          href={WA_HREF}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Report this broken link"
-          className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
-          style={{
-            background: 'var(--card-alt)',
-            color: 'var(--ink)',
-            boxShadow: 'inset 0 0 0 1px var(--border)',
-          }}
-        >
-          Report this
-        </a>
+        {IS_WHATSAPP_HREF ? (
+          <WhatsAppLink
+            href={WA_HREF}
+            source="not_found_report"
+            ctaLabel="Report this"
+            aria-label="Report this broken link"
+            className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
+            style={{
+              background: 'var(--card-alt)',
+              color: 'var(--ink)',
+              boxShadow: 'inset 0 0 0 1px var(--border)',
+            }}
+          >
+            Report this
+          </WhatsAppLink>
+        ) : (
+          <a
+            href={WA_HREF}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Report this broken link"
+            className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
+            style={{
+              background: 'var(--card-alt)',
+              color: 'var(--ink)',
+              boxShadow: 'inset 0 0 0 1px var(--border)',
+            }}
+          >
+            Report this
+          </a>
+        )}
       </div>
     </div>
   )

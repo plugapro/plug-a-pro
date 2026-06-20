@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import type { VerificationChannel } from '@prisma/client'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata, siteConfig } from '@/lib/metadata'
@@ -529,12 +530,14 @@ function ExpiredLink({ channelAware }: { channelAware: boolean }) {
           This secure link is invalid, expired or already complete. Return to WhatsApp and reply{' '}
           <span className="font-semibold">VERIFY</span> to request a new link.
         </p>
-        <a
+        <WhatsAppLink
           href={whatsappReturnUrl()}
+          source="provider_verify_link_unavailable"
+          ctaLabel="Back to WhatsApp"
           className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
         >
           Back to WhatsApp
-        </a>
+        </WhatsAppLink>
         <Link href="/provider/verification" className="text-center text-sm font-medium underline underline-offset-4">
           Open verification help
         </Link>
@@ -576,12 +579,14 @@ function TerminalHandoff({
         <p className="text-muted-foreground">
           Plug A Pro will message you in WhatsApp when there&apos;s an update. You can close this page.
         </p>
-        <a
+        <WhatsAppLink
           href={whatsappReturnUrl()}
+          source="provider_verify_terminal_back"
+          ctaLabel="Back to WhatsApp"
           className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
         >
           Back to WhatsApp
-        </a>
+        </WhatsAppLink>
         <Link
           href="/provider/verification"
           className="block text-center text-sm font-medium underline underline-offset-4"
@@ -609,12 +614,14 @@ function CompletionCtaButtons({ action }: { action: CompletionAction }) {
   return (
     <>
       {action.primary.external ? (
-        <a
+        <WhatsAppLink
           href={action.primary.href}
+          source="provider_verify_completion_primary"
+          ctaLabel={action.primary.label}
           className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
         >
           {action.primary.label}
-        </a>
+        </WhatsAppLink>
       ) : (
         <Link
           href={action.primary.href}
@@ -624,12 +631,14 @@ function CompletionCtaButtons({ action }: { action: CompletionAction }) {
         </Link>
       )}
       {action.secondary.external ? (
-        <a
+        <WhatsAppLink
           href={action.secondary.href}
+          source="provider_verify_completion_secondary"
+          ctaLabel={action.secondary.label}
           className="block text-center text-sm font-medium underline underline-offset-4"
         >
           {action.secondary.label}
-        </a>
+        </WhatsAppLink>
       ) : (
         <Link
           href={action.secondary.href}

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { AlertCallout } from '@/components/shared/AlertCallout'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { ChevronLeft } from 'lucide-react'
 
 export const metadata = buildMetadata({ title: 'Submit Quote', noIndex: true })
@@ -174,9 +175,9 @@ export default async function QuotePage({
             <p style={{ color: 'var(--ink-mute)' }}>{jobRequest.customer.phone}</p>
           </div>
           <Button asChild className="w-full">
-            <a href={contactUrl} target="_blank" rel="noopener noreferrer">
+            <WhatsAppLink href={contactUrl} source="provider_quote_contact_customer" ctaLabel="Contact Customer">
               Contact Customer
-            </a>
+            </WhatsAppLink>
           </Button>
         </div>
 

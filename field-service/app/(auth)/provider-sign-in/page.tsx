@@ -7,6 +7,7 @@ import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { AuthShell } from '@/components/shared/auth-shell'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { getSafeCustomerNextPath, getSafeProviderNextPath } from '@/lib/safe-redirect'
 import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
 import { PROVIDER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
@@ -263,7 +264,15 @@ export default function ProviderSignInPage() {
                 <div className="flex flex-col gap-2 pt-1">
                   <Button size="sm" fullWidth asChild><Link href={customerSignInHref}>Sign in as customer</Link></Button>
                   <Button size="sm" fullWidth variant="secondary" asChild><Link href={applyProviderHref}>Register as a Service Provider</Link></Button>
-                  <Button size="sm" fullWidth variant="ghost" asChild><a href={supportHref}>Contact support</a></Button>
+                  <Button size="sm" fullWidth variant="ghost" asChild>
+                    {supportHref.startsWith('https://wa.me/') ? (
+                      <WhatsAppLink href={supportHref} source="provider_sign_in_support" ctaLabel="Contact support">
+                        Contact support
+                      </WhatsAppLink>
+                    ) : (
+                      <a href={supportHref}>Contact support</a>
+                    )}
+                  </Button>
                 </div>
               )}
               <details className="pt-1 text-[11px] text-[var(--ink-mute)]">

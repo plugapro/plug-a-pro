@@ -21,6 +21,7 @@ import { CategoryGatedByPilotError } from './launch/errors'
 import { OPS_QUEUE_TYPES, claimOpsQueueItem } from './ops-queue'
 import { notifyCustomerPaymentFailed } from './client-pwa-submission-notifications'
 import { createPayAtGoBookingPaymentRequest } from './payat-go'
+import { emitServerConversion } from './marketing/server-events'
 export { formatCurrency } from './currency'
 
 export type PaymentCollectionMode = 'bypass' | 'checkout'
@@ -448,20 +449,27 @@ export function parseWebhookEvent(rawBody: string): PaymentEvent {
 }
 
 export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
-  let requiresManualFollowUp = false
-
-  await db.$transaction(async (tx) => {
+  // Return shape captures both follow-up state and the (post-commit-safe)
+  // conversion payload. Returning from the transaction callback keeps TS's
+  // flow analysis honest — assigning a `let` from inside the closure narrows
+  // the outer binding to `never` after `await`.
+  const result = await db.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { bookingId: event.bookingId },
-      select: { status: true, booking: { select: { status: true } } },
+      select: { status: true, amount: true, currency: true, booking: { select: { status: true } } },
     })
     if (
       payment?.status === 'PAID' ||
       payment?.status === 'REFUNDED' ||
       payment?.status === 'PARTIALLY_REFUNDED'
-    ) return
+    ) {
+      return { requiresManualFollowUp: false, firstTransitionPayment: null }
+    }
 
     const fromStatus = payment?.booking?.status ?? null
+    const firstTransitionPayment = payment
+      ? { amount: Number(payment.amount), currency: payment.currency }
+      : null
 
     await tx.payment.update({
       where: { bookingId: event.bookingId },
@@ -473,8 +481,7 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
     })
 
     if (fromStatus === 'CANCELLED' || fromStatus === 'COMPLETED') {
-      requiresManualFollowUp = true
-      return
+      return { requiresManualFollowUp: true, firstTransitionPayment }
     }
 
     await tx.booking.update({
@@ -492,9 +499,24 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
         notes: `Payment confirmed (${event.pspReference})`,
       },
     })
+    return { requiresManualFollowUp: false, firstTransitionPayment }
   })
 
-  if (!requiresManualFollowUp) return
+  // Server-side conversion event — fires only on the first non-PAID → PAID
+  // transition (idempotent against webhook retries via the guard inside the
+  // transaction). Fire-and-forget: tracker failure must never block payment
+  // confirmation. Meta CAPI dedupes against any client Pixel sibling via
+  // eventId('payment_success', bookingId).
+  if (result.firstTransitionPayment) {
+    void emitServerConversion({
+      name: 'payment_success',
+      entityId: event.bookingId,
+      value: result.firstTransitionPayment.amount,
+      currency: result.firstTransitionPayment.currency,
+    })
+  }
+
+  if (!result.requiresManualFollowUp) return
 
   console.warn('[payments] payment succeeded after terminal booking state; queued follow-up', {
     bookingId: event.bookingId,
@@ -526,6 +548,14 @@ export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
   console.error('[payments] payment failed - ops follow-up required', {
     bookingId: event.bookingId,
     pspReference: event.pspReference,
+  })
+
+  // Server-side conversion event. PSP webhook may retry; Meta CAPI and GA4 MP
+  // both dedupe by eventId('payment_failed', bookingId), so re-emission on
+  // retry is safe.
+  void emitServerConversion({
+    name: 'payment_failed',
+    entityId: event.bookingId,
   })
 
   const booking = await db.booking.findUnique({

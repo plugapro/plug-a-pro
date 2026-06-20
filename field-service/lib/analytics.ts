@@ -1,0 +1,84 @@
+// Client-side analytics surface. Each method fans out to gtag (GA4) via the
+// shared track() helper. Methods that fire on milestones we never want to
+// double-count (quote/slot/booking starts, requestSubmitted) dedup via
+// sessionStorage; click counters (whatsappClick/phoneClick) do not — every
+// click is a real intent signal worth recording.
+
+type GtagWindow = typeof window & {
+  gtag?: (...args: unknown[]) => void
+}
+
+function track(eventName: string, params: object = {}): void {
+  if (typeof window === 'undefined') return
+  const w = window as GtagWindow
+  if (typeof w.gtag !== 'function') return
+  w.gtag('event', eventName, params)
+}
+
+function once(key: string, fn: () => void): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (window.sessionStorage.getItem(key)) return
+    window.sessionStorage.setItem(key, '1')
+  } catch {
+    // sessionStorage can throw in privacy mode — fall through and still fire.
+  }
+  fn()
+}
+
+export interface WhatsAppClickParams {
+  source: string
+  cta_label: string
+}
+
+export interface PhoneClickParams {
+  source: string
+  cta_label: string
+}
+
+export interface QuoteStartedParams {
+  service_slug: string
+  category: string
+  area?: string
+}
+
+export interface SlotSelectedParams {
+  job_request_id: string
+  window_start?: string
+  window_end?: string
+}
+
+export interface BookingStartedParams {
+  job_request_id: string
+}
+
+export interface RequestSubmittedParams {
+  job_request_id: string
+  category?: string
+}
+
+export const analytics = {
+  whatsappClick(params: WhatsAppClickParams): void {
+    track('whatsapp_click', params)
+  },
+
+  phoneClick(params: PhoneClickParams): void {
+    track('phone_click', params)
+  },
+
+  quoteStarted(params: QuoteStartedParams): void {
+    once(`pap_a_qs_${params.service_slug}`, () => track('quote_started', params))
+  },
+
+  slotSelected(params: SlotSelectedParams): void {
+    once(`pap_a_ss_${params.job_request_id}`, () => track('slot_selected', params))
+  },
+
+  bookingStarted(params: BookingStartedParams): void {
+    once(`pap_a_bs_${params.job_request_id}`, () => track('booking_started', params))
+  },
+
+  requestSubmitted(params: RequestSubmittedParams): void {
+    once(`pap_a_rs_${params.job_request_id}`, () => track('request_submitted', params))
+  },
+}

@@ -22,7 +22,7 @@ import { MobileGate } from '@/components/shared/mobile-gate'
 import { MetaPixel } from '@/components/meta-pixel'
 import { GoogleAnalytics } from '@/components/google-analytics'
 import { ConsentBanner } from '@/components/consent-banner'
-import { UtmCapture } from '@/components/utm-capture'
+import { AttributionCapture } from '@/components/attribution-capture'
 import './globals.css'
 
 // GA4 uses the SAME measurement ID as the marketing site so app.plugapro.co.za and
@@ -91,7 +91,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-background font-sans antialiased">
         <MetaPixel />
         {GA_ENABLED && <GoogleAnalytics gaId={GA_ID} />}
-        <UtmCapture />
+        <AttributionCapture />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

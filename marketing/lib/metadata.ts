@@ -33,19 +33,26 @@ export function buildMetadata(overrides: {
   description?: string;
   image?: string;
   noIndex?: boolean;
+  // Relative path like '/services/electrician'. Resolves against metadataBase
+  // to produce the absolute canonical URL Google uses for deduplication.
+  canonical?: string;
 }): Metadata {
   const title = overrides.title
     ? `${overrides.title} | ${siteConfig.name}`
     : `${siteConfig.name} | ${siteConfig.tagline}`;
+  const canonicalUrl = overrides.canonical
+    ? `${siteConfig.url}${overrides.canonical}`
+    : siteConfig.url;
 
   return {
     metadataBase: new URL(siteConfig.url),
     title,
     description: overrides.description ?? siteConfig.description,
+    alternates: { canonical: canonicalUrl },
     openGraph: {
       title,
       description: overrides.description ?? siteConfig.description,
-      url: siteConfig.url,
+      url: canonicalUrl,
       siteName: siteConfig.name,
       images: [{ url: overrides.image ?? siteConfig.ogImage }],
       type: "website",

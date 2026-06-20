@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 
 export function SelectedScreen() {
   return (
@@ -13,14 +14,14 @@ export function SelectedScreen() {
         <Link href="/client" className="block rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold">
           Cancel request
         </Link>
-        <a
+        <WhatsAppLink
           href="https://wa.me/"
-          target="_blank"
-          rel="noopener noreferrer"
+          source="selected_screen_support"
+          ctaLabel="Contact support"
           className="block rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold"
         >
           Contact support
-        </a>
+        </WhatsAppLink>
       </div>
     </div>
   )

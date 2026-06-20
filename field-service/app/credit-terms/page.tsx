@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowLeft, Info } from 'lucide-react'
 import { buildMetadata } from '@/lib/metadata'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
 
 export const metadata = buildMetadata({
@@ -162,16 +163,16 @@ export default function CreditTermsPage() {
             </div>
           </div>
           {WA_ENABLED ? (
-            <a
+            <WhatsAppLink
               href={supportHref}
-              target="_blank"
-              rel="noopener noreferrer"
+              source="credit_terms_support"
+              ctaLabel="Open WhatsApp support"
               className="flex items-center justify-center gap-2 h-[46px] rounded-[13px] text-[14px] font-semibold text-white"
               style={{ background: '#25D366' }}
             >
               <WhatsAppIcon />
               Open WhatsApp support
-            </a>
+            </WhatsAppLink>
           ) : (
             <a
               href={supportHref}

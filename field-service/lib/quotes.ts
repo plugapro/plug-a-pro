@@ -6,6 +6,7 @@ import { db } from './db'
 import { addMinutes, format } from 'date-fns'
 import { MATCHING_CONFIG } from './matching/config'
 import type { Prisma } from '@prisma/client'
+import { emitServerConversion } from './marketing/server-events'
 
 export type QuoteDecisionResult =
   | {
@@ -270,6 +271,17 @@ export async function processQuoteDecision(
         category,
       }
     })
+
+    // Server-side conversion events — fire post-commit so they only emit when
+    // the approval+booking actually persisted. Idempotent against retries: the
+    // atomic claim on quote.updateMany ({status:'PENDING'}) makes a re-entry
+    // throw ALREADY_ACTIONED before reaching this point. Meta CAPI / GA4 MP
+    // additionally dedupe via eventId(name, entityId) against any client
+    // sibling event.
+    if (result.action === 'approved') {
+      void emitServerConversion({ name: 'quote_approved', entityId: result.quoteId })
+      void emitServerConversion({ name: 'booking_confirmed', entityId: result.bookingId })
+    }
 
     return result
   } catch (err) {

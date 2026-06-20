@@ -8,6 +8,7 @@ import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
+import { parseAttributionJson } from '@/lib/attribution'
 import {
   createJobRequest,
   CustomerBlockedError,
@@ -124,6 +125,7 @@ export async function POST(req: NextRequest) {
     utmMedium?: string
     utmCampaign?: string
     utmContent?: string
+    attributionJson?: string
   }
   let photos: File[] = []
   let photoSafeForPreview: PhotoSafeForPreviewList = []
@@ -158,6 +160,12 @@ export async function POST(req: NextRequest) {
         utmMedium: formData.get('utmMedium') ? String(formData.get('utmMedium')).slice(0, 200) : undefined,
         utmCampaign: formData.get('utmCampaign') ? String(formData.get('utmCampaign')).slice(0, 200) : undefined,
         utmContent: formData.get('utmContent') ? String(formData.get('utmContent')).slice(0, 200) : undefined,
+        // Rich attribution blob (first/last touch + click IDs + referrer +
+        // landing path). 8KB cap stops a tampered client from posting a giant
+        // payload; parseAttributionJson is defensive against malformed JSON.
+        attributionJson: formData.get('attributionJson')
+          ? String(formData.get('attributionJson')).slice(0, 8192)
+          : undefined,
         ...(rawWindowStart ? { requestedWindowStart: String(rawWindowStart) } : {}),
         ...(rawWindowEnd ? { requestedWindowEnd: String(rawWindowEnd) } : {}),
         ...(rawArrivalLatest ? { requestedArrivalLatest: String(rawArrivalLatest) } : {}),
@@ -208,6 +216,7 @@ export async function POST(req: NextRequest) {
     utmMedium,
     utmCampaign,
     utmContent,
+    attributionJson,
   } = body
   const rawCategory = typeof category === 'string' ? category : ''
   const canonicalCategory = canonicalizeServiceCategoryValue(rawCategory).canonical ?? rawCategory.trim()
@@ -447,6 +456,7 @@ export async function POST(req: NextRequest) {
       utmMedium: utmMedium ?? null,
       utmCampaign: utmCampaign ?? null,
       utmContent: utmContent ?? null,
+      attribution: parseAttributionJson(attributionJson),
     })
 
     let uploadedPhotoCount = 0

@@ -20,4 +20,21 @@ describe("buildMetadata", () => {
     const meta = buildMetadata({});
     expect(meta.description).toBe(siteConfig.description);
   });
+
+  it("defaults canonical to the site root when no path supplied", () => {
+    const meta = buildMetadata({});
+    expect(meta.alternates?.canonical).toBe(siteConfig.url);
+  });
+
+  it("resolves a relative canonical path against the site URL", () => {
+    const meta = buildMetadata({ canonical: "/services/electrician" });
+    expect(meta.alternates?.canonical).toBe(`${siteConfig.url}/services/electrician`);
+    // openGraph URL follows the canonical so the share preview matches.
+    expect(meta.openGraph?.url).toBe(`${siteConfig.url}/services/electrician`);
+  });
+
+  it("applies noIndex robots when requested", () => {
+    const meta = buildMetadata({ noIndex: true });
+    expect(meta.robots).toEqual({ index: false, follow: false });
+  });
 });

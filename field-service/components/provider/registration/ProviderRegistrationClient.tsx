@@ -22,6 +22,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { OtpInput } from '@/components/ui/otp-input'
@@ -842,6 +843,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   const statusActionHref = resolveStatusActionHref(statusCopy.actionHref, statusReference)
   const statusActionUsesAnchor = statusActionHref.startsWith('http') || statusActionHref.startsWith('mailto:')
   const statusActionOpensNewTab = statusActionHref.startsWith('http')
+  const statusActionIsWhatsApp = statusActionHref.startsWith('https://wa.me/')
   const showStepper = Boolean(meta.step)
 
   return (
@@ -1477,7 +1479,15 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
               </div>
               <FooterActions>
                 <Button fullWidth asChild>
-                  {statusActionUsesAnchor ? (
+                  {statusActionIsWhatsApp ? (
+                    <WhatsAppLink
+                      href={statusActionHref}
+                      source="provider_registration_status"
+                      ctaLabel={statusCopy.actionLabel}
+                    >
+                      {statusCopy.actionLabel}
+                    </WhatsAppLink>
+                  ) : statusActionUsesAnchor ? (
                     <a
                       href={statusActionHref}
                       target={statusActionOpensNewTab ? '_blank' : undefined}

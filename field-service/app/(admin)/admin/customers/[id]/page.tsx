@@ -411,6 +411,27 @@ export default async function CustomerDetailPage({
         </CardContent>
       </Card>
 
+      {/* Acquisition (first-touch attribution) */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Acquisition
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <AcquisitionBlock
+            source={customer.firstTouchSource ?? null}
+            medium={customer.firstTouchMedium ?? null}
+            campaign={customer.firstTouchCampaign ?? null}
+            gclid={customer.firstTouchGclid ?? null}
+            fbclid={customer.firstTouchFbclid ?? null}
+            at={customer.firstTouchAt ?? null}
+            landingPath={customer.firstTouchLandingPath ?? null}
+            referrer={customer.firstTouchReferrer ?? null}
+          />
+        </CardContent>
+      </Card>
+
       {/* WhatsApp Preferences */}
       <Card>
         <CardHeader className="pb-2">
@@ -546,5 +567,74 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="text-muted-foreground w-32 flex-shrink-0">{label}</span>
       <span className="font-medium">{children}</span>
     </div>
+  )
+}
+
+function AcquisitionBlock({
+  source,
+  medium,
+  campaign,
+  gclid,
+  fbclid,
+  at,
+  landingPath,
+  referrer,
+}: {
+  source: string | null
+  medium: string | null
+  campaign: string | null
+  gclid: string | null
+  fbclid: string | null
+  at: Date | null
+  landingPath: string | null
+  referrer: string | null
+}) {
+  const hasAny =
+    source || medium || campaign || gclid || fbclid || at || landingPath || referrer
+  if (!hasAny) {
+    return <p className="text-muted-foreground">No attribution captured</p>
+  }
+  return (
+    <>
+      {source && <Row label="Source">{source}</Row>}
+      {medium && <Row label="Medium">{medium}</Row>}
+      {campaign && <Row label="Campaign">{campaign}</Row>}
+      {gclid && (
+        <Row label="Google click ID">
+          <span className="font-mono text-xs break-all">{gclid}</span>
+        </Row>
+      )}
+      {fbclid && (
+        <Row label="Meta click ID">
+          <span className="font-mono text-xs break-all">{fbclid}</span>
+        </Row>
+      )}
+      {referrer && (
+        <Row label="Referrer">
+          <span className="text-xs break-all">{referrer}</span>
+        </Row>
+      )}
+      {landingPath && (
+        <Row label="Landing page">
+          <Link
+            href={landingPath}
+            className="text-primary underline-offset-4 hover:underline break-all"
+          >
+            {landingPath}
+          </Link>
+        </Row>
+      )}
+      {at && (
+        <Row label="First touch at">
+          {at.toLocaleString('en-ZA', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </Row>
+      )}
+    </>
   )
 }

@@ -5,7 +5,9 @@
 // Can either trigger matching immediately or defer matching until customer
 // chooses a post-submit matching mode.
 
+import type { Prisma } from '@prisma/client'
 import { db } from '../db'
+import type { AttributionSnapshot, AttributionState } from '../attribution'
 import { resolveCategoryRequirements } from '../category-config'
 import { checkPilotGate, resolveAreaScopeByNodeId } from '../customer-serviceability'
 import { PilotGateError } from '../launch/errors'
@@ -61,6 +63,12 @@ export interface CreateJobRequestParams {
   utmMedium?: string | null
   utmCampaign?: string | null
   utmContent?: string | null
+
+  // Rich attribution snapshot — captured + parsed client-side via
+  // lib/attribution.ts; carries the full first/last touch state including click
+  // IDs, referrer and landing path. The legacy utm* fields above stay populated
+  // for back-compat with paths that don't post the rich blob.
+  attribution?: AttributionState | null
 
   // Requirements (merged with category policy defaults inside service)
   requiredSkillTags?: string[]
@@ -148,6 +156,56 @@ function maskPhone(phone?: string | null) {
   const digits = phone.replace(/\D/g, '')
   if (digits.length <= 4) return '***'
   return `***${digits.slice(-4)}`
+}
+
+function safeIsoToDate(iso: string | undefined | null): Date | undefined {
+  if (!iso) return undefined
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return undefined
+  return d
+}
+
+// First-touch wins for attribution credit; last-touch fills any field
+// first-touch lacks (e.g. user arrives organic then clicks a tagged email link).
+function buildJobRequestAttributionFields(state: AttributionState | null | undefined) {
+  if (!state) return {}
+  const first = state.first_touch
+  const last = state.last_touch
+  const pick = (key: keyof AttributionSnapshot): string | undefined => {
+    const fv = first?.[key]
+    if (typeof fv === 'string' && fv) return fv
+    const lv = last?.[key]
+    if (typeof lv === 'string' && lv) return lv
+    return undefined
+  }
+  return {
+    utmTerm: pick('utm_term'),
+    gclid: pick('gclid'),
+    gbraid: pick('gbraid'),
+    wbraid: pick('wbraid'),
+    fbclid: pick('fbclid'),
+    msclkid: pick('msclkid'),
+    referrer: pick('referrer'),
+    landingPath: pick('landing_path'),
+    firstTouchAt: safeIsoToDate(first?.captured_at),
+    lastTouchAt: safeIsoToDate(last?.captured_at),
+    attribution: state as unknown as Prisma.InputJsonValue,
+  }
+}
+
+function buildCustomerFirstTouchStamp(first: AttributionSnapshot | null | undefined) {
+  if (!first) return null
+  const stamp: Record<string, string | Date> = {}
+  if (first.utm_source) stamp.firstTouchSource = first.utm_source
+  if (first.utm_medium) stamp.firstTouchMedium = first.utm_medium
+  if (first.utm_campaign) stamp.firstTouchCampaign = first.utm_campaign
+  if (first.gclid) stamp.firstTouchGclid = first.gclid
+  if (first.fbclid) stamp.firstTouchFbclid = first.fbclid
+  if (first.referrer) stamp.firstTouchReferrer = first.referrer
+  if (first.landing_path) stamp.firstTouchLandingPath = first.landing_path
+  const at = safeIsoToDate(first.captured_at)
+  if (at) stamp.firstTouchAt = at
+  return Object.keys(stamp).length > 0 ? stamp : null
 }
 
 function getExplicitRequestDeadline(params: CreateJobRequestParams) {
@@ -361,6 +419,17 @@ export async function createJobRequest(
       }
     }
 
+    // Stamp first-touch acquisition attribution on the Customer record. Race-
+    // safe: the `firstTouchSource: null` guard means a concurrent request that
+    // also stamps the same customer is a silent no-op.
+    const customerFirstTouchStamp = buildCustomerFirstTouchStamp(params.attribution?.first_touch ?? null)
+    if (customerFirstTouchStamp) {
+      await tx.customer.updateMany({
+        where: { id: customer.id, firstTouchSource: null },
+        data: customerFirstTouchStamp,
+      })
+    }
+
     // Reuse a saved address if the caller supplies an existingAddressId that
     // belongs to this customer.  Fall back to creating a new address row when
     // the ID is absent, cannot be found or belongs to a different customer.
@@ -492,6 +561,7 @@ export async function createJobRequest(
         utmMedium: params.utmMedium?.trim() || undefined,
         utmCampaign: params.utmCampaign?.trim() || undefined,
         utmContent: params.utmContent?.trim() || undefined,
+        ...buildJobRequestAttributionFields(params.attribution),
         autoCreateBookingOnAssignment,
         // Read from the resolved Customer row (DB is authoritative). The
         // phone-based `cohort` is only used to seed brand-new customer rows above.

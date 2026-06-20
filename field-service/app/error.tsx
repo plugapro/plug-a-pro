@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect } from 'react'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 
 const WA_NUMBER = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
 const WA_HREF = WA_NUMBER
   ? `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent("Hi, I'm getting an error on Plug A Pro")}`
   : `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Error report')}`
+const IS_WHATSAPP_HREF = WA_HREF.startsWith('https://wa.me/')
 
 export default function Error({
   error,
@@ -89,19 +91,35 @@ export default function Error({
         >
           Try again
         </button>
-        <a
-          href={WA_HREF}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
-          style={{
-            background: 'var(--card-alt)',
-            color: 'var(--ink)',
-            boxShadow: 'inset 0 0 0 1px var(--border)',
-          }}
-        >
-          Get support
-        </a>
+        {IS_WHATSAPP_HREF ? (
+          <WhatsAppLink
+            href={WA_HREF}
+            source="app_error_support"
+            ctaLabel="Get support"
+            className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
+            style={{
+              background: 'var(--card-alt)',
+              color: 'var(--ink)',
+              boxShadow: 'inset 0 0 0 1px var(--border)',
+            }}
+          >
+            Get support
+          </WhatsAppLink>
+        ) : (
+          <a
+            href={WA_HREF}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
+            style={{
+              background: 'var(--card-alt)',
+              color: 'var(--ink)',
+              boxShadow: 'inset 0 0 0 1px var(--border)',
+            }}
+          >
+            Get support
+          </a>
+        )}
       </div>
     </div>
   )

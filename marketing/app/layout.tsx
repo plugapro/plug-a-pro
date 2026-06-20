@@ -7,6 +7,8 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import { buildMetadata } from "@/lib/metadata";
 import { ChatWidget } from "@/components/marketing/ChatWidget";
 import { ConsentBanner } from "@/components/marketing/ConsentBanner";
+import { AttributionCapture } from "@/components/AttributionCapture";
+import { organizationLd, jsonLdScript } from "@/lib/jsonld";
 import "./globals.css";
 
 export const metadata: Metadata = buildMetadata({});
@@ -25,6 +27,14 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
+        {/* Site-wide Organization markup so every page exposes the same
+            entity to Google/Bing. jsonLdScript() escapes `<` to prevent any
+            `</script>` breakout from string fields in the payload. */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(organizationLd()) }}
+        />
+        <AttributionCapture />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveCustomerProviderHandoverToken } from '@/lib/customer-provider-handover-access'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -122,9 +123,13 @@ export default async function CustomerProviderHandoverPage({
           <ProviderTrustNote marketplaceApproved={provider.verified} />
 
           <Button asChild className="w-full">
-            <a href={providerContactHref} target="_blank" rel="noopener noreferrer">
+            <WhatsAppLink
+              href={providerContactHref}
+              source="requests_handover_contact_provider"
+              ctaLabel="Contact Provider"
+            >
               Contact Provider
-            </a>
+            </WhatsAppLink>
           </Button>
         </CardContent>
       </Card>

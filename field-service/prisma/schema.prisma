@@ -59,6 +59,19 @@ model Customer {
   isBusinessAccount Boolean @default(false)
   businessName      String?
 
+  // First-touch acquisition attribution (Marketing Acquisition Readiness — Slice B).
+  // Stamped once on the first JobRequest that arrives with attribution; never
+  // overwritten, even if the same customer later books via a different campaign
+  // (that becomes last-touch on the new JobRequest, not a rewrite here).
+  firstTouchSource      String?
+  firstTouchMedium      String?
+  firstTouchCampaign    String?
+  firstTouchGclid       String?
+  firstTouchFbclid      String?
+  firstTouchAt          DateTime?
+  firstTouchLandingPath String?
+  firstTouchReferrer    String?
+
   addresses              Address[]
   customerAddresses      CustomerAddress[]
   members                CustomerMember[]        @relation("PrincipalCustomerMembers")
@@ -315,6 +328,7 @@ model Provider {
   voucherRedemptionAttempts            VoucherRedemptionAttempt[]
   identityVerifications                ProviderIdentityVerification[]
   identityVerificationPilotAllowlist   ProviderIdentityVerificationPilotAllowlist[]
+  profileScores                        ProviderProfileScore[]
 
   @@index([active, verified])
   @@index([isTestUser])
@@ -515,6 +529,19 @@ model JobRequest {
   utmMedium                       String?
   utmCampaign                     String?
   utmContent                      String?
+  // Extended attribution (Marketing Acquisition Readiness — Slice B). The same
+  // capture also stores the rich first/last-touch snapshot in `attribution`.
+  utmTerm                         String?
+  gclid                           String?
+  gbraid                          String?
+  wbraid                          String?
+  fbclid                          String?
+  msclkid                         String?
+  referrer                        String?
+  landingPath                     String?
+  firstTouchAt                    DateTime?
+  lastTouchAt                     DateTime?
+  attribution                     Json?
   status                          JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt                       DateTime? // if no match within window, mark EXPIRED
   customerNoMatchNotifiedAt       DateTime?
@@ -543,6 +570,7 @@ model JobRequest {
   assignmentHolds          AssignmentHold[]
   dispatchDecisions        DispatchDecision[]
   providerLeadAccessTokens ProviderLeadAccessToken[]
+  frictionSignals          RequestFrictionSignal[]
 
   @@index([status, createdAt])
   @@index([isTestRequest, status])
