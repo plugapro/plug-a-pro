@@ -3,6 +3,7 @@ import { db } from './db'
 import { recordAuditLog } from './audit'
 import { AUDIT_ENTITY } from './audit-entities'
 import { getCustomerProviderHandoverUrl } from './customer-provider-handover-access'
+import { logOutboundMessage } from './message-events'
 import {
   getProviderSignedJobHandoverUrlByLeadId,
   verifyProviderLeadAccessToken,
@@ -11,7 +12,12 @@ import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { normaliseLocationDisplayName } from './location-format'
 import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
 import { testEventFields } from './internal-test-cohort'
+import { sendTemplate } from './whatsapp'
 import { ctaLabelFor } from './whatsapp-copy'
+import {
+  hasRecentInboundWhatsappSession,
+  isTemplateNotApprovedError,
+} from './whatsapp-policy'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -145,6 +151,178 @@ async function recordPostMatchSendFailure(params: {
   }
 }
 
+type CustomerDeliveryOutcome =
+  | 'primary_template_sent'
+  | 'fallback_template_sent'
+  | 'inside_window_text_sent'
+  | 'outside_window_blocked'
+  | 'send_error'
+
+type CustomerDeliveryResult = {
+  sent: boolean
+  outcome: CustomerDeliveryOutcome
+  failureReason?: string
+}
+
+async function deliverCustomerPostMatchNotification(params: {
+  customerPhone: string
+  customerName: string
+  providerFirstName: string
+  providerPhone: string
+  category: string
+  jobRequestId: string
+  customerBody: string
+  customerHandoverUrl: string | null
+  customerContext: {
+    templateName: string
+    metadata: Record<string, unknown>
+  }
+  isTestLead: boolean
+}): Promise<CustomerDeliveryResult> {
+  const {
+    customerPhone,
+    customerName,
+    providerFirstName,
+    providerPhone,
+    category,
+    jobRequestId,
+    customerBody,
+    customerHandoverUrl,
+    customerContext,
+    isTestLead,
+  } = params
+
+  // ── Step 1: preferred template (named provider + PWA deep-link) ──────────
+  try {
+    const externalId = await sendTemplate({
+      to: customerPhone,
+      template: 'post_match_customer_provider_accepted',
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: customerName },
+            { type: 'text', text: providerFirstName },
+            { type: 'text', text: category },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: 0,
+          parameters: [{ type: 'text', text: jobRequestId }],
+        },
+      ],
+      metadata: { ...customerContext.metadata, deliveryPath: 'primary_template' },
+    })
+    await logOutboundMessage({
+      to: customerPhone,
+      templateName: 'post_match_customer_provider_accepted',
+      body: customerBody,
+      externalId,
+      metadata: { ...customerContext.metadata, deliveryPath: 'primary_template' },
+      isTestEvent: isTestLead,
+    }).catch((err: unknown) => {
+      console.warn('[post-match] logOutboundMessage (primary_template) failed (non-fatal)', {
+        leadId: customerContext.metadata.leadId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+    return { sent: true, outcome: 'primary_template_sent' }
+  } catch (primaryErr) {
+    if (!isTemplateNotApprovedError(primaryErr)) {
+      return {
+        sent: false,
+        outcome: 'send_error',
+        failureReason: primaryErr instanceof Error ? primaryErr.message : String(primaryErr),
+      }
+    }
+    console.info('[post-match] primary post-match template not approved, trying fallback template', {
+      leadId: customerContext.metadata.leadId,
+    })
+  }
+
+  // ── Step 2: approved fallback template (customer_match_found) ────────────
+  try {
+    const externalId = await sendTemplate({
+      to: customerPhone,
+      template: 'customer_match_found',
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: providerFirstName },
+            { type: 'text', text: category },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: 0,
+          parameters: [{ type: 'text', text: jobRequestId }],
+        },
+      ],
+      metadata: { ...customerContext.metadata, deliveryPath: 'fallback_template' },
+    })
+    await logOutboundMessage({
+      to: customerPhone,
+      templateName: 'customer_match_found',
+      body: customerBody,
+      externalId,
+      metadata: { ...customerContext.metadata, deliveryPath: 'fallback_template' },
+      isTestEvent: isTestLead,
+    }).catch((err: unknown) => {
+      console.warn('[post-match] logOutboundMessage (fallback_template) failed (non-fatal)', {
+        leadId: customerContext.metadata.leadId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+    return { sent: true, outcome: 'fallback_template_sent' }
+  } catch (fallbackErr) {
+    if (!isTemplateNotApprovedError(fallbackErr)) {
+      return {
+        sent: false,
+        outcome: 'send_error',
+        failureReason: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+      }
+    }
+  }
+
+  // ── Step 3: 24h-window-gated rich CTA (only inside the customer-service window) ──
+  const hasWindow = await hasRecentInboundWhatsappSession(customerPhone).catch(() => false)
+  if (!hasWindow) {
+    return {
+      sent: false,
+      outcome: 'outside_window_blocked',
+      failureReason: 'NO_ACTIVE_WHATSAPP_SERVICE_WINDOW',
+    }
+  }
+
+  const { sendText, sendCtaUrl } = await import('./whatsapp-interactive')
+  try {
+    if (customerHandoverUrl) {
+      const whatsappProviderUrl = `https://wa.me/${providerPhone.replace(/\D/g, '')}`
+      await sendCtaUrl(
+        customerPhone,
+        customerBody,
+        'WhatsApp Provider',
+        whatsappProviderUrl,
+        { footer: 'Chat directly with your provider.' },
+        customerContext,
+      )
+    } else {
+      await sendText(customerPhone, customerBody, customerContext)
+    }
+    return { sent: true, outcome: 'inside_window_text_sent' }
+  } catch (err) {
+    return {
+      sent: false,
+      outcome: 'send_error',
+      failureReason: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
 export async function notifyPostMatchAcceptance(params: {
   leadId: string
   providerId: string
@@ -210,6 +388,21 @@ export async function notifyPostMatchAcceptance(params: {
 
   // Customer notification - non-fatal. A customer-side WhatsApp failure must
   // never block the provider confirmation that follows.
+  //
+  // Send strategy (template-first; falls through on TEMPLATE_NOT_APPROVED):
+  //   1. sendTemplate('post_match_customer_provider_accepted') - the eventual
+  //      preferred template with named provider + PWA deep-link button. Until
+  //      Meta approves it, step 2 carries the load.
+  //   2. sendTemplate('customer_match_found') - already approved. Slightly
+  //      different wording ("reviewing your request") but still tells the
+  //      customer something happened with a deep-link to the PWA.
+  //   3. Free-form rich CTA (sendCtaUrl/sendText) - ONLY when the customer is
+  //      inside the 24h re-engagement window. This preserves the existing
+  //      WhatsApp-Provider CTA experience for live conversations.
+  //   4. Outside the 24h window with no approved template - we DO NOT send
+  //      plain text (Meta returns "Re-engagement message"). The failure is
+  //      recorded explicitly with NO_ACTIVE_WHATSAPP_SERVICE_WINDOW so ops
+  //      can manually follow up.
   if (customer.phone && !(await hasSentPostMatchMessage({
     to: customer.phone,
     templateName: 'post_match_customer_provider_accepted',
@@ -235,30 +428,29 @@ export async function notifyPostMatchAcceptance(params: {
         recipientIsTest: customer.isTestUser,
       },
     }
+    const providerFirstName = firstName(provider.name)
 
-    try {
-      if (customerHandoverUrl) {
-        // Send message with provider WhatsApp CTA button
-        const whatsappProviderUrl = `https://wa.me/${provider.phone.replace(/\D/g, '')}`;
-        await sendCtaUrl(
-          customer.phone,
-          customerBody,
-          'WhatsApp Provider',
-          whatsappProviderUrl,
-          { footer: 'Chat directly with your provider.' },
-          customerContext,
-        )
-      } else {
-        // No handover URL - send plain text; provider will contact customer
-        await sendText(customer.phone, customerBody, customerContext)
-      }
+    const customerDelivery = await deliverCustomerPostMatchNotification({
+      customerPhone: customer.phone,
+      customerName,
+      providerFirstName,
+      providerPhone: provider.phone,
+      category,
+      jobRequestId: lead.jobRequestId,
+      customerBody,
+      customerHandoverUrl,
+      customerContext,
+      isTestLead,
+    })
+
+    if (customerDelivery.sent) {
       customerNotified = true
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err)
+    } else {
       console.error('[post-match] customer notification failed (non-fatal - provider confirmation continues)', {
         lead_id: lead.id,
         customer_id: customer.id,
-        error: reason,
+        reason: customerDelivery.failureReason,
+        outcome: customerDelivery.outcome,
       })
       await recordPostMatchSendFailure({
         to: customer.phone,
@@ -267,9 +459,9 @@ export async function notifyPostMatchAcceptance(params: {
         jobRequestId: lead.jobRequestId,
         providerId: provider.id,
         customerId: customer.id,
-        reason,
+        reason: customerDelivery.failureReason ?? 'UNKNOWN',
         body: customerBody,
-        metadata: customerContext.metadata,
+        metadata: { ...customerContext.metadata, outcome: customerDelivery.outcome },
         isTestEvent: isTestLead,
       })
     }

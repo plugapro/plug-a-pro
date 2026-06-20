@@ -14,6 +14,36 @@
 import { db } from './db'
 import { TEMPLATES, TemplateName } from './messaging-templates'
 import { maskPhone } from './support-diagnostics'
+import { phoneLookupVariants } from './whatsapp-identity'
+
+// ─── 24h re-engagement window ─────────────────────────────────────────────────
+// Meta's customer-service window: free-form (non-template) sends only succeed
+// within 24h of the customer's last inbound. Slightly shorter than 24h to leave
+// a guard against clock skew at the boundary.
+export const WHATSAPP_FREEFORM_FALLBACK_WINDOW_MS = 23 * 60 * 60 * 1000
+
+/** Detect Meta template-approval failures surfaced by `sendTemplate`. */
+export function isTemplateNotApprovedError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('[TEMPLATE_NOT_APPROVED]')
+}
+
+/**
+ * Returns true when the recipient has sent an inbound WhatsApp message inside
+ * the customer-service window — i.e. we may send a free-form text or interactive
+ * message without using an approved template. Looks up across all phone-number
+ * variants for the recipient.
+ */
+export async function hasRecentInboundWhatsappSession(to: string): Promise<boolean> {
+  const cutoff = new Date(Date.now() - WHATSAPP_FREEFORM_FALLBACK_WINDOW_MS)
+  const inbound = await db.inboundWhatsAppMessage.findFirst({
+    where: {
+      phone: { in: phoneLookupVariants(to) },
+      firstSeenAt: { gte: cutoff },
+    },
+    select: { id: true },
+  })
+  return Boolean(inbound)
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

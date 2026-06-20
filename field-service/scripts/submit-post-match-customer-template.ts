@@ -1,20 +1,28 @@
 /**
- * One-shot script to register the `otp_security_check` WhatsApp template
- * with Meta via the WhatsApp Business Management API.
+ * One-shot script to register the `post_match_customer_provider_accepted`
+ * WhatsApp template with Meta via the WhatsApp Business Management API.
+ *
+ * Why this exists:
+ *   The legacy post-match customer notification sent free-form interactive
+ *   messages that Meta rejects with "Re-engagement message" when the
+ *   customer's last inbound was >24h old. lib/post-match-communications.ts
+ *   now routes through sendTemplate first; this template is the preferred
+ *   primary target. Until it's APPROVED at Meta, the code falls through to
+ *   the already-approved `customer_match_found` template.
  *
  * Run from the repo root (or field-service/) with production env loaded:
  *
- *   pnpm --filter field-service exec tsx scripts/submit-otp-security-check-template.ts
+ *   set -a && source .env.production.local && set +a
+ *   pnpm --filter field-service exec tsx scripts/submit-post-match-customer-template.ts
  *
  * Required env:
  *   WHATSAPP_ACCESS_TOKEN          — must have `whatsapp_business_management`
  *                                    scope (same scope used by sendTemplate)
- *
- * Optional env:
- *   WHATSAPP_BUSINESS_ACCOUNT_ID   — WABA id. Defaults to the value recorded
- *                                    approved for Plug A Pro on 2026-06-02.
- *                                    Override here if your project's WABA
- *                                    has changed since.
+ *   WHATSAPP_WABA_ID OR
+ *   WHATSAPP_BUSINESS_ACCOUNT_ID   — WABA id. Defaults to 104200042667877
+ *                                    (Kgolaentle Holdings, recorded approved
+ *                                    on 2026-04-08 for the existing 21
+ *                                    production templates).
  *
  * Behaviour:
  *   - POSTs the template definition to Meta's Graph API.
@@ -27,27 +35,31 @@
 
 // Make this file an ES module so its top-level `const`s are file-scoped under
 // `isolatedModules`. Without this, tsc treats the file as a script and the
-// constants here collide with the same-named ones in submit-post-match-customer-template.ts.
+// constants here collide with the same-named ones in submit-otp-security-check-template.ts.
 export {}
 
-const DEFAULT_WABA_ID = '104200042667877' // Approved otp_security_check WABA, 2026-06-02.
-const GRAPH_API_VERSION = 'v18.0'
+const DEFAULT_WABA_ID = '104200042667877' // Kgolaentle Holdings, recorded 2026-04-08.
+const GRAPH_API_VERSION = 'v21.0'
 
 const TEMPLATE_DEFINITION = {
-  name: 'otp_security_check',
+  name: 'post_match_customer_provider_accepted',
   language: 'en_ZA',
   category: 'UTILITY',
   components: [
     {
       type: 'BODY',
-      text: "Plug A Pro security check.\n\nWe just sent you a sign-in code. If you didn't request this, tap below to block it — your account stays safe.",
+      text:
+        'Hi {{1}}, great news — {{2}} has accepted your {{3}} request and will contact you shortly to confirm the visit. Tap below to view the details.',
+      example: { body_text: [['Stephanie', 'Sipho', 'Plumbing']] },
     },
     {
       type: 'BUTTONS',
       buttons: [
         {
-          type: 'QUICK_REPLY',
-          text: "I didn't request this",
+          type: 'URL',
+          text: 'View request',
+          url: 'https://app.plugapro.co.za/requests/{{1}}',
+          example: ['https://app.plugapro.co.za/requests/demo-job-request-id'],
         },
       ],
     },
@@ -59,14 +71,17 @@ async function main(): Promise<void> {
   if (!accessToken) {
     console.error(
       'WHATSAPP_ACCESS_TOKEN is required. Source your env first:\n' +
-        '  set -a && source .env.local && set +a\n' +
+        '  set -a && source .env.production.local && set +a\n' +
         'Or paste it inline:\n' +
-        '  WHATSAPP_ACCESS_TOKEN=EAAB... pnpm --filter field-service exec tsx scripts/submit-otp-security-check-template.ts',
+        '  WHATSAPP_ACCESS_TOKEN=EAAB... pnpm --filter field-service exec tsx scripts/submit-post-match-customer-template.ts',
     )
     process.exit(1)
   }
 
-  const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID?.trim() || DEFAULT_WABA_ID
+  const wabaId =
+    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID?.trim() ||
+    process.env.WHATSAPP_WABA_ID?.trim() ||
+    DEFAULT_WABA_ID
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${wabaId}/message_templates`
 
   console.error(`[submit-template] POST ${url}`)
@@ -88,8 +103,6 @@ async function main(): Promise<void> {
     const metaCode = metaError?.code
     const metaMessage = String(metaError?.message ?? '')
 
-    // Meta returns code 100 with a specific subcode for "name already taken"
-    // OR a clear-text "already exists" message. Treat both as success.
     const alreadyExists =
       metaMessage.toLowerCase().includes('already exists') ||
       metaMessage.toLowerCase().includes('name has already been used')
@@ -123,8 +136,7 @@ async function main(): Promise<void> {
   )
 
   console.error(
-    '\nNext: poll for approval. Either via Meta Business Manager → Message Templates, ' +
-      'or via API:\n' +
+    '\nNext: poll for approval.\n' +
       `  curl -s 'https://graph.facebook.com/${GRAPH_API_VERSION}/${wabaId}/message_templates?name=${TEMPLATE_DEFINITION.name}' \\\n` +
       `    -H "Authorization: Bearer $WHATSAPP_ACCESS_TOKEN" | jq '.data[] | {name,status,category}'\n` +
       'Approval is typically minutes to a few hours. Status moves PENDING → APPROVED (or REJECTED with reason).',

@@ -1,5 +1,6 @@
 // ─── Admin: WhatsApp message log ──────────────────────────────────────────────
-// Shows recent outbound message events for audit / support.
+// Shows recent outbound message events for audit / support, plus a flag-gated
+// compose form for ops to send a one-off WhatsApp template to a single customer.
 
 export const dynamic = 'force-dynamic'
 
@@ -7,17 +8,39 @@ import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
+import { TEMPLATES } from '@/lib/messaging-templates'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { ComposeMessageForm, type ComposeMessageTemplate } from './_components/ComposeMessageForm'
 import { RetryMessageButton } from './_components/RetryMessageButton'
 
 export const metadata = buildMetadata({ title: 'Messages', noIndex: true })
 
 const RETRY_FLAG = 'admin.crud.messages'
+const OUTBOUND_FLAG = 'admin.messages.outbound'
+
+// Templates the compose form exposes. Excludes provider-side templates, OTP,
+// templates that require non-trivial component shapes (e.g. URL buttons whose
+// parameters cannot be entered as plain text), and templates intended for
+// broadcast / automatic flows only.
+const COMPOSE_ALLOWED_TEMPLATE_KEYS: string[] = [
+  'please_confirm_with_provider',
+  'customer_abandoned_recovery',
+  'no_technician_available',
+  'slot_available',
+]
 
 export default async function MessagesPage() {
   const admin = await requireAdmin()
   const retryEnabled = await isEnabled(RETRY_FLAG, { userId: admin.id })
+  const outboundEnabled = await isEnabled(OUTBOUND_FLAG, { userId: admin.id })
+
+  const composeTemplates: ComposeMessageTemplate[] = COMPOSE_ALLOWED_TEMPLATE_KEYS
+    .filter((key) => key in TEMPLATES)
+    .map((key) => {
+      const tpl = TEMPLATES[key as keyof typeof TEMPLATES] as { name: string; category: string; description: string; example: string }
+      return { key: tpl.name, category: tpl.category, description: tpl.description, example: tpl.example }
+    })
 
   const messages = await db.messageEvent.findMany({
     include: {
@@ -45,6 +68,12 @@ export default async function MessagesPage() {
         <h1 className="text-2xl font-bold">Messages</h1>
         <p className="text-sm text-muted-foreground">Last 100 outbound events</p>
       </div>
+
+      <ComposeMessageForm
+        templates={composeTemplates}
+        disabled={!outboundEnabled}
+        disabledReason={!outboundEnabled ? `Disabled while \`${OUTBOUND_FLAG}\` is off` : undefined}
+      />
 
       {messages.length === 0 ? (
         <EmptyState

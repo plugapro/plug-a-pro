@@ -352,6 +352,16 @@ const TEMPLATES = [
     body: 'Hi {{1}}, {{2}} has accepted your {{3}} request and is waiting to hear back from you. Please reply here or message them with a preferred date and time — request: {{4}} — they will keep your slot open today.',
     examples: ['Ishmael', 'Vigilance Chauke', 'handyman', 'https://app.plugapro.co.za/requests/cmqf77w0o'],
   },
+  {
+    name: 'customer_abandoned_recovery',
+    category: 'UTILITY',
+    // {{1}} customer name (or "there"), {{2}} service category, {{3}} pickup URL
+    // Recovers customers who abandoned a job_request flow mid-way (browse_categories,
+    // addr_confirm, collect_issue_description). UTILITY so it can fire outside the
+    // 24h customer-service window. URL is inline body text, no button.
+    body: "Hi {{1}}, you started a {{2}} request with us earlier and didn't finish. Tap to pick it up here — {{3}} — your details are saved.",
+    examples: ['Andries', 'garden', 'https://app.plugapro.co.za/'],
+  },
 ]
 
 // Templates that are intentionally managed outside this script's creation
