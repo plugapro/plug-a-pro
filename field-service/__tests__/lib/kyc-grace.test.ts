@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { KYC_GRACE_CUTOFF, isKycGrandfathered } from '@/lib/matching/kyc-grace'
+import {
+  KYC_GRACE_CUTOFF,
+  buildProviderKycVisibilityWhere,
+  isKycGrandfathered,
+} from '@/lib/matching/kyc-grace'
 import { checkProviderCanUnlockLead } from '@/lib/provider-lead-eligibility'
 
 const before = new Date(KYC_GRACE_CUTOFF.getTime() - 1000)
@@ -51,5 +55,25 @@ describe('checkProviderCanUnlockLead KYC grace', () => {
   it('blocks an EXPIRED pre-cutoff provider even when grace is on', () => {
     const r = checkProviderCanUnlockLead({ ...approved, kycStatus: 'EXPIRED', createdAt: before }, true)
     expect(r).toEqual({ ok: false, code: 'KYC_REQUIRED' })
+  })
+})
+
+describe('buildProviderKycVisibilityWhere', () => {
+  it('returns a strict kycStatus=VERIFIED clause when grace is off', () => {
+    expect(buildProviderKycVisibilityWhere(false)).toEqual({ kycStatus: 'VERIFIED' })
+  })
+
+  it('admits the legacy cohort via OR when grace is on, excluding REJECTED/EXPIRED', () => {
+    expect(buildProviderKycVisibilityWhere(true)).toEqual({
+      OR: [
+        { kycStatus: 'VERIFIED' },
+        {
+          AND: [
+            { createdAt: { lt: KYC_GRACE_CUTOFF } },
+            { kycStatus: { notIn: ['REJECTED', 'EXPIRED'] } },
+          ],
+        },
+      ],
+    })
   })
 })

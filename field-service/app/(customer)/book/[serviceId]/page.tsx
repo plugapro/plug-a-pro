@@ -13,6 +13,8 @@ import { formatAreaSearchLabel } from '@/lib/customer-search-routing'
 import { buildMetadata } from '@/lib/metadata'
 import { BookingFlow } from '@/components/customer/BookingFlow'
 import { SERVICE_CATEGORY_OPTIONS, getPilotServiceCategories } from '@/lib/service-categories'
+import { isEnabled } from '@/lib/flags'
+import { buildProviderKycVisibilityWhere, KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
 
 export const metadata = buildMetadata({ title: 'Request a Job' })
 
@@ -104,6 +106,16 @@ export default async function RequestJobPage({
     : null
   const initialAreaLabel = areaSlug && !initialAddress ? formatAreaSearchLabel(areaSlug) : null
 
+  // Defense-in-depth: today the verified=true filter is transitively safe
+  // (provider approval refuses verified=true without VERIFIED KYC — PR #114),
+  // but the preferred-provider check explicitly requires kycStatus too so a
+  // non-VERIFIED ?provider= id cannot leak through if the approval pipeline
+  // is later weakened or the kyc-required flag is OFF.
+  const kycGraceOn = preferredProviderId ? await isEnabled(KYC_GRACE_FLAG) : false
+  const kycVisibilityWhere = preferredProviderId
+    ? buildProviderKycVisibilityWhere(kycGraceOn)
+    : null
+
   const eligiblePreferredProvider = preferredProviderId
     ? await db.provider.findFirst({
         where: {
@@ -113,6 +125,7 @@ export default async function RequestJobPage({
           status: 'ACTIVE',
           AND: [
             { OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: new Date() } }] },
+            ...(kycVisibilityWhere ? [kycVisibilityWhere] : []),
             {
               OR: [
                 {
