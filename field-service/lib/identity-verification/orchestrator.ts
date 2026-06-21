@@ -474,11 +474,29 @@ export async function transitionIdentityVerification(
     }
   }
 
-  if (current.status !== input.toStatus && TERMINAL_NOTIFICATION_STATUSES.has(input.toStatus)) {
+  if (
+    current.status !== input.toStatus &&
+    TERMINAL_NOTIFICATION_STATUSES.has(input.toStatus) &&
+    !isHarmlessTerminalTransition(current.status, input.toStatus)
+  ) {
     void notifyTerminalVerificationStatus(input.verificationId, input.toStatus)
   }
 
   return updated
+}
+
+// PASSED → EXPIRED is a Didit session cleanup artefact: the provider has
+// already received the PASSED success confirmation and the cleanup cron is
+// only retiring the (now stale) verification session row. Re-notifying with
+// "your session expired before you finished" on top of a successful PASSED is
+// confusing copy and erodes trust. Suppress the follow-up notification for
+// this specific transition only; every other path into EXPIRED (STARTED,
+// AWAITING_*, RETRY_REQUIRED) still notifies.
+function isHarmlessTerminalTransition(
+  fromStatus: VerificationStatus,
+  toStatus: VerificationStatus,
+): boolean {
+  return fromStatus === 'PASSED' && toStatus === 'EXPIRED'
 }
 
 const TERMINAL_NOTIFICATION_STATUSES = new Set<VerificationStatus>([
