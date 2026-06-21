@@ -136,6 +136,7 @@ describe('manualOverrideAssignment — KYC pre-flight', () => {
       status: 'ACTIVE',
       kycStatus: 'REJECTED',
       createdAt: new Date('2026-05-01T00:00:00.000Z'), // pre-cutoff, but REJECTED never grandfathered
+      kycOverriddenAt: null,
     })
 
     await expect(
@@ -160,6 +161,7 @@ describe('manualOverrideAssignment — KYC pre-flight', () => {
       status: 'ACTIVE',
       kycStatus: 'EXPIRED',
       createdAt: new Date('2026-09-01T00:00:00.000Z'),
+      kycOverriddenAt: null,
     })
 
     await expect(
@@ -170,5 +172,141 @@ describe('manualOverrideAssignment — KYC pre-flight', () => {
         overrideReason: 'admin override',
       }),
     ).rejects.toBeInstanceOf(ManualOverrideKycBlockedError)
+  })
+
+  // F2 closure: a TRUST+ admin who has run setProviderKycOverrideAction can
+  // force-assign a provider whose KYC is otherwise REJECTED/EXPIRED/missing.
+  // Without this the override action writes a phantom flag the matching path
+  // never reads, and ops gets the misleading "set kycOverrideReason and retry"
+  // message even though they already did.
+  it('does NOT throw when REJECTED provider has kycOverriddenAt set (admin override honoured)', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'prov-overridden',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'REJECTED',
+      createdAt: new Date('2026-05-01T00:00:00.000Z'),
+      kycOverriddenAt: new Date('2026-06-18T00:00:00.000Z'),
+    })
+    // Provide just enough downstream state to let manualOverrideAssignment
+    // get past the KYC gate. We don't care if it errors further down — the
+    // assertion is that ManualOverrideKycBlockedError is NOT thrown.
+    mockDb.jobRequest.findUnique.mockResolvedValue(null)
+    mockDb.jobRequest.findUniqueOrThrow.mockRejectedValue(new Error('jr-not-found'))
+    mockDb.provider.findMany.mockResolvedValue([])
+
+    await expect(
+      manualOverrideAssignment({
+        jobRequestId: 'jr-1',
+        providerId: 'prov-overridden',
+        actor: { id: 'admin-1', role: 'ADMIN' } as any,
+        overrideReason: 'admin override',
+      }),
+    ).rejects.not.toBeInstanceOf(ManualOverrideKycBlockedError)
+  })
+
+  it('does NOT throw when NOT_STARTED post-cutoff provider has kycOverriddenAt set', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'prov-overridden-2',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'NOT_STARTED',
+      createdAt: new Date('2026-09-01T00:00:00.000Z'),
+      kycOverriddenAt: new Date('2026-06-18T00:00:00.000Z'),
+    })
+    mockDb.jobRequest.findUnique.mockResolvedValue(null)
+    mockDb.jobRequest.findUniqueOrThrow.mockRejectedValue(new Error('jr-not-found'))
+    mockDb.provider.findMany.mockResolvedValue([])
+
+    await expect(
+      manualOverrideAssignment({
+        jobRequestId: 'jr-1',
+        providerId: 'prov-overridden-2',
+        actor: { id: 'admin-1', role: 'ADMIN' } as any,
+        overrideReason: 'admin override',
+      }),
+    ).rejects.not.toBeInstanceOf(ManualOverrideKycBlockedError)
+  })
+})
+
+describe('acceptAssignmentOffer — admin KYC override (F2 closure)', () => {
+  // Mirror of the manualOverrideAssignment block above. The accept path also
+  // reads the provider with a select that omitted kycOverriddenAt, so a
+  // provider whose KYC was admin-overridden could not accept the lead they'd
+  // been force-assigned — circular failure mode where the admin "fix" was
+  // useless.
+  it('does NOT return KYC_REQUIRED when REJECTED provider has kycOverriddenAt set', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-2',
+      providerId: 'provider-overridden',
+      jobRequestId: 'jr-2',
+      dispatchDecisionId: 'd-2',
+      matchAttemptId: 'a-2',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'h-2',
+      assignmentHold: { id: 'h-2', status: 'ACTIVE' },
+      matchAttempt: { id: 'a-2' },
+    })
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-overridden',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'REJECTED',
+      createdAt: new Date('2026-05-01T00:00:00.000Z'),
+      kycOverriddenAt: new Date('2026-06-18T00:00:00.000Z'),
+    })
+    mockDb.providerWallet.findUnique.mockResolvedValue({ paidCreditBalance: 0, promoCreditBalance: 0 })
+    mockDb.match.findUnique.mockResolvedValue(null)
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-2',
+      providerId: 'provider-overridden',
+      source: 'whatsapp',
+    })
+
+    // KYC gate MUST be cleared. Anything else (insufficient credits, lead
+    // acceptance failure, etc.) is fine — the assertion is specifically that
+    // we did not collapse this back to KYC_REQUIRED.
+    if (!result.ok) {
+      expect(result.reason).not.toBe('KYC_REQUIRED')
+    }
+  })
+
+  it('does NOT return KYC_REQUIRED when NOT_STARTED post-cutoff provider has kycOverriddenAt set', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-3',
+      providerId: 'provider-overridden-2',
+      jobRequestId: 'jr-3',
+      dispatchDecisionId: 'd-3',
+      matchAttemptId: 'a-3',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'h-3',
+      assignmentHold: { id: 'h-3', status: 'ACTIVE' },
+      matchAttempt: { id: 'a-3' },
+    })
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-overridden-2',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'NOT_STARTED',
+      createdAt: new Date('2026-09-01T00:00:00.000Z'),
+      kycOverriddenAt: new Date('2026-06-18T00:00:00.000Z'),
+    })
+    mockDb.providerWallet.findUnique.mockResolvedValue({ paidCreditBalance: 0, promoCreditBalance: 0 })
+    mockDb.match.findUnique.mockResolvedValue(null)
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-3',
+      providerId: 'provider-overridden-2',
+      source: 'whatsapp',
+    })
+
+    if (!result.ok) {
+      expect(result.reason).not.toBe('KYC_REQUIRED')
+    }
   })
 })

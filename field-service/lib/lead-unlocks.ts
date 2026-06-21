@@ -100,6 +100,12 @@ function assertProviderCanUnlock(
     status: string
     kycStatus: string
     createdAt?: Date | null
+    // F2: optional admin override flag. When set the TRUST+ operator has
+    // explicitly cleared this provider via setProviderKycOverrideAction;
+    // checkProviderCanUnlockLead now honours it (same semantics as
+    // checkCanBeApproved). Optional so callers that omit it keep their
+    // current (override-absent) behaviour.
+    kycOverriddenAt?: Date | null
   },
   kycGraceEnabled = false,
 ) {
@@ -189,6 +195,10 @@ export async function unlockLeadForProvider(
               status: true,
               kycStatus: true,
               createdAt: true,
+              // F2: read kycOverriddenAt so a TRUST+ admin override actually
+              // unblocks the credit-spend step. Without it the matching-time
+              // gate may pass while the unlock-time gate still rejects.
+              kycOverriddenAt: true,
               isTestUser: true,
             },
           },
