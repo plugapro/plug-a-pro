@@ -308,6 +308,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
+  // ─── Ops Agent Workflow Team ─────────────────────────────────────────────────
+  'admin.ops_intelligence': {
+    description: 'Shows /admin/ops-intelligence (agent recommendations, incomplete profiles, friction & matching alerts, drafts awaiting approval). Internal-only: agents create WhatsApp drafts but never send; ops approves/rejects/resolves. Gates the page, nav entry, and the ops-agents cron.',
+    owner: 'ops',
+    defaultValue: false,
+  },
+
   // ─── Pilot - post-job review flow ────────────────────────────────────────────
   'pilot.completion-check': {
     description: 'Enable cron-driven completion-check WhatsApp flow for AUTO_ASSIGN cash-pilot jobs. Sends completion check 2 days after job window; fires review nudges on Yes.',

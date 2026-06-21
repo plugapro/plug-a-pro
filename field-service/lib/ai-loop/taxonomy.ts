@@ -34,6 +34,7 @@ export const EVENT_CATEGORIES = [
   'campaign',
   'support',
   'improvement_candidate',
+  'workflow',
 ] as const
 
 export type EventCategory = (typeof EVENT_CATEGORIES)[number]
@@ -527,6 +528,21 @@ export const EVENT_DEFINITIONS: Record<string, EventDefinition> = {
     improvementCandidateEligible: true,
     redactionProfile: 'standard',
     description: 'An ops agent escalated an entity needing urgent ops attention.',
+  }),
+
+  // ── workflow funnel event log ────────────────────────────────────────────────
+  // One umbrella event for the durable WorkflowEvent stream (recordWorkflowEvent).
+  // The concrete funnel type travels in metadata.workflowEventType. Strict
+  // redaction because callers across the funnel may pass through free text.
+  'workflow.event': def({
+    name: 'workflow.event',
+    category: 'workflow',
+    defaultSeverity: 'info',
+    actorTypes: ['customer', 'provider', 'admin', 'system', 'anonymous'],
+    openBrainEligible: true,
+    improvementCandidateEligible: false,
+    redactionProfile: 'strict',
+    description: 'A key operational funnel event was recorded (provider/request/match/job/payment lifecycle).',
   }),
 }
 

@@ -44,6 +44,12 @@ export const ADMIN_NAV_ITEMS = [
     icon: 'messages' as const,
     flag: 'launch.west_rand_pilot.nudge_console' as const,
   },
+  {
+    href: '/admin/ops-intelligence',
+    label: 'Ops Intelligence',
+    icon: 'workflow' as const,
+    flag: 'admin.ops_intelligence' as const,
+  },
 ] as const
 
 // Smoke suite route targets are derived from the sidebar source to prevent
