@@ -20,6 +20,7 @@ const {
   mockSendTemplate,
   mockSendProviderKycNudge,
   mockIssueProviderIdentityVerificationLink,
+  mockLogOutboundMessage,
 } = vi.hoisted(() => ({
   mockIsEnabled: vi.fn(),
   mockLoadProviderQualityRows: vi.fn(),
@@ -27,6 +28,7 @@ const {
   mockSendTemplate: vi.fn(),
   mockSendProviderKycNudge: vi.fn(),
   mockIssueProviderIdentityVerificationLink: vi.fn(),
+  mockLogOutboundMessage: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({
@@ -48,6 +50,10 @@ vi.mock('@/lib/whatsapp', () => ({
 
 vi.mock('@/lib/identity-verification/link', () => ({
   issueProviderIdentityVerificationLink: mockIssueProviderIdentityVerificationLink,
+}))
+
+vi.mock('@/lib/message-events', () => ({
+  logOutboundMessage: mockLogOutboundMessage,
 }))
 
 import { sendNudges } from '@/lib/provider-quality/orchestrator'
@@ -93,6 +99,7 @@ beforeEach(() => {
     reused: false,
     status: 'NOT_STARTED',
   })
+  mockLogOutboundMessage.mockReset().mockResolvedValue(undefined)
   process.env.KYC_DRIVE_NUDGE_DEADLINE = '31 July 2026'
 })
 
@@ -171,6 +178,100 @@ describe('sendNudges — provider_kyc_nudge uses signed verification link', () =
     expect(mockSendProviderKycNudge).not.toHaveBeenCalled()
     expect(result.failedCount).toBe(1)
     expect(result.failures[0].reason).toMatch(/PROVIDER_NOT_FOUND/)
+  })
+})
+
+describe('sendNudges — provider_kyc_nudge writes MessageEvent attempt-first (F3 dedup fix)', () => {
+  it('calls logOutboundMessage with templateName provider_kyc_nudge BEFORE sendProviderKycNudge', async () => {
+    mockLoadProviderQualityRows.mockResolvedValue([kycMissingRow()])
+
+    // Order check: capture call order so we can assert the attempt-first sequence.
+    const callOrder: string[] = []
+    mockLogOutboundMessage.mockImplementation(async () => {
+      callOrder.push('logOutboundMessage')
+    })
+    mockSendProviderKycNudge.mockImplementation(async () => {
+      callOrder.push('sendProviderKycNudge')
+      return 'msg-id-1'
+    })
+
+    await sendNudges({ providerIds: ['prov-kyc-1'], ...ACTOR })
+
+    expect(mockLogOutboundMessage).toHaveBeenCalledTimes(1)
+    expect(mockLogOutboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '+27800000001',
+        templateName: 'provider_kyc_nudge',
+      }),
+    )
+    // Attempt-first invariant: log MUST happen before send, otherwise the
+    // dedup window in previewNudges (which reads MessageEvent.templateName)
+    // is bypassed for admin-triggered KYC nudges (F3 from code review).
+    expect(callOrder).toEqual(['logOutboundMessage', 'sendProviderKycNudge'])
+  })
+
+  it('still records the MessageEvent attempt when sendProviderKycNudge throws (slot consumed)', async () => {
+    mockLoadProviderQualityRows.mockResolvedValue([kycMissingRow()])
+    mockSendProviderKycNudge.mockRejectedValue(new Error('META_API_ERROR'))
+
+    const result = await sendNudges({ providerIds: ['prov-kyc-1'], ...ACTOR })
+
+    // The log call must still have happened — polite-bias: a failed send
+    // burns a slot rather than letting an admin retry past the 7-day cap.
+    expect(mockLogOutboundMessage).toHaveBeenCalledTimes(1)
+    expect(mockLogOutboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '+27800000001',
+        templateName: 'provider_kyc_nudge',
+      }),
+    )
+    expect(result.failedCount).toBe(1)
+    expect(result.failures[0].reason).toMatch(/META_API_ERROR/)
+  })
+
+  it('does NOT call logOutboundMessage when MISSING_DEADLINE short-circuits the send', async () => {
+    delete process.env.KYC_DRIVE_NUDGE_DEADLINE
+    mockLoadProviderQualityRows.mockResolvedValue([kycMissingRow()])
+
+    await sendNudges({ providerIds: ['prov-kyc-1'], ...ACTOR })
+
+    // Fail-closed before minting a token AND before consuming a nudge slot —
+    // a config gap shouldn't burn a polite-cadence opportunity.
+    expect(mockLogOutboundMessage).not.toHaveBeenCalled()
+  })
+
+  it('does NOT call logOutboundMessage when NO_VERIFICATION_URL short-circuits the send', async () => {
+    mockLoadProviderQualityRows.mockResolvedValue([kycMissingRow()])
+    mockIssueProviderIdentityVerificationLink.mockResolvedValue({
+      verificationId: 'ver-1',
+      verificationUrl: null,
+      expiresAt: new Date(),
+      reused: false,
+      status: 'NOT_STARTED',
+    })
+
+    await sendNudges({ providerIds: ['prov-kyc-1'], ...ACTOR })
+
+    // Same logic — issuer returned no URL, nothing to send, don't burn a slot.
+    expect(mockLogOutboundMessage).not.toHaveBeenCalled()
+  })
+
+  it('passes providerId + actor metadata into the logOutboundMessage call', async () => {
+    mockLoadProviderQualityRows.mockResolvedValue([kycMissingRow()])
+
+    await sendNudges({ providerIds: ['prov-kyc-1'], ...ACTOR })
+
+    expect(mockLogOutboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '+27800000001',
+        templateName: 'provider_kyc_nudge',
+        metadata: expect.objectContaining({
+          providerId: 'prov-kyc-1',
+          actorId: 'admin-1',
+          actorRole: 'ADMIN',
+        }),
+      }),
+    )
   })
 })
 

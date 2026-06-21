@@ -269,6 +269,22 @@ export async function sendNudges(args: {
           failures.push({ providerId: item.providerId, reason: 'NO_VERIFICATION_URL' })
           continue
         }
+        // Attempt-first MessageEvent write — mirrors lib/kyc-drive/nudge.ts.
+        // sendProviderKycNudge itself does NOT log a MessageEvent (see
+        // lib/whatsapp.ts:964 comment), so the orchestrator must record the
+        // attempt BEFORE the send. Without this, previewNudges' 7-day dedup
+        // and 3-cap (derived from messageEvent.findMany filtered by
+        // templateName) are bypassed entirely for admin-triggered KYC nudges
+        // — an admin could re-send to the same provider repeatedly. Recording
+        // before the send also means a failed send still consumes a slot:
+        // polite-bias by design (no chance of overshooting the cap if a
+        // post-send write fails).
+        const { logOutboundMessage } = await import('@/lib/message-events')
+        await logOutboundMessage({
+          to: item.phone!,
+          templateName: KYC_NUDGE_TEMPLATE,
+          metadata,
+        })
         await sendProviderKycNudge({
           providerPhone: item.phone!,
           providerFirstName: firstName,
