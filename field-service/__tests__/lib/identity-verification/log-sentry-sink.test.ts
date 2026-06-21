@@ -184,4 +184,99 @@ describe('identity-verification log — Sentry sink (opt-in)', () => {
       )
     })
   })
+
+  // F5: SENTRY_DSN as blank string is functionally identical to "unset" —
+  // it should still allow NEXT_PUBLIC_SENTRY_DSN to enable the sink, and it
+  // must never enable the sink when both values are empty/whitespace.
+  // Regression: `??` only falls through on null/undefined, which meant an
+  // explicitly-blank SENTRY_DSN (common when copied from .env.example and
+  // left empty) silently disabled Sentry even when the NEXT_PUBLIC fallback
+  // carried a real DSN.
+  describe('blank-string SENTRY_DSN fallback (F5)', () => {
+    it('treats SENTRY_DSN="" as unset and falls back to NEXT_PUBLIC_SENTRY_DSN', async () => {
+      vi.stubEnv('SENTRY_DSN', '')
+      vi.stubEnv(
+        'NEXT_PUBLIC_SENTRY_DSN',
+        'https://public@o0.ingest.sentry.io/0',
+      )
+
+      const { logIdentityVerificationError } = await import(
+        '../../../lib/identity-verification/log'
+      )
+
+      logIdentityVerificationError('vendor.submit.failed', new Error('boom'), {
+        verificationId: 'ver-1',
+      })
+
+      expect(sentryMocks.captureException).toHaveBeenCalledTimes(1)
+    })
+
+    it('treats whitespace-only SENTRY_DSN as unset and falls back to NEXT_PUBLIC_SENTRY_DSN', async () => {
+      vi.stubEnv('SENTRY_DSN', '   ')
+      vi.stubEnv(
+        'NEXT_PUBLIC_SENTRY_DSN',
+        'https://public@o0.ingest.sentry.io/0',
+      )
+
+      const { logIdentityVerificationError } = await import(
+        '../../../lib/identity-verification/log'
+      )
+
+      logIdentityVerificationError('vendor.submit.failed', new Error('boom'), {
+        verificationId: 'ver-1',
+      })
+
+      expect(sentryMocks.captureException).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the sink ENABLED when SENTRY_DSN is undefined and NEXT_PUBLIC_SENTRY_DSN is set', async () => {
+      // Explicitly remove SENTRY_DSN from the environment so we exercise the
+      // undefined → fallback branch (not just the empty-string branch).
+      vi.stubEnv('SENTRY_DSN', undefined as unknown as string)
+      vi.stubEnv(
+        'NEXT_PUBLIC_SENTRY_DSN',
+        'https://public@o0.ingest.sentry.io/0',
+      )
+
+      const { logIdentityVerificationError } = await import(
+        '../../../lib/identity-verification/log'
+      )
+
+      logIdentityVerificationError('vendor.submit.failed', new Error('boom'), {
+        verificationId: 'ver-1',
+      })
+
+      expect(sentryMocks.captureException).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the sink DISABLED when SENTRY_DSN is unset and NEXT_PUBLIC_SENTRY_DSN is empty', async () => {
+      vi.stubEnv('SENTRY_DSN', undefined as unknown as string)
+      vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', '')
+
+      const { logIdentityVerificationError } = await import(
+        '../../../lib/identity-verification/log'
+      )
+
+      logIdentityVerificationError('vendor.submit.failed', new Error('boom'), {
+        verificationId: 'ver-1',
+      })
+
+      expect(sentryMocks.captureException).not.toHaveBeenCalled()
+    })
+
+    it('keeps the sink DISABLED when both DSN env vars are blank strings', async () => {
+      vi.stubEnv('SENTRY_DSN', '')
+      vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', '   ')
+
+      const { logIdentityVerificationError } = await import(
+        '../../../lib/identity-verification/log'
+      )
+
+      logIdentityVerificationError('vendor.submit.failed', new Error('boom'), {
+        verificationId: 'ver-1',
+      })
+
+      expect(sentryMocks.captureException).not.toHaveBeenCalled()
+    })
+  })
 })

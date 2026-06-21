@@ -46,7 +46,13 @@ export function maskToken(token: string | null | undefined): string | null {
 const SEARCHABLE_TAG_KEYS = ['verificationId', 'providerId', 'vendor', 'action'] as const
 
 function isSentrySinkEnabled(): boolean {
-  return Boolean(process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN)
+  // Treat blank / whitespace-only DSN values as "unset" so the fallback to
+  // NEXT_PUBLIC_SENTRY_DSN still kicks in. `??` would only fall through on
+  // null/undefined, which silently disabled the sink when SENTRY_DSN was
+  // copied from .env.example and left empty. See F5 in code review.
+  const serverDsn = process.env.SENTRY_DSN?.trim()
+  const publicDsn = process.env.NEXT_PUBLIC_SENTRY_DSN?.trim()
+  return Boolean(serverDsn || publicDsn)
 }
 
 // Wrap a Sentry call so a transport / scope error can never reach the caller.
