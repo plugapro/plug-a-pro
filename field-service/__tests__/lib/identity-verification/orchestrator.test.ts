@@ -46,6 +46,7 @@ import {
   notifyTerminalVerificationStatus,
   resolveIdentityVerificationConsentVendorForSubject,
   submitVerificationForAutomation,
+  transitionIdentityVerification,
 } from '../../../lib/identity-verification/orchestrator'
 
 describe('provider identity verification orchestrator', () => {
@@ -485,6 +486,63 @@ describe('notifyTerminalVerificationStatus', () => {
   it('swallows send failures so a flaky WhatsApp API does not break the state transition', async () => {
     mocks.sendText.mockRejectedValueOnce(new Error('WhatsApp API 500'))
     await expect(notifyTerminalVerificationStatus('ver_1', 'PASSED')).resolves.toBeUndefined()
+  })
+})
+
+describe('transitionIdentityVerification terminal notifications', () => {
+  beforeEach(() => {
+    mocks.sendText.mockReset()
+    mocks.dbFindUnique.mockReset()
+    mocks.sendText.mockResolvedValue('msg_1')
+    mocks.dbFindUnique.mockResolvedValue({ provider: { phone: '+27711111111' } })
+  })
+
+  // Flush pending microtasks AND macrotasks. notifyTerminalVerificationStatus
+  // is invoked via `void` (fire-and-forget) inside transitionIdentityVerification
+  // so we need to let the async sendText path resolve before asserting on it.
+  async function flushNotifyMicrotasks() {
+    for (let i = 0; i < 5; i++) {
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+  }
+
+  it('fires the expiry notification for a normal in-flight EXPIRED transition (e.g. STARTED → EXPIRED)', async () => {
+    const client = makeClient({ status: 'STARTED' })
+    // findUnique must return a SNAPSHOT — the orchestrator reads `current.status`
+    // both before and after the update, and if it shares a reference with the
+    // in-place mutated state.verification, the post-update read will look like
+    // status didn't change and skip the notification.
+    client.providerIdentityVerification.findUnique = vi.fn(async () => ({ ...client.state.verification })) as unknown as typeof client.providerIdentityVerification.findUnique
+
+    await transitionIdentityVerification({
+      verificationId: 'ver_1',
+      toStatus: 'EXPIRED',
+    }, client)
+
+    await flushNotifyMicrotasks()
+
+    expect(mocks.sendText).toHaveBeenCalledTimes(1)
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      '+27711111111',
+      expect.stringContaining('expired'),
+    )
+  })
+
+  it('suppresses the expiry notification when a PASSED verification is cleaned up to EXPIRED', async () => {
+    // Didit session cleanup cron can transition PASSED → EXPIRED. The provider
+    // has already received the PASSED confirmation; sending the generic "your
+    // session expired" copy on top of that is confusing and erodes trust.
+    const client = makeClient({ status: 'PASSED' })
+    client.providerIdentityVerification.findUnique = vi.fn(async () => ({ ...client.state.verification })) as unknown as typeof client.providerIdentityVerification.findUnique
+
+    await transitionIdentityVerification({
+      verificationId: 'ver_1',
+      toStatus: 'EXPIRED',
+    }, client)
+
+    await flushNotifyMicrotasks()
+
+    expect(mocks.sendText).not.toHaveBeenCalled()
   })
 })
 
