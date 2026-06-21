@@ -25,6 +25,7 @@ const STATIC_ROUTES = [
   "/for-providers",
   "/for-workers",
   "/how-it-works",
+  "/onboarding",
   "/pricing",
   "/privacy",
   "/services",

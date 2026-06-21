@@ -203,9 +203,15 @@ function buildCustomerFirstTouchStamp(first: AttributionSnapshot | null | undefi
   if (first.fbclid) stamp.firstTouchFbclid = first.fbclid
   if (first.referrer) stamp.firstTouchReferrer = first.referrer
   if (first.landing_path) stamp.firstTouchLandingPath = first.landing_path
-  const at = safeIsoToDate(first.captured_at)
-  if (at) stamp.firstTouchAt = at
-  return Object.keys(stamp).length > 0 ? stamp : null
+  // Only stamp when there's real attribution to record.
+  if (Object.keys(stamp).length === 0) return null
+  // Always set firstTouchAt whenever we write a stamp: it is the idempotency
+  // marker the updateMany guard below keys on. Falling back to "now" when the
+  // snapshot has no capture time (e.g. legacy-migrated first-touch, or a
+  // click-id-only touch with no utm_source) is what stops every later booking
+  // from re-stamping — and from overwriting the original first-touch values.
+  stamp.firstTouchAt = safeIsoToDate(first.captured_at) ?? new Date()
+  return stamp
 }
 
 function getExplicitRequestDeadline(params: CreateJobRequestParams) {
@@ -420,12 +426,15 @@ export async function createJobRequest(
     }
 
     // Stamp first-touch acquisition attribution on the Customer record. Race-
-    // safe: the `firstTouchSource: null` guard means a concurrent request that
-    // also stamps the same customer is a silent no-op.
+    // safe and write-once: the `firstTouchAt: null` guard means a concurrent or
+    // later request that also stamps the same customer is a silent no-op. We
+    // guard on firstTouchAt (always populated when a stamp is written) rather
+    // than firstTouchSource, which can legitimately be null for a click-id-only
+    // first touch and would otherwise let later touches overwrite it.
     const customerFirstTouchStamp = buildCustomerFirstTouchStamp(params.attribution?.first_touch ?? null)
     if (customerFirstTouchStamp) {
       await tx.customer.updateMany({
-        where: { id: customer.id, firstTouchSource: null },
+        where: { id: customer.id, firstTouchAt: null },
         data: customerFirstTouchStamp,
       })
     }
