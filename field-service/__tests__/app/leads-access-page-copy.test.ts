@@ -78,4 +78,25 @@ describe('signed provider lead page copy', () => {
     expect(source).toContain('plannedArrivalEnd: jr.match?.plannedArrivalEnd')
     expect(source).toContain('fallback: deriveDefaultArrivalWindow(customerAvailability)')
   })
+
+  it('maps KYC_REQUIRED reason to a stable accept error code', () => {
+    // acceptErrorCode is the central reason→errorCode translator used when an
+    // accept attempt fails. acceptAssignmentOffer can now return KYC_REQUIRED
+    // distinct from PROVIDER_NOT_APPROVED, so the switch must surface that
+    // reason as its own stable code rather than falling through to the
+    // catch-all LEAD_ACCEPTANCE_FAILED bucket.
+    expect(source).toMatch(/case 'KYC_REQUIRED':\s*\n\s*return 'KYC_REQUIRED'/)
+  })
+
+  it('shows KYC-specific copy when the accept attempt is blocked on identity verification', () => {
+    // KYC_REQUIRED must redirect with a dedicated error key (not the generic
+    // catch-all) so the provider sees actionable copy pointing at the
+    // WhatsApp verification link instead of "your account is not approved".
+    expect(source).toMatch(/result\.reason === 'KYC_REQUIRED'/)
+    expect(source).toContain("errorCode: 'KYC_REQUIRED'")
+    expect(source).toContain('Identity verification required before you can accept leads.')
+    // The render block must filter the catch-all so the KYC branch renders its
+    // own callout instead of falling through to the generic error panel.
+    expect(source).toMatch(/resolvedSearchParams\.error === 'kyc'/)
+  })
 })
