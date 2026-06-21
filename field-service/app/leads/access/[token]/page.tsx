@@ -67,6 +67,8 @@ function acceptErrorCode(reason: string) {
       return 'INSUFFICIENT_CREDITS'
     case 'IDENTITY_NOT_VERIFIED':
       return 'IDENTITY_NOT_VERIFIED'
+    case 'KYC_REQUIRED':
+      return 'KYC_REQUIRED'
     case 'PROVIDER_NOT_APPROVED':
       return 'PROVIDER_NOT_APPROVED'
     case 'EXPIRED':
@@ -218,6 +220,22 @@ async function acceptLeadWithToken(formData: FormData) {
         action: 'accept',
         traceId,
         message: 'Verify your identity before accepting this selected job.',
+        creditDeducted: false,
+      })
+    }
+    // KYC_REQUIRED is distinct from PROVIDER_NOT_APPROVED: the provider's
+    // marketplace status is fine but they haven't completed identity
+    // verification. Without this branch the catch-all below maps it to a
+    // generic "could not be accepted" message instead of pointing the
+    // provider at the WhatsApp verification flow.
+    if (result.reason === 'KYC_REQUIRED') {
+      redirectLeadActionError(token, {
+        error: 'kyc',
+        errorCode: 'KYC_REQUIRED',
+        action: 'accept',
+        traceId,
+        message:
+          'Identity verification required before you can accept leads. Open the verification link in your WhatsApp messages, or contact support.',
         creditDeducted: false,
       })
     }
@@ -1035,8 +1053,24 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
+        {resolvedSearchParams.error === 'kyc' && (
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
+            <p className="font-medium">Identity verification required before you can accept leads.</p>
+            <p className="mt-1">
+              Open the verification link in your WhatsApp messages, or contact support. No credit was deducted and customer contact details remain hidden.
+            </p>
+            <Button asChild size="sm" variant="outline" className="mt-3">
+              <Link href="/provider/verification">Verify identity</Link>
+            </Button>
+            <p className="mt-2 text-xs">
+              Error code: KYC_REQUIRED
+              {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
+            </p>
+          </div>
+        )}
+
         {resolvedSearchParams.error &&
-          !['credits', 'inactive', 'approval', 'identity'].includes(resolvedSearchParams.error) && (
+          !['credits', 'inactive', 'approval', 'identity', 'kyc'].includes(resolvedSearchParams.error) && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               <p className="font-medium">
                 {resolvedSearchParams.action === 'decline'
