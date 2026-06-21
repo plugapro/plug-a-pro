@@ -2431,6 +2431,12 @@ export async function acceptAssignmentOffer(params: {
           // "you still need to verify your identity").
           kycStatus: true,
           createdAt: true,
+          // F2: read kycOverriddenAt so the TRUST+ admin override
+          // (setProviderKycOverrideAction) actually unblocks lead-accept.
+          // Without this the override action wrote a flag the matching path
+          // never consulted, and the operator got the misleading "set
+          // kycOverrideReason and retry" loop even after doing so.
+          kycOverriddenAt: true,
         },
       })
       if (!provider) return { ok: false as const, reason: 'FORBIDDEN' }
@@ -2448,7 +2454,9 @@ export async function acceptAssignmentOffer(params: {
       // KYC pre-check. Mirrors the unlock-time gate in
       // lib/lead-unlocks.ts#assertProviderCanUnlock, but distinct from the
       // approval check above so the failure reason stays specific. We honor
-      // the legacy grace flag the same way checkProviderCanUnlockLead does.
+      // the legacy grace flag the same way checkProviderCanUnlockLead does
+      // AND the admin override (kycOverriddenAt) the same way
+      // checkCanBeApproved does.
       const kycGraceEnabledForAccept = await isEnabled(KYC_GRACE_FLAG)
       const kycEligibility = checkProviderCanUnlockLead(
         {
@@ -2457,6 +2465,7 @@ export async function acceptAssignmentOffer(params: {
           status: provider.status,
           kycStatus: provider.kycStatus ?? 'NOT_STARTED',
           createdAt: provider.createdAt ?? null,
+          kycOverriddenAt: provider.kycOverriddenAt ?? null,
         },
         kycGraceEnabledForAccept,
       )
@@ -3456,6 +3465,12 @@ export async function manualOverrideAssignment(params: {
       status: true,
       kycStatus: true,
       createdAt: true,
+      // F2: include kycOverriddenAt so a TRUST+ admin who already cleared the
+      // provider via setProviderKycOverrideAction can actually force-assign
+      // them. Without it the override flag is written but ignored here, and
+      // the admin sees ManualOverrideKycBlockedError telling them to do the
+      // very thing they just did.
+      kycOverriddenAt: true,
     },
   })
   if (overriddenProvider) {
@@ -3467,6 +3482,7 @@ export async function manualOverrideAssignment(params: {
         status: overriddenProvider.status,
         kycStatus: overriddenProvider.kycStatus ?? 'NOT_STARTED',
         createdAt: overriddenProvider.createdAt ?? null,
+        kycOverriddenAt: overriddenProvider.kycOverriddenAt ?? null,
       },
       kycGraceEnabledForOverride,
     )

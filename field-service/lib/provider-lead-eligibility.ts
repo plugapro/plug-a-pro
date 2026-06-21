@@ -46,13 +46,22 @@ export type ProviderUnlockEligibilitySubject = ProviderLeadEligibilitySubject & 
   kycStatus: string
   // Sign-up time, used by the scoped legacy KYC grace to grandfather pre-cutoff providers.
   createdAt?: Date | null
+  // TRUST+ admin escape hatch (setProviderKycOverrideAction). When set the
+  // operator has explicitly cleared this provider to bypass the KYC gate; the
+  // override is audited separately via crudAction. Mirrors checkCanBeApproved
+  // semantics so a single mental model applies at approval-time AND at
+  // matching/unlock-time. Optional so existing callers that omit the field
+  // keep their current (pre-override) behaviour.
+  kycOverriddenAt?: Date | null
 }
 
 /**
  * Credit-spend / unlock gate. Builds on the approval gate above and additionally
  * requires KYC verification before a lead can be unlocked. active/verified/status
  * are marketplace approval flags, not identity guarantees, so unlocking a lead -
- * which exposes customer PII and spends a credit - requires kycStatus === 'VERIFIED'.
+ * which exposes customer PII and spends a credit - requires kycStatus === 'VERIFIED'
+ * UNLESS a TRUST+ admin has set kycOverriddenAt (audited escape hatch — same
+ * pass order as checkCanBeApproved).
  */
 export function checkProviderCanUnlockLead(
   provider: ProviderUnlockEligibilitySubject,
@@ -62,6 +71,13 @@ export function checkProviderCanUnlockLead(
   | { ok: false; code: ProviderLeadEligibilityCode } {
   const approval = checkPhaseOneLeadDetailEligibility(provider)
   if (!approval.ok) return approval
+
+  // Admin override is always sufficient — even for REJECTED/EXPIRED. The audit
+  // trail (who set it, when, why) lives on the AuditLog + AdminAuditEvent rows
+  // written by setProviderKycOverrideAction via crudAction(). This mirrors
+  // checkCanBeApproved so an admin who has cleared a provider does not get
+  // tripped at matching/unlock-time by a stale unlock-side gate.
+  if (provider.kycOverriddenAt) return { ok: true }
 
   if (
     provider.kycStatus !== 'VERIFIED' &&

@@ -232,3 +232,98 @@ describe('checkProviderCanUnlockLead (regression — unchanged behavior)', () =>
     expect(result.ok).toBe(true)
   })
 })
+
+describe('checkProviderCanUnlockLead — admin KYC override (F2 closure)', () => {
+  // The TRUST+ admin override path (setProviderKycOverrideAction) writes
+  // kycOverriddenAt/By/Reason. checkCanBeApproved already honours it; the
+  // matching-time gates were silently ignoring it because the unlock
+  // eligibility subject did not include the field. These tests pin that
+  // behaviour so the bypass cannot regress.
+
+  const approved = {
+    active: true as const,
+    verified: true as const,
+    status: 'ACTIVE' as const,
+  }
+  const overriddenAt = new Date('2026-06-18T00:00:00.000Z')
+
+  it('passes NOT_STARTED provider when kycOverriddenAt is set', () => {
+    const result = checkProviderCanUnlockLead(
+      {
+        ...approved,
+        kycStatus: 'NOT_STARTED',
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        kycOverriddenAt: overriddenAt,
+      },
+      false,
+    )
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('passes REJECTED provider when kycOverriddenAt is set (operator escape hatch with audit)', () => {
+    const result = checkProviderCanUnlockLead(
+      {
+        ...approved,
+        kycStatus: 'REJECTED',
+        createdAt: new Date('2026-05-01T00:00:00.000Z'),
+        kycOverriddenAt: overriddenAt,
+      },
+      false,
+    )
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('passes EXPIRED provider when kycOverriddenAt is set', () => {
+    const result = checkProviderCanUnlockLead(
+      {
+        ...approved,
+        kycStatus: 'EXPIRED',
+        createdAt: new Date('2026-05-01T00:00:00.000Z'),
+        kycOverriddenAt: overriddenAt,
+      },
+      false,
+    )
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('still blocks SUSPENDED status even with override (override is for KYC, not for marketplace approval)', () => {
+    const result = checkProviderCanUnlockLead(
+      {
+        active: true,
+        verified: true,
+        status: 'SUSPENDED',
+        kycStatus: 'NOT_STARTED',
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        kycOverriddenAt: overriddenAt,
+      },
+      false,
+    )
+    expect(result).toEqual({ ok: false, code: 'PROVIDER_NOT_ACTIVE' })
+  })
+
+  it('treats undefined kycOverriddenAt as absent (back-compat default)', () => {
+    const result = checkProviderCanUnlockLead(
+      {
+        ...approved,
+        kycStatus: 'REJECTED',
+        createdAt: new Date('2026-05-01T00:00:00.000Z'),
+        // kycOverriddenAt omitted entirely
+      },
+      false,
+    )
+    expect(result).toEqual({ ok: false, code: 'KYC_REQUIRED' })
+  })
+
+  it('treats null kycOverriddenAt as absent', () => {
+    const result = checkProviderCanUnlockLead(
+      {
+        ...approved,
+        kycStatus: 'REJECTED',
+        createdAt: new Date('2026-05-01T00:00:00.000Z'),
+        kycOverriddenAt: null,
+      },
+      false,
+    )
+    expect(result).toEqual({ ok: false, code: 'KYC_REQUIRED' })
+  })
+})
