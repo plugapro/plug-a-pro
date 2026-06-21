@@ -224,36 +224,53 @@ async function approveApplication(formData: FormData) {
   // they need to know the action did NOT activate the provider. Pre-check
   // here against the application's linked provider (if any) so we can show
   // a clear admin message and bail before any auth/DB writes.
+  //
+  // F1 — web-resume / first-time WhatsApp applications carry providerId=null
+  // at approval time. The previous condition (`kycRequired && app.providerId`)
+  // silently bypassed the gate for that path, then syncProviderRecord flipped
+  // verified=true → verified=false on its own KYC gate, leaving the admin
+  // with a "success" redirect and an inactive provider. Treat a missing
+  // linked provider as kycStatus='NOT_STARTED' so checkCanBeApproved blocks
+  // and the admin sees the kyc_required_for_approval banner.
   const kycRequired = await isKycRequiredForActivation()
-  if (kycRequired && app.providerId) {
-    const linkedProvider = await db.provider.findUnique({
-      where: { id: app.providerId },
-      select: {
-        kycStatus: true,
-        createdAt: true,
-        kycGraceUntil: true,
-        kycOverriddenAt: true,
-      },
-    })
-    if (linkedProvider) {
-      const kycGraceEnabled = await isEnabled(KYC_GRACE_FLAG)
-      const gate = checkCanBeApproved(
-        {
-          kycStatus: linkedProvider.kycStatus ?? 'NOT_STARTED',
-          createdAt: linkedProvider.createdAt ?? null,
-          kycGraceUntil: linkedProvider.kycGraceUntil ?? null,
-          kycOverriddenAt: linkedProvider.kycOverriddenAt ?? null,
+  if (kycRequired) {
+    let linkedProvider: {
+      kycStatus: string | null
+      createdAt: Date | null
+      kycGraceUntil: Date | null
+      kycOverriddenAt: Date | null
+    } | null = null
+    if (app.providerId) {
+      linkedProvider = await db.provider.findUnique({
+        where: { id: app.providerId },
+        select: {
+          kycStatus: true,
+          createdAt: true,
+          kycGraceUntil: true,
+          kycOverriddenAt: true,
         },
-        { kycRequired, kycGraceEnabled },
-      )
-      if (!gate.ok) {
-        console.warn('[applications] Approval blocked: provider has not completed KYC', {
+      })
+    }
+    const kycGraceEnabled = await isEnabled(KYC_GRACE_FLAG)
+    const gate = checkCanBeApproved(
+      {
+        kycStatus: linkedProvider?.kycStatus ?? 'NOT_STARTED',
+        createdAt: linkedProvider?.createdAt ?? null,
+        kycGraceUntil: linkedProvider?.kycGraceUntil ?? null,
+        kycOverriddenAt: linkedProvider?.kycOverriddenAt ?? null,
+      },
+      { kycRequired, kycGraceEnabled },
+    )
+    if (!gate.ok) {
+      console.warn(
+        '[applications] Approval blocked: provider has not completed KYC (or provider not yet linked)',
+        {
           applicationId: app.id,
           providerId: app.providerId,
-          kycStatus: linkedProvider.kycStatus,
-        })
-        redirect('/admin/applications?message=kyc_required_for_approval')
-      }
+          kycStatus: linkedProvider?.kycStatus ?? 'NOT_STARTED',
+        },
+      )
+      redirect('/admin/applications?message=kyc_required_for_approval')
     }
   }
 
