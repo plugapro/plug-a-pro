@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { db } from '@/lib/db'
 import { getRequiredDocumentKinds, isIdentityBasis, type IdentityDocumentKind } from '@/lib/identity-verification/types'
 import { logIdentityVerificationError, logIdentityVerificationEvent } from '@/lib/identity-verification/log'
 import { storeIdentityDocument } from '@/lib/identity-verification/storage'
 import { resolveProviderVerificationToken } from '@/lib/provider-verification-token'
 import { checkIdentityUploadLimit } from '@/lib/rate-limit'
+import { submitIdentityDocuments, submitIdentitySelfie } from '@/app/provider/verify/[token]/actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,6 +101,14 @@ export async function POST(request: NextRequest) {
       mimeType: file.type,
     })
 
+    await maybeAutoAdvanceAfterUpload({
+      verificationId: verification.id,
+      providerId: verification.providerId,
+      identityBasis: verification.identityBasis,
+      status: verification.status,
+      token,
+    })
+
     return jsonOrRedirect(
       request,
       returnTo,
@@ -115,6 +125,53 @@ export async function POST(request: NextRequest) {
       mimeType: file.type,
     })
     return jsonOrRedirect(request, returnTo, { ok: false, error: 'Could not store this file.' }, 400)
+  }
+}
+
+// After a successful upload, if this completes the current step's required
+// document set, transition the verification forward so the page renders the
+// next step on reload instead of asking the user to tap "Continue". Best-effort:
+// any failure is logged and swallowed so the manual "Continue" button on the
+// page remains as a fallback.
+async function maybeAutoAdvanceAfterUpload(input: {
+  verificationId: string
+  providerId: string | null
+  identityBasis: string | null
+  status: string
+  token: string
+}): Promise<void> {
+  if (input.status !== 'AWAITING_DOCUMENT' && input.status !== 'AWAITING_SELFIE') return
+  if (!isIdentityBasis(input.identityBasis)) return
+
+  const rows = await db.providerIdentityDocument.findMany({
+    where: { verificationId: input.verificationId, deletedAt: null },
+    select: { documentKind: true },
+  })
+  const uploaded = new Set(rows.map((r) => r.documentKind as IdentityDocumentKind))
+  const stepKinds = getRequiredDocumentKinds(input.identityBasis).filter((kind) =>
+    input.status === 'AWAITING_SELFIE' ? kind === 'SELFIE' : kind !== 'SELFIE',
+  )
+  if (stepKinds.length === 0) return
+  const stepComplete = stepKinds.every((kind) => uploaded.has(kind))
+  if (!stepComplete) return
+
+  try {
+    if (input.status === 'AWAITING_DOCUMENT') {
+      await submitIdentityDocuments(input.token)
+    } else {
+      await submitIdentitySelfie(input.token)
+    }
+    logIdentityVerificationEvent('upload.auto_advance.succeeded', {
+      verificationId: input.verificationId,
+      providerId: input.providerId,
+      status: input.status,
+    })
+  } catch (error) {
+    logIdentityVerificationError('upload.auto_advance.failed', error, {
+      verificationId: input.verificationId,
+      providerId: input.providerId,
+      status: input.status,
+    })
   }
 }
 
