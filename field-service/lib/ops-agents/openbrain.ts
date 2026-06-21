@@ -185,3 +185,77 @@ export function captureEscalation(input: EscalationInput): Promise<void> {
     },
   })
 }
+
+export interface ReviewInput {
+  recommendationId: string
+  agentKey: OpsAgentKey
+  entityType: string
+  entityId: string
+  /** New OpsRecommendationStatus after the admin decision. */
+  decision: string
+  adminId: string
+  occurredAtIso: string
+}
+
+/** An admin acknowledged / actioned / dismissed a recommendation. */
+export function captureReview(input: ReviewInput): Promise<void> {
+  return safeCapture({
+    name: 'ops.recommendation.reviewed',
+    actorType: 'admin',
+    actorRef: input.adminId,
+    occurredAt: input.occurredAtIso,
+    affectedFlow: 'ops_agents',
+    entityRefs: {
+      recommendationId: input.recommendationId,
+      [entityRefKey(input.entityType)]: input.entityId,
+    },
+    metadata: {
+      agentKey: input.agentKey,
+      entityType: input.entityType,
+      decision: input.decision,
+    },
+  })
+}
+
+export interface DraftDecisionInput {
+  draftId: string
+  recommendationId: string
+  agentKey: OpsAgentKey
+  recipientRole: string
+  /** 'approved' | 'rejected' | 'sent' | 'blocked' */
+  decision: 'approved' | 'rejected' | 'sent' | 'blocked'
+  adminId?: string | null
+  /** For sent drafts: the resulting MessageEvent id (never the body). */
+  messageEventId?: string | null
+  reason?: string | null
+  occurredAtIso: string
+}
+
+/** An admin approved/rejected a draft, or a draft was sent / blocked by policy. */
+export function captureDraftDecision(input: DraftDecisionInput): Promise<void> {
+  const name =
+    input.decision === 'sent'
+      ? 'ops.draft.sent'
+      : input.decision === 'blocked'
+        ? 'ops.draft.blocked'
+        : 'ops.recommendation.reviewed'
+  return safeCapture({
+    name,
+    actorType: input.adminId ? 'admin' : 'system',
+    actorRef: input.adminId ?? null,
+    occurredAt: input.occurredAtIso,
+    affectedFlow: 'ops_agents',
+    // No raw phone or message body ever — only ids and the decision.
+    entityRefs: {
+      draftId: input.draftId,
+      recommendationId: input.recommendationId,
+    },
+    metadata: {
+      agentKey: input.agentKey,
+      recipientRole: input.recipientRole,
+      decision: input.decision,
+      messageEventId: input.messageEventId ?? null,
+      reason: input.reason ?? null,
+    },
+  })
+}

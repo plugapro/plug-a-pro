@@ -50,6 +50,17 @@ export interface AgentDefinition<TCandidate> {
   evaluate: Evaluator<TCandidate>
   /** Optional WhatsApp policy gate. When absent, drafts default to PENDING_APPROVAL. */
   policyCheck?: DraftPolicyCheck
+  /**
+   * Optional best-effort side-effect to persist agent-specific artifacts
+   * (e.g. ProviderProfileScore, RequestFrictionSignal) after the recommendation
+   * is stored. A throw here is recorded as a soft error (run → PARTIAL) but does
+   * NOT prevent the OpenBrain capture for that candidate.
+   */
+  persistArtifacts?: (args: {
+    evaluation: Evaluation
+    recommendationId: string
+    nowIso: string
+  }) => Promise<void>
 }
 
 export interface RunAgentOptions {
@@ -211,6 +222,14 @@ export async function runAgent<TCandidate>(
         const row = buildDraftRow(evaluation.draft, status, policy.reason ?? null)
         const draftRes = await store.replaceDraft(upsert.id, row)
         if (draftRes.created && status === 'PENDING_APPROVAL') draftsCreated++
+      }
+
+      if (def.persistArtifacts) {
+        try {
+          await def.persistArtifacts({ evaluation, recommendationId: upsert.id, nowIso })
+        } catch (e) {
+          errors.push(`${candidateLabel(candidate, i)}: persistArtifacts: ${errMessage(e)}`)
+        }
       }
 
       void captureRecommendation({

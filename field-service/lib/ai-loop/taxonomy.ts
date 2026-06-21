@@ -34,6 +34,7 @@ export const EVENT_CATEGORIES = [
   'campaign',
   'support',
   'improvement_candidate',
+  'workflow',
 ] as const
 
 export type EventCategory = (typeof EVENT_CATEGORIES)[number]
@@ -485,7 +486,9 @@ export const EVENT_DEFINITIONS: Record<string, EventDefinition> = {
     actorTypes: ['system'],
     openBrainEligible: true,
     improvementCandidateEligible: true,
-    redactionProfile: 'standard',
+    // strict: defence-in-depth so an over-length unknown string (e.g. a future
+    // evaluator summary that interpolates a name) is summarised, not leaked.
+    redactionProfile: 'strict',
     description: 'An ops agent produced or refreshed a recommendation for admin review.',
   }),
   'ops.recommendation.reviewed': def({
@@ -525,8 +528,25 @@ export const EVENT_DEFINITIONS: Record<string, EventDefinition> = {
     actorTypes: ['system'],
     openBrainEligible: true,
     improvementCandidateEligible: true,
-    redactionProfile: 'standard',
+    // strict: the escalation carries the evaluator summary as `reason`; summarise
+    // any over-length unknown string rather than forwarding it verbatim.
+    redactionProfile: 'strict',
     description: 'An ops agent escalated an entity needing urgent ops attention.',
+  }),
+
+  // ── workflow funnel event log ────────────────────────────────────────────────
+  // One umbrella event for the durable WorkflowEvent stream (recordWorkflowEvent).
+  // The concrete funnel type travels in metadata.workflowEventType. Strict
+  // redaction because callers across the funnel may pass through free text.
+  'workflow.event': def({
+    name: 'workflow.event',
+    category: 'workflow',
+    defaultSeverity: 'info',
+    actorTypes: ['customer', 'provider', 'admin', 'system', 'anonymous'],
+    openBrainEligible: true,
+    improvementCandidateEligible: false,
+    redactionProfile: 'strict',
+    description: 'A key operational funnel event was recorded (provider/request/match/job/payment lifecycle).',
   }),
 }
 

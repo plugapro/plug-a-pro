@@ -3327,3 +3327,47 @@ model OpsDailyBriefing {
   @@unique([forDate])
   @@map("ops_daily_briefings")
 }
+
+// ─── Workflow event log (Ops Agent Workflow Team) ────────────────────────────
+// Durable funnel event stream the ops agents read for friction/matching signal.
+// This is an additive operational log, NOT the audit log (AuditLog) and NOT the
+// AI-loop observation store — recordWorkflowEvent() writes a row here AND mirrors
+// a redacted copy to OpenBrain (lib/ai-loop) best-effort.
+enum WorkflowEventType {
+  PROVIDER_APPLICATION_SUBMITTED
+  PROVIDER_PROFILE_UPDATED
+  SERVICE_REQUEST_STARTED
+  SERVICE_REQUEST_STEP_COMPLETED
+  SERVICE_REQUEST_ABANDONED
+  SERVICE_REQUEST_SUBMITTED
+  SERVICE_REQUEST_DECLINED
+  SERVICE_REQUEST_CANCELLED
+  MATCH_CREATED
+  PROVIDER_ASSIGNED
+  PROVIDER_DECLINED_REQUEST
+  CUSTOMER_ACCEPTED_MATCH
+  JOB_SCHEDULED
+  JOB_STARTED
+  JOB_COMPLETED
+  INVOICE_ISSUED
+  PAYMENT_FAILED
+  PAYMENT_COMPLETED
+  REVIEW_SUBMITTED
+}
+
+model WorkflowEvent {
+  id         String            @id @default(cuid())
+  eventType  WorkflowEventType
+  actorType  String // customer | provider | admin | system | anonymous
+  actorId    String? // internal id of the actor; never a raw phone
+  entityType String // PROVIDER_APPLICATION | PROVIDER | JOB_REQUEST | MATCH | BOOKING | PAYMENT | ...
+  entityId   String
+  source     String // e.g. "pwa" | "whatsapp" | "admin" | "cron" | "system"
+  metadata   Json              @default("{}") // safe, structured; no raw PII
+  occurredAt DateTime          @default(now())
+
+  @@index([eventType, occurredAt])
+  @@index([entityType, entityId])
+  @@index([occurredAt])
+  @@map("workflow_events")
+}
