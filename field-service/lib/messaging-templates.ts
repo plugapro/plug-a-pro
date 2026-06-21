@@ -340,6 +340,48 @@ export const TEMPLATES = {
       'Hi {{1}}, please complete the following on your profile:\n{{2}}\nA complete profile helps us assess you properly and gives you a better chance of being considered for work.',
   },
 
+  // ─── In-flight identity-verification re-nudge (2026-06-21) ──────────────
+  // Sent 24h after a provider stalls mid-verification (CONSENTED, AWAITING_*).
+  // Tighter than the 7-day Quality Uplift spacing because these providers
+  // already showed intent and the verification flow has known mid-flow drops
+  // (Wave 1 of admin.quality.uplift: 22 read / 3 started / 0 completed).
+  // All three URL buttons take {{1}} = signed verification token suffix
+  // appended to /provider/verify/. Sender mints a fresh token via
+  // issueProviderIdentityVerificationLink (fail_safe ON resumes the row).
+  provider_verification_resume_consent: {
+    name: 'provider_verification_resume_consent',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'In-flight re-nudge for providers in CONSENTED / AWAITING_IDENTIFIER / RETRY_REQUIRED. Asks them to finish entering identity details.',
+    // {{1}} provider first name; button (url, index 0): {{1}} signed verification token suffix
+    example:
+      'Hi {{1}}, your Plug A Pro identity verification is paused. Tap the button below to add your document details — takes about 60 seconds.',
+  },
+
+  provider_verification_resume_document: {
+    name: 'provider_verification_resume_document',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'In-flight re-nudge for providers in AWAITING_DOCUMENT. Asks them to upload the specific document the identity basis requires.',
+    // {{1}} provider first name, {{2}} human-readable document label (e.g. "SA ID");
+    // button (url, index 0): {{1}} signed verification token suffix
+    example:
+      'Hi {{1}}, your Plug A Pro identity verification just needs your {{2}} photo. Tap the button below to upload it.',
+  },
+
+  provider_verification_resume_selfie: {
+    name: 'provider_verification_resume_selfie',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'In-flight re-nudge for providers in AWAITING_SELFIE. Asks them to take the final selfie to complete verification.',
+    // {{1}} provider first name; button (url, index 0): {{1}} signed verification token suffix
+    example:
+      'Hi {{1}}, one quick selfie left to complete your Plug A Pro identity verification. Tap the button below to take it.',
+  },
+
   technician_job_reminder: {
     name: 'technician_job_reminder',
     language: 'en_ZA',
