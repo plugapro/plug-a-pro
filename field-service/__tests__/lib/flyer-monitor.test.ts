@@ -10,13 +10,13 @@ import {
 
 describe('flyer monitor phone handling', () => {
   it('normalizes plus, bare 27 and local 0-prefixed SA phones', () => {
-    expect(normalizePhone('+27 77 392 3802')).toBe('+27773923802')
-    expect(normalizePhone('27773923802')).toBe('+27773923802')
-    expect(normalizePhone('0773923802')).toBe('+27773923802')
+    expect(normalizePhone('+27 00 000 0001')).toBe('+27000000001')
+    expect(normalizePhone('27000000001')).toBe('+27000000001')
+    expect(normalizePhone('0000000001')).toBe('+27000000001')
   })
 
   it('masks phones without leaking raw 10 digit numbers', () => {
-    expect(maskPhone('+27773923802')).toBe('+27****3802')
+    expect(maskPhone('+27000000001')).toBe('+27****0001')
   })
 })
 
@@ -44,7 +44,7 @@ describe('analyzeFlyerMonitorRows', () => {
     const rows: FlyerMonitorRow[] = [
       {
         stage: 'otp_sent',
-        phone: '+27773923802',
+        phone: '+27000000001',
         at: '2026-05-29T08:00:00.000Z',
         detail: 'sent',
         failureCode: null,

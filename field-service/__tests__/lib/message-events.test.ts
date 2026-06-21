@@ -20,7 +20,7 @@ describe('outbound message event cohort guard', () => {
     const { logOutboundMessage } = await import('@/lib/message-events')
 
     await logOutboundMessage({
-      to: '+27773923802',
+      to: '+27000000001',
       templateName: 'test-template',
       body: 'Internal test',
       metadata: { isTestRequest: true, traceId: 'trace-1' },
@@ -28,7 +28,7 @@ describe('outbound message event cohort guard', () => {
 
     expect(mockDb.messageEvent.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        to: '+27773923802',
+        to: '+27000000001',
         status: 'SENT',
         isTestEvent: true,
         cohortName: 'internal_staff_test',
@@ -61,7 +61,7 @@ describe('outbound message event cohort guard', () => {
     const { logOutboundMessage } = await import('@/lib/message-events')
 
     await expect(logOutboundMessage({
-      to: '+27773923802',
+      to: '+27000000001',
       templateName: 'live-template',
       body: 'Live job',
       metadata: { isTestRequest: false, traceId: 'trace-3' },
@@ -69,7 +69,7 @@ describe('outbound message event cohort guard', () => {
 
     expect(mockDb.messageEvent.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        to: '+27773923802',
+        to: '+27000000001',
         status: 'FAILED',
         failureReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
         isTestEvent: false,
