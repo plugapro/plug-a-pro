@@ -343,6 +343,54 @@ const TEMPLATES = [
       },
     ],
   },
+  // ─── In-flight verification re-nudge (2026-06-21) ────────────────────────
+  // Sent 24h after a provider stalls mid-verification. Each URL button takes
+  // {{1}} = signed verification token suffix appended to /provider/verify/.
+  {
+    name: 'provider_verification_resume_consent',
+    category: 'UTILITY',
+    // {{1}} provider first name
+    body: 'Hi {{1}}, your Plug A Pro identity verification is paused. Tap the button below to add your document details - takes about 60 seconds.',
+    examples: ['Sipho'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Resume verification',
+        url: 'https://app.plugapro.co.za/provider/verify/{{1}}',
+        example: ['demo-verification-token'],
+      },
+    ],
+  },
+  {
+    name: 'provider_verification_resume_document',
+    category: 'UTILITY',
+    // {{1}} provider first name, {{2}} human-readable document label
+    body: 'Hi {{1}}, your Plug A Pro identity verification just needs your {{2}} photo. Tap the button below to upload it.',
+    examples: ['Sipho', 'SA ID'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Upload document',
+        url: 'https://app.plugapro.co.za/provider/verify/{{1}}',
+        example: ['demo-verification-token'],
+      },
+    ],
+  },
+  {
+    name: 'provider_verification_resume_selfie',
+    category: 'UTILITY',
+    // {{1}} provider first name
+    body: 'Hi {{1}}, one quick selfie left to complete your Plug A Pro identity verification. Tap the button below to take it.',
+    examples: ['Sipho'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Take selfie',
+        url: 'https://app.plugapro.co.za/provider/verify/{{1}}',
+        example: ['demo-verification-token'],
+      },
+    ],
+  },
   {
     name: 'please_confirm_with_provider',
     category: 'UTILITY',
