@@ -4,15 +4,18 @@ import { vi, it, expect, describe, beforeEach } from 'vitest'
 // assert the critical "approve does NOT send" invariant.
 const calls: { draftUpdate?: Record<string, unknown>; recUpdate?: Record<string, unknown> } = {}
 
+// The status the draft is in when loaded — tests vary it to exercise the guard.
+let draftStatus = 'PENDING_APPROVAL'
+
 const mockTx = () => ({
   opsDraftMessage: {
-    findUniqueOrThrow: vi.fn().mockResolvedValue({
+    findUniqueOrThrow: vi.fn(async () => ({
       id: 'draft-1',
-      status: 'PENDING_APPROVAL',
+      status: draftStatus,
       recommendationId: 'rec-1',
       recipientRole: 'PROVIDER',
       recommendation: { agentKey: 'PROVIDER_APPLICATION_REVIEW' },
-    }),
+    })),
     update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
       calls.draftUpdate = data
       return { id: 'draft-1', recommendationId: 'rec-1', recipientRole: 'PROVIDER' }
@@ -41,6 +44,8 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/flags', () => ({ isEnabled: vi.fn().mockResolvedValue(true) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
+import { isEnabled } from '@/lib/flags'
+
 const captureDraftDecision = vi.fn(async (_input: Record<string, unknown>) => {})
 const captureReview = vi.fn(async (_input: Record<string, unknown>) => {})
 vi.mock('@/lib/ops-agents', () => ({
@@ -54,6 +59,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   calls.draftUpdate = undefined
   calls.recUpdate = undefined
+  draftStatus = 'PENDING_APPROVAL'
+  vi.mocked(isEnabled).mockResolvedValue(true)
 })
 
 describe('decideDraftAction', () => {
@@ -77,6 +84,20 @@ describe('decideDraftAction', () => {
     expect(calls.draftUpdate?.status).toBe('REJECTED')
     expect(calls.draftUpdate?.failureReason).toBe('off tone')
     expect(captureDraftDecision.mock.calls[0][0]).toMatchObject({ decision: 'rejected' })
+  })
+
+  it('refuses to re-decide a draft that is not PENDING_APPROVAL (no write)', async () => {
+    draftStatus = 'APPROVED'
+    const { decideDraftAction } = await import('@/app/(admin)/admin/ops-intelligence/actions')
+    await expect(decideDraftAction({ draftId: 'draft-1', decision: 'APPROVE' })).rejects.toThrow()
+    expect(calls.draftUpdate).toBeUndefined()
+  })
+
+  it('is blocked when the admin.ops_intelligence flag is disabled (no write)', async () => {
+    vi.mocked(isEnabled).mockResolvedValue(false)
+    const { decideDraftAction } = await import('@/app/(admin)/admin/ops-intelligence/actions')
+    await expect(decideDraftAction({ draftId: 'draft-1', decision: 'APPROVE' })).rejects.toThrow()
+    expect(calls.draftUpdate).toBeUndefined()
   })
 })
 

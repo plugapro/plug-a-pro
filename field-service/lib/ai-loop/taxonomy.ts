@@ -486,7 +486,9 @@ export const EVENT_DEFINITIONS: Record<string, EventDefinition> = {
     actorTypes: ['system'],
     openBrainEligible: true,
     improvementCandidateEligible: true,
-    redactionProfile: 'standard',
+    // strict: defence-in-depth so an over-length unknown string (e.g. a future
+    // evaluator summary that interpolates a name) is summarised, not leaked.
+    redactionProfile: 'strict',
     description: 'An ops agent produced or refreshed a recommendation for admin review.',
   }),
   'ops.recommendation.reviewed': def({
@@ -526,7 +528,9 @@ export const EVENT_DEFINITIONS: Record<string, EventDefinition> = {
     actorTypes: ['system'],
     openBrainEligible: true,
     improvementCandidateEligible: true,
-    redactionProfile: 'standard',
+    // strict: the escalation carries the evaluator summary as `reason`; summarise
+    // any over-length unknown string rather than forwarding it verbatim.
+    redactionProfile: 'strict',
     description: 'An ops agent escalated an entity needing urgent ops attention.',
   }),
 

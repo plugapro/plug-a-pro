@@ -9,16 +9,17 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
-import { crudAction } from '@/lib/crud-action'
+import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { requireAdmin } from '@/lib/auth'
-import { db } from '@/lib/db'
-import { isEnabled } from '@/lib/flags'
 import { captureReview, captureDraftDecision } from '@/lib/ops-agents'
 import { runAgent } from '@/lib/ops-agents'
 import { PHASE_1_AGENTS } from '@/lib/ops-agents/agents'
 import type { OpsAgentKey, OpsRecommendationStatus } from '@prisma/client'
 
 const FLAG = 'admin.ops_intelligence'
+// Ops-intelligence triage roles. roleExact is used on every action so this list
+// is authoritative — FINANCE (which outranks OPS in the hierarchy) is NOT
+// admitted. OWNER is always allowed as break-glass by crudAction.
 const ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
 const PATH = '/admin/ops-intelligence'
 
@@ -40,6 +41,7 @@ export async function reviewRecommendationAction(input: ReviewInput) {
     entityId: input.recommendationId,
     action: 'ops.recommendation.review',
     requiredRole: [...ROLES],
+    roleExact: true,
     requiredFlag: FLAG,
     schema: ReviewSchema,
     input,
@@ -103,6 +105,7 @@ export async function decideDraftAction(input: DraftDecisionInput) {
     entityId: input.draftId,
     action: approve ? 'ops.draft.approve' : 'ops.draft.reject',
     requiredRole: [...ROLES],
+    roleExact: true,
     requiredFlag: FLAG,
     schema: DraftDecisionSchema,
     input,
@@ -112,8 +115,14 @@ export async function decideDraftAction(input: DraftDecisionInput) {
         where: { id: data.draftId },
         select: { id: true, status: true, recommendationId: true, recipientRole: true, recommendation: { select: { agentKey: true } } },
       })
-      // Only PENDING_APPROVAL drafts are decidable. Approving sets APPROVED
-      // (queued, NOT sent); sending is intentionally out of Phase 1 scope.
+      // Only PENDING_APPROVAL drafts are decidable. Guard against re-deciding an
+      // already APPROVED/REJECTED/SENT draft — this is what keeps a previously
+      // rejected (or, in a later phase, sent) draft from being flipped back to
+      // APPROVED. Hardens the no-send invariant.
+      if (existing.status !== 'PENDING_APPROVAL') {
+        throw new CrudActionError('CONFLICT', `Draft is ${existing.status}, not PENDING_APPROVAL — cannot ${approve ? 'approve' : 'reject'}.`)
+      }
+      // Approving sets APPROVED (queued, NOT sent); sending is out of Phase 1 scope.
       const next = approve ? 'APPROVED' : 'REJECTED'
       const updated = await tx.opsDraftMessage.update({
         where: { id: data.draftId },
@@ -155,9 +164,19 @@ export async function decideDraftFromFormAction(formData: FormData) {
 // ── Manual "Run agents now" trigger ──────────────────────────────────────────
 
 export async function runAgentsNowAction() {
-  await requireAdmin()
-  const enabled = await isEnabled(FLAG)
-  if (!enabled) throw new Error(`Feature '${FLAG}' is not enabled.`)
+  // Gate + audit the manual trigger through crudAction (same role allow-list as
+  // the mutation actions, and an AuditLog/AdminAuditEvent row recording who ran
+  // the batch). The agents run AFTER, outside the audit transaction, because
+  // runAgent opens its own transactions and is long-running.
+  await crudAction<undefined, { id: string }>({
+    entity: 'OpsAgentRun',
+    entityId: 'manual-batch',
+    action: 'ops.agents.run_now',
+    requiredRole: [...ROLES],
+    roleExact: true,
+    requiredFlag: FLAG,
+    run: async () => ({ id: 'manual-batch' }),
+  })
 
   for (const { agent } of PHASE_1_AGENTS) {
     await runAgent(agent, { trigger: 'manual' })
