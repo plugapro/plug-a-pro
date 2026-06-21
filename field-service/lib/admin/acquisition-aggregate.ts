@@ -23,6 +23,20 @@ export type AggregateBucket = {
   revenue: number
 }
 
+// Common medium synonyms, normalised to letters-only (so 'paid_social',
+// 'paid-social', 'Paid Social' all collapse to 'paidsocial'). Kept deliberately
+// conservative: only mediums that are unambiguously paid/organic are mapped, so
+// e.g. a bare 'social' (could be organic) stays Unknown rather than inflating
+// paid revenue. A row with a click ID but a non-standard medium still lands in
+// Unknown — refining that with utmSource (google/fb) is a later step.
+const PAID_SEARCH_MEDIA = new Set(['cpc', 'ppc', 'paidsearch', 'sem'])
+const PAID_SOCIAL_MEDIA = new Set(['paidsocial'])
+const ORGANIC_MEDIA = new Set(['organic'])
+
+function normalizeMedium(medium: string | null): string {
+  return medium ? medium.toLowerCase().replace(/[^a-z]/g, '') : ''
+}
+
 // Classify a row into one of five mutually-exclusive channel groups.
 // Direct = no UTM data at all. Unknown = has UTM data but doesn't match a known
 // paid/organic medium — surfaced so unmapped traffic doesn't silently disappear.
@@ -31,10 +45,10 @@ export function classifyChannel(row: {
   utmMedium: string | null
   utmCampaign: string | null
 }): ChannelGroup {
-  const medium = row.utmMedium?.toLowerCase() ?? null
-  if (medium === 'cpc') return 'paid_search'
-  if (medium === 'paid_social') return 'paid_social'
-  if (medium === 'organic') return 'organic'
+  const medium = normalizeMedium(row.utmMedium)
+  if (PAID_SEARCH_MEDIA.has(medium)) return 'paid_search'
+  if (PAID_SOCIAL_MEDIA.has(medium)) return 'paid_social'
+  if (ORGANIC_MEDIA.has(medium)) return 'organic'
   if (!row.utmSource && !row.utmMedium && !row.utmCampaign) return 'direct'
   return 'unknown'
 }

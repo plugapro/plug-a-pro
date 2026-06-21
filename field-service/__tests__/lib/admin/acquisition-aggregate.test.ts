@@ -45,6 +45,24 @@ describe('classifyChannel', () => {
     expect(classifyChannel(row({ utmMedium: 'Paid_Social' }))).toBe('paid_social')
   })
 
+  it('maps common paid-search medium synonyms', () => {
+    for (const m of ['ppc', 'sem', 'paidsearch', 'paid-search', 'paid search']) {
+      expect(classifyChannel(row({ utmMedium: m })), m).toBe('paid_search')
+    }
+  })
+
+  it('maps paid-social medium punctuation variants', () => {
+    for (const m of ['paid-social', 'paidsocial', 'Paid Social']) {
+      expect(classifyChannel(row({ utmMedium: m })), m).toBe('paid_social')
+    }
+  })
+
+  it('leaves ambiguous mediums (bare social) as unknown, not paid', () => {
+    expect(classifyChannel(row({ utmMedium: 'social', utmSource: 'facebook' }))).toBe(
+      'unknown',
+    )
+  })
+
   it('treats only-utmSource-set as unknown, not direct', () => {
     expect(classifyChannel(row({ utmSource: 'newsletter' }))).toBe('unknown')
   })

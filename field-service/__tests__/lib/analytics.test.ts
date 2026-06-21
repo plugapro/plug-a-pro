@@ -101,13 +101,22 @@ describe('analytics', () => {
     })
   })
 
-  it('bookingStarted fires booking_started once per job_request_id', async () => {
+  it('bookingStarted fires booking_started once per draft_key', async () => {
     const { analytics } = await importFresh()
-    analytics.bookingStarted({ job_request_id: 'jr_2' })
-    analytics.bookingStarted({ job_request_id: 'jr_2' })
+    analytics.bookingStarted({ draft_key: 'plumbing' })
+    analytics.bookingStarted({ draft_key: 'plumbing' })
 
     expect(gtag).toHaveBeenCalledTimes(1)
-    expect(gtag).toHaveBeenCalledWith('event', 'booking_started', { job_request_id: 'jr_2' })
+    expect(gtag).toHaveBeenCalledWith('event', 'booking_started', { draft_key: 'plumbing' })
+  })
+
+  it('resetBookingStarted lets the same draft_key fire booking_started again', async () => {
+    const { analytics } = await importFresh()
+    analytics.bookingStarted({ draft_key: 'plumbing' })
+    analytics.resetBookingStarted('plumbing')
+    analytics.bookingStarted({ draft_key: 'plumbing' })
+
+    expect(gtag).toHaveBeenCalledTimes(2)
   })
 
   it('requestSubmitted fires request_submitted once per job_request_id', async () => {

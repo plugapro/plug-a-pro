@@ -49,7 +49,10 @@ export interface SlotSelectedParams {
 }
 
 export interface BookingStartedParams {
-  job_request_id: string
+  // No job_request_id exists yet at booking start — anchor on the per-category
+  // draft key so the dedup is honest and the GA4 event isn't polluted with a
+  // fake id that can't be joined to downstream slot_selected/request_submitted.
+  draft_key: string
 }
 
 export interface RequestSubmittedParams {
@@ -75,7 +78,19 @@ export const analytics = {
   },
 
   bookingStarted(params: BookingStartedParams): void {
-    once(`pap_a_bs_${params.job_request_id}`, () => track('booking_started', params))
+    once(`pap_a_bs_${params.draft_key}`, () => track('booking_started', params))
+  },
+
+  // Clear the booking_started dedup flag once the draft converts, so a fresh
+  // booking in the same category + session counts as a new start. Without this
+  // the funnel can show more submissions than starts.
+  resetBookingStarted(draftKey: string): void {
+    if (typeof window === 'undefined') return
+    try {
+      window.sessionStorage.removeItem(`pap_a_bs_${draftKey}`)
+    } catch {
+      // sessionStorage unavailable (privacy mode) — nothing to reset.
+    }
   },
 
   requestSubmitted(params: RequestSubmittedParams): void {

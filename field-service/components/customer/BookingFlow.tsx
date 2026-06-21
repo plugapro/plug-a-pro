@@ -486,9 +486,9 @@ export function BookingFlow({
       return
     }
     setError(null)
-    // No job_request_id yet — draftStorageKey is stable per category for the
-    // session and gives the dedup helper something to anchor on.
-    analytics.bookingStarted({ job_request_id: draftStorageKey })
+    // No job_request_id yet — anchor the dedup on the per-category draft key
+    // (reset on submit so a re-booking in the same session re-counts).
+    analytics.bookingStarted({ draft_key: draftStorageKey })
     setStep('confirm')
   }
 
@@ -606,6 +606,9 @@ export function BookingFlow({
         window_end: timing.requestedWindowEnd?.toISOString(),
       })
       window.localStorage.removeItem(draftStorageKey)
+      // Draft converted — clear the booking_started dedup flag so a new booking
+      // in the same category + session counts as a fresh start.
+      analytics.resetBookingStarted(draftStorageKey)
       setStep('submitted')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
@@ -1157,7 +1160,7 @@ export function BookingFlow({
                 return
               }
               setError(null)
-              analytics.bookingStarted({ job_request_id: draftStorageKey })
+              analytics.bookingStarted({ draft_key: draftStorageKey })
               setStep('confirm')
             }}
           >
