@@ -31,6 +31,7 @@ function candidate(overrides: Partial<ProfileCandidate> = {}): ProfileCandidate 
     acceptanceRate: 0.9,
     complaintRate: 0,
     whatsappMarketingOptIn: true,
+    draftEligible: true,
     ...overrides,
   }
 }
@@ -93,6 +94,16 @@ describe('profile-coach evaluator output', () => {
       candidate({ hasBio: false, hasAvatar: false, portfolioCount: 0, whatsappMarketingOptIn: false }),
       ctx,
     )!
+    expect(e.draft).toBeUndefined()
+  })
+
+  it('does not draft when the loader left this provider outside the per-run draft budget', () => {
+    const e = evaluateProfile(
+      candidate({ hasBio: false, hasAvatar: false, portfolioCount: 0, draftEligible: false }),
+      ctx,
+    )!
+    // still surfaced as a recommendation, just no WhatsApp draft
+    expect(e).not.toBeNull()
     expect(e.draft).toBeUndefined()
   })
 })

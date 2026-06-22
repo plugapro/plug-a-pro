@@ -37,6 +37,14 @@ export interface ProfileCandidate {
   acceptanceRate: number // 0–1
   complaintRate: number // 0–1
   whatsappMarketingOptIn: boolean
+  /**
+   * The loader caps draft generation to the highest-impact (least complete)
+   * providers per run, so ops gets a small, ranked nudge batch instead of one
+   * draft per active provider. Recommendations are still produced for everyone;
+   * only eligible candidates also get a WhatsApp draft. Defaults true so unit
+   * tests and any non-capping caller keep the prior behaviour.
+   */
+  draftEligible?: boolean
 }
 
 function clampPct(n: number): number {
@@ -136,8 +144,17 @@ function buildDraft(
   c: ProfileCandidate,
   suggestions: string[],
 ): DraftMessageSpec | undefined {
-  // Only nudge reachable, opted-in providers, and only about concrete gaps.
-  if (!c.phone || !c.whatsappMarketingOptIn || suggestions.length === 0) return undefined
+  // Only nudge reachable, opted-in providers, only about concrete gaps, and only
+  // when the loader marked this provider in the per-run draft budget (top-N least
+  // complete). draftEligible defaults to true when unset.
+  if (
+    !c.phone ||
+    !c.whatsappMarketingOptIn ||
+    c.draftEligible === false ||
+    suggestions.length === 0
+  ) {
+    return undefined
+  }
   const greeting = c.firstName ? `Hi ${c.firstName}` : 'Hi there'
   const top = suggestions.slice(0, 3).map((sug) => `• ${sug}`).join('\n')
   const body =
