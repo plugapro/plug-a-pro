@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { db } from './db'
 import { recordAuditLog } from './audit'
 import { AUDIT_ENTITY } from './audit-entities'
+import { recordWorkflowEvent } from './workflow-events/record'
 import { getCustomerProviderHandoverUrl } from './customer-provider-handover-access'
 import { logOutboundMessage } from './message-events'
 import {
@@ -610,6 +611,28 @@ export async function notifyPostMatchAcceptance(params: {
       customerContactReleased: true,
     },
   }).catch(() => {})
+
+  // Tier 1 funnel observability — CLIENT_NOTIFIED emit. Only fires when the
+  // customer was actually reached (customerNotified=true); failed customer
+  // sends leave the funnel honest about the matched-but-not-told leak.
+  // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+  if (customerNotified) {
+    recordWorkflowEvent({
+      eventType: 'CLIENT_NOTIFIED',
+      actorType: 'system',
+      entityType: 'JOB_REQUEST',
+      entityId: lead.jobRequestId,
+      source: 'system',
+      metadata: {
+        leadId: lead.id,
+        matchId: params.matchId ?? null,
+        providerId: provider.id,
+        customerId: customer.id,
+        channel: 'WHATSAPP',
+        customerContactReleased: true,
+      },
+    }).catch(() => {})
+  }
 
   return { providerNotified, customerNotified }
 }

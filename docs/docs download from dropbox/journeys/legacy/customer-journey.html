@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plug A Pro — Customer Journey</title>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: 'loose',
+      maxTextSize: 900000,
+      flowchart: { htmlLabels: true, useMaxWidth: false, curve: 'basis' },
+      themeVariables: {
+        fontSize: '13px',
+        fontFamily: 'ui-sans-serif, system-ui, sans-serif'
+      }
+    });
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; padding: 32px; }
+    h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+    p  { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+    .wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            padding: 32px; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+    .mermaid { min-width: 1400px; }
+  </style>
+</head>
+<body>
+  <h1>Plug A Pro — Customer Journey</h1>
+  <p>End-to-end flow: WhatsApp entry → identity resolution → request capture → photo upload → submission → matching → handover → job updates → completion</p>
+  <div class="wrap">
+    <pre class="mermaid">
+flowchart TD
+
+subgraph SG1["① WhatsApp Customer Entry"]
+    A1["📱 Customer sends 'Hi'\nor opens Plug A Pro link\n[WhatsApp]"]
+    A2["🔔 Webhook received\nX-Hub-Signature-256 verified\n[Backend]"]
+    A3["📋 Inbound message stored\nWAMID dedup constraint\n[Backend]"]
+    A1 --> A2 --> A3
+end
+
+subgraph SG2["② Identity Resolution"]
+    B1["📞 Normalise phone to E.164\nGenerate lookup variants\n[Backend]"]
+    B2{"Known\nphone?"}
+    B3{"Role\ncheck"}
+    B4["⚠️ Conflict — same phone is customer AND provider\nBlock: show error\n[Backend]"]
+    B5{"Existing\ncustomer?"}
+    B6["Show customer menu\nGreet by first name\n[WhatsApp]"]
+    B7["Show discovery menu\nRequest a Service / Find Work\n[WhatsApp]"]
+    B8{"Chose Request\na Service?"}
+    B9["Capture first name\n[WhatsApp]"]
+    B10["Route to provider onboarding\n[WhatsApp]"]
+    B1 --> B2
+    B2 -->|"Yes"| B3
+    B2 -->|"No"| B7
+    B3 -->|"Conflict"| B4
+    B3 -->|"Customer"| B5
+    B5 -->|"Yes"| B6
+    B5 -->|"No — unknown"| B7
+    B7 --> B8
+    B8 -->|"Yes"| B9
+    B8 -->|"No — Find Work"| B10
+end
+
+subgraph SG3["③ Customer Request Capture"]
+    C1["📋 Show service category list\nPaginated 8-items + nav\n[WhatsApp]"]
+    C2["Customer selects category\n[WhatsApp]"]
+    C3{"Saved address\nexists?"}
+    C4["Show saved addresses\nUse saved or add new\n[WhatsApp]"]
+    C5["Select saved address\n[WhatsApp]"]
+    C6["Capture new address\nStreet → Province → City → Region → Suburb\n[WhatsApp — List selections]"]
+    C7["Geocode address\nResolve locationNodeId and lat/lng\nPostal code derived from suburb node\n[Backend]"]
+    C8["Capture issue description\nFree-text\n[WhatsApp]"]
+    C9["Capture preferred availability\nFree-text: 'Friday afternoon'\n[WhatsApp]"]
+    C1 --> C2 --> C3
+    C3 -->|"Yes"| C4
+    C3 -->|"No"| C6
+    C4 --> C5 --> C8
+    C4 -->|"Add new"| C6
+    C6 --> C7 --> C8
+    C8 --> C9
+end
+
+subgraph SG4["④ Photo Upload Handling"]
+    D1["📸 Customer sends photo(s)\n[WhatsApp]"]
+    D2["Open 3-second batch window\nCollect multi-image burst\n[Backend]"]
+    D3{"More images\narriving?"}
+    D4["Download via Meta two-hop\nValidate MIME and size ≤ 15 MB\n[Backend]"]
+    D5{"Photo count\n≤ 5?"}
+    D6["⚠️ Reject excess photos\nNotify customer of 5-photo limit\n[WhatsApp]"]
+    D7["Upload accepted photos\nto Vercel Blob\n[Backend — Storage]"]
+    D8["Create Attachment records\nauth-proxy URL, idempotency key\n[Backend]"]
+    D9["📩 Single confirmation message\n'X photo(s) received'\n[WhatsApp]"]
+    D10{"Upload\nmore photos?"}
+    D1 --> D2 --> D3
+    D3 -->|"Yes — batch"| D2
+    D3 -->|"No — window closed"| D4
+    D4 --> D5
+    D5 -->|"Over limit"| D6 --> D7
+    D5 -->|"Within limit"| D7
+    D7 --> D8 --> D9
+    D9 --> D10
+    D10 -->|"Yes"| D1
+end
+
+subgraph SG5["⑤ Request Submission"]
+    E1["📄 Show request summary\nCategory, address, availability, photo count\n[WhatsApp]"]
+    E2{"Customer\nconfirms?"}
+    E3["❌ Customer cancels\nReturn to main menu\n[WhatsApp]"]
+    E4["Atomic DB transaction\n[Backend]"]
+    E5["Upsert Customer record\nnormalised phone as key\n[Backend]"]
+    E6["Create Address record\n[Backend]"]
+    E7["Create JobRequest\nStatus: PENDING_MATCH\n[Backend]"]
+    E8["Backfill Attachments to JobRequest\n[Backend]"]
+    E9["Generate customer access token\nOpaque 24-byte hex, 90-day TTL\n[Backend]"]
+    E10["✅ Request submitted confirmation\n+ signed PWA link\n[WhatsApp]"]
+    E11["Customer views ticket\n/requests/access/{token}\n[PWA Signed Link — no login]"]
+    E12["Fire-and-forget dispatch trigger\nvia after() hook\n[Backend]"]
+    E1 --> E2
+    E2 -->|"Cancel"| E3
+    E2 -->|"Confirm"| E4
+    E4 --> E5 --> E6 --> E7 --> E8 --> E9
+    E9 --> E10 --> E11
+    E9 --> E12
+end
+
+subgraph SG6["⑥ Matching & Provider Acceptance"]
+    F1["Run matching algorithm\nSkill, area, availability filters\n[Backend — Matching Engine]"]
+    F2{"Eligible providers\nfound?"}
+    F3["No match\nEscalate to OPS review\n[Admin/System]"]
+    F4["Create AssignmentHold per provider\nSend WhatsApp lead\n[Backend]"]
+    F5["Provider receives lead offer\nSigned PWA link, 72h TTL\n[WhatsApp → Provider]"]
+    F6["Provider views lead on PWA\n[PWA Signed Link — Provider]"]
+    F7{"Provider\naccepts?"}
+    F8["Lead DECLINED or EXPIRED\nTry next candidate\n[Backend]"]
+    F9["Unlock lead\nDebit 1 credit — atomic transaction\n[Backend]"]
+    F10{"Credit unlock\nsucceeded?"}
+    F11["⚠️ Unlock failed\nNotify provider only\nCustomer NOT notified\n[WhatsApp → Provider]"]
+    F12["Create Match record\nJobRequest linked to Provider\n[Backend]"]
+    F13{"Match\ncreated OK?"}
+    F14["Match conflict or error\nCustomer NOT notified\n[Backend]"]
+    F1 --> F2
+    F2 -->|"None found"| F3
+    F2 -->|"Found"| F4
+    F4 --> F5 --> F6 --> F7
+    F7 -->|"Declined or Expired"| F8 --> F1
+    F7 -->|"Accepted"| F9
+    F9 --> F10
+    F10 -->|"Failed"| F11
+    F10 -->|"Success"| F12
+    F12 --> F13
+    F13 -->|"Error"| F14
+    F13 -->|"OK"| G1
+end
+
+subgraph SG7["⑦ Customer Handover"]
+    G1["Send 'technician_assigned' template\nProvider name + service + window\n[WhatsApp → Customer]"]
+    G2["Customer receives provider name\n+ contact number\n[WhatsApp]"]
+    G3["Customer views handover page\n/leads/{token}/handover\n[PWA Signed Link — no login]"]
+    G4["Provider receives signed job link\nfor PWA job management\n[WhatsApp → Provider]"]
+    G1 --> G2 --> G3
+    G1 --> G4
+end
+
+subgraph SG8["⑧ Job Progress Updates"]
+    H1["Provider confirms ETA\n[PWA — Provider Action]"]
+    H2["Provider taps On My Way\nJob: SCHEDULED → EN_ROUTE\n[PWA — Provider Action]"]
+    H3["'technician_on_the_way' sent\nProvider name + ETA\n[WhatsApp → Customer]"]
+    H4["Provider taps Mark Arrived\nJob: EN_ROUTE → ARRIVED\n[PWA — Provider Action]"]
+    H5["'technician_arrived' sent\n[WhatsApp → Customer]"]
+    H6["Provider taps Start Job\nJob: ARRIVED → STARTED\n[PWA — Provider Action]"]
+    H7["Provider taps Complete Job\n[PWA — Provider Action]"]
+    H8{"Completion photos\nrequired?"}
+    H9["Provider submits completion photos\nJob: STARTED → PENDING_COMPLETION\n[PWA — Provider Action]"]
+    H10["Job → COMPLETED\n[Backend]"]
+    H1 --> H2 --> H3 --> H4 --> H5 --> H6 --> H7 --> H8
+    H8 -->|"Yes"| H9 --> H10
+    H8 -->|"No"| H10
+end
+
+subgraph SG9["⑨ Completion & Follow-Up"]
+    I1["Send 'job_completed' template\n[WhatsApp → Customer]"]
+    I2["Invoice generated\n[Backend — Placeholder]"]
+    I3["Payment collection\nPeach Payments / PayFast\n[Backend — Placeholder]"]
+    I4["Send 'payment_reminder'\nif outstanding\n[WhatsApp → Customer — Placeholder]"]
+    I5["Send 'follow_up' template\nRating link post-completion\n[WhatsApp → Customer]"]
+    I6["Customer rates provider\n[PWA Signed Link]"]
+    I7["Provider payout released\n'technician_payment_released'\n[WhatsApp → Provider — Placeholder]"]
+    I1 --> I2 --> I3
+    I3 -->|"Unpaid"| I4
+    I3 -->|"Paid"| I7
+    I1 --> I5 --> I6
+end
+
+%% ─── Top-level connections ───
+A3 --> B1
+B6 --> C1
+B9 --> C1
+C9 -->|"No photos"| E1
+C9 -->|"Photos to upload"| D1
+D10 -->|"Done"| E1
+E12 --> F1
+G4 --> H1
+H10 --> I1
+
+classDef whatsapp fill:#25D366,color:#000,stroke:#128C7E,stroke-width:1.5px
+classDef pwa fill:#4F46E5,color:#fff,stroke:#3730A3,stroke-width:1.5px
+classDef backend fill:#1E293B,color:#fff,stroke:#334155,stroke-width:1.5px
+classDef admin fill:#DC2626,color:#fff,stroke:#B91C1C,stroke-width:1.5px
+classDef decision fill:#FEF3C7,color:#000,stroke:#D97706,stroke-width:1.5px
+
+class A1,B6,B7,B9,B10,C1,C2,C4,C5,C8,C9,D1,D6,D9,E1,E3,E10,F5,G1,G2,G4,H3,H5,I1,I4,I5 whatsapp
+class E11,F6,G3,I6 pwa
+class A2,A3,B1,B4,C7,D2,D4,D7,D8,E4,E5,E6,E7,E8,E9,E12,F1,F4,F8,F9,F12,F14,H10,I2,I3 backend
+class F3,F11 admin
+class B2,B3,B5,B8,C3,D3,D5,D10,E2,F2,F7,F10,F13,H8 decision
+    </pre>
+  </div>
+</body>
+</html>

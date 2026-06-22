@@ -11,6 +11,31 @@ import {
   rejectAssignmentOffer,
   runAssignmentForJobRequest,
 } from './matching/service'
+import { recordWorkflowEvent } from './workflow-events/record'
+
+// Tier 1 funnel observability — small helper to keep the declineLead success
+// paths readable. Best-effort emit; never blocks the decline outcome.
+// Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+function emitProviderDeclined(params: {
+  leadId: string
+  providerId: string
+  path: 'qualified-shortlist' | 'standard'
+  reason?: string
+}) {
+  recordWorkflowEvent({
+    eventType: 'PROVIDER_DECLINED',
+    actorType: 'provider',
+    actorId: params.providerId,
+    entityType: 'LEAD',
+    entityId: params.leadId,
+    source: 'api',
+    metadata: {
+      providerId: params.providerId,
+      path: params.path,
+      reason: params.reason ?? null,
+    },
+  }).catch(() => {})
+}
 
 export interface CandidateInput {
   category: string
@@ -334,9 +359,15 @@ export async function declineLead(params: {
     const { declineSelectedProviderJob } = await import('./customer-shortlists')
     const selectedResult = await declineSelectedProviderJob(params)
     if (selectedResult.ok) {
-      return 'alreadyDeclined' in selectedResult && selectedResult.alreadyDeclined
-        ? { ok: true, alreadyDeclined: true }
-        : { ok: true }
+      const alreadyDeclined = 'alreadyDeclined' in selectedResult && selectedResult.alreadyDeclined
+      if (!alreadyDeclined) {
+        emitProviderDeclined({
+          leadId: params.leadId,
+          providerId: params.providerId,
+          path: 'qualified-shortlist',
+        })
+      }
+      return alreadyDeclined ? { ok: true, alreadyDeclined: true } : { ok: true }
     }
     if (selectedResult.reason === 'NOT_FOUND' || selectedResult.reason === 'FORBIDDEN') {
       return { ok: false, reason: selectedResult.reason }
@@ -350,6 +381,11 @@ export async function declineLead(params: {
     if (result.reason !== 'NOT_FOUND' && result.reason !== 'FORBIDDEN') return { ok: true }
     return { ok: false, reason: result.reason }
   }
+  emitProviderDeclined({
+    leadId: params.leadId,
+    providerId: params.providerId,
+    path: 'standard',
+  })
   return { ok: true }
 }
 

@@ -27,6 +27,7 @@ import {
   syncReusableCustomerAddressFromSnapshot,
   type ReusableAddressTx,
 } from '../customer-address-book'
+import { recordWorkflowEvent } from '../workflow-events/record'
 
 export interface CreateJobRequestParams {
   // Customer identity - supply one of the two sets:
@@ -607,6 +608,30 @@ export async function createJobRequest(
     }
 
     return { jobRequestId: jobRequest.id, requestRef, customerId: customer.id }
+  })
+
+  // Tier 1 funnel observability — REQUEST_SUBMITTED emit. Post-tx + best-effort
+  // so a recorder failure cannot roll back the submission. The actor is the
+  // customer (internal id), entity is the JobRequest (real id).
+  // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+  recordWorkflowEvent({
+    eventType: 'REQUEST_SUBMITTED',
+    actorType: 'customer',
+    actorId: result.customerId,
+    entityType: 'JOB_REQUEST',
+    entityId: result.jobRequestId,
+    source: params.source === 'whatsapp' ? 'whatsapp' : params.source === 'pwa' ? 'pwa' : 'system',
+    metadata: {
+      category: params.category,
+      assignmentMode: initialAssignmentMode,
+      deferMatchingModeSelection: Boolean(params.deferMatchingModeSelection),
+      requestRef: result.requestRef,
+    },
+  }).catch((err) => {
+    console.warn('[create-job-request] REQUEST_SUBMITTED event write failed (non-fatal)', {
+      jobRequestId: result.jobRequestId,
+      error: err instanceof Error ? err.message : String(err),
+    })
   })
 
   // Open a DISPATCH case for the new job request (fire and forget - cron can backfill on failure).

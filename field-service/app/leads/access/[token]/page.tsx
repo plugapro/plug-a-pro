@@ -16,6 +16,7 @@ import {
   resolveProviderLeadAccessToken,
   verifyProviderLeadAccessToken,
 } from '@/lib/provider-lead-access'
+import { recordWorkflowEvent } from '@/lib/workflow-events/record'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { LEAD_UNLOCK_COST_CREDITS } from '@/lib/lead-unlocks'
@@ -793,15 +794,41 @@ export default async function ProviderLeadAccessPage({
   }
 
   if (lead.status === 'SENT') {
-    await db.lead.update({ where: { id: lead.id }, data: { status: 'VIEWED' } }).catch((error) => {
-      console.warn('[leads/access] failed to mark lead as viewed', {
-        trace_id: traceId,
-        lead_id: lead.id,
-        provider_id: lead.providerId,
-        route: '/leads/access/[token]',
-        error: safeErrorMessage(error),
+    const viewedAt = new Date()
+    const flipResult = await db.lead
+      .update({ where: { id: lead.id }, data: { status: 'VIEWED', viewedAt } })
+      .then(() => true)
+      .catch((error) => {
+        console.warn('[leads/access] failed to mark lead as viewed', {
+          trace_id: traceId,
+          lead_id: lead.id,
+          provider_id: lead.providerId,
+          route: '/leads/access/[token]',
+          error: safeErrorMessage(error),
+        })
+        return false
       })
-    })
+
+    // Tier 1 funnel observability — PROVIDER_VIEWED emit. Idempotency is by
+    // the status guard above: subsequent taps land in lead.status !== 'SENT'
+    // and skip this block, so the event fires once per lead.
+    // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+    if (flipResult) {
+      recordWorkflowEvent({
+        eventType: 'PROVIDER_VIEWED',
+        actorType: 'provider',
+        actorId: lead.providerId,
+        entityType: 'LEAD',
+        entityId: lead.id,
+        source: 'pwa',
+        metadata: {
+          jobRequestId: lead.jobRequestId,
+          providerId: lead.providerId,
+          viewedFromChannel: 'web',
+        },
+        occurredAt: viewedAt,
+      }).catch(() => {})
+    }
   }
 
   const previewArea = addr

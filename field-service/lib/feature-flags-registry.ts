@@ -19,6 +19,13 @@
  */
 
 export const FEATURE_FLAGS_REGISTRY = {
+  // ─── Admin reports ───────────────────────────────────────────────────────────
+  'admin.reports.customer_funnel': {
+    description:
+      'Gate the Tier 1 customer-funnel admin report (/admin/reports/funnel). When off the route 404s and the sidebar entry is hidden. Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md',
+    owner: 'ops',
+    defaultValue: false,
+  },
   // ─── Admin CRUD surfaces ─────────────────────────────────────────────────────
   'admin.crud.locations': {
     description: 'Enable create/update/delete mutations on the Location Taxonomy admin page.',

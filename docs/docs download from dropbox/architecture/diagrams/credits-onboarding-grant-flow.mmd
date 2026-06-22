@@ -1,0 +1,48 @@
+flowchart TD
+  subgraph AdminApproval["Admin / System Approval"]
+    A1["[Admin] Approve provider application"]
+    A2["[Backend] approveApplication or cron approval path"]
+    A3["[Backend] syncProviderRecord active=true verified=true status=ACTIVE"]
+    A4["[Backend] ProviderApplication status becomes APPROVED"]
+  end
+
+  subgraph PromoAward["Promo Award Service"]
+    P1["[Backend] awardMobileVerifiedPromoCreditsInTransaction"]
+    P2["[Backend] Load provider phone"]
+    P3{"[Backend] Internal test onboarding credit phone?"}
+    P4["[Backend] Credits = INTERNAL_TEST_ONBOARDING_CREDITS"]
+    P5["[Backend] Credits = PROVIDER_PROMO_CREDIT_REWARDS.MOBILE_VERIFIED"]
+    P6{"[Backend] Existing ProviderPromoAward for MOBILE_VERIFIED?"}
+    P7{"[Backend] Pre-payment promo cap exceeded?"}
+    P8["[Backend] Create ProviderPromoAward"]
+    P9["[Backend] Return duplicate or cap skip"]
+  end
+
+  subgraph WalletLedger["Wallet / Ledger"]
+    W1["[Wallet] getOrCreateProviderWalletInTx"]
+    W2{"[Wallet] Wallet ACTIVE?"}
+    W3["[Wallet] Increment promoCreditBalance"]
+    W4["[Ledger] Create PROMO_CREDIT entry with reference provider_promo_award"]
+    W5["[Error] WALLET_NOT_ACTIVE blocks grant"]
+  end
+
+  subgraph AuditNotify["Audit / Notification"]
+    N1["[Admin Audit] crudAction approval event"]
+    N2["[WhatsApp] Approval notification after commit"]
+    N3["[Logs] Approval notification failure logged, DB approval remains"]
+  end
+
+  A1 --> A2 --> A3 --> A4 --> P1
+  P1 --> P2 --> P3
+  P3 -- "Yes" --> P4 --> P6
+  P3 -- "No" --> P5 --> P6
+  P6 -- "Yes" --> P9
+  P6 -- "No" --> P7
+  P7 -- "Yes" --> P9
+  P7 -- "No" --> P8 --> W1 --> W2
+  W2 -- "Yes" --> W3 --> W4 --> N1 --> N2
+  W2 -- "No" --> W5
+  N2 --> N3
+
+  classDef gap fill:#fff3cd,stroke:#a66a00,color:#3d2b00;
+  class P9,N3 gap;

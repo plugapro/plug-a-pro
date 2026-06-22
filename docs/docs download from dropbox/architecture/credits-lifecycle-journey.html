@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plug A Pro — Credits Lifecycle</title>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: 'loose',
+      maxTextSize: 900000,
+      flowchart: { htmlLabels: true, useMaxWidth: false, curve: 'basis' },
+      themeVariables: {
+        fontSize: '13px',
+        fontFamily: 'ui-sans-serif, system-ui, sans-serif'
+      }
+    });
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; padding: 32px; }
+    h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+    p  { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+    .wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            padding: 32px; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+    .mermaid { min-width: 1600px; }
+  </style>
+</head>
+<body>
+  <h1>Plug A Pro — Credits Lifecycle</h1>
+  <p>End-to-end flow: provider approval → onboarding promo grant → credit top-up (EFT / PayFast) → lead unlock / credit deduction → decline path → refund / adjustment → balance statement → reconciliation audit</p>
+  <div class="wrap">
+    <pre class="mermaid">
+flowchart TD
+
+subgraph SG1["① Provider Approval"]
+    A1["OPS team reviews application\nAdmin dashboard\n[Admin]"]
+    A2["Application APPROVED\nProvider.status → ACTIVE\nverified = true\n[Backend]"]
+    A3["'technician_application_approved' sent\n[WhatsApp → Provider]"]
+    A1 --> A2 --> A3
+end
+
+subgraph SG2["② Onboarding Promo Credit Grant"]
+    B1["awardMobileVerifiedPromoCreditsInTransaction\n[Backend]"]
+    B2{"Internal test\nphone?"}
+    B3["Credits = INTERNAL_TEST_ONBOARDING_CREDITS\n[Backend]"]
+    B4["Credits = PROVIDER_PROMO_CREDIT_REWARDS\n.MOBILE_VERIFIED\n[Backend]"]
+    B5{"Existing award for\nMOBILE_VERIFIED?"}
+    B6{"Pre-payment\npromo cap exceeded?"}
+    B7["Create ProviderPromoAward\n[Backend]"]
+    B8["Skip — duplicate or cap\n[Backend]"]
+    B9["getOrCreateProviderWalletInTx\nWallet must be ACTIVE\n[Wallet]"]
+    B10["Increment promoCreditBalance\n[Wallet]"]
+    B11["PROMO_CREDIT ledger entry\nref: provider_promo_award\n[Ledger]"]
+    B1 --> B2
+    B2 -->|"Yes"| B3 --> B5
+    B2 -->|"No"| B4 --> B5
+    B5 -->|"Yes — duplicate"| B8
+    B5 -->|"No"| B6
+    B6 -->|"Yes — over cap"| B8
+    B6 -->|"No"| B7 --> B9 --> B10 --> B11
+end
+
+subgraph SG3["③ Credit Top-up — Manual EFT"]
+    C1["Provider opens Credits page\n[Worker Portal]"]
+    C2["Select package\nR100 / R200 / R500\n[Worker Portal]"]
+    C3["Create EFT PaymentIntent\nstatus: PENDING_PAYMENT\n[Backend]"]
+    C4["Top-up initiated notification\n[WhatsApp → Provider]"]
+    C5["Provider bank transfer\nusing PAP reference number\n[Provider → Bank]"]
+    C6["Upload proof of payment\n[Worker Portal]"]
+    C7["PaymentIntent status → PROOF_UPLOADED\n[DB]"]
+    C8["Ops matches bank statement reference\nPaymentIntent → MATCHED_ON_STATEMENT\n[Admin / Ops]"]
+    C1 --> C2 --> C3 --> C4
+    C4 --> C5 --> C6 --> C7 --> C8
+end
+
+subgraph SG4["④ Credit Top-up — PayFast Gateway"]
+    D1["Create PayFast PaymentIntent\nstatus: PENDING_PAYMENT\n[Backend]"]
+    D2["Provider completes PayFast checkout\n[PayFast]"]
+    D3["PayFast sends ITN\nVerify IP + HMAC signature\n[Backend]"]
+    D4{"Signature and\nstatus COMPLETE?"}
+    D5{"Amount matches\nPaymentIntent?"}
+    D6["PaymentIntent status → ITN_RECEIVED\n[DB]"]
+    D7["Mark FAILED — amount mismatch\nReturn HTTP 200 silently\n[DB]"]
+    D8["Return HTTP 200\nNo credit on invalid ITN\n[Backend]"]
+    C2 --> D1 --> D2 --> D3 --> D4
+    D4 -->|"No — invalid"| D8
+    D4 -->|"Yes"| D5
+    D5 -->|"No"| D7
+    D5 -->|"Yes"| D6
+end
+
+subgraph SG5["⑤ Wallet Credit — EFT & PayFast Shared Path"]
+    E1{"Intent creditable\nand creditedAt null?"}
+    E2["updateMany intent → CREDITED\nOptimistic lock\n[Backend]"]
+    E3{"Lock\nacquired?"}
+    E4["Increment paidCreditBalance\n[Wallet]"]
+    E5["TOPUP_CREDIT ledger entry\nref: payment_intent\n[Ledger]"]
+    E6["Check FIRST_TOPUP promo award\nawardPromoCreditsForMilestone\n[Backend]"]
+    E7["Payment credited notification\n[WhatsApp → Provider]"]
+    E8["Duplicate or invalid status\nNo credit written\n[Backend]"]
+    C8 --> E1
+    D6 --> E1
+    E1 -->|"No"| E8
+    E1 -->|"Yes"| E2 --> E3
+    E3 -->|"No — concurrent duplicate"| E8
+    E3 -->|"Yes"| E4 --> E5 --> E6 --> E7
+end
+
+subgraph SG6["⑥ Lead Unlock / Credit Deduction"]
+    F1["Provider taps Unlock &amp; Accept\n[WhatsApp or PWA Signed Link]"]
+    F2["acceptAssignmentOffer transaction\n[Backend — matching-engine]"]
+    F3{"Provider ACTIVE,\nhold valid, not expired?"}
+    F4{"LeadUnlock already\nexists for this provider?"}
+    F5["Return alreadyUnlocked\nNo ledger write — idempotent\n[Backend]"]
+    F6["Read paidCreditBalance\n+ promoCreditBalance\n[Wallet]"]
+    F7{"Total credits\n≥ 1 and wallet ACTIVE?"}
+    F8["⛔ Insufficient credits\nShow top-up guidance\n[WhatsApp / PWA → Provider]"]
+    F9["Create LeadUnlock record\n[DB]"]
+    F10["Debit promo credits first\nthen paid credits\nOptimistic updateMany\n[Wallet]"]
+    F11{"Balance update\ncount = 1?"}
+    F12["⛔ Concurrent collision\nor suspended wallet\n[Error — rollback]"]
+    F13["LEAD_UNLOCK_DEBIT entries\nwith before/after snapshots\n[Ledger]"]
+    F14["Update LeadUnlock\ncreditTypeBreakdown\n[DB]"]
+    F1 --> F2 --> F3
+    F3 -->|"No"| F12
+    F3 -->|"Yes"| F4
+    F4 -->|"Yes — same provider"| F5
+    F4 -->|"No"| F6 --> F7
+    F7 -->|"No"| F8 --> C1
+    F7 -->|"Yes"| F9 --> F10 --> F11
+    F11 -->|"No"| F12
+    F11 -->|"Yes"| F13 --> F14
+end
+
+subgraph SG7["⑦ Assignment Commit & Post-Match Notifications"]
+    G1["Lead → ACCEPTED\nAssignmentHold → ACCEPTED\n[DB]"]
+    G2["Match created\nJobRequest → MATCHED\n[DB]"]
+    G3["Other provider holds\nexpired or released\n[DB]"]
+    G4["Customer notified\nProvider name + contact released\n[WhatsApp → Customer]"]
+    G5["Provider notified\nCustomer details + View Job link\n[WhatsApp → Provider]"]
+    G6["Low-balance wallet notification\nif balance &lt; threshold\n[WhatsApp → Provider]"]
+    F5 --> G1
+    F14 --> G1
+    G1 --> G2 --> G3 --> G4
+    G3 --> G5
+    F13 --> G6
+end
+
+subgraph SG8["⑧ Decline Path — No Credit Deducted"]
+    H1["Provider taps Decline\n[WhatsApp or PWA Signed Link]"]
+    H2["rejectAssignmentOffer\n[Backend — matching-engine]"]
+    H3["Lead → DECLINED\nAssignmentHold → REJECTED\n[DB]"]
+    H4["No credit deducted\n[Wallet]"]
+    H5["Offer next ranked\ncandidate\n[Matching Engine]"]
+    H1 --> H2 --> H3 --> H4
+    H3 --> H5
+end
+
+subgraph SG9["⑨ Refunds / Admin Adjustments"]
+    I1["Provider raises\nunlock dispute\n[Worker Portal]"]
+    I2{"Admin\napproves?"}
+    I3["LEAD_REFUND_CREDIT\nby original promo / paid split\n[Ledger]"]
+    I4["Restore paid / promo balance\n[Wallet]"]
+    I5["Admin manual\nADMIN_ADJUSTMENT with reason\n[Admin Dashboard]"]
+    I6["ADMIN_ADJUSTMENT ledger entry\nAudit event recorded\n[Ledger / AdminAuditEvent]"]
+    I1 --> I2
+    I2 -->|"Approved"| I3 --> I4
+    I2 -->|"Rejected"| I6
+    I5 --> I4
+    I5 --> I6
+end
+
+subgraph SG10["⑩ Balance Statement"]
+    J1["ProviderWallet\ncached paidCreditBalance\n+ promoCreditBalance\n[DB]"]
+    J2["WalletLedgerEntry history\nbalanceBefore + balanceAfter\non every entry\n[DB]"]
+    J3["Credits page\nBalance + transaction history\n[Worker Portal]"]
+    J4["Provider wallets list\nWallet detail view\n[Admin Dashboard]"]
+    J1 --> J3
+    J2 --> J3
+    J1 --> J4
+    J2 --> J4
+end
+
+subgraph SG11["⑪ Reconciliation & Audit"]
+    K1["Approved provider should have\n≤ 1 MOBILE_VERIFIED award\n[Ops Check]"]
+    K2["CREDITED intent must have\nTOPUP_CREDIT ledger entry\n[Ops Check]"]
+    K3["LeadUnlock must have\nmatching LEAD_UNLOCK_DEBIT\n[Ops Check]"]
+    K4["Wallet cached balance must equal\nlatest ledger snapshot\n[Ops Check]"]
+    K5["Admin adjustments must have\nreason + audit event\n[Ops Check]"]
+    K6["buildProviderCreditReconciliationReport\nOutputs exceptions per provider\n[Backend]"]
+    K7["⚠️ No scheduled reconciliation job\nor admin exception dashboard yet\n[Gap — not wired]"]
+    K1 --> K6
+    K2 --> K6
+    K3 --> K6
+    K4 --> K6
+    K5 --> K6
+    K6 --> K7
+end
+
+%% ─── Top-level connections ───
+A3 --> B1
+B11 --> J1
+B11 --> J2
+E5 --> J1
+E5 --> J2
+F13 --> J1
+F13 --> J2
+I3 --> J1
+I3 --> J2
+I5 --> J1
+J1 --> K4
+J2 --> K1
+J2 --> K2
+J2 --> K3
+F13 --> K3
+E5 --> K2
+B11 --> K1
+
+classDef whatsapp fill:#25D366,color:#000,stroke:#128C7E,stroke-width:1.5px
+classDef pwa fill:#4F46E5,color:#fff,stroke:#3730A3,stroke-width:1.5px
+classDef backend fill:#1E293B,color:#fff,stroke:#334155,stroke-width:1.5px
+classDef admin fill:#DC2626,color:#fff,stroke:#B91C1C,stroke-width:1.5px
+classDef credit fill:#7C3AED,color:#fff,stroke:#5B21B6,stroke-width:1.5px
+classDef portal fill:#0891B2,color:#fff,stroke:#0E7490,stroke-width:1.5px
+classDef decision fill:#FEF3C7,color:#000,stroke:#D97706,stroke-width:1.5px
+classDef error fill:#FEE2E2,color:#7F1D1D,stroke:#B91C1C,stroke-width:1.5px
+classDef gap fill:#FEF9C3,color:#713F12,stroke:#A16207,stroke-width:1.5px
+
+class A3,C4,E7,F8,G4,G5,G6,H1 whatsapp
+class F1 pwa
+class A2,B1,B3,B4,B7,B8,B9,C3,D1,D2,D3,D8,E2,E6,E8,F2,F5,F9,F10,F14,G1,G2,G3,H2,H3,H4,H5 backend
+class A1,C8,I5,J4,K1,K2,K3,K4,K5 admin
+class B10,B11,E4,E5,F13,I3,I4,I6,J1,J2 credit
+class C1,C2,C5,C6,I1,J3 portal
+class B2,B5,B6,D4,D5,E1,E3,F3,F4,F7,F11,I2 decision
+class F8,F12,D7 error
+class K7 gap
+    </pre>
+  </div>
+</body>
+</html>

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plug A Pro — Service Provider Journey (v2 · WhatsApp-first / WhatsApp-complete / PWA-optional)</title>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: 'loose',
+      maxTextSize: 900000,
+      flowchart: { htmlLabels: true, useMaxWidth: false, curve: 'basis' },
+      themeVariables: {
+        fontSize: '13px',
+        fontFamily: 'ui-sans-serif, system-ui, sans-serif'
+      }
+    });
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; padding: 32px; color: #0f172a; }
+    h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+    p  { font-size: 13px; color: #64748b; margin-bottom: 18px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-bottom: 22px; padding: 14px 18px;
+              background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #334155; }
+    .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid #00000022; }
+    .sw-wa { background: #25D366; border-color: #128C7E; }
+    .sw-pwa { background: #4F46E5; border-color: #3730A3; }
+    .sw-be { background: #1E293B; border-color: #334155; }
+    .sw-admin { background: #DC2626; border-color: #B91C1C; }
+    .sw-credit { background: #7C3AED; border-color: #5B21B6; }
+    .sw-privacy { background: #F59E0B; border-color: #B45309; }
+    .sw-decision { background: #FEF3C7; border-color: #D97706; }
+    .sw-error { background: #FCA5A5; border-color: #B91C1C; }
+    .wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            padding: 32px; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+    .mermaid { min-width: 1700px; }
+    .meta { font-size: 12px; color: #64748b; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <h1>Plug A Pro — Service Provider Journey (v2)</h1>
+  <p>Updated operating model: <strong>WhatsApp-first · WhatsApp-complete · PWA-optional</strong>. Provider can complete the full lifecycle inside WhatsApp. The PWA is for richer dashboards, profile management, credit history, image gallery, and document management — never required for transactional flow.</p>
+
+  <div class="legend">
+    <span><i class="swatch sw-wa"></i> WhatsApp action</span>
+    <span><i class="swatch sw-pwa"></i> PWA (optional)</span>
+    <span><i class="swatch sw-be"></i> Backend / system</span>
+    <span><i class="swatch sw-admin"></i> Admin / Ops</span>
+    <span><i class="swatch sw-credit"></i> Credit event</span>
+    <span><i class="swatch sw-privacy"></i> Privacy boundary</span>
+    <span><i class="swatch sw-decision"></i> Decision</span>
+    <span><i class="swatch sw-error"></i> Exception / error</span>
+  </div>
+
+  <div class="wrap">
+    <pre class="mermaid">
+flowchart TD
+
+%% ─────────────────────────────────────────────────────────────
+%% ① WhatsApp Entry & Identity Resolution
+%% ─────────────────────────────────────────────────────────────
+subgraph SG1["① WhatsApp Entry &amp; Identity Resolution"]
+    A1["📱 Provider sends 'hi' / 'register' / 'find work'\n[WhatsApp]"]
+    A2["🔔 Webhook received · signature verified\nWAMID dedup · message stored\n[Backend]"]
+    A3["Normalise phone to E.164\nphoneLookupVariants generated\n[Backend]"]
+    A4{"Phone\nknown?"}
+    A5{"Existing\ncustomer?"}
+    A6["⛔ Conflict — phone already a customer\nSame number cannot be both in MVP\n[WhatsApp]"]
+    A7{"Existing\nprovider?"}
+    A8{"Provider\nstatus?"}
+    A9["Show discovery menu\nRequest a Service / Find Work\n[WhatsApp]"]
+    A10{"Chose\nFind Work?"}
+    A11["Route to provider onboarding\n[WhatsApp]"]
+    A12["Route to customer flow\n[WhatsApp]"]
+    A1 --> A2 --> A3 --> A4
+    A4 -->|"Yes"| A5
+    A4 -->|"No — unknown"| A9
+    A5 -->|"Yes"| A6
+    A5 -->|"No"| A7
+    A7 -->|"Yes"| A8
+    A7 -->|"No"| A9
+    A9 --> A10
+    A10 -->|"Yes"| A11
+    A10 -->|"No — Request a Service"| A12
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ② Onboarding (WhatsApp-first)
+%% ─────────────────────────────────────────────────────────────
+subgraph SG2["② Onboarding — WhatsApp-first (PWA mirror at /provider/apply is optional)"]
+    B1["Intro &amp; consent\n'Reply YES to apply'\nDiscloses: starter credits on approval,\n1 credit per accepted job,\nfull details unlock only after acceptance\n[WhatsApp]"]
+    B2["Capture: full name · mobile · email (optional) · ID/passport\n[WhatsApp]"]
+    B3["Capture: provider type · service categories · sub-services\nPaginated 8-item lists + nav\n[WhatsApp]"]
+    B4["Capture: years of experience · skill level\n[WhatsApp]"]
+    B5["Capture: city / region / suburb(s)\n[WhatsApp]"]
+    B6{"Active pilot\nservice area?"}
+    B7["Mark as Coming Soon\nAdd to waitlist\n[WhatsApp]"]
+    B8["Capture: availability days/times · call-out fee · rate · negotiable flag\n[WhatsApp]"]
+    B9["Upload profile photo · previous-work photos · references (3-sec batch window)\nValidate MIME/size · ≤ N files\n[WhatsApp → Backend storage]"]
+    B10["Show application summary\n[WhatsApp]"]
+    B11{"Provider\nconfirms?"}
+    B12["❌ Cancel · return to menu\n[WhatsApp]"]
+    B13["Submit application\nProviderApplication created\nstatus: PENDING / application_submitted\n[Backend]"]
+    B14["✅ 'Application submitted' confirmation\nReference number provided\n[WhatsApp → Provider]"]
+    B1 --> B2 --> B3 --> B4 --> B5 --> B6
+    B6 -->|"Non-pilot"| B7
+    B6 -->|"Active pilot"| B8
+    B7 --> B8
+    B8 --> B9 --> B10 --> B11
+    B11 -->|"Cancel"| B12
+    B11 -->|"Confirm"| B13 --> B14
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ③ Application Review &amp; Approval
+%% ─────────────────────────────────────────────────────────────
+subgraph SG3["③ Application Review &amp; Approval — Admin"]
+    C1["Ops team reviews application\n[Admin Dashboard]"]
+    C2{"Decision"}
+    C3["✅ APPROVED\nProvider.status → APPROVED / approved_idle\nAvailableNow → true\nStarter credits awarded once via wallet ledger\n[Backend · Credit Ledger]"]
+    C4["❌ DECLINED\nReason stored\n[Backend]"]
+    C5["⚠️ MORE_INFO_REQUIRED\nNote stored\n[Backend]"]
+    C6["'technician_application_approved' template\nIncludes starter credit balance\n[WhatsApp → Provider]"]
+    C7["'technician_application_declined' template\nDecline reason included\n[WhatsApp → Provider]"]
+    C8["'application_more_info' template\n[WhatsApp → Provider]"]
+    C9["Provider replies free-text in WhatsApp\nresumeMoreInfoApplication appends note\nstatus → PENDING (audited)\n[WhatsApp → Backend]"]
+    C10["Provider eligible for opportunity broadcasts\n[Backend]"]
+    C1 --> C2
+    C2 -->|"Approve"| C3 --> C6 --> C10
+    C2 -->|"Decline"| C4 --> C7
+    C2 -->|"More info"| C5 --> C8 --> C9 --> C1
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ④ Provider Operations Menu (WhatsApp-complete)
+%% ─────────────────────────────────────────────────────────────
+subgraph SG4["④ Provider Operations Menu — fully usable in WhatsApp"]
+    D1{"Provider\nstatus?"}
+    D2["PENDING menu\n─ Application Status\n─ Update Application\n─ Support\n[WhatsApp]"]
+    D3["APPROVED menu (1–6)\n1. View credits\n2. View opportunities\n3. View active jobs\n4. Update availability\n5. Update profile\n6. Contact support\n[WhatsApp]"]
+    D4{"Action?"}
+    D5["💰 Credit summary\nAvailable · Starter · Purchased\nSource: ProviderWallet + ledger\n[WhatsApp]"]
+    D6["🛠️ Active jobs (#PAP-JOB-…)\nRefer to job state\n[WhatsApp]"]
+    D7["Pause / Go Available toggle\nAvailableNow ↔ false/true\n[Backend]"]
+    D8["Profile edit (light)\n[WhatsApp]"]
+    D9["Open optional PWA dashboard\nOTP login required\n[PWA]"]
+    D1 -->|"PENDING"| D2
+    D1 -->|"APPROVED"| D3
+    D3 --> D4
+    D4 -->|"View credits"| D5
+    D4 -->|"View jobs"| D6
+    D4 -->|"Availability"| D7
+    D4 -->|"Update profile"| D8
+    D4 -->|"Open dashboard (optional)"| D9
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ⑤ Opportunity Preview (broadcast — no credit, masked customer info)
+%% ─────────────────────────────────────────────────────────────
+subgraph SG5["⑤ Opportunity Preview — masked, NO credit charged"]
+    E1["Backend dispatcher selects Top-N eligible providers\nSkill · area · availability · cohort filters\n[Backend — Matching Engine]"]
+    E2["Send 'job_offer' / opportunity preview\nCategory · suburb · city · province · region\nUrgency · preferred date/time · budget pref\nDescription summary (truncated via previewNotes)\nPhotos count (only safeForPreview=true)\nCurrent credit balance\nButtons: 1. Interested · 2. Not interested · 3. View photos\nOptional signed link {{lead_preview_url}}\n[WhatsApp → Provider]"]
+    E3["🔒 Privacy boundary — masked fields\nNO phone · NO email · NO street · NO unit\nNO complex · NO access notes · NO GPS · NO postal code\n[Privacy]"]
+    E4["LeadInvite created · status: SENT → VIEWED\nlead.expiresAt = +15 min preview window\n[Backend]"]
+    E5["10-min nudge if no response\n'technician_job_reminder'\n[WhatsApp → Provider]"]
+    E1 --> E4 --> E2 --> E3
+    E2 --> E5
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ⑥ Provider Interest Response (multi-step capture — no credit)
+%% ─────────────────────────────────────────────────────────────
+subgraph SG6["⑥ Provider Interest Response — NO credit"]
+    F1{"Provider\nresponse?"}
+    F2["Tap 'Not interested'\nnot_interested:&lt;leadId&gt;\nLead → DECLINED · drops out\n[WhatsApp]"]
+    F3["Tap 'Interested'\ninterested:&lt;leadId&gt;\n[WhatsApp]"]
+    F4["No response within 15-min window\nLead → EXPIRED\nNot eligible for shortlist\n[Backend]"]
+    F5["Capture call-out fee (R)\nstate: interest_capture_callout\n[WhatsApp]"]
+    F6["Capture estimated arrival time\nETA NLP: HH:MM · today/tomorrow + window\nin N hours · noon · later today\nstate: interest_capture_arrival\n[WhatsApp]"]
+    F7["Capture rate · negotiable yes/no · optional note\nstate: interest_capture_rate\n[WhatsApp]"]
+    F8["💾 ProviderLeadResponse persisted\nlead_invite_id · provider_id · response\ncall_out_fee · estimated_arrival_at\nrate_type · rate_amount · negotiable · provider_note\nidempotencyKey: whatsapp:&lt;providerId&gt;:&lt;leadId&gt;:interested\n[Backend]"]
+    F9["✅ 'Interest submitted. No credits were used.\nWe'll notify you if the customer selects you.'\n[WhatsApp → Provider]"]
+    F10["Logical lead state: INTERESTED\n(timestamp-driven; enum value additive)\n[Backend]"]
+    F1 -->|"Not interested"| F2
+    F1 -->|"Interested"| F3
+    F1 -->|"No response · 15 min"| F4
+    F3 --> F5 --> F6 --> F7 --> F8 --> F9 --> F10
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ⑦ Customer Selects Provider — Selected Provider Notified (still no credit)
+%% ─────────────────────────────────────────────────────────────
+subgraph SG7["⑦ Customer Selects Provider — Selected Provider Notified · NO credit"]
+    G1["Customer compares shortlist in PWA\nSelects provider\n[Customer · PWA]"]
+    G2["Backend: selectShortlistedProviderForRequest\nrequest.status → PROVIDER_CONFIRMATION_PENDING\nlead_invite.customerSelectedAt set\nselectedProviderId · selectedLeadInviteId\n[Backend]"]
+    G3["Send 'interactive:provider_selected_for_confirmation'\n'✅ Customer selected you for #PAP-JOB-…\nAccepting this job uses 1 credit\nAvailable: {{available_credits}} · After: {{remaining_credits}}'\nButtons: confirm_accept:&lt;leadId&gt; · confirm_decline:&lt;leadId&gt;\n[WhatsApp → Selected Provider]"]
+    G4["🔒 Privacy boundary — STILL masked\nFull customer details NOT yet released\n[Privacy]"]
+    G1 --> G2 --> G3 --> G4
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ⑧ Provider Final Acceptance — 1 CREDIT DEDUCTED · DETAILS UNLOCK
+%% ─────────────────────────────────────────────────────────────
+subgraph SG8["⑧ Provider Final Acceptance — 💳 1 credit deducted · 🔓 details unlock"]
+    H1{"Provider\nresponse?"}
+    H2["Tap 'Confirm decline'\nconfirm_decline:&lt;leadId&gt;\n[WhatsApp]"]
+    H3["declineSelectedProviderJob\nrequest → SHORTLIST_READY (re-selectable)\nNo credit deducted\n[Backend]"]
+    H4["Tap 'Confirm accept'\nconfirm_accept:&lt;leadId&gt;\n(or PWA accept screen)\n[WhatsApp / PWA]"]
+    H5["acceptSelectedProviderJob\n→ unlockLeadForProviderInTransaction (single ledger entrypoint)\n[Backend]"]
+    H6{"Idempotent re-accept?\n(already unlocked)"}
+    H7["Return alreadyUnlocked: true\nNO additional debit\n[Backend]"]
+    H8{"Guards passed?\n· lead.providerId matches\n· selectedLeadInviteId matches\n· customerSelectedAt set\n· lead.status ≠ EXPIRED\n· request = PROVIDER_CONFIRMATION_PENDING\n· wallet credits ≥ 1"}
+    H9["⛔ Insufficient credits / job unavailable / duplicate\nControlled WhatsApp message\nNO credit deducted · customer NOT notified\n[WhatsApp → Provider]"]
+    H10["💳 ATOMIC TRANSACTION\nDeduct 1 credit · write CreditLedger entry\nCreate Match · approved Quote (call-out fee)\nCreate Booking · Job · JobStatusEvent\nCreate LeadUnlock · AuditLog\nExpire other pending lead invites\n[Backend — Credit Ledger]"]
+    H11["🔓 PRIVACY UNLOCK\nFull customer name · mobile · full address\nUnit / complex · structured accessNotes\nFull description · all photos · preferred time\n[Privacy]"]
+    H12["✅ 'Job confirmed · 1 credit used · balance R{{remaining}}'\nSends full job card to provider\n[WhatsApp → Provider]"]
+    H13["'technician_assigned' template\nProvider name + contact\n[WhatsApp → Customer]"]
+    H1 -->|"Decline"| H2 --> H3
+    H1 -->|"Accept"| H4 --> H5 --> H6
+    H6 -->|"Yes"| H7
+    H6 -->|"No"| H8
+    H8 -->|"Fail"| H9
+    H8 -->|"Pass"| H10 --> H11 --> H12
+    H10 --> H13
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ⑨ Arrival &amp; Job Execution (WhatsApp)
+%% ─────────────────────────────────────────────────────────────
+subgraph SG9["⑨ Arrival &amp; Job Execution — fully driven from WhatsApp"]
+    I1["Provider replies 'arrive 14:00' or 'eta HH:MM'\nMulti-job: 'arrive 14:00 #PAP-JOB-ABC12345'\nJob.scheduledArrivalAt + arrivalTimeConfirmedAt set\n[WhatsApp → Backend]"]
+    I2["Provider sends 'on the way' / 'otw' / 'en route'\nJob: SCHEDULED → EN_ROUTE\n[WhatsApp]"]
+    I3["Provider sends 'arrived' / 'i arrived'\nJob: EN_ROUTE → ARRIVED\n[WhatsApp]"]
+    I4["Provider sends 'start' / 'start work'\nJob: ARRIVED → STARTED\n[WhatsApp]"]
+    I5["Provider sends 'complete' / 'done' / 'finished'\nJob: STARTED → PENDING_COMPLETION_CONFIRMATION\n[WhatsApp]"]
+    I6["Capture completion note (required) + completion photo (optional · SKIP allowed)\nlabel: 'completion_photo' attachment\n[WhatsApp → Backend]"]
+    I7["Customer auto-notified per transition\non_the_way · arrived · job_completed\n[WhatsApp → Customer]"]
+    I1 --> I2 --> I3 --> I4 --> I5 --> I6
+    I2 --> I7
+    I3 --> I7
+    I5 --> I7
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ⑩ Optional PWA Surfaces (provider) — NEVER required
+%% ─────────────────────────────────────────────────────────────
+subgraph SG10["⑩ Optional Provider PWA — NOT required for any transactional flow"]
+    J1["/provider/dashboard\nPerformance · upcoming jobs · earnings\n[PWA]"]
+    J2["/provider/profile · /services · /areas · /availability · /rates\nRicher profile management\n[PWA]"]
+    J3["/provider/credits · /provider/credits/history\nLedger view · purchase via Payfast\n[PWA]"]
+    J4["/provider/opportunities/[leadInviteId]\nRicher lead detail · image gallery\n[PWA Signed Link]"]
+    J5["/provider/jobs/[jobId] · /arrival · /execute · /complete\nState-aware resolver — never stale\n[PWA Signed Link]"]
+    J6["Document management · ID · certifications · references\n[PWA]"]
+    J7["Token routes /provider/handoff|lead|job/:token\n→ resolveProviderPwaHandoffPath\n→ /leads/access/[token]\n[PWA]"]
+end
+
+%% ─────────────────────────────────────────────────────────────
+%% ⑪ Exception &amp; Recovery
+%% ─────────────────────────────────────────────────────────────
+subgraph SG11["⑪ Exception &amp; Recovery"]
+    K1["Free-text outside known commands\n→ tip-rich recovery + menu\n[WhatsApp]"]
+    K2["'menu' / 'help' / 'status' commands always available\n[WhatsApp]"]
+    K3["Insufficient credits · job unavailable · duplicate accept\n→ controlled WhatsApp messages · no credit deducted\n[WhatsApp]"]
+    K4["Token expired / invalid\n→ controlled recovery copy\n[PWA]"]
+    K5["Provider role guard prevents cross-journey actions\n[Backend]"]
+    K6["Logged phone numbers masked → 0XX****XXX (maskPhone)\n[Backend]"]
+end
+
+%% ─── Top-level connections ───
+A11 --> B1
+B14 -.->|"Async — Ops queue"| C1
+C10 -.->|"Provider eligible for matching"| E1
+A8 -->|"PENDING"| D2
+A8 -->|"APPROVED / ACTIVE"| D3
+A8 -->|"INACTIVE / SUSPENDED"| K2
+F2 -.->|"Drops out"| E1
+F4 -.->|"Try other invitees"| E1
+F10 -.->|"Counts toward shortlist"| G1
+H3 -.->|"Customer can re-select"| G1
+H7 --> H12
+H12 --> I1
+J4 -.->|"Optional alternative to WhatsApp inline preview"| F1
+J5 -.->|"Optional alternative to WhatsApp commands"| I2
+D9 --> J1
+
+%% ─── Class definitions ───
+classDef whatsapp fill:#25D366,color:#000,stroke:#128C7E,stroke-width:1.5px
+classDef pwa fill:#4F46E5,color:#fff,stroke:#3730A3,stroke-width:1.5px
+classDef backend fill:#1E293B,color:#fff,stroke:#334155,stroke-width:1.5px
+classDef admin fill:#DC2626,color:#fff,stroke:#B91C1C,stroke-width:1.5px
+classDef credit fill:#7C3AED,color:#fff,stroke:#5B21B6,stroke-width:1.5px
+classDef privacy fill:#F59E0B,color:#000,stroke:#B45309,stroke-width:1.5px
+classDef decision fill:#FEF3C7,color:#000,stroke:#D97706,stroke-width:1.5px
+classDef error fill:#FCA5A5,color:#000,stroke:#B91C1C,stroke-width:1.5px
+
+%% WhatsApp
+class A1,A6,A9,A11,A12,B1,B2,B3,B4,B5,B7,B8,B9,B10,B12,B14,C6,C7,C8,C9,D2,D3,D5,D6,D8,E2,E5,F2,F3,F5,F6,F7,F9,G3,H2,H4,H9,H12,H13,I1,I2,I3,I4,I5,I6,I7,K1,K2,K3 whatsapp
+%% PWA optional
+class D9,G1,J1,J2,J3,J4,J5,J6,J7,K4 pwa
+%% Backend
+class A2,A3,B13,C3,C4,C5,C10,D7,E1,E4,F4,F8,F10,G2,H3,H5,I7,K5,K6 backend
+%% Admin
+class C1 admin
+%% Credit events
+class H7,H10 credit
+%% Privacy boundaries
+class E3,G4,H11 privacy
+%% Decisions
+class A4,A5,A7,A8,A10,B6,B11,C2,D1,D4,F1,H1,H6,H8 decision
+    </pre>
+  </div>
+
+  <p class="meta">Source-of-truth blueprints: <code>plugapro_provider_whatsapp_pwa_blueprint/02–13</code>, <code>plugapro_codex_blueprint/10–13</code>, <code>docs/codex-execution/010–017</code>, <code>docs/provider-whatsapp-pwa-execution/017</code>. Generated 2026-05-02. Diagram is target-state with feature flags <code>qualified_shortlist.dispatch_v2</code> and <code>qualified_shortlist.auto_trigger</code> ON.</p>
+</body>
+</html>
