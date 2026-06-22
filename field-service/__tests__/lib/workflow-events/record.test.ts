@@ -2,6 +2,7 @@
 process.env.OPENBRAIN_AILOOP_SINK = 'null'
 
 import { describe, it, expect, vi } from 'vitest'
+import type { PrismaClient } from '@prisma/client'
 import {
   recordWorkflowEvent,
   type RecordWorkflowEventInput,
@@ -127,7 +128,7 @@ describe('recordWorkflowEvent', () => {
     })
 
     const res = await recordWorkflowEvent(baseInput, {
-       
+
       client: client as any,
       now: () => FIXED,
       capture,
@@ -135,5 +136,60 @@ describe('recordWorkflowEvent', () => {
 
     expect(res.id).toBe('we_1')
     expect(rows).toHaveLength(1)
+  })
+
+  describe('Tier 1 funnel event types', () => {
+    it.each([
+      'REQUEST_STARTED',
+      'REQUEST_SUBMITTED',
+      'PROVIDER_NOTIFIED',
+      'PROVIDER_VIEWED',
+      'PROVIDER_ACCEPTED',
+      'PROVIDER_DECLINED',
+      'CLIENT_NOTIFIED',
+    ] as const)('accepts %s as a valid eventType', async (eventType) => {
+      const create = vi.fn().mockResolvedValue({ id: 'wf-1', occurredAt: new Date('2026-06-22T12:00:00Z') })
+      const client = { workflowEvent: { create } } as unknown as PrismaClient
+      const capture = vi.fn().mockResolvedValue(undefined)
+
+      await recordWorkflowEvent(
+        {
+          eventType,
+          actorType: 'system',
+          entityType: 'JOB_REQUEST',
+          entityId: 'jr-1',
+          source: 'test',
+        },
+        { client, capture },
+      )
+
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ eventType }) }),
+      )
+    })
+  })
+
+  describe('PII metadata guard', () => {
+    it('forbids known PII keys in metadata at runtime', async () => {
+      const create = vi.fn().mockResolvedValue({ id: 'wf-1', occurredAt: new Date() })
+      const client = { workflowEvent: { create } } as unknown as PrismaClient
+
+      const piiKeys = ['phone', 'email', 'idNumber', 'address', 'customerName', 'providerName']
+      for (const key of piiKeys) {
+        await expect(
+          recordWorkflowEvent(
+            {
+              eventType: 'REQUEST_SUBMITTED',
+              actorType: 'customer',
+              entityType: 'JOB_REQUEST',
+              entityId: 'jr-1',
+              source: 'test',
+              metadata: { [key]: 'should-be-rejected' },
+            },
+            { client },
+          ),
+        ).rejects.toThrow(/PII/i)
+      }
+    })
   })
 })

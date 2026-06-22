@@ -15,6 +15,34 @@ import { Prisma, type PrismaClient, type WorkflowEventType } from '@prisma/clien
 import { db } from '@/lib/db'
 import { safeCapture, type OperationalEvent, type ActorType } from '@/lib/ai-loop'
 
+// Conservative allowlist guard. Callers must use internal IDs and structured
+// flags in metadata — never raw customer/provider identifiers. Keys listed
+// here are denied at runtime to fail loud rather than leak silently.
+const FORBIDDEN_METADATA_KEYS = new Set([
+  'phone',
+  'phoneNumber',
+  'email',
+  'emailAddress',
+  'idNumber',
+  'identityNumber',
+  'address',
+  'customerName',
+  'providerName',
+  'name',
+  'fullName',
+])
+
+function assertNoPiiKeys(metadata: Record<string, unknown> | undefined): void {
+  if (!metadata) return
+  for (const key of Object.keys(metadata)) {
+    if (FORBIDDEN_METADATA_KEYS.has(key)) {
+      throw new Error(
+        `recordWorkflowEvent: metadata key "${key}" is forbidden (PII). Use an internal id or a structured flag instead.`,
+      )
+    }
+  }
+}
+
 /** Actor strings we persist. Superset of the AI-loop ActorType allowlist. */
 export type WorkflowActorType =
   | 'customer'
@@ -104,6 +132,8 @@ export async function recordWorkflowEvent(
   const capture = options.capture ?? safeCapture
   const occurredAt = input.occurredAt ?? now()
   const metadata = input.metadata ?? {}
+
+  assertNoPiiKeys(metadata)
 
   const row = await client.workflowEvent.create({
     data: {
