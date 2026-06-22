@@ -238,7 +238,6 @@ export function BookingFlow({
   const requestStartedFiredRef = useRef(false)
   useEffect(() => {
     if (requestStartedFiredRef.current) return
-    if (typeof window === 'undefined') return
 
     // Per-session dedup: don't re-fire on remount within the same tab session.
     const key = `pap.funnel.request_started.${category.slug}`
