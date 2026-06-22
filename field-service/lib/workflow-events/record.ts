@@ -53,6 +53,7 @@ export type WorkflowActorType =
 
 /** Entity kinds a funnel event can be about. Free-form by design, but these are the known ones. */
 export type WorkflowEntityType =
+  | 'ANONYMOUS_SESSION'
   | 'PROVIDER_APPLICATION'
   | 'PROVIDER'
   | 'CUSTOMER'
