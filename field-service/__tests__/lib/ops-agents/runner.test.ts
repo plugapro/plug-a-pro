@@ -268,6 +268,26 @@ describe('runAgent', () => {
     })
     expect(summary.draftsCreated).toBe(1)
   })
+
+  it('clears a stale non-terminal draft when a later run produces no draft', async () => {
+    const mem = createMemoryStore()
+    // Run 1: candidate yields a draft → a PENDING_APPROVAL draft is stored.
+    await runAgent(makeAgent([{ id: 'jr1', draft: draftSpec() }]), {
+      trigger: 'manual',
+      now: fixedNow,
+      store: mem.store,
+    })
+    const recId = [...mem.recsByDedupe.values()][0].id
+    expect(mem.draftsByRec.get(recId)?.some((d) => d.status === 'PENDING_APPROVAL')).toBe(true)
+
+    // Run 2: same candidate (same dedupeKey) yields NO draft → stale draft cleared.
+    await runAgent(makeAgent([{ id: 'jr1' }]), {
+      trigger: 'manual',
+      now: fixedNow,
+      store: mem.store,
+    })
+    expect(mem.draftsByRec.get(recId)?.some((d) => d.status === 'PENDING_APPROVAL')).toBe(false)
+  })
 })
 
 describe('buildDedupeKey', () => {

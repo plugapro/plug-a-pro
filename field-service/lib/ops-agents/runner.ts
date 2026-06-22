@@ -222,6 +222,12 @@ export async function runAgent<TCandidate>(
         const row = buildDraftRow(evaluation.draft, status, policy.reason ?? null)
         const draftRes = await store.replaceDraft(upsert.id, row)
         if (draftRes.created && status === 'PENDING_APPROVAL') draftsCreated++
+      } else {
+        // No draft this run — clear any stale non-terminal draft so the queue
+        // reflects current state (e.g. the entity improved, or dropped out of an
+        // agent's per-run draft budget). replaceDraft(_, null) only removes
+        // PENDING_APPROVAL / BLOCKED_POLICY drafts; APPROVED/SENT are preserved.
+        await store.replaceDraft(upsert.id, null)
       }
 
       if (def.persistArtifacts) {
