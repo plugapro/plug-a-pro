@@ -4,6 +4,25 @@
 // Read-only aggregations. Returns counts + category/suburb labels only — no
 // customer names, phones, addresses, or request descriptions. Per-request
 // drill-down lives in Tier 3.
+//
+// ── Test-cohort traffic skew ──────────────────────────────────────────────────
+// TODO(tier-2): WorkflowEvent has no `isTestEvent` column. This means the
+// WorkflowEvent-based stage counts (REQUEST_STARTED, PROVIDER_ACCEPTED,
+// CLIENT_NOTIFIED) include test-cohort traffic, while the JobRequest-based
+// submitted count uses `isTestRequest: false`. In any reporting window that
+// contains test activity, `started` may exceed `submitted`, making conversion
+// rates appear higher than reality.
+//
+// Acceptable Tier-1 resolution: surface a disclaimer in the page header and
+// in the daily script's console output (see both sites). The UI disclaimer
+// text is: "Note: test-event traffic is included in cohort-event counts
+// (started / provider-accepted / client-notified) until tier-2 fix lands."
+//
+// Tier-2 fix: add `isTestEvent Boolean @default(false)` to WorkflowEvent,
+// backfill from the related JobRequest.isTestRequest, and add
+// `isTestEvent: false` to every `workflowEvent.count` / `findMany` where-
+// clause in this file.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import type { PrismaClient, Prisma } from '@prisma/client'
 import { db as defaultDb } from '@/lib/db'

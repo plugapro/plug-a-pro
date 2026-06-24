@@ -104,6 +104,17 @@ export default async function CustomerFunnelReportPage({
 
   return (
     <div className="space-y-8">
+      {/* TODO(tier-2): WorkflowEvent has no isTestEvent column. WorkflowEvent-based
+          stage counts (REQUEST_STARTED, PROVIDER_ACCEPTED, CLIENT_NOTIFIED) include
+          test-cohort traffic, while JobRequest counts filter isTestRequest=false.
+          This can cause started > submitted in windows with test activity. */}
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+        <strong>Note:</strong> Test-event traffic is included in cohort-event counts
+        (started / provider-accepted / client-notified) until tier-2 fix lands.
+        Submitted counts already exclude test requests. Conversion rates may appear
+        inflated in windows with test activity.
+      </div>
+
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link

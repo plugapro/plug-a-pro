@@ -84,6 +84,18 @@ async function main() {
     return
   }
 
+  // TODO(tier-2): WorkflowEvent has no isTestEvent column. WorkflowEvent-based
+  // stage counts (REQUEST_STARTED, PROVIDER_ACCEPTED, CLIENT_NOTIFIED) include
+  // test-cohort traffic, while JobRequest-based counts filter isTestRequest=false.
+  // This can cause started > submitted in windows with active test events.
+  // Fix: add isTestEvent column to WorkflowEvent and join-filter in fetchers.
+  console.warn(
+    '[funnel-report] NOTE: test-event traffic is included in cohort-event counts ' +
+    '(REQUEST_STARTED / PROVIDER_ACCEPTED / CLIENT_NOTIFIED) until tier-2 fix lands. ' +
+    'Submitted counts already exclude test requests (isTestRequest=false filter). ' +
+    'Conversion rates may appear inflated in windows with test activity.',
+  )
+
   const banner = `========== Plug A Pro — Customer Funnel — last ${days}d ==========`
   console.log(banner)
   console.log(`Window: ${from.toISOString().slice(0, 16).replace('T', ' ')} → ${to.toISOString().slice(0, 16).replace('T', ' ')} UTC`)
