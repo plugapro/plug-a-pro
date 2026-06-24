@@ -261,46 +261,62 @@ export async function dispatchMatchLead(params: {
 
   if (actionsAlreadySent) return
 
-  // Qualified Shortlist Model: when the dispatch_v2 flag is on, the buttons
-  // capture free interest instead of triggering a paid acceptance. This keeps
-  // the legacy paid sequential dispatch reachable until pilots are ready.
-  const dispatchV2 = await isEnabled('qualified_shortlist.dispatch_v2').catch(() => false)
-  const buttons = dispatchV2
-    ? [
-        { id: `interested:${lead.id}`, title: "I'm available" },
-        { id: `not_interested:${lead.id}`, title: 'Not available' },
-      ]
-    : [
-        { id: `accept:${hold.id}`, title: 'Accept Lead' },
-        { id: `decline:${hold.id}`, title: 'Decline' },
-      ]
+  // Action-buttons follow-up message. Default OFF as of 2026-06-24 — the
+  // dispatch:job_lead_actions interactive template is policy-blocked outside
+  // the 24h provider session window and was failing 22+ times per 14 days in
+  // prod. The first WhatsApp send above (sendJobOffer / sendButtons in the
+  // UTILITY template) already carries a URL CTA that opens /leads/access/[token];
+  // providers accept inside the PWA.
+  // Flip MATCHING_SEND_DISPATCH_ACTION_BUTTONS=true to re-enable after the
+  // interactive templates are reclassified UTILITY in Meta Business Manager.
+  // Spec: docs/superpowers/plans/2026-06-24-pre-jhb-north-acquisition-fixes.md
+  if (MATCHING_CONFIG.sendDispatchActionButtons) {
+    // Qualified Shortlist Model: when the dispatch_v2 flag is on, the buttons
+    // capture free interest instead of triggering a paid acceptance. This keeps
+    // the legacy paid sequential dispatch reachable until pilots are ready.
+    const dispatchV2 = await isEnabled('qualified_shortlist.dispatch_v2').catch(() => false)
+    const buttons = dispatchV2
+      ? [
+          { id: `interested:${lead.id}`, title: "I'm available" },
+          { id: `not_interested:${lead.id}`, title: 'Not available' },
+        ]
+      : [
+          { id: `accept:${hold.id}`, title: 'Accept Lead' },
+          { id: `decline:${hold.id}`, title: 'Decline' },
+        ]
 
-  await sendButtons(
-    provider.phone,
-    actionsBody,
-    buttons,
-    undefined,
-    { templateName: 'dispatch:job_lead_actions', metadata: msgMeta }
-  ).catch(async (err: unknown) => {
-    const failureReason = err instanceof Error ? err.message : String(err)
-    console.error('[dispatch] WhatsApp action buttons failed - hold still active', {
-      ...msgMeta,
-      error: failureReason,
+    await sendButtons(
+      provider.phone,
+      actionsBody,
+      buttons,
+      undefined,
+      { templateName: 'dispatch:job_lead_actions', metadata: msgMeta }
+    ).catch(async (err: unknown) => {
+      const failureReason = err instanceof Error ? err.message : String(err)
+      console.error('[dispatch] WhatsApp action buttons failed - hold still active', {
+        ...msgMeta,
+        error: failureReason,
+      })
+      await db.messageEvent.create({
+        data: {
+          channel: 'WHATSAPP',
+          direction: 'OUTBOUND',
+          templateName: 'dispatch:job_lead_actions',
+          body: actionsBody,
+          to: provider.phone,
+          status: 'FAILED',
+          sentAt: new Date(),
+          failureReason,
+          metadata: msgMeta as object,
+        },
+      }).catch(() => {})
     })
-    await db.messageEvent.create({
-      data: {
-        channel: 'WHATSAPP',
-        direction: 'OUTBOUND',
-        templateName: 'dispatch:job_lead_actions',
-        body: actionsBody,
-        to: provider.phone,
-        status: 'FAILED',
-        sentAt: new Date(),
-        failureReason,
-        metadata: msgMeta as object,
-      },
-    }).catch(() => {})
-  })
+  } else {
+    console.info('[dispatch] action-buttons send skipped by config', {
+      ...msgMeta,
+      reason: 'MATCHING_SEND_DISPATCH_ACTION_BUTTONS=false',
+    })
+  }
 
   // Notify customer that offer was sent and provide offer window duration
   if (jobRequest.customer?.phone && !actionsAlreadySent) {

@@ -2495,7 +2495,10 @@ export async function acceptAssignmentOffer(params: {
       ) {
         await tx.lead.updateMany({
           where: { id: lead.id, status: { not: 'ACCEPTED' } },
-          data: { status: 'ACCEPTED', respondedAt: new Date() },
+          // 2026-06-24 half-commit fix: stamp providerAcceptedAt alongside the
+          // status flip so the funnel page + daily script have a non-null
+          // acceptance timestamp. Spec: docs/superpowers/plans/2026-06-24-pre-jhb-north-acquisition-fixes.md
+          data: { status: 'ACCEPTED', respondedAt: new Date(), providerAcceptedAt: new Date() },
         })
         if (lead.assignmentHoldId) {
           await tx.assignmentHold.updateMany({
@@ -2594,7 +2597,8 @@ export async function acceptAssignmentOffer(params: {
     if (existingMatch && existingMatch.providerId === params.providerId) {
       await tx.lead.update({
         where: { id: lead.id },
-        data: { status: 'ACCEPTED', respondedAt: new Date() },
+        // 2026-06-24 half-commit fix — see comment above.
+        data: { status: 'ACCEPTED', respondedAt: new Date(), providerAcceptedAt: new Date() },
       })
       await tx.assignmentHold.update({
         where: { id: lead.assignmentHold.id },
@@ -2625,7 +2629,10 @@ export async function acceptAssignmentOffer(params: {
 
     await tx.lead.update({
       where: { id: lead.id },
-      data: { status: 'ACCEPTED', respondedAt: new Date() },
+      // 2026-06-24 half-commit fix — see comment above. This is the primary
+      // acceptance path post-credit-unlock; Vigilance Chauke's lead (prod, 2026-06-17)
+      // landed here with providerAcceptedAt = NULL until this fix.
+      data: { status: 'ACCEPTED', respondedAt: new Date(), providerAcceptedAt: new Date() },
     })
     await tx.assignmentHold.update({
       where: { id: lead.assignmentHold.id },

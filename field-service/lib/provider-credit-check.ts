@@ -411,7 +411,12 @@ export async function checkProviderLeadCreditBalanceInTransaction(
   if (lead.status === 'CREDIT_REQUIRED') {
     await tx.lead.updateMany({
       where: { id: lead.id, status: 'CREDIT_REQUIRED' },
-      data: { status: 'PROVIDER_ACCEPTED' },
+      // 2026-06-24 half-commit fix: stamp providerAcceptedAt + respondedAt
+      // alongside the status flip so the funnel page + daily script have a
+      // non-null acceptance timestamp. Idempotent if a prior flip already
+      // stamped it (overwriting by a few ms is fine for analytics).
+      // Spec: docs/superpowers/plans/2026-06-24-pre-jhb-north-acquisition-fixes.md
+      data: { status: 'PROVIDER_ACCEPTED', providerAcceptedAt: new Date(), respondedAt: new Date() },
     })
   }
 

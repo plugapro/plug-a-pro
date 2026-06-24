@@ -21,6 +21,22 @@ vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendButtons: mockSendButtons,
 }))
+// The 2026-06-24 pre-JHB-North fix moved the dispatch:job_lead_actions
+// follow-up send behind MATCHING_CONFIG.sendDispatchActionButtons (env-gated,
+// default OFF). The existing tests in this file cover the legacy "buttons
+// sent" path, so we keep the config TRUE here. A separate test asserts the
+// new default in __tests__/lib/matching/lead-ttl-extension.test.ts and
+// __tests__/lib/lead-acceptance-timestamp.test.ts.
+vi.mock('@/lib/matching/config', async () => {
+  const actual = (await vi.importActual('@/lib/matching/config')) as Record<string, unknown>
+  return {
+    ...actual,
+    MATCHING_CONFIG: {
+      ...(actual.MATCHING_CONFIG as object),
+      sendDispatchActionButtons: true,
+    },
+  }
+})
 vi.mock('@/lib/whatsapp', () => ({
   sendJobOffer: mockSendJobOffer,
 }))

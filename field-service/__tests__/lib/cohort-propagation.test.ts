@@ -66,6 +66,20 @@ vi.mock('@/lib/provider-wallet-notifications', () => ({
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendButtons: mockSendButtons,
 }))
+// 2026-06-24: dispatch:job_lead_actions follow-up is gated by
+// MATCHING_CONFIG.sendDispatchActionButtons (env-default OFF). This test
+// exercises the legacy "buttons sent" path to verify cohort propagation
+// through msgMeta; keep the flag TRUE for the cases that need it.
+vi.mock('@/lib/matching/config', async () => {
+  const actual = (await vi.importActual('@/lib/matching/config')) as Record<string, unknown>
+  return {
+    ...actual,
+    MATCHING_CONFIG: {
+      ...(actual.MATCHING_CONFIG as object),
+      sendDispatchActionButtons: true,
+    },
+  }
+})
 vi.mock('@/lib/whatsapp', () => ({
   sendJobOffer: mockSendJobOffer,
 }))

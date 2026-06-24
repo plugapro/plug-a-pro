@@ -69,19 +69,19 @@ describe('fast match regression sweep', () => {
     vi.unstubAllEnvs()
   })
 
-  it('uses 10 minutes as default provider response window when env is missing/invalid', async () => {
+  it('uses 60 minutes as default provider response window when env is missing/invalid (raised from 10 on 2026-06-24 — see plan 2026-06-24-pre-jhb-north-acquisition-fixes)', async () => {
     // Reset module cache so env parsing is re-evaluated for this test.
     vi.resetModules()
     vi.stubEnv('FAST_MATCH_PROVIDER_RESPONSE_MINUTES', '')
     const missingEnv = await import('@/lib/matching/config')
-    expect(missingEnv.FAST_MATCH_PROVIDER_RESPONSE_MINUTES).toBe(10)
-    expect(missingEnv.MATCHING_CONFIG.offerTtlMinutes).toBe(10)
+    expect(missingEnv.FAST_MATCH_PROVIDER_RESPONSE_MINUTES).toBe(60)
+    expect(missingEnv.MATCHING_CONFIG.offerTtlMinutes).toBe(60)
 
     vi.resetModules()
     vi.stubEnv('FAST_MATCH_PROVIDER_RESPONSE_MINUTES', '0')
     const invalidEnv = await import('@/lib/matching/config')
-    expect(invalidEnv.FAST_MATCH_PROVIDER_RESPONSE_MINUTES).toBe(10)
-    expect(invalidEnv.MATCHING_CONFIG.offerTtlMinutes).toBe(10)
+    expect(invalidEnv.FAST_MATCH_PROVIDER_RESPONSE_MINUTES).toBe(60)
+    expect(invalidEnv.MATCHING_CONFIG.offerTtlMinutes).toBe(60)
   })
 
   it('honors FAST_MATCH_PROVIDER_RESPONSE_MINUTES when configured', async () => {
