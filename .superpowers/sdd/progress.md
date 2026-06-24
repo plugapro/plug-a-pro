@@ -28,3 +28,5 @@ Base: $(git rev-parse main)
 
 `field-service/docs/openbrain/2026-06-22-funnel-observability-tier1-shipped.md` (this branch).
 Memory index entry: `~/.claude/projects/-Users-shimane-Projects-Plug-A-Pro/memory/project_funnel_observability_tier1.md`.
+Task 2: complete (commits b1c14bd7..7d7a3ae7, review PASS — Medium: missing 'secure' assertion in new-session test; Low: comment mismatch in cryptoRandomId, source default 'pwa' applied silently. None blocking.)
+Final fix pass: complete (commits e61bb5a8..06fc4d26 — 4d447de0 test honesty + 06fc4d26 skew disclaimer; re-review PASS, ready to merge)
