@@ -5,7 +5,7 @@
 // ─── Multi-step job request flow ──────────────────────────────────────────────
 // Steps: address → description → confirm → submitted
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, MapPin, Shield, CheckCircle2, Zap, Clock, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -231,6 +231,37 @@ export function BookingFlow({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Durable funnel beacon — records REQUEST_STARTED in the WorkflowEvent log.
+  // Fires once per session per service (sessionStorage dedup) so remounts don't
+  // double-count. The fetch is best-effort; errors are silently swallowed.
+  const requestStartedFiredRef = useRef(false)
+  useEffect(() => {
+    if (requestStartedFiredRef.current) return
+
+    // Per-session dedup: don't re-fire on remount within the same tab session.
+    const key = `pap.funnel.request_started.${category.slug}`
+    if (sessionStorage.getItem(key)) {
+      requestStartedFiredRef.current = true
+      return
+    }
+    requestStartedFiredRef.current = true
+    sessionStorage.setItem(key, '1')
+
+    fetch('/api/funnel/request-started', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        serviceId: category.slug,
+        source: 'pwa',
+        landingPath: window.location.pathname,
+      }),
+      keepalive: true,
+    }).catch(() => {
+      // Best-effort beacon; never surface to the user
+    })
+  }, [category.slug])
 
   useEffect(() => {
     if (hasInitialDraft) return

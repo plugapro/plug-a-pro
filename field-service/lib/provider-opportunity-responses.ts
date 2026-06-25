@@ -7,6 +7,7 @@ import { previewNotes } from './provider-lead-detail'
 import { validateProviderOnboardingRates } from './provider-onboarding-data'
 import { sendText } from './whatsapp-interactive'
 import { notifyCustomerRfpResponseSummary } from './review-first'
+import { recordWorkflowEvent } from './workflow-events/record'
 
 export type ProviderOpportunityResponseInput = {
   leadId: string
@@ -273,6 +274,26 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
   }
 
   if (input.response === 'NOT_INTERESTED') {
+    // Tier 1 funnel observability — PROVIDER_DECLINED emit. The "not interested"
+    // response on a shortlist lead is also a decline from the funnel POV; emit
+    // before the cascade so the count is honest even if the next-provider
+    // routing fails.
+    // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+    recordWorkflowEvent({
+      eventType: 'PROVIDER_DECLINED',
+      actorType: 'provider',
+      actorId: input.providerId,
+      entityType: 'LEAD',
+      entityId: input.leadId,
+      source: input.source ?? 'api',
+      metadata: {
+        providerId: input.providerId,
+        path: 'qualified-shortlist',
+        subStage: 'opportunity-response',
+        reason: 'NOT_INTERESTED',
+      },
+    }).catch(() => {})
+
     const { rejectAssignmentOffer } = await import('./matching/service')
     const declined = await rejectAssignmentOffer({
       leadId: input.leadId,

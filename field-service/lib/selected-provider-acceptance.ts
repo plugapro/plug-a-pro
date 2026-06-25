@@ -21,6 +21,7 @@ import {
   IdentityCreditGateError,
   assertIdentityVerifiedForCredits,
 } from './identity-verification/credit-gate'
+import { recordWorkflowEvent } from './workflow-events/record'
 
 const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_TIMEOUT_MS = 20_000
 const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_MAX_WAIT_MS = 10_000
@@ -365,6 +366,30 @@ export async function acceptSelectedProviderJob(params: {
         reason: result.reason,
       })
       return result
+    }
+
+    // Tier 1 funnel observability — PROVIDER_ACCEPTED emit. Post-tx + only on
+    // the first acceptance (alreadyAccepted retries are idempotency, not a new
+    // acceptance event). Best-effort.
+    // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+    if (!result.alreadyAccepted) {
+      recordWorkflowEvent({
+        eventType: 'PROVIDER_ACCEPTED',
+        actorType: 'provider',
+        actorId: params.providerId,
+        entityType: 'LEAD',
+        entityId: params.leadId,
+        source: params.source ?? 'api',
+        metadata: {
+          providerId: params.providerId,
+          matchId: result.matchId ?? null,
+          jobId: result.jobId ?? null,
+          bookingId: result.bookingId ?? null,
+          creditsCharged: result.creditCheck?.requiredCredits ?? null,
+          creditTransactionId: result.creditTransactionId ?? null,
+          path: 'qualified-shortlist',
+        },
+      }).catch(() => {})
     }
 
     const notificationPayload = notificationPayloadBox.value

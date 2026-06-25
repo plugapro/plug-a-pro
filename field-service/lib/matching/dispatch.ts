@@ -19,6 +19,7 @@ import { sendJobOffer, sendText } from '@/lib/whatsapp'
 import { canSend } from '@/lib/whatsapp-policy'
 import { TEMPLATES } from '@/lib/messaging-templates'
 import { maskPhone } from '@/lib/support-diagnostics'
+import { recordWorkflowEvent } from '@/lib/workflow-events/record'
 import { MATCHING_CONFIG } from './config'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
@@ -211,22 +212,35 @@ export async function dispatchMatchLead(params: {
     }
   }
 
+  // Tier 1 funnel observability: track whether this dispatch attempt resulted
+  // in a delivered notification. PROVIDER_NOTIFIED is emitted once at the end
+  // of the offer flow with the boolean outcome.
+  let leadOfferDelivered: boolean | null = null
+  let leadOfferFailureReason: string | null = null
+
   if (!leadUrl) {
     console.error('[dispatch] Missing provider lead URL - hold still active', msgMeta)
-    if (!ctaAlreadySent) await db.messageEvent.create({
-      data: {
-        channel: 'WHATSAPP',
-        direction: 'OUTBOUND',
-        templateName: providerLeadTemplateName,
-        body,
-        to: provider.phone,
-        status: 'FAILED',
-        sentAt: new Date(),
-        failureReason: 'Missing provider lead access URL',
-        metadata: msgMeta as object,
-      },
-    }).catch(() => {})
+    if (!ctaAlreadySent) {
+      leadOfferDelivered = false
+      leadOfferFailureReason = 'Missing provider lead access URL'
+      await db.messageEvent.create({
+        data: {
+          channel: 'WHATSAPP',
+          direction: 'OUTBOUND',
+          templateName: providerLeadTemplateName,
+          body,
+          to: provider.phone,
+          providerId: provider.id,
+          leadId: lead.id,
+          status: 'FAILED',
+          sentAt: new Date(),
+          failureReason: leadOfferFailureReason,
+          metadata: msgMeta as object,
+        },
+      }).catch(() => {})
+    }
   } else if (!ctaAlreadySent) {
+    leadOfferDelivered = true
     await sendJobOffer({
       providerPhone: provider.phone,
       providerFirstName: providerFirstName(provider),
@@ -237,10 +251,11 @@ export async function dispatchMatchLead(params: {
       templateName: providerLeadTemplateName,
       metadata: msgMeta,
     }).catch(async (err: unknown) => {
-      const failureReason = err instanceof Error ? err.message : String(err)
+      leadOfferDelivered = false
+      leadOfferFailureReason = err instanceof Error ? err.message : String(err)
       console.error('[dispatch] WhatsApp template send failed - hold still active', {
         ...msgMeta,
-        error: failureReason,
+        error: leadOfferFailureReason,
       })
       // Record the failure in message_events so ops can see and retry
       await db.messageEvent.create({
@@ -250,13 +265,36 @@ export async function dispatchMatchLead(params: {
           templateName: providerLeadTemplateName,
           body,
           to: provider.phone,
+          providerId: provider.id,
+          leadId: lead.id,
           status: 'FAILED',
           sentAt: new Date(),
-          failureReason,
+          failureReason: leadOfferFailureReason,
           metadata: msgMeta as object,
         },
       }).catch(() => {})
     })
+  }
+
+  // Tier 1 funnel observability: emit PROVIDER_NOTIFIED once per offer attempt.
+  // Skipped on retries where the buttons were already sent (ctaAlreadySent).
+  // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+  if (leadOfferDelivered !== null) {
+    recordWorkflowEvent({
+      eventType: 'PROVIDER_NOTIFIED',
+      actorType: 'system',
+      entityType: 'LEAD',
+      entityId: lead.id,
+      source: 'system',
+      metadata: {
+        providerId: provider.id,
+        jobRequestId: jobRequest.id,
+        template: providerLeadTemplateName,
+        channel: 'WHATSAPP',
+        delivered: leadOfferDelivered,
+        failureReason: leadOfferFailureReason ?? undefined,
+      },
+    }).catch(() => {})
   }
 
   if (actionsAlreadySent) return
@@ -304,6 +342,8 @@ export async function dispatchMatchLead(params: {
           templateName: 'dispatch:job_lead_actions',
           body: actionsBody,
           to: provider.phone,
+          providerId: provider.id,
+          leadId: lead.id,
           status: 'FAILED',
           sentAt: new Date(),
           failureReason,

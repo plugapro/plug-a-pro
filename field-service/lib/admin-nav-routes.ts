@@ -50,6 +50,14 @@ export const ADMIN_NAV_ITEMS = [
     icon: 'workflow' as const,
     flag: 'admin.ops_intelligence' as const,
   },
+  // Tier 1 funnel observability — admin customer-funnel report.
+  // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+  {
+    href: '/admin/reports/funnel',
+    label: 'Customer Funnel',
+    icon: 'reports' as const,
+    flag: 'admin.reports.customer_funnel' as const,
+  },
 ] as const
 
 // Smoke suite route targets are derived from the sidebar source to prevent

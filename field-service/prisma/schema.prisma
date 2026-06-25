@@ -329,6 +329,7 @@ model Provider {
   identityVerifications                ProviderIdentityVerification[]
   identityVerificationPilotAllowlist   ProviderIdentityVerificationPilotAllowlist[]
   profileScores                        ProviderProfileScore[]
+  messageEvents                        MessageEvent[]
 
   @@index([active, verified])
   @@index([isTestUser])
@@ -618,6 +619,7 @@ model Lead {
   shortlistItems        ProviderShortlistItem[]
   selectedForJobRequest JobRequest?               @relation("SelectedLeadInvite")
   selectedForJob        Job?                      @relation("JobSelectedLeadInvite")
+  messageEvents         MessageEvent[]
 
   @@unique([jobRequestId, providerId])
   @@index([jobRequestId, status])
@@ -1867,6 +1869,8 @@ model MessageEvent {
   id             String         @id @default(cuid())
   customerId     String?
   bookingId      String?
+  providerId     String? // Tier 1 funnel observability: provider this message was sent to
+  leadId         String? // Tier 1 funnel observability: lead this message was about
   channel        MessageChannel
   direction      String         @default("OUTBOUND") // "INBOUND" | "OUTBOUND"
   templateName   String?
@@ -1884,10 +1888,14 @@ model MessageEvent {
   cohortName     String?
   createdAt      DateTime       @default(now())
 
-  customer Customer? @relation(fields: [customerId], references: [id])
-  booking  Booking?  @relation(fields: [bookingId], references: [id])
+  customer Customer?  @relation(fields: [customerId], references: [id])
+  booking  Booking?   @relation(fields: [bookingId], references: [id])
+  provider Provider?  @relation(fields: [providerId], references: [id])
+  lead     Lead?      @relation(fields: [leadId], references: [id])
 
   @@index([idempotencyKey])
+  @@index([providerId])
+  @@index([leadId])
   @@map("message_events")
 }
 
@@ -3353,6 +3361,14 @@ enum WorkflowEventType {
   PAYMENT_FAILED
   PAYMENT_COMPLETED
   REVIEW_SUBMITTED
+  // Tier 1 funnel observability — granular request + lead lifecycle events
+  REQUEST_STARTED
+  REQUEST_SUBMITTED
+  PROVIDER_NOTIFIED
+  PROVIDER_VIEWED
+  PROVIDER_ACCEPTED
+  PROVIDER_DECLINED
+  CLIENT_NOTIFIED
 }
 
 model WorkflowEvent {
