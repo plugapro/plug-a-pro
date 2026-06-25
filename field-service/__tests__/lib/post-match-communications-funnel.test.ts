@@ -11,7 +11,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 
-const recordWorkflowEvent = vi.fn(async () => ({ id: 'we_1', occurredAt: new Date() }))
+const recordWorkflowEvent = vi.fn(async (_input: Record<string, unknown>) => ({ id: 'we_1', occurredAt: new Date() }))
 vi.mock('../../lib/workflow-events/record', () => ({ recordWorkflowEvent }))
 
 // The contract under test, lifted verbatim from the post-match emit site so a
@@ -55,7 +55,7 @@ describe('post-match-communications CLIENT_NOTIFIED emit', () => {
     })
 
     expect(recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    expect(recordWorkflowEvent.mock.calls[0][0]).toMatchObject({
+    expect(recordWorkflowEvent.mock.calls[0]![0]).toMatchObject({
       eventType: 'CLIENT_NOTIFIED',
       actorType: 'system',
       entityType: 'JOB_REQUEST',
@@ -68,7 +68,7 @@ describe('post-match-communications CLIENT_NOTIFIED emit', () => {
         channel: 'WHATSAPP',
       },
     })
-    const meta = recordWorkflowEvent.mock.calls[0][0].metadata as Record<string, unknown>
+    const meta = recordWorkflowEvent.mock.calls[0]![0]!.metadata as Record<string, unknown>
     expect(meta).not.toHaveProperty('phone')
     expect(meta).not.toHaveProperty('customerName')
   })

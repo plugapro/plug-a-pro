@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 
-const recordWorkflowEvent = vi.fn(async () => ({ id: 'we_1', occurredAt: new Date() }))
+const recordWorkflowEvent = vi.fn(async (_input: Record<string, unknown>) => ({ id: 'we_1', occurredAt: new Date() }))
 vi.mock('../../lib/workflow-events/record', () => ({ recordWorkflowEvent }))
 
 type LeadRow = {
@@ -90,10 +90,10 @@ describe('leads/access PROVIDER_VIEWED emit + Lead.viewedAt write', () => {
 
     await handleLeadAccess({ ...rows[0] }, db, () => fixedNow)
 
-    expect(rows[0].status).toBe('VIEWED')
-    expect(rows[0].viewedAt).toEqual(fixedNow)
+    expect(rows[0]!.status).toBe('VIEWED')
+    expect(rows[0]!.viewedAt).toEqual(fixedNow)
     expect(recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    expect(recordWorkflowEvent.mock.calls[0][0]).toMatchObject({
+    expect(recordWorkflowEvent.mock.calls[0]![0]).toMatchObject({
       eventType: 'PROVIDER_VIEWED',
       actorType: 'provider',
       actorId: 'prov_1',

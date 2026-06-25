@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Hoisted mock handles ───────────────────────────────────────────────────────
 const mocks = vi.hoisted(() => {
-  const recordWorkflowEvent = vi.fn(async () => ({ id: 'we_test', occurredAt: new Date() }))
+  const recordWorkflowEvent = vi.fn(async (_input: Record<string, unknown>) => ({ id: 'we_test', occurredAt: new Date() }))
 
   // db.$transaction stubs — the factory receives the tx callback. By default we
   // simulate a happy-path first acceptance: lead is CUSTOMER_SELECTED, credits
@@ -82,7 +82,8 @@ const txLead = {
   updateMany: vi.fn(async () => ({ count: 1 })),
 }
 const txAuditLog = { create: vi.fn(async () => ({})) }
-const tx = { lead: txLead, auditLog: txAuditLog }
+const txStub = { lead: txLead, auditLog: txAuditLog }
+type TxStub = typeof txStub
 
 vi.mock('../../lib/db', () => ({
   db: {
@@ -117,11 +118,11 @@ const HAPPY_PATH_LEAD = {
 // Helper to configure dbTransaction to run the callback with the tx stub and
 // return whatever the callback returns.
 function stubTransactionHappyPath() {
-  mocks.dbTransaction.mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => {
+  mocks.dbTransaction.mockImplementation(async (fn: (tx: TxStub) => Promise<unknown>) => {
     txLead.findUnique.mockResolvedValueOnce(HAPPY_PATH_LEAD)
     txLead.updateMany.mockResolvedValueOnce({ count: 1 })
     txAuditLog.create.mockResolvedValueOnce({})
-    return fn(tx as any)
+    return fn(txStub as any)
   })
 }
 
@@ -144,7 +145,7 @@ describe('selected-provider-acceptance PROVIDER_ACCEPTED emit — production mod
 
     expect(result.ok).toBe(true)
     expect(mocks.recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    const call = mocks.recordWorkflowEvent.mock.calls[0][0]
+    const call = mocks.recordWorkflowEvent.mock.calls[0]![0]!
     expect(call.eventType).toBe('PROVIDER_ACCEPTED')
     expect(call.actorType).toBe('provider')
     expect(call.actorId).toBe('prov_1')
@@ -157,7 +158,7 @@ describe('selected-provider-acceptance PROVIDER_ACCEPTED emit — production mod
 
   it('does NOT emit PROVIDER_ACCEPTED when result is ok=false (INSUFFICIENT_CREDITS)', async () => {
     // Transaction returns a failed credit-check result
-    mocks.dbTransaction.mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => {
+    mocks.dbTransaction.mockImplementation(async (fn: (tx: TxStub) => Promise<unknown>) => {
       txLead.findUnique.mockResolvedValueOnce(HAPPY_PATH_LEAD)
       txLead.updateMany.mockResolvedValueOnce({ count: 1 })
       txAuditLog.create.mockResolvedValueOnce({})
@@ -168,7 +169,7 @@ describe('selected-provider-acceptance PROVIDER_ACCEPTED emit — production mod
         reason: 'INSUFFICIENT_CREDITS',
         currentCreditBalance: 0,
       })
-      return fn(tx as any)
+      return fn(txStub as any)
     })
 
     const result = await acceptSelectedProviderJob({
@@ -183,14 +184,14 @@ describe('selected-provider-acceptance PROVIDER_ACCEPTED emit — production mod
   it('does NOT emit PROVIDER_ACCEPTED when alreadyAccepted (idempotent re-accept via CREDIT_APPLIED path)', async () => {
     // The CREDIT_APPLIED path sets alreadyAccepted=true in the result — the
     // emit guard in the production code is `if (!result.alreadyAccepted)`.
-    mocks.dbTransaction.mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => {
+    mocks.dbTransaction.mockImplementation(async (fn: (tx: TxStub) => Promise<unknown>) => {
       const creditAppliedLead = {
         ...HAPPY_PATH_LEAD,
         status: 'CREDIT_APPLIED',
         unlock: { id: 'unlock_1', providerId: 'prov_1' },
       }
       txLead.findUnique.mockResolvedValueOnce(creditAppliedLead)
-      return fn(tx as any)
+      return fn(txStub as any)
     })
 
     const result = await acceptSelectedProviderJob({

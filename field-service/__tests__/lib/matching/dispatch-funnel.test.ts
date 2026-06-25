@@ -12,16 +12,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // vi.hoisted() runs before module resolution so these refs are safe to use
 // inside vi.mock() factory functions.
 const mocks = vi.hoisted(() => {
-  const recordWorkflowEvent = vi.fn(async () => ({ id: 'we_test', occurredAt: new Date() }))
-  const sendJobOffer = vi.fn(async () => ({ messageId: 'msg_ok' }))
-  const sendButtons = vi.fn(async () => ({}))
-  const hasSuccessfulMessageForRecipient = vi.fn(async () => false)
-  const getProviderLeadAccessUrl = vi.fn(async () => 'https://plugapro.co.za/lead/lead_test?t=tok')
-  const messageEventCreate = vi.fn(async () => ({}))
-  const leadUpsert = vi.fn(async () => ({ id: 'lead_test', isTestLead: false, cohortName: null }))
-  const attachmentCount = vi.fn(async () => 0)
-  const leadFindUnique = vi.fn(async () => null)
-  const canSend = vi.fn(async () => ({ allowed: true, reason: undefined }))
+  const recordWorkflowEvent = vi.fn(async (_input: Record<string, unknown>) => ({ id: 'we_test', occurredAt: new Date() }))
+  const sendJobOffer = vi.fn(async (..._args: unknown[]) => ({ messageId: 'msg_ok' }) as unknown)
+  const sendButtons = vi.fn(async (..._args: unknown[]) => ({}) as unknown)
+  const hasSuccessfulMessageForRecipient = vi.fn(async (..._args: unknown[]) => false)
+  const getProviderLeadAccessUrl = vi.fn(async (..._args: unknown[]): Promise<string | null> => 'https://plugapro.co.za/lead/lead_test?t=tok')
+  const messageEventCreate = vi.fn(async (..._args: unknown[]) => ({}) as unknown)
+  const leadUpsert = vi.fn(async (..._args: unknown[]) => ({ id: 'lead_test', isTestLead: false, cohortName: null }))
+  const attachmentCount = vi.fn(async (..._args: unknown[]) => 0)
+  const leadFindUnique = vi.fn(async (..._args: unknown[]): Promise<{ id: string; status: string } | null> => null)
+  const canSend = vi.fn(async (..._args: unknown[]): Promise<{ allowed: boolean; reason?: string | undefined }> => ({ allowed: true, reason: undefined }))
   return {
     recordWorkflowEvent,
     sendJobOffer,
@@ -120,19 +120,24 @@ const BASE_JOB_REQUEST = {
   isTestRequest: false,
   cohortName: null,
   requestedWindowStart: null,
+  requestedWindowEnd: null,
   requestedArrivalLatest: null,
   estimatedDurationMinutes: null,
   requiredSkillTags: [],
   requiredCertificationCodes: [],
   requiredEquipmentTags: [],
   requiredVehicleTypes: [],
+  preferredProviderId: null,
+  customerAcceptedAmount: null,
+  customerAcceptedScope: null,
+  autoCreateBookingOnAssignment: false,
   subcategory: null,
   urgency: null,
   providerPreference: null,
   budgetPreference: null,
   address: { suburb: 'Roodepoort' },
   customer: { id: 'cust_1', name: 'Alice', phone: '+27820000001' },
-  status: 'SUBMITTED' as const,
+  status: 'OPEN' as const,
   expiresAt: null,
   selectedProviderId: null,
   selectedLeadInviteId: null,
@@ -144,13 +149,22 @@ const BASE_PROVIDER = {
   phone: '+27820000002',
   isTestUser: false,
   skills: ['plumbing'],
-  serviceAreas: [],
+  serviceAreas: [] as string[],
+  maxTravelMinutes: 60,
   averageRating: 4.5,
   reliabilityScore: 0.9,
   availableNow: true,
   active: true,
   verified: true,
-  kycStatus: 'VERIFIED' as const,
+  kycStatus: 'VERIFIED' as string | null,
+  lastKnownLat: null,
+  lastKnownLng: null,
+  isOnline: null,
+  liveLocationLat: null,
+  liveLocationLng: null,
+  lastHeartbeatAt: null,
+  scoreBase: 0.9,
+  fromPool: true,
 }
 
 const BASE_HOLD = {
@@ -171,7 +185,7 @@ describe('dispatch PROVIDER_NOTIFIED emit — production module', () => {
     mocks.sendButtons.mockResolvedValue({})
     mocks.hasSuccessfulMessageForRecipient.mockResolvedValue(false)
     mocks.getProviderLeadAccessUrl.mockResolvedValue('https://plugapro.co.za/lead/lead_test?t=tok')
-    mocks.canSend.mockResolvedValue({ allowed: true })
+    mocks.canSend.mockResolvedValue({ allowed: true, reason: undefined })
     mocks.recordWorkflowEvent.mockResolvedValue({ id: 'we_test', occurredAt: new Date() })
     mocks.messageEventCreate.mockResolvedValue({})
   })
@@ -184,7 +198,7 @@ describe('dispatch PROVIDER_NOTIFIED emit — production module', () => {
     })
 
     expect(mocks.recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    const call = mocks.recordWorkflowEvent.mock.calls[0][0]
+    const call = mocks.recordWorkflowEvent.mock.calls[0]![0]!
     expect(call.eventType).toBe('PROVIDER_NOTIFIED')
     expect(call.entityType).toBe('LEAD')
     expect(call.entityId).toBe('lead_test')
@@ -206,7 +220,7 @@ describe('dispatch PROVIDER_NOTIFIED emit — production module', () => {
     })
 
     expect(mocks.recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    const call = mocks.recordWorkflowEvent.mock.calls[0][0]
+    const call = mocks.recordWorkflowEvent.mock.calls[0]![0]!
     expect(call.eventType).toBe('PROVIDER_NOTIFIED')
     const meta = call.metadata as Record<string, unknown>
     expect(meta.delivered).toBe(false)
@@ -223,13 +237,13 @@ describe('dispatch PROVIDER_NOTIFIED emit — production module', () => {
     })
 
     expect(mocks.recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    const meta = mocks.recordWorkflowEvent.mock.calls[0][0].metadata as Record<string, unknown>
+    const meta = mocks.recordWorkflowEvent.mock.calls[0]![0]!.metadata as Record<string, unknown>
     expect(meta.delivered).toBe(false)
     expect(meta.failureReason).toBe('Missing provider lead access URL')
 
     // MessageEvent.providerId + MessageEvent.leadId must both be set on the failure path
     expect(mocks.messageEventCreate).toHaveBeenCalledTimes(1)
-    const createArg = mocks.messageEventCreate.mock.calls[0][0].data as Record<string, unknown>
+    const createArg = (mocks.messageEventCreate.mock.calls[0]![0] as { data: Record<string, unknown> }).data
     expect(createArg.providerId).toBe('prov_test')
     expect(createArg.leadId).toBe('lead_test')
     expect(createArg.status).toBe('FAILED')

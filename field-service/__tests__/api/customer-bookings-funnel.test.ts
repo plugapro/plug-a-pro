@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 
-const recordWorkflowEvent = vi.fn(async () => ({ id: 'we_1', occurredAt: new Date() }))
+const recordWorkflowEvent = vi.fn(async (_input: Record<string, unknown>) => ({ id: 'we_1', occurredAt: new Date() }))
 vi.mock('../../lib/workflow-events/record', () => ({ recordWorkflowEvent }))
 
 // Lifted contract from `lib/job-requests/create-job-request.ts`.
@@ -54,7 +54,7 @@ describe('create-job-request REQUEST_SUBMITTED emit', () => {
     })
 
     expect(recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    expect(recordWorkflowEvent.mock.calls[0][0]).toMatchObject({
+    expect(recordWorkflowEvent.mock.calls[0]![0]).toMatchObject({
       eventType: 'REQUEST_SUBMITTED',
       actorType: 'customer',
       actorId: 'cust_1',
@@ -80,7 +80,7 @@ describe('create-job-request REQUEST_SUBMITTED emit', () => {
       deferMatchingModeSelection: true,
     })
 
-    const arg = recordWorkflowEvent.mock.calls[0][0]
+    const arg = recordWorkflowEvent.mock.calls[0]![0]!
     expect(arg.source).toBe('whatsapp')
     expect((arg.metadata as Record<string, unknown>).deferMatchingModeSelection).toBe(true)
     expect((arg.metadata as Record<string, unknown>).assignmentMode).toBe('OPS_REVIEW')
@@ -94,7 +94,7 @@ describe('create-job-request REQUEST_SUBMITTED emit', () => {
       paramsCategory: 'cleaning',
       initialAssignmentMode: 'AUTO_ASSIGN',
     })
-    const meta = recordWorkflowEvent.mock.calls[0][0].metadata as Record<string, unknown>
+    const meta = recordWorkflowEvent.mock.calls[0]![0]!.metadata as Record<string, unknown>
     expect(meta).not.toHaveProperty('phone')
     expect(meta).not.toHaveProperty('name')
     expect(meta).not.toHaveProperty('email')

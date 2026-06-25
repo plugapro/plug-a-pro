@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the recorder before importing the SUT so vi can intercept the module.
-const recordWorkflowEvent = vi.fn(async () => ({ id: 'we_1', occurredAt: new Date() }))
+const recordWorkflowEvent = vi.fn(async (_input: Record<string, unknown>) => ({ id: 'we_1', occurredAt: new Date() }))
 vi.mock('../../lib/workflow-events/record', () => ({ recordWorkflowEvent }))
 
 // Mock the inner shortlist / rejection helpers — declineLead delegates to them.
@@ -50,7 +50,7 @@ describe('declineLead — PROVIDER_DECLINED emit', () => {
 
     expect(result.ok).toBe(true)
     expect(recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    expect(recordWorkflowEvent.mock.calls[0][0]).toMatchObject({
+    expect(recordWorkflowEvent.mock.calls[0]![0]).toMatchObject({
       eventType: 'PROVIDER_DECLINED',
       actorType: 'provider',
       actorId: 'prov_1',
@@ -92,7 +92,7 @@ describe('declineLead — PROVIDER_DECLINED emit', () => {
 
     expect(result.ok).toBe(true)
     expect(recordWorkflowEvent).toHaveBeenCalledTimes(1)
-    expect(recordWorkflowEvent.mock.calls[0][0]).toMatchObject({
+    expect(recordWorkflowEvent.mock.calls[0]![0]).toMatchObject({
       eventType: 'PROVIDER_DECLINED',
       metadata: { path: 'standard' },
     })
