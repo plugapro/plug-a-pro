@@ -1,4 +1,11 @@
-const DEFAULT_FAST_MATCH_PROVIDER_RESPONSE_MINUTES = 10
+// 2026-06-24: raised from 10 → 60 after the pre-JHB-North acquisition audit.
+// Prod data over 14 days: 6 of 8 leads on the cancelled cascade JR
+// (`cmqf77w0o002nl404e35wyhkp`) had `respondedAt` set exactly at the TTL —
+// the cron auto-timed them out, no human response. Plumbers on a job can't
+// thumb a WhatsApp action button in 10–15 minutes. The env override
+// (FAST_MATCH_PROVIDER_RESPONSE_MINUTES) still wins if set.
+// Spec: docs/superpowers/plans/2026-06-24-pre-jhb-north-acquisition-fixes.md
+const DEFAULT_FAST_MATCH_PROVIDER_RESPONSE_MINUTES = 60
 
 function parsePositiveIntEnv(raw: string | undefined, fallback: number) {
   const value = Number.parseInt(raw ?? '', 10)
@@ -12,8 +19,31 @@ export const FAST_MATCH_PROVIDER_RESPONSE_MINUTES = parsePositiveIntEnv(
   DEFAULT_FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
 )
 
+function parseBoolEnv(raw: string | undefined, fallback: boolean) {
+  if (raw == null) return fallback
+  const normalized = raw.trim().toLowerCase()
+  if (normalized === '1' || normalized === 'true' || normalized === 'on' || normalized === 'yes') return true
+  if (normalized === '0' || normalized === 'false' || normalized === 'off' || normalized === 'no') return false
+  return fallback
+}
+
+// 2026-06-24: default OFF after the pre-JHB-North acquisition audit found
+// 22 sends of `dispatch:job_lead_actions` FAILED in 14 days with Meta reason
+// "Re-engagement message" — the interactive template is policy-blocked when
+// the provider hasn't opened a session in 24h. The UTILITY `provider_lead_offer`
+// / `quick_match_provider_lead_offer` template already carries a URL CTA that
+// opens /leads/access/[token]; providers accept in the PWA.
+// Set MATCHING_SEND_DISPATCH_ACTION_BUTTONS=true to re-enable once the
+// interactive templates are reclassified UTILITY in Meta Business Manager.
+// Spec: docs/superpowers/plans/2026-06-24-pre-jhb-north-acquisition-fixes.md
+export const SEND_DISPATCH_ACTION_BUTTONS = parseBoolEnv(
+  process.env.MATCHING_SEND_DISPATCH_ACTION_BUTTONS,
+  false,
+)
+
 export const MATCHING_CONFIG = {
   offerTtlMinutes: FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
+  sendDispatchActionButtons: SEND_DISPATCH_ACTION_BUTTONS,
   quickMatchMaxProviderOffers: 10,
   quickMatchProgressUpdateMinutes: 30,
   retryDelayMinutes: 1,

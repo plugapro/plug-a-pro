@@ -32,6 +32,10 @@ vouchers*.xlsx
 
 # Git worktrees
 .worktrees/
+# Some session tooling creates worktrees at the repo root without a leading
+# dot; ignored the same way so a build cache (.next/) inside a worktree never
+# gets staged by an accidental `git add -A`.
+worktrees/
 
 # Media source files (raw assets — processed outputs go into app public/ dirs)
 media assets/
