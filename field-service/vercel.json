@@ -71,6 +71,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/identity-verification-in-flight-renudge",
+      "schedule": "0 6-20 * * *"
+    },
+    {
       "path": "/api/cron/customer-match-confirmation-nudge",
       "schedule": "15 6-20 * * *"
     },
