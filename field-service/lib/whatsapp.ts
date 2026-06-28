@@ -993,6 +993,78 @@ export async function sendProviderKycNudge(params: {
   return externalId
 }
 
+// In-flight identity-verification re-nudges (provider_verification_resume_*).
+// Sent ~24h after a provider stalls mid-verification. Each pair below mirrors
+// sendProviderKycNudge: the signed verify URL travels as a URL button param
+// only, and the send deliberately does NOT log a MessageEvent — the orchestrator
+// in lib/identity-verification/in-flight-renudge.ts records the attempt BEFORE
+// sending so the politeness cadence (24h dedup, lifetime cap) holds across
+// crashes and post-send write failures.
+
+export async function sendProviderVerificationResumeConsent(params: {
+  providerPhone: string
+  providerFirstName: string
+  verificationUrl: string
+  metadata?: Record<string, unknown>
+}): Promise<string> {
+  return sendTemplate({
+    to: params.providerPhone,
+    template: 'provider_verification_resume_consent',
+    metadata: params.metadata,
+    components: [
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: params.providerFirstName }],
+      },
+      providerVerifyButtonComponent(0, params.verificationUrl),
+    ],
+  })
+}
+
+export async function sendProviderVerificationResumeDocument(params: {
+  providerPhone: string
+  providerFirstName: string
+  documentFriendlyName: string
+  verificationUrl: string
+  metadata?: Record<string, unknown>
+}): Promise<string> {
+  return sendTemplate({
+    to: params.providerPhone,
+    template: 'provider_verification_resume_document',
+    metadata: params.metadata,
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.providerFirstName },
+          { type: 'text', text: params.documentFriendlyName },
+        ],
+      },
+      providerVerifyButtonComponent(0, params.verificationUrl),
+    ],
+  })
+}
+
+export async function sendProviderVerificationResumeSelfie(params: {
+  providerPhone: string
+  providerFirstName: string
+  verificationUrl: string
+  metadata?: Record<string, unknown>
+}): Promise<string> {
+  return sendTemplate({
+    to: params.providerPhone,
+    template: 'provider_verification_resume_selfie',
+    metadata: params.metadata,
+    components: [
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: params.providerFirstName }],
+      },
+      providerVerifyButtonComponent(0, params.verificationUrl),
+    ],
+  })
+}
+
 export async function sendProviderJobReminder(params: {
   providerPhone: string
   providerFirstName: string

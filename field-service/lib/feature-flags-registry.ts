@@ -335,6 +335,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'provider.identity.verification.in_flight_renudge': {
+    description: 'Enable the identity-verification-in-flight-renudge cron — sends step-specific provider_verification_resume_* templates to providers stalled mid-verification for 20-28h. OFF = the cron is report-only. Keep OFF until all 3 templates are APPROVED at Meta (submitted 2026-06-22 PENDING).',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'customer.match_confirmation_nudge.cron': {
     description: 'Enable the customer-match-confirmation-nudge cron — sends please_confirm_with_provider to MATCHED customers who have not been contacted, when their 24h WhatsApp window is closed. OFF = the cron is a no-op.',
     owner: 'eng',
