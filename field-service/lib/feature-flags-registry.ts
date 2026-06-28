@@ -340,6 +340,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'admin.reports.kyc_funnel': {
+    description: 'Shows /admin/reports/kyc-funnel — snapshot of provider kycStatus distribution (NOT_STARTED → VERIFIED) plus verification activity in a date window. Read-only, count-only, no PII. Use as the readout when deciding grace-flag retirement.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'customer.match_confirmation_nudge.cron': {
     description: 'Enable the customer-match-confirmation-nudge cron — sends please_confirm_with_provider to MATCHED customers who have not been contacted, when their 24h WhatsApp window is closed. OFF = the cron is a no-op.',
     owner: 'eng',
