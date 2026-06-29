@@ -71,6 +71,7 @@ const PUBLIC_PATHS = [
   '/api/locations',                 // public canonical location taxonomy used before booking/provider registration auth
   '/api/customer/notify-interest',  // public "notify me when this service is available" capture; handler enforces flag + SA-phone validation + per-IP/phone rate limits
   '/api/customer/location-reverse',  // public reverse-geocode for the anonymous booking address step ("Use my current location"); handler enforces a per-IP rate limit. Must NOT redirect to /sign-in or the client parses HTML as JSON.
+  '/api/funnel',                    // public anonymous funnel beacons (REQUEST_STARTED etc.); handler validates payload + sets HttpOnly session cookie. Must NOT redirect to /sign-in — beacon is fire-and-forget from the customer's first booking-flow render before they have a session.
   // '/api/debug' is intentionally NOT public: diagnostic handlers (e.g. payat-ping)
   // can trigger real side-effects, so they enforce requireAdminApi() and must sit
   // behind the session gate. In production they are additionally 403'd outright.

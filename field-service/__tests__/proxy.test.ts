@@ -739,4 +739,27 @@ describe('proxy bfcache hardening on public pages', () => {
     expect(res.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
   })
+
+  it('passes an anonymous /api/funnel beacon through instead of redirecting to sign-in', async () => {
+    // Regression: after Tier 1 funnel observability shipped (PR #145, 2026-06-25)
+    // the admin.reports.customer_funnel flag flipped ON but the workflow_events
+    // table stayed empty for days because /api/funnel/request-started was not on
+    // the public-API allowlist — the proxy 307-redirected the anonymous beacon
+    // POST to /sign-in?callbackUrl=/bookings and the beacon silently failed.
+    // The endpoint must be public so REQUEST_STARTED events accumulate from the
+    // customer's first booking-flow render before they have a session.
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(
+      new NextRequest('http://localhost/api/funnel/request-started', {
+        method: 'POST',
+        body: JSON.stringify({ serviceId: 'plumbing', source: 'pwa' }),
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    expect(res.status).not.toBe(307)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
 })
