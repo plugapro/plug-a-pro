@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker, type Selection as SuburbSelection } from './SuburbPicker'
+import { InlineOtpDialog } from '@/components/customer/InlineOtpDialog'
+import { nextActionForAuthFailure } from '@/components/customer/bookingSubmitAuthGate'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { trackJobRequestSubmitted } from '@/lib/meta-pixel'
 import { analytics } from '@/lib/analytics'
@@ -88,6 +90,8 @@ interface BookingFlowProps {
   savedSites?: SavedSite[]
   /** Whether the feature.customer.address_book flag is enabled. */
   addressBookEnabled?: boolean
+  /** Whether the customer.booking.inline_otp flag is enabled. */
+  inlineOtpEnabled?: boolean
 }
 
 interface Address {
@@ -140,6 +144,7 @@ export function BookingFlow({
   initialAreaLabel = null,
   savedSites = [],
   addressBookEnabled = false,
+  inlineOtpEnabled = false,
 }: BookingFlowProps) {
   const [step, setStep] = useState<Step>('address')
   // null = no site chosen yet (show site picker), 'new' = user wants manual form
@@ -194,6 +199,13 @@ export function BookingFlow({
   const [hasProviderResponses, setHasProviderResponses] = useState(false)
   const [matchingModeSubmitting, setMatchingModeSubmitting] = useState(false)
   const [waitlistedCity, setWaitlistedCity] = useState<string | null>(null)
+  // Inline OTP (customer.booking.inline_otp): the FormData built by the submit
+  // that hit 401/403 is parked here so onVerified can re-POST it unchanged.
+  const [otpDialogOpen, setOtpDialogOpen] = useState(false)
+  const pendingSubmitRef = useRef<{
+    formData: FormData
+    timing: ReturnType<typeof resolvePreferredTimingWindow>
+  } | null>(null)
   const streetSummary = buildLegacyStreetAddress(address)
   const draftStorageKey = `plugapro:client-request-draft:${category.slug}`
   const hasInitialDraft = Boolean(initialDraft && Object.values(initialDraft).some(Boolean))
@@ -600,52 +612,100 @@ export function BookingFlow({
         formData.set('photoSafeForPreview', JSON.stringify(photos.map(() => photosSafeForPreview)))
       }
 
-      const res = await fetch('/api/customer/bookings', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          // Draft is auto-saved to localStorage - redirect to sign-in and come back
-          const returnPath = `${window.location.pathname}${window.location.search}`
-          window.location.href = `/sign-in?next=${encodeURIComponent(returnPath || `/book/${category.slug}`)}`
-          return
-        }
-        if (res.status === 400) {
-          throw new Error('Please review your address and job details, then try again.')
-        }
-        throw new Error('We could not submit your request right now. Please try again.')
-      }
-
-      const data = await res.json()
-
-      if (data.waitlisted) {
-        setWaitlistedCity(data.city ?? address.city)
-        setStep('waitlisted')
-        return
-      }
-
-      setJobRequestId(data.jobRequestId)
-      setTicketUrl(data.ticketUrl ?? null)
-      // Timing window is only fully resolved after handleConfirm runs the
-      // urgency → window calc; fire slot_selected here so it carries a real
-      // job_request_id for dedup downstream.
-      analytics.slotSelected({
-        job_request_id: data.jobRequestId,
-        window_start: timing.requestedWindowStart?.toISOString(),
-        window_end: timing.requestedWindowEnd?.toISOString(),
-      })
-      window.localStorage.removeItem(draftStorageKey)
-      // Draft converted — clear the booking_started dedup flag so a new booking
-      // in the same category + session counts as a fresh start.
-      analytics.resetBookingStarted(draftStorageKey)
-      setStep('submitted')
+      await submitBookingFormData(formData, timing, false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
     } finally {
       setLoading(false)
     }
+  }
+
+  // POST + response handling shared by the first submit and the post-OTP
+  // retry. `alreadyRetried` feeds the auth gate so a second 401/403 falls back
+  // to the legacy /sign-in redirect instead of looping the dialog.
+  async function submitBookingFormData(
+    formData: FormData,
+    timing: ReturnType<typeof resolvePreferredTimingWindow>,
+    alreadyRetried: boolean,
+  ) {
+    const res = await fetch('/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!res.ok) {
+      const authAction = nextActionForAuthFailure({
+        status: res.status,
+        flagEnabled: inlineOtpEnabled,
+        alreadyRetried,
+      })
+      if (authAction === 'redirect') {
+        // Draft is auto-saved to localStorage - redirect to sign-in and come back
+        const returnPath = `${window.location.pathname}${window.location.search}`
+        window.location.href = `/sign-in?next=${encodeURIComponent(returnPath || `/book/${category.slug}`)}`
+        return
+      }
+      if (authAction === 'open_dialog') {
+        // Signed-out submit with the inline OTP flag on: park the FormData and
+        // verify in place. No error banner — the dialog is the next step, not
+        // a failure. onVerified re-POSTs the exact same payload.
+        pendingSubmitRef.current = { formData, timing }
+        setOtpDialogOpen(true)
+        return
+      }
+      if (res.status === 400) {
+        throw new Error('Please review your address and job details, then try again.')
+      }
+      throw new Error('We could not submit your request right now. Please try again.')
+    }
+
+    const data = await res.json()
+
+    if (data.waitlisted) {
+      setWaitlistedCity(data.city ?? address.city)
+      setStep('waitlisted')
+      return
+    }
+
+    setJobRequestId(data.jobRequestId)
+    setTicketUrl(data.ticketUrl ?? null)
+    // Timing window is only fully resolved after handleConfirm runs the
+    // urgency → window calc; fire slot_selected here so it carries a real
+    // job_request_id for dedup downstream.
+    analytics.slotSelected({
+      job_request_id: data.jobRequestId,
+      window_start: timing.requestedWindowStart?.toISOString(),
+      window_end: timing.requestedWindowEnd?.toISOString(),
+    })
+    window.localStorage.removeItem(draftStorageKey)
+    // Draft converted — clear the booking_started dedup flag so a new booking
+    // in the same category + session counts as a fresh start.
+    analytics.resetBookingStarted(draftStorageKey)
+    setStep('submitted')
+  }
+
+  // Dialog verified: close it and re-POST the parked FormData exactly once.
+  async function handleInlineOtpVerified() {
+    const pending = pendingSubmitRef.current
+    pendingSubmitRef.current = null
+    setOtpDialogOpen(false)
+    if (!pending) return
+    setError(null)
+    setLoading(true)
+    try {
+      await submitBookingFormData(pending.formData, pending.timing, true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Dismissed without verifying: stay on the review step with the submit
+  // button re-enabled; drop the parked payload so nothing fires later.
+  function handleInlineOtpOpenChange(open: boolean) {
+    setOtpDialogOpen(open)
+    if (!open) pendingSubmitRef.current = null
   }
 
   async function handleMatchingModeSelect(mode: MatchingMode) {
@@ -1467,6 +1527,17 @@ export function BookingFlow({
             })()}
           </div>
         </div>
+      )}
+
+      {/* Inline OTP (customer.booking.inline_otp): verify in place when the
+          submit POST is rejected as signed-out, instead of losing the review
+          step to a /sign-in redirect. */}
+      {inlineOtpEnabled && (
+        <InlineOtpDialog
+          open={otpDialogOpen}
+          onOpenChange={handleInlineOtpOpenChange}
+          onVerified={handleInlineOtpVerified}
+        />
       )}
     </div>
   )
