@@ -178,11 +178,20 @@ test.describe('mobile viewport', () => {
 test.describe('Pay@ sprint — unauthenticated route checks', () => {
   test('/provider/credits redirects unauthenticated users to sign-in', async ({ page }) => {
     const response = await page.goto('/provider/credits')
-    // Must either redirect to a sign-in page or return a non-200 auth gate.
-    // Acceptable: any redirect destination that is not /provider/credits itself.
+    // The credits page must never render for an unauthenticated caller. Two
+    // outcomes are acceptable: (a) the proxy redirects away from
+    // /provider/credits (mobile UA path), or (b) the proxy returns the
+    // mobile-only interstitial at 200 on the same URL (desktop UA path, gated
+    // BEFORE the auth check by design). What must NOT happen is the actual
+    // credits UI rendering — detected here by the absence of a credits-page
+    // marker in the served HTML.
     const finalUrl = page.url()
-    const isOnCreditsPage = finalUrl.includes('/provider/credits') && response?.status() === 200
-    expect(isOnCreditsPage).toBe(false)
+    const stayedOnCreditsUrl = finalUrl.includes('/provider/credits') && response?.status() === 200
+    if (stayedOnCreditsUrl) {
+      const title = await page.title()
+      const isMobileOnlyInterstitial = title === 'Use mobile for Plug A Pro'
+      expect(isMobileOnlyInterstitial, `expected mobile-only interstitial, got title="${title}"`).toBe(true)
+    }
   })
 
   test('cron /api/cron/expire-payment-intents rejects without bearer token', async ({ request }) => {
