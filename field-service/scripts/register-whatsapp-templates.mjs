@@ -392,6 +392,13 @@ const TEMPLATES = [
     ],
   },
   {
+    name: 'provider_area_waitlist',
+    category: 'UTILITY',
+    // {{1}} applicant first name, {{2}} area label
+    body: "Hi {{1}}, thanks for applying to Plug A Pro. We're not live in {{2}} yet - your application is saved and you're on the launch list. We'll message you the moment we start rolling out in your area. No need to re-apply.",
+    examples: ['Sipho', 'Midrand'],
+  },
+  {
     name: 'please_confirm_with_provider',
     category: 'UTILITY',
     // {{1}} customer name, {{2}} provider name, {{3}} service, {{4}} request URL (inline body text)

@@ -382,6 +382,18 @@ export const TEMPLATES = {
       'Hi {{1}}, one quick selfie left to complete your Plug A Pro identity verification. Tap the button below to take it.',
   },
 
+  // ─── Application triage sweep (2026-07-01) ───────────────────────────────
+  provider_area_waitlist: {
+    name: 'provider_area_waitlist',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Sent to out-of-pilot applicants during the application triage sweep. Parks them on the launch waitlist; prevents re-applications.',
+    // {{1}} applicant first name, {{2}} area label (e.g. "Midrand", "the Western Cape")
+    example:
+      "Hi {{1}}, thanks for applying to Plug A Pro. We're not live in {{2}} yet — your application is saved and you're on the launch list. We'll message you the moment we start rolling out in your area. No need to re-apply.",
+  },
+
   technician_job_reminder: {
     name: 'technician_job_reminder',
     language: 'en_ZA',
