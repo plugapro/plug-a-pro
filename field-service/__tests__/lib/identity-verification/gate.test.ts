@@ -66,11 +66,56 @@ describe('checkCanStartNewVerification', () => {
     expect(mockCount).not.toHaveBeenCalled()
   })
 
-  it('uses the high-assurance credit predicate for credit top-up purpose', async () => {
+  it('allows credit top-up re-verification when an old pass is superseded by a newer failed row (deadlock case)', async () => {
+    const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
+    // Provider history: old non-expired HIGH PASS row + newer FAILED row.
+    // Latest-row semantics (matching credit-gate.ts) must return the FAILED row
+    // and fall through to CREATE so the provider can re-verify.
+    mockFindFirst
+      .mockResolvedValueOnce(null) // no in-progress verification
+      .mockResolvedValueOnce({
+        id: 'ver-failed-latest',
+        providerId: 'provider-1',
+        status: 'FAILED',
+        decision: 'FAIL',
+        assuranceLevel: 'HIGH',
+        expiresAt: null,
+      })
+    mockCount.mockResolvedValue(1)
+
+    await expect(
+      checkCanStartNewVerification('provider-1', {
+        purpose: 'CREDIT_TOP_UP',
+        now: new Date('2026-05-27T08:00:00.000Z'),
+      }),
+    ).resolves.toEqual({ ok: 'CREATE' })
+
+    expect(mockFindFirst).toHaveBeenNthCalledWith(2, {
+      where: { providerId: 'provider-1' },
+      orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
+      select: {
+        id: true,
+        providerId: true,
+        status: true,
+        decision: true,
+        assuranceLevel: true,
+        expiresAt: true,
+      },
+    })
+  })
+
+  it('blocks credit top-up starts when the latest row is a current high-assurance pass', async () => {
     const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
     mockFindFirst
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 'ver-high' })
+      .mockResolvedValueOnce({
+        id: 'ver-high-latest',
+        providerId: 'provider-1',
+        status: 'PASSED',
+        decision: 'PASS',
+        assuranceLevel: 'HIGH',
+        expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+      })
 
     await expect(
       checkCanStartNewVerification('provider-1', {
@@ -83,18 +128,88 @@ describe('checkCanStartNewVerification', () => {
     })
 
     expect(mockFindFirst).toHaveBeenNthCalledWith(2, {
-      where: {
+      where: { providerId: 'provider-1' },
+      orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
+      select: {
+        id: true,
+        providerId: true,
+        status: true,
+        decision: true,
+        assuranceLevel: true,
+        expiresAt: true,
+      },
+    })
+    expect(mockCount).not.toHaveBeenCalled()
+  })
+
+  it('allows credit top-up re-verification when the latest pass has expired', async () => {
+    const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
+    mockFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'ver-expired-pass',
         providerId: 'provider-1',
         status: 'PASSED',
         decision: 'PASS',
         assuranceLevel: 'HIGH',
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date('2026-05-27T08:00:00.000Z') } },
-        ],
+        expiresAt: new Date('2026-05-01T00:00:00.000Z'),
+      })
+    mockCount.mockResolvedValue(0)
+
+    await expect(
+      checkCanStartNewVerification('provider-1', {
+        purpose: 'CREDIT_TOP_UP',
+        now: new Date('2026-05-27T08:00:00.000Z'),
+      }),
+    ).resolves.toEqual({ ok: 'CREATE' })
+  })
+
+  it('allows credit top-up re-verification when the latest pass is only low assurance', async () => {
+    const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
+    mockFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'ver-low-pass',
+        providerId: 'provider-1',
+        status: 'PASSED',
+        decision: 'PASS',
+        assuranceLevel: 'LOW',
+        expiresAt: null,
+      })
+    mockCount.mockResolvedValue(0)
+
+    await expect(
+      checkCanStartNewVerification('provider-1', { purpose: 'CREDIT_TOP_UP' }),
+    ).resolves.toEqual({ ok: 'CREATE' })
+  })
+
+  it('still locks credit top-up starts after three counted failures when the latest row is adverse', async () => {
+    const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
+    mockFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'ver-failed-latest',
+        providerId: 'provider-1',
+        status: 'FAILED',
+        decision: 'FAIL',
+        assuranceLevel: 'HIGH',
+        expiresAt: null,
+      })
+    mockCount.mockResolvedValue(3)
+
+    await expect(
+      checkCanStartNewVerification('provider-1', { purpose: 'CREDIT_TOP_UP' }),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'VERIFICATION_LOCKED',
+    })
+
+    expect(mockCount).toHaveBeenCalledWith({
+      where: {
+        providerId: 'provider-1',
+        status: 'FAILED',
+        countsTowardAttemptCap: true,
       },
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true },
     })
   })
 

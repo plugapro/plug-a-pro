@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     customer: { findUnique: vi.fn() },
-    messageEvent: { create: vi.fn() },
+    messageEvent: { create: vi.fn(), update: vi.fn() },
   },
 }))
 
@@ -33,6 +33,7 @@ describe('outbound message event cohort guard', () => {
         isTestEvent: true,
         cohortName: 'internal_staff_test',
       }),
+      select: { id: true },
     })
   })
 
@@ -77,6 +78,20 @@ describe('outbound message event cohort guard', () => {
     })
   })
 
+  it('returns the created MessageEvent id so callers can mark it failed later', async () => {
+    mockDb.messageEvent.create.mockResolvedValue({ id: 'evt-123' })
+    const { logOutboundMessage } = await import('@/lib/message-events')
+
+    const result = await logOutboundMessage({
+      to: '+27773923802',
+      templateName: 'test-template',
+      body: 'Internal test',
+      metadata: { isTestRequest: true, traceId: 'trace-ret' },
+    })
+
+    expect(result).toEqual({ id: 'evt-123' })
+  })
+
   it('records the explicit DB recipient test flag on blocked sends', async () => {
     const { logOutboundMessage } = await import('@/lib/message-events')
 
@@ -96,6 +111,24 @@ describe('outbound message event cohort guard', () => {
           blockedReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
         }),
       }),
+    })
+  })
+})
+
+describe('markOutboundMessageFailed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDb.messageEvent.update.mockResolvedValue({})
+  })
+
+  it('marks the event FAILED with the failure reason', async () => {
+    const { markOutboundMessageFailed } = await import('@/lib/message-events')
+
+    await markOutboundMessageFailed({ eventId: 'evt-123', failureReason: 'meta 500' })
+
+    expect(mockDb.messageEvent.update).toHaveBeenCalledWith({
+      where: { id: 'evt-123' },
+      data: { status: 'FAILED', failureReason: 'meta 500' },
     })
   })
 })

@@ -57,10 +57,11 @@ describe('listKycNudgeCandidates', () => {
         provider({ id: 'exhausted', phone: '+27820000004' }),
       ],
       [
-        { to: '+27820000002', createdAt: recent },
-        { to: '+27820000003', createdAt: stale },
+        { to: '+27820000002', templateName: 'provider_kyc_nudge', createdAt: recent },
+        { to: '+27820000003', templateName: 'provider_kyc_nudge', createdAt: stale },
         ...Array.from({ length: KYC_DRIVE_MAX_NUDGES }, (_, i) => ({
           to: '+27820000004',
+          templateName: 'provider_kyc_nudge',
           createdAt: new Date(stale.getTime() - i * 8 * 24 * 60 * 60 * 1000),
         })),
       ],
@@ -72,6 +73,48 @@ describe('listKycNudgeCandidates', () => {
     expect(byId.get('due-again')?.eligibleNow).toBe(true)
     expect(byId.get('exhausted')?.eligibleNow).toBe(false)
     expect(summarizeKycNudgeRows(rows)).toEqual({ candidates: 4, eligibleNow: 2, exhausted: 1 })
+  })
+
+  it('blocks a kyc-drive nudge within 24h of an in-flight resume nudge (cross-cron politeness)', async () => {
+    const twoHoursAgo = new Date(NOW.getTime() - 2 * 60 * 60 * 1000)
+    const client = clientWith(
+      [provider({ id: 'resumed-recently', phone: '+27820000001' })],
+      [{ to: '+27820000001', templateName: 'provider_verification_resume_document', createdAt: twoHoursAgo }],
+    )
+    const rows = await listKycNudgeCandidates(client, { now: NOW })
+    expect(rows[0].eligibleNow).toBe(false)
+    expect(rows[0].nudgeCount).toBe(0)
+  })
+
+  it('ignores resume nudges older than 24h for cadence, count, and spacing', async () => {
+    const threeDaysAgo = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000)
+    const client = clientWith(
+      [provider({ id: 'resumed-long-ago', phone: '+27820000001' })],
+      [
+        { to: '+27820000001', templateName: 'provider_verification_resume_consent', createdAt: threeDaysAgo },
+        { to: '+27820000001', templateName: 'provider_verification_resume_selfie', createdAt: threeDaysAgo },
+      ],
+    )
+    const rows = await listKycNudgeCandidates(client, { now: NOW })
+    expect(rows[0].eligibleNow).toBe(true)
+    expect(rows[0].nudgeCount).toBe(0)
+    expect(rows[0].lastNudgedAt).toBeNull()
+  })
+
+  it('queries the resume templates alongside provider_kyc_nudge', async () => {
+    const findMany = vi.fn().mockResolvedValue([])
+    const client = {
+      provider: { findMany: vi.fn().mockResolvedValue([provider()]) },
+      messageEvent: { findMany },
+    }
+    await listKycNudgeCandidates(client, { now: NOW })
+    const where = (findMany.mock.calls[0][0] as { where: { templateName: { in: string[] } } }).where
+    expect(where.templateName.in).toEqual(expect.arrayContaining([
+      'provider_kyc_nudge',
+      'provider_verification_resume_consent',
+      'provider_verification_resume_document',
+      'provider_verification_resume_selfie',
+    ]))
   })
 
   it('ranks thin skill categories first, case-normalized', async () => {
