@@ -32,6 +32,7 @@ import { checkProviderCanUnlockLead } from '../provider-lead-eligibility'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import { isOutsideStandardLeadHours } from './filter'
+import { hasRecentInboundWhatsappSession } from '../whatsapp-policy'
 import { recordWorkflowEvent } from '../workflow-events'
 import type {
   CoverageTier,
@@ -2051,51 +2052,59 @@ async function createOfferForAttempt(params: {
   }
 
   // Interactive paths run on top of the approved template — they upgrade the
-  // UX for providers inside the 24h re-engagement window. If they fail
-  // (cold provider), the template above already carried the lead link.
-  const { notifyProviderNewJob } = await import('../whatsapp-bot')
-  await notifyProviderNewJob({
-    providerPhone: provider.phone,
-    leadId: lead.id,
-    category: jobRequest.category,
-    area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
-    isTestLead: jobRequest.isTestRequest,
-    description: jobRequest.title || jobRequest.description || jobRequest.category,
-    customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
-    expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
-  }).catch((error) => {
-    console.error('[matching] Failed to notify provider of assignment offer (template fallback above already covers cold providers):', error)
-  })
-
-  // Quick-response action buttons - same credit copy and Accept Lead / Decline
-  // buttons as the dispatch.ts path so providers always see a consistent UI.
-  // Will silently fail for cold providers; the template link above still works,
-  // so any failure here (no wallet, missing balance, send rejected) is non-fatal
-  // and must NOT break the rotation cascade in offerNextRankedCandidate.
-  try {
-    const { sendButtons } = await import('../whatsapp-interactive')
-    const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
-    const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
-    const category = jobRequest.category
-    const balance = await getProviderWalletBalanceReadOnly(params.providerId)
-    const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
-    await sendButtons(
-      provider.phone,
-      actionsBody,
-      [
-        { id: `accept:${hold.id}`, title: 'Accept Lead' },
-        { id: `decline:${hold.id}`, title: 'Decline' },
-      ],
-      undefined,
-      {
-        templateName: 'interactive:new_lead_actions',
-        metadata: { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: params.providerId },
-      }
-    ).catch((error) => {
-      console.error('[matching] Failed to send lead action buttons to provider (template above still carries the link):', error)
+  // UX for providers inside the 24h re-engagement window. Meta rejects session
+  // (interactive) sends to cold providers with "Re-engagement message", so gate
+  // both extras on an actual inbound message inside the window instead of
+  // firing blind. A failed window check is treated as cold (skip) — the
+  // template above already carried the lead link either way.
+  const hasSessionWindow = await hasRecentInboundWhatsappSession(provider.phone).catch(() => false)
+  if (hasSessionWindow) {
+    const { notifyProviderNewJob } = await import('../whatsapp-bot')
+    await notifyProviderNewJob({
+      providerPhone: provider.phone,
+      leadId: lead.id,
+      category: jobRequest.category,
+      area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
+      isTestLead: jobRequest.isTestRequest,
+      description: jobRequest.title || jobRequest.description || jobRequest.category,
+      customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
+      expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
+    }).catch((error) => {
+      console.error('[matching] Failed to notify provider of assignment offer (template fallback above already covers cold providers):', error)
     })
-  } catch (error) {
-    console.error('[matching] Skipping lead action buttons - non-fatal:', error)
+
+    // Quick-response action buttons - same credit copy and Accept Lead / Decline
+    // buttons as the dispatch.ts path so providers always see a consistent UI.
+    // Will silently fail for cold providers; the template link above still works,
+    // so any failure here (no wallet, missing balance, send rejected) is non-fatal
+    // and must NOT break the rotation cascade in offerNextRankedCandidate.
+    try {
+      const { sendButtons } = await import('../whatsapp-interactive')
+      const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
+      const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
+      const category = jobRequest.category
+      const balance = await getProviderWalletBalanceReadOnly(params.providerId)
+      const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
+      await sendButtons(
+        provider.phone,
+        actionsBody,
+        [
+          { id: `accept:${hold.id}`, title: 'Accept Lead' },
+          { id: `decline:${hold.id}`, title: 'Decline' },
+        ],
+        undefined,
+        {
+          templateName: 'interactive:new_lead_actions',
+          metadata: { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: params.providerId },
+        }
+      ).catch((error) => {
+        console.error('[matching] Failed to send lead action buttons to provider (template above still carries the link):', error)
+      })
+    } catch (error) {
+      console.error('[matching] Skipping lead action buttons - non-fatal:', error)
+    }
+  } else {
+    console.info('[matching] interactive lead extras skipped: outside 24h session window', { leadId: lead.id, providerId: params.providerId })
   }
 
   // Tier 1 funnel observability: emit PROVIDER_NOTIFIED once per rotation
@@ -2116,6 +2125,7 @@ async function createOfferForAttempt(params: {
         channel: 'WHATSAPP',
         path: 'rotation',
         delivered: leadOfferDelivered,
+        interactiveSuppressed: !hasSessionWindow,
       },
     })
   } catch (error) {
