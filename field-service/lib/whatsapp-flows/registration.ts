@@ -591,7 +591,7 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
         ].join('\n'),
         [
           { id: 'name_use_wa',          title: `✅ Use "${firstWord}"` },
-          { id: 'name_enter_different', title: '✏️ Enter a different name' },
+          { id: 'name_enter_different', title: '✏️ Different name' },
         ],
       )
       // Persist the offered name into conversation data so the next webhook

@@ -1448,7 +1448,7 @@ async function processInboundMessageUnlocked(
           phone,
           `👋🏽 Your session timed out during your provider application.\n\nContinue where you left off?`,
           [
-            { id: 'reg_start', title: '▶️ Continue application' },
+            { id: 'reg_start', title: '▶️ Continue' },
             { id: 'session_restart', title: '🏠 Main Menu' },
           ]
         )
@@ -1481,7 +1481,7 @@ async function processInboundMessageUnlocked(
         phone,
         "👋🏽 You're still completing your provider application.\n\nContinue from where you left off?",
         [
-          { id: 'reg_start', title: '▶️ Continue application' },
+          { id: 'reg_start', title: '▶️ Continue' },
           { id: 'session_restart', title: '🏠 Main Menu' },
         ],
       )

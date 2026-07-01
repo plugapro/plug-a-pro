@@ -104,6 +104,17 @@ describe('listInFlightRenudgeCandidates', () => {
     expect(where.updatedAt.lte.getTime()).toBe(NOW.getTime() - 6 * HOUR_MS)
   })
 
+  it('filters the provider relation on active only - Provider.phone is non-nullable, so any phone filter with not: null makes Prisma throw "Argument `not` must not be null"', async () => {
+    const findMany = vi.fn().mockResolvedValue([])
+    const client = {
+      providerIdentityVerification: { findMany },
+      messageEvent: { findMany: vi.fn().mockResolvedValue([]) },
+    }
+    await listInFlightRenudgeCandidates(client, { now: NOW })
+    const where = (findMany.mock.calls[0][0] as { where: { provider: Record<string, unknown> } }).where
+    expect(where.provider).toEqual({ active: true })
+  })
+
   it('drops rows with no linked provider, no phone, or null providerId', async () => {
     const client = clientWith([
       verification({ id: 'v-ok', providerId: 'p-ok', provider: { id: 'p-ok', firstName: 'Ok', name: null, phone: '+27820000001', active: true } }),

@@ -78,6 +78,14 @@ describe('reg_collect_name profile-name shortcut', () => {
     expect(useButton!.title.length).toBeLessThanOrEqual(20)
   })
 
+  it('keeps EVERY quick-reply title within the 20-char limit - Meta rejects the whole send (#131009) if any one button is over', async () => {
+    await handleRegistrationFlow(ctx({ senderProfileName: 'Thandolwethu Mokoena' }))
+    const [, , buttons] = sendButtonsMock.mock.calls[0]
+    for (const button of buttons as Array<{ id: string; title: string }>) {
+      expect(button.title.length, `button "${button.id}" title "${button.title}"`).toBeLessThanOrEqual(20)
+    }
+  })
+
   it('falls back to the legacy text prompt when no profile name is available', async () => {
     await handleRegistrationFlow(ctx({ senderProfileName: undefined }))
     expect(sendTextMock).toHaveBeenCalledWith('+27820000001', expect.stringMatching(/name/i))

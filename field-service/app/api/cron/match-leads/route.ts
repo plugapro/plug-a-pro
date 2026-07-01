@@ -21,23 +21,18 @@ import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-applicatio
 import { routeProviderApplicationsForOpsReview } from '@/lib/provider-application-review-support'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { expireOpenJobRequest } from '@/lib/job-requests/expire-job-request'
-import { sendText } from '@/lib/whatsapp-interactive'
+import { sendCtaUrl } from '@/lib/whatsapp-interactive'
 import { recordAuditLog } from '@/lib/audit'
-import { detectQueueBreaches, getQueueHref } from '@/lib/ops-dashboard/alerts'
+import {
+  buildQueueBreachAlertMessage,
+  buildUnmatchedJobsAlertMessage,
+  detectQueueBreaches,
+  getQueueHref,
+} from '@/lib/ops-dashboard/alerts'
 import { getPublicAppUrl } from '@/lib/provider-credit-copy'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
 const ALERT_COOLDOWN_MINUTES = 90
-
-function formatAge(ageMinutes: number) {
-  if (ageMinutes < 60) return `${ageMinutes}m`
-  const hours = Math.floor(ageMinutes / 60)
-  const minutes = ageMinutes % 60
-  if (hours < 24) return `${hours}h ${minutes}m`
-  const days = Math.floor(hours / 24)
-  const remainingHours = hours % 24
-  return `${days}d ${remainingHours}h`
-}
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -336,9 +331,14 @@ export async function GET(request: Request) {
     })
 
     if (unmatched1h > 0) {
-      await sendText(
+      // URL must travel in the CTA button payload: a raw URL in the text body
+      // is rejected by the central WhatsApp send guard.
+      const alert = buildUnmatchedJobsAlertMessage(unmatched1h)
+      await sendCtaUrl(
         ADMIN_PHONE,
-        `⚠️ *Ops Alert - Unmatched Jobs*\n\n${unmatched1h} job request(s) have been open for over 1 hour with no provider match.\n\nReview: ${process.env.NEXT_PUBLIC_APP_URL ?? ''}/admin/bookings`
+        alert.body,
+        alert.buttonText,
+        `${getPublicAppUrl()}/admin/bookings`
       ).catch(() => {})
     }
   }
@@ -376,14 +376,10 @@ export async function GET(request: Request) {
       }
 
       const link = `${getPublicAppUrl()}${getQueueHref(breach.queueKey)}`
-      const message =
-        `⚠️ *Ops Alert - ${breach.label}*\n\n` +
-        `${breach.overdueCount} item${breach.overdueCount === 1 ? '' : 's'} overdue.\n` +
-        `Oldest age: ${formatAge(breach.oldestAgeMinutes)}.\n\n` +
-        `Review: ${link}`
+      const alert = buildQueueBreachAlertMessage(breach)
 
       const sent = ADMIN_PHONE
-        ? await sendText(ADMIN_PHONE, message).catch((error) => {
+        ? await sendCtaUrl(ADMIN_PHONE, alert.body, alert.buttonText, link).catch((error) => {
             console.error(`[cron/match-leads:${reqId}] Failed to send ops WhatsApp alert`, { queueKey: breach.queueKey, error })
             return null
           })
