@@ -159,6 +159,34 @@ const TEMPLATES = [
     ],
   },
   {
+    // Lead invite expired without a response. UTILITY so the notice reaches
+    // providers outside the 24h window (the freeform interactive:lead_expired
+    // send failed Meta Re-engagement for cold providers). No buttons.
+    name: 'provider_lead_expired',
+    category: 'UTILITY',
+    // {{1}} provider first name, {{2}} service, {{3}} area
+    body: "Hi {{1}}, the {{2}} lead in {{3}} expired before a response was received. No credits were used. We'll send you the next matching lead.",
+    examples: ['Sipho', 'Plumbing', 'Bromhof, Johannesburg'],
+  },
+  {
+    // Post-acceptance provider confirmation - customer contact released.
+    // UTILITY so it reaches providers outside the 24h window. The signed job
+    // handover suffix travels only in the URL button parameter, never in body text.
+    name: 'provider_job_accepted_next_steps',
+    category: 'UTILITY',
+    // {{1}} provider first name, {{2}} service, {{3}} area
+    body: 'Hi {{1}}, you accepted the {{2}} job in {{3}}. Customer contact is released — open your job page for details and next steps.',
+    examples: ['Sipho', 'Plumbing', 'Bromhof, Johannesburg'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'View job',
+        url: 'https://app.plugapro.co.za/provider/jobs/{{1}}',
+        example: ['demo-job-request-id/handover?token=demo-token'],
+      },
+    ],
+  },
+  {
     name: 'technician_job_reminder',
     category: 'UTILITY',
     // {{1}} tech name, {{2}} service, {{3}} address, {{4}} time, {{5}} job URL

@@ -8,7 +8,7 @@ import {
 import { notifyExpiredJobParties } from '../../lib/matching/customer-recontact'
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
+const { mockDb, mockEmitMatchEvent, mockSendText, mockSendProviderLeadExpired } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
@@ -71,9 +71,13 @@ const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
     messageEvent: {
       findFirst: vi.fn(),
     },
+    inboundWhatsAppMessage: {
+      findFirst: vi.fn(),
+    },
   },
   mockEmitMatchEvent: vi.fn(),
   mockSendText: vi.fn(),
+  mockSendProviderLeadExpired: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
@@ -82,6 +86,10 @@ vi.mock('../../lib/whatsapp-interactive', () => ({
   sendText: mockSendText,
   sendButtons: vi.fn().mockResolvedValue(undefined),
   sendCtaUrl: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock(import('../../lib/whatsapp'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  sendProviderLeadExpired: mockSendProviderLeadExpired,
 }))
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -179,6 +187,8 @@ function setupBaseTransaction() {
   mockDb.technicianScheduleItem.create.mockResolvedValue({})
   mockDb.matchAttempt.count.mockResolvedValue(1)
   mockDb.messageEvent.findFirst.mockResolvedValue(null)
+  // Default: outside the 24h window (no recent inbound WhatsApp message).
+  mockDb.inboundWhatsAppMessage.findFirst.mockResolvedValue(null)
   mockDb.dispatchDecision.update.mockResolvedValue({})
   mockDb.jobRequest.update.mockResolvedValue({})
   // loadMatchingJobRequest inside createOfferForAttempt
@@ -203,6 +213,7 @@ describe('expireAssignmentOffer', () => {
     vi.clearAllMocks()
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
     mockSendText.mockResolvedValue(undefined)
+    mockSendProviderLeadExpired.mockResolvedValue('wamid.lead-expired')
     setupBaseTransaction()
   })
 
@@ -261,6 +272,45 @@ describe('expireAssignmentOffer', () => {
 
     await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
 
+    // Template-first: the UTILITY template reaches cold providers outside the
+    // 24h window; the freeform interactive:lead_expired text is fallback-only.
+    expect(mockSendProviderLeadExpired).toHaveBeenCalledTimes(1)
+    expect(mockSendProviderLeadExpired).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27764010810',
+      firstName: 'Fannie',
+      service: 'Handyman',
+      area: 'Ruimsig, Johannesburg',
+      metadata: expect.objectContaining({
+        assignmentHoldId: 'hold-1',
+        jobRequestId: 'job-1',
+        providerId: 'provider-1',
+        wasReassigned: true,
+      }),
+    }))
+    // The street address must never leak into the notification.
+    expect(mockSendProviderLeadExpired).not.toHaveBeenCalledWith(
+      expect.objectContaining({ area: expect.stringContaining('42 Oak Avenue') }),
+    )
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Lead expired'),
+      expect.anything(),
+    )
+  })
+
+  it('falls back to the freeform lead-expired text only when the template is unapproved and the provider is inside the 24h window', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
+    mockDb.matchAttempt.findMany.mockResolvedValue([
+      { id: 'attempt-2', stage: 'RANKED', rankedPosition: 2, providerId: 'provider-2', hardFilterPassed: true },
+    ])
+    mockSendProviderLeadExpired.mockRejectedValue(
+      new Error('[TEMPLATE_NOT_APPROVED] Template "provider_lead_expired" is not approved or does not exist in Meta Business Manager. Approve it before deploying. code=132000')
+    )
+    // hasRecentInboundWhatsappSession (real implementation) consults this table.
+    mockDb.inboundWhatsAppMessage.findFirst.mockResolvedValue({ id: 'inb-recent' })
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
     expect(mockSendText).toHaveBeenCalledWith(
       '+27764010810',
       expect.stringContaining('Lead expired'),
@@ -292,6 +342,26 @@ describe('expireAssignmentOffer', () => {
     expect(mockSendText).not.toHaveBeenCalledWith(
       expect.any(String),
       expect.stringContaining('42 Oak Avenue'),
+      expect.anything(),
+    )
+  })
+
+  it('sends nothing when the template is unapproved and the provider is outside the 24h window', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
+    mockDb.matchAttempt.findMany.mockResolvedValue([
+      { id: 'attempt-2', stage: 'RANKED', rankedPosition: 2, providerId: 'provider-2', hardFilterPassed: true },
+    ])
+    mockSendProviderLeadExpired.mockRejectedValue(
+      new Error('[TEMPLATE_NOT_APPROVED] Template "provider_lead_expired" is not approved or does not exist in Meta Business Manager. Approve it before deploying. code=132000')
+    )
+    mockDb.inboundWhatsAppMessage.findFirst.mockResolvedValue(null)
+
+    const result = await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(result.expired).toBe(true)
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Lead expired'),
       expect.anything(),
     )
   })
@@ -349,8 +419,7 @@ describe('expireAssignmentOffer', () => {
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'match.exhausted', jobRequestId: 'job-1' })
     )
-    expect(mockSendText).toHaveBeenNthCalledWith(
-      3,
+    expect(mockSendText).toHaveBeenCalledWith(
       '+27831234567',
       expect.stringContaining('Thank you for trying Plug A Pro.'),
       expect.objectContaining({
@@ -376,8 +445,7 @@ describe('expireAssignmentOffer', () => {
 
     await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
 
-    expect(mockSendText).toHaveBeenNthCalledWith(
-      3,
+    expect(mockSendText).toHaveBeenCalledWith(
       '+27831234567',
       expect.stringContaining('we will message you if a suitable provider becomes available in time'),
       expect.objectContaining({

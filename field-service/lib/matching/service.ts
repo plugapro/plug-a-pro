@@ -32,7 +32,8 @@ import { checkProviderCanUnlockLead } from '../provider-lead-eligibility'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import { isOutsideStandardLeadHours } from './filter'
-import { hasRecentInboundWhatsappSession } from '../whatsapp-policy'
+import { hasRecentInboundWhatsappSession, isTemplateNotApprovedError } from '../whatsapp-policy'
+import { sendProviderLeadExpired } from '../whatsapp'
 import { recordWorkflowEvent } from '../workflow-events'
 import type {
   CoverageTier,
@@ -488,7 +489,7 @@ async function notifyCustomerProviderRotation(params: {
   ).catch(() => undefined)
 }
 
-async function notifyProviderLeadInviteExpired(params: {
+export async function notifyProviderLeadInviteExpired(params: {
   hold: ExpiredAssignmentNotificationHold
   wasReassigned: boolean
   traceId: string
@@ -507,14 +508,25 @@ async function notifyProviderLeadInviteExpired(params: {
     return
   }
 
-  const alreadySent = await hasSuccessfulMessageForRecipient({
-    to: phone,
-    templateName: 'interactive:lead_expired',
-    metadataPath: ['assignmentHoldId'],
-    metadataEquals: hold.id,
-  })
+  // A successful send under EITHER template name suppresses a resend:
+  // provider_lead_expired is the current UTILITY template; interactive:lead_expired
+  // is the legacy freeform session send that predates it.
+  const [sentViaTemplate, sentViaLegacyFreeform] = await Promise.all([
+    hasSuccessfulMessageForRecipient({
+      to: phone,
+      templateName: 'provider_lead_expired',
+      metadataPath: ['assignmentHoldId'],
+      metadataEquals: hold.id,
+    }),
+    hasSuccessfulMessageForRecipient({
+      to: phone,
+      templateName: 'interactive:lead_expired',
+      metadataPath: ['assignmentHoldId'],
+      metadataEquals: hold.id,
+    }),
+  ])
 
-  if (alreadySent) {
+  if (sentViaTemplate || sentViaLegacyFreeform) {
     console.info('[expireAssignmentOffer] skipped duplicate provider expiry notification', {
       trace_id: traceId,
       provider_id: hold.providerId,
@@ -527,6 +539,45 @@ async function notifyProviderLeadInviteExpired(params: {
 
   const category = hold.jobRequest?.category || 'job'
   const area = formatLeadExpiryArea(hold.jobRequest?.address)
+  const providerFirstName = hold.provider?.name?.trim().split(/\s+/)[0] || 'there'
+  const metadata = {
+    traceId,
+    providerId: hold.providerId,
+    jobRequestId: hold.jobRequestId,
+    assignmentHoldId: hold.id,
+    expiresAt: hold.expiresAt.toISOString(),
+    wasReassigned,
+  }
+
+  // Template-first: the UTILITY template reaches providers OUTSIDE the 24h
+  // session window, where the legacy freeform send failed Meta Re-engagement.
+  try {
+    await sendProviderLeadExpired({
+      to: phone,
+      firstName: providerFirstName,
+      service: category,
+      area,
+      metadata,
+    })
+    return
+  } catch (error) {
+    if (!isTemplateNotApprovedError(error)) throw error
+    // Template still PENDING/REJECTED at Meta — fall through to the legacy
+    // freeform send, which is only deliverable inside the 24h window.
+  }
+
+  const hasWindow = await hasRecentInboundWhatsappSession(phone).catch(() => false)
+  if (!hasWindow) {
+    console.info('[expireAssignmentOffer] skipped provider expiry notification: template unapproved and provider outside 24h window', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      result: 'outside_window_skipped',
+    })
+    return
+  }
+
   const deadline = formatProviderLeadDeadline(hold.expiresAt)
   const reassignedLine = wasReassigned ? '\n\nThis lead has now been offered to another provider.' : ''
 
@@ -535,14 +586,7 @@ async function notifyProviderLeadInviteExpired(params: {
     `⏱️ *Lead expired*\n\nThe ${category} lead in ${area} expired because there was no response before ${deadline}.\n\nNo credits were used.${reassignedLine}\n\nWe'll send you another lead when one matches your area and availability.`,
     {
       templateName: 'interactive:lead_expired',
-      metadata: {
-        traceId,
-        providerId: hold.providerId,
-        jobRequestId: hold.jobRequestId,
-        assignmentHoldId: hold.id,
-        expiresAt: hold.expiresAt.toISOString(),
-        wasReassigned,
-      },
+      metadata,
     },
   )
 }
