@@ -17,6 +17,9 @@ const SHARED_KEYS = [
   'prewarningSentAt',
   // Customer identity is needed across flows for greeting + recovery copy
   'customerName', 'customerId',
+  // CTWA ad attribution — captured on the first inbound message and carried
+  // until an application/job request can persist it (lib/whatsapp-referral.ts)
+  'ctwaReferral',
 ] as const
 
 const FLOW_DATA_WHITELIST: Record<FlowName, ReadonlyArray<string>> = {

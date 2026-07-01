@@ -28,6 +28,7 @@ export type ServerConversionName =
   | 'payment_success'
   | 'payment_failed'
   | 'job_completed'
+  | 'provider_application_submitted'
 
 export interface ServerConversion {
   name: ServerConversionName
@@ -35,6 +36,13 @@ export interface ServerConversion {
   value?: number
   currency?: string
   customParams?: Record<string, string | number | boolean>
+  /**
+   * Meta Click-to-WhatsApp click id (referral.ctwa_clid). When present AND
+   * META_PAGE_ID is configured, the CAPI event is sent with
+   * action_source=business_messaging so Meta can attribute the conversion to
+   * the originating ad and optimize delivery on it.
+   */
+  ctwaClid?: string | null
 }
 
 // Read each call to remain testable (vi.stubEnv changes propagate).
@@ -71,6 +79,8 @@ function metaEventNameFor(name: ServerConversionName): string {
       return 'SubmitApplication'
     case 'job_completed':
       return 'CompleteRegistration'
+    case 'provider_application_submitted':
+      return 'Lead'
     default:
       return name
   }
@@ -87,13 +97,24 @@ async function sendToMetaCapi(event: ServerConversion): Promise<void> {
     customData.value = event.value
     customData.currency = event.currency ?? 'ZAR'
   }
+  // CTWA conversions: Meta requires action_source=business_messaging with
+  // user_data.ctwa_clid + user_data.page_id for click-to-WhatsApp attribution.
+  // Falls back to the standard website shape when META_PAGE_ID is unset.
+  const pageId = process.env.META_PAGE_ID
+  const isCtwa = Boolean(event.ctwaClid && pageId)
   const body = {
     data: [
       {
         event_name: metaEventNameFor(event.name),
         event_time: Math.floor(Date.now() / 1000),
         event_id: eventId(event.name, event.entityId),
-        action_source: 'website',
+        ...(isCtwa
+          ? {
+              action_source: 'business_messaging',
+              messaging_channel: 'whatsapp',
+              user_data: { ctwa_clid: event.ctwaClid, page_id: pageId },
+            }
+          : { action_source: 'website' }),
         ...(Object.keys(customData).length > 0 ? { custom_data: customData } : {}),
       },
     ],

@@ -32,6 +32,7 @@ import {
   REGISTRATION_TRIGGERS,
 } from './whatsapp-flows/registration'
 import { matchDeeplink } from './whatsapp-deeplinks'
+import { classifyReferralAudience, toReferralAttribution } from './whatsapp-referral'
 import { clearIncompatibleFlowData } from './whatsapp-conversation-state'
 import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
@@ -1210,6 +1211,36 @@ async function processInboundMessageUnlocked(
         flow = 'registration'
         step = 'reg_start'
         data = {}
+        deeplinkMatched = true
+      }
+    }
+
+    // CTWA referral from a Meta ad → same routing override as the deeplink
+    // above, but keyed on the webhook `referral` payload instead of the
+    // prefilled message text (Meta's auto-generated openers like "Hello! Can
+    // I get more info on this?" never match a deeplink token). Attribution is
+    // always stashed on the conversation so the eventual ProviderApplication
+    // can be tied back to the ad; the routing override itself is flag-gated.
+    if (message.referral) {
+      const referralAttribution = toReferralAttribution(message.referral)
+      if (referralAttribution) {
+        data = { ...data, ctwaReferral: referralAttribution }
+      }
+      if (
+        !deeplinkMatched &&
+        conversation.flow === 'idle' &&
+        classifyReferralAudience(message.referral) === 'provider_recruitment' &&
+        await isEnabled('whatsapp.registration.ctwa_referral_route')
+      ) {
+        console.info('[whatsapp-bot] ctwa referral routed to registration', {
+          phone: maskedPhone(phone),
+          sourceId: message.referral.source_id ?? null,
+          sourceType: message.referral.source_type ?? null,
+          messageId: message.id,
+        })
+        flow = 'registration'
+        step = 'reg_start'
+        data = referralAttribution ? { ctwaReferral: referralAttribution } : {}
         deeplinkMatched = true
       }
     }

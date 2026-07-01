@@ -735,5 +735,16 @@ export interface InboundMessage {
   image?: { id: string; mime_type: string; caption?: string }
   document?: { id: string; mime_type: string; filename?: string; caption?: string }
   location?: { latitude: number; longitude: number; name?: string; address?: string }
+  // Present on the first message of a "Click to WhatsApp" ad conversation.
+  // See lib/whatsapp-referral.ts for routing/attribution handling.
+  referral?: {
+    source_url?: string
+    source_id?: string
+    source_type?: string
+    headline?: string
+    body?: string
+    media_type?: string
+    ctwa_clid?: string
+  }
   timestamp: string
 }
