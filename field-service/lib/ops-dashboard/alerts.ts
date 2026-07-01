@@ -64,6 +64,45 @@ export function getQueueHref(queueKey: OpsDashboardQueueKey) {
   }
 }
 
+export function formatQueueAge(ageMinutes: number) {
+  if (ageMinutes < 60) return `${ageMinutes}m`
+  const hours = Math.floor(ageMinutes / 60)
+  const minutes = ageMinutes % 60
+  if (hours < 24) return `${hours}h ${minutes}m`
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return `${days}d ${remainingHours}h`
+}
+
+// ─── WhatsApp ops-alert copy ──────────────────────────────────────────────────
+// Bodies must stay free of raw URLs: the central send guard
+// (assertNoRawUrlsInWhatsAppBody) rejects them, which silently killed every
+// queue-breach alert from 2026-05-07 to 2026-07-01. The review link travels via
+// the sendCtaUrl button payload instead — callers pair these with getQueueHref.
+
+export function buildQueueBreachAlertMessage(breach: QueueBreachResult): {
+  body: string
+  buttonText: string
+} {
+  const body =
+    `⚠️ *Ops Alert - ${breach.label}*\n\n` +
+    `${breach.overdueCount} item${breach.overdueCount === 1 ? '' : 's'} overdue.\n` +
+    `Oldest age: ${formatQueueAge(breach.oldestAgeMinutes)}.\n\n` +
+    `Tap below to review the queue.`
+  return { body, buttonText: 'Review queue' }
+}
+
+export function buildUnmatchedJobsAlertMessage(count: number): {
+  body: string
+  buttonText: string
+} {
+  const body =
+    `⚠️ *Ops Alert - Unmatched Jobs*\n\n` +
+    `${count} job request(s) have been open for over 1 hour with no provider match.\n\n` +
+    `Tap below to review.`
+  return { body, buttonText: 'Review jobs' }
+}
+
 export function getQueueAgeTone(
   queueKey: OpsDashboardQueueKey,
   ageMinutes: number | null,

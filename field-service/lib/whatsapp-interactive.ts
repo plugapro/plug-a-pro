@@ -14,6 +14,7 @@ import { normalizePhone } from './utils'
 
 const API_VERSION = 'v21.0'
 const WHATSAPP_CTA_URL_BUTTON_TEXT_MAX = 20
+const WHATSAPP_QUICK_REPLY_TITLE_MAX = 20
 
 function getConfig() {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
@@ -99,6 +100,20 @@ function assertCtaUrlButtonTextIsValid(buttonText: string, contextName: string) 
   }
 }
 
+function assertQuickReplyTitlesAreValid(buttons: QuickReply[], contextName: string) {
+  // Meta rejects the WHOLE interactive message with error #131009 when any one
+  // quick-reply title exceeds 20 chars — but only at send time, so the failure
+  // is invisible locally. Fail loudly here instead, like the raw-URL guard.
+  for (const button of buttons) {
+    if (button.title.length > WHATSAPP_QUICK_REPLY_TITLE_MAX) {
+      throw new Error(
+        `[sendButtons] Quick-reply button title must be ${WHATSAPP_QUICK_REPLY_TITLE_MAX} characters or fewer. ` +
+        `Received ${button.title.length} ("${button.title}") for id "${button.id}" in ${contextName}.`,
+      )
+    }
+  }
+}
+
 // ─── Text ─────────────────────────────────────────────────────────────────────
 
 export async function sendText(
@@ -150,6 +165,7 @@ export async function sendButtons(
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
   const contextName = context?.templateName ?? 'interactive:buttons'
+  assertQuickReplyTitlesAreValid(buttons, contextName)
   assertVisibleWhatsAppTextIsSafe(contextName, [
     ['body', body],
     ['header', options?.header],
