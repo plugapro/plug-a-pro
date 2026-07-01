@@ -41,11 +41,19 @@ describe('signed provider lead page copy', () => {
   })
 
   it('only renders offer countdown and response actions for active lead offers', () => {
-    expect(source).toContain("const isExpired = lead.status === 'EXPIRED'")
-    expect(source).toContain("const isOpenOffer = lead.status === 'SEND_PENDING' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'")
+    // Late-response grace (2026-07-01 incident): a just-expired AUTO_ASSIGN
+    // lead stays respondable inside the grace window; acceptAssignmentOffer
+    // stays the authority on whether the accept is honored.
+    expect(source).toContain('const renderLateAcceptCandidate =')
+    expect(source).toContain('isWithinLateResponseGraceWindow(lead.expiresAt)')
+    expect(source).toContain('!renderLateAcceptCandidate &&')
+    expect(source).toContain("(lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false))")
+    expect(source).toContain("(lead.status === 'EXPIRED' && renderLateAcceptCandidate)")
     expect(source).toContain('const canRespondToLead = isOpenOffer && !isExpired')
-    expect(source).toContain('const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)')
+    // Countdown/auto-refresh only before expiry; grace shows a notice instead.
+    expect(source).toContain('lead.expiresAt && canRespondToLead && lead.expiresAt > new Date()')
     expect(source).toContain('{showExpiryCountdown && lead.expiresAt && (')
+    expect(source).toContain('{showLateAcceptNotice && (')
     expect(source).not.toContain('{lead.expiresAt && !isAccepted && (')
     expect(source).toContain('canRespondToLead && confirmingAccept')
   })

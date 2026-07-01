@@ -50,6 +50,14 @@ type LeadUnlockContext = {
   // balance on the first page load. Callers must surface a "Confirm unlock
   // (1 credit will be deducted)" step and only then call with confirmed: true.
   confirmed?: boolean
+  // Late-response grace (matching/service.ts#acceptAssignmentOffer): set only
+  // after the accept transaction has verified the job is still genuinely
+  // unmatched (no Match row, jobRequest OPEN/MATCHING, no other ACCEPTED
+  // lead). Lets the unlock tolerate a lead whose own status/expiresAt already
+  // say EXPIRED — the availability assertion would otherwise reject the very
+  // accept the grace window is honoring. All other checks (ownership,
+  // approval, KYC, credits) still apply unchanged.
+  allowExpiredLeadWithinGrace?: boolean
 }
 
 function assertUnlockConfirmed(context: LeadUnlockContext) {
@@ -75,20 +83,34 @@ function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue
 }
 
-function assertLeadAvailable(lead: {
-  status: string
-  expiresAt: Date | null
-  jobRequest: { status: string }
-}) {
+function assertLeadAvailable(
+  lead: {
+    status: string
+    expiresAt: Date | null
+    jobRequest: { status: string }
+  },
+  opts: { allowExpiredLeadWithinGrace?: boolean } = {},
+) {
   if (lead.jobRequest.status === 'CANCELLED' || lead.jobRequest.status === 'EXPIRED') {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead is no longer available.')
   }
 
-  if (!['SENT', 'VIEWED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'ACCEPTED', 'ACCEPTED_LOCKED'].includes(lead.status)) {
+  const unlockableStatuses = ['SENT', 'VIEWED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'ACCEPTED', 'ACCEPTED_LOCKED']
+  if (opts.allowExpiredLeadWithinGrace) {
+    // Late-response grace: the accept transaction has already verified the job
+    // is still genuinely unmatched; a cron-expired lead may be resurrected.
+    unlockableStatuses.push('EXPIRED')
+  }
+  if (!unlockableStatuses.includes(lead.status)) {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead cannot be unlocked.')
   }
 
-  if (!['ACCEPTED', 'ACCEPTED_LOCKED'].includes(lead.status) && lead.expiresAt && lead.expiresAt < new Date()) {
+  if (
+    !['ACCEPTED', 'ACCEPTED_LOCKED'].includes(lead.status) &&
+    !opts.allowExpiredLeadWithinGrace &&
+    lead.expiresAt &&
+    lead.expiresAt < new Date()
+  ) {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead has expired.')
   }
 }
@@ -435,7 +457,7 @@ export async function unlockLeadForProviderInTransaction(
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead has already been matched.')
   }
 
-  assertLeadAvailable(lead)
+  assertLeadAvailable(lead, { allowExpiredLeadWithinGrace: context.allowExpiredLeadWithinGrace })
 
   const isTestUnlock = lead.jobRequest.isTestRequest || lead.provider.isTestUser
   const wallet = await tx.providerWallet.findUnique({

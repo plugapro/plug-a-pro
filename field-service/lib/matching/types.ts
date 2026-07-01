@@ -210,6 +210,12 @@ export type OfferResolutionResult =
       alreadyUnlocked?: boolean
       assignmentHoldId: string
       nextOfferedProviderId: string | null
+      // True when the accept landed after lead.expiresAt but was honored via
+      // the late-response grace window (MATCHING_LATE_RESPONSE_GRACE_MINUTES)
+      // because the job was still genuinely unmatched. The PROVIDER_ACCEPTED
+      // workflow emit does not live in acceptAssignmentOffer, so callers use
+      // this to tag their own logging/metadata.
+      lateAccepted?: boolean
     }
   | {
       ok: false

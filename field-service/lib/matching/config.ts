@@ -19,6 +19,28 @@ export const FAST_MATCH_PROVIDER_RESPONSE_MINUTES = parsePositiveIntEnv(
   DEFAULT_FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
 )
 
+// 2026-07-01 incident: a provider accepted 30 seconds after lead.expiresAt;
+// the rotation cron had already flipped his hold to EXPIRED and dispatched the
+// next provider. His accept was rejected and the job took another hour to
+// fill. A late accept within this many minutes of lead.expiresAt is honored
+// as long as the job is still genuinely unmatched (no Match row, jobRequest
+// still OPEN/MATCHING, no other ACCEPTED lead). Set
+// MATCHING_LATE_RESPONSE_GRACE_MINUTES=0 to disable the grace entirely.
+const DEFAULT_LATE_RESPONSE_GRACE_MINUTES = 30
+
+// Unlike parsePositiveIntEnv, 0 is a valid value here (explicit opt-out).
+function parseNonNegativeIntEnv(raw: string | undefined, fallback: number) {
+  const value = Number.parseInt(raw ?? '', 10)
+  if (!Number.isFinite(value)) return fallback
+  if (value < 0) return fallback
+  return value
+}
+
+export const LATE_RESPONSE_GRACE_MINUTES = parseNonNegativeIntEnv(
+  process.env.MATCHING_LATE_RESPONSE_GRACE_MINUTES,
+  DEFAULT_LATE_RESPONSE_GRACE_MINUTES,
+)
+
 function parseBoolEnv(raw: string | undefined, fallback: boolean) {
   if (raw == null) return fallback
   const normalized = raw.trim().toLowerCase()
@@ -44,6 +66,7 @@ export const SEND_DISPATCH_ACTION_BUTTONS = parseBoolEnv(
 export const MATCHING_CONFIG = {
   offerTtlMinutes: FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
   sendDispatchActionButtons: SEND_DISPATCH_ACTION_BUTTONS,
+  lateResponseGraceMinutes: LATE_RESPONSE_GRACE_MINUTES,
   quickMatchMaxProviderOffers: 10,
   quickMatchProgressUpdateMinutes: 30,
   retryDelayMinutes: 1,
@@ -80,3 +103,17 @@ export const MATCHING_CONFIG = {
 } as const
 
 export type MatchingWeights = typeof MATCHING_CONFIG.weights
+
+// Pure time-window check for the late-response grace. Callers that gate UI or
+// pre-flight guards (e.g. the signed lead page) use this to decide whether an
+// already-expired lead should still be handed to acceptAssignmentOffer, which
+// then authoritatively verifies the job is genuinely unmatched.
+export function isWithinLateResponseGraceWindow(
+  expiresAt: Date | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  const graceMinutes = MATCHING_CONFIG.lateResponseGraceMinutes
+  if (graceMinutes <= 0) return false
+  if (!expiresAt) return false
+  return now.getTime() <= expiresAt.getTime() + graceMinutes * 60_000
+}

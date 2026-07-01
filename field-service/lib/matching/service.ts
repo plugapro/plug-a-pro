@@ -2484,6 +2484,69 @@ async function offerNextRankedCandidate(params: {
   return { nextOfferedProviderId: null, assignmentHoldId: null }
 }
 
+// ── Late-response grace ──────────────────────────────────────────────────────
+// Production incident (2026-07-01): a provider accepted 30 seconds after
+// lead.expiresAt. The rotation cron had already flipped his assignmentHold to
+// EXPIRED and dispatched the next provider; his accept bounced off guards A
+// (hold not ACTIVE → TAKEN) and B (expiresAt in the past → EXPIRED), he lost
+// the job, and the job took another hour to fill. A late accept is now honored
+// while the job is still genuinely unmatched.
+//
+// The grace bypasses ONLY guards A and B. Ownership, provider approval, KYC
+// and the credit spend still apply unchanged. Evaluated lazily — the common
+// (non-expired) accept path pays for zero extra queries.
+const LATE_ACCEPT_LEAD_STATUSES = ['EXPIRED', 'SENT', 'VIEWED'] as const
+const LATE_ACCEPT_HOLD_STATUSES = ['EXPIRED', 'ACTIVE'] as const
+
+async function evaluateLateResponseGrace(
+  tx: Prisma.TransactionClient,
+  params: {
+    lead: {
+      id: string
+      jobRequestId: string
+      status: string
+      expiresAt: Date | null
+      assignmentHold: { status: string } | null
+    }
+    hasExistingMatch: boolean
+    now: Date
+  },
+): Promise<boolean> {
+  const graceMinutes = MATCHING_CONFIG.lateResponseGraceMinutes
+  // (a) grace enabled and still inside expiresAt + grace. A lead without an
+  // expiresAt has no window to be "late" against — no grace.
+  if (graceMinutes <= 0) return false
+  const { lead, hasExistingMatch, now } = params
+  if (!lead.expiresAt) return false
+  if (now.getTime() > lead.expiresAt.getTime() + graceMinutes * 60_000) return false
+  // (b) no Match row for the jobRequest (loaded earlier in the transaction).
+  if (hasExistingMatch) return false
+  // (e) a DECLINED/CANCELLED lead is never resurrected, and a hold that was
+  // REJECTED/RELEASED (someone else got the job, or the provider declined)
+  // stays closed. Only cron-expired or still-active states qualify.
+  if (!(LATE_ACCEPT_LEAD_STATUSES as readonly string[]).includes(lead.status)) return false
+  const holdStatus = lead.assignmentHold?.status
+  if (!holdStatus || !(LATE_ACCEPT_HOLD_STATUSES as readonly string[]).includes(holdStatus)) return false
+  // (c) the job request itself must still be open for matching.
+  const jobRequest = await tx.jobRequest.findUnique({
+    where: { id: lead.jobRequestId },
+    select: { status: true },
+  })
+  if (!jobRequest) return false
+  if (jobRequest.status !== 'OPEN' && jobRequest.status !== 'MATCHING') return false
+  // (d) no OTHER lead on the same job has already been accepted.
+  const otherAcceptedLead = await tx.lead.findFirst({
+    where: {
+      jobRequestId: lead.jobRequestId,
+      id: { not: lead.id },
+      status: 'ACCEPTED',
+    },
+    select: { id: true },
+  })
+  if (otherAcceptedLead) return false
+  return true
+}
+
 export async function acceptAssignmentOffer(params: {
   leadId: string
   providerId: string
@@ -2623,10 +2686,24 @@ export async function acceptAssignmentOffer(params: {
       if (!lead.assignmentHoldId || !lead.assignmentHold) {
         return { ok: false as const, reason: existingMatch ? 'TAKEN' : 'NOT_FOUND' }
       }
-      if (lead.assignmentHold.status !== 'ACTIVE') {
+      // Guards A (hold no longer ACTIVE) and B (lead past expiresAt) may be
+      // bypassed by the late-response grace when the job is still genuinely
+      // unmatched. The verdict is computed once, and only when a guard would
+      // otherwise reject — the happy path runs zero extra queries.
+      const guardNow = new Date()
+      const holdNotActive = lead.assignmentHold.status !== 'ACTIVE'
+      const leadTimeExpired = Boolean(lead.expiresAt && lead.expiresAt < guardNow)
+      const lateAcceptGranted =
+        (holdNotActive || leadTimeExpired) &&
+        (await evaluateLateResponseGrace(tx, {
+          lead,
+          hasExistingMatch: Boolean(existingMatch),
+          now: guardNow,
+        }))
+      if (holdNotActive && !lateAcceptGranted) {
         return { ok: false as const, reason: 'TAKEN' }
       }
-      if (lead.expiresAt && lead.expiresAt < new Date()) {
+      if (leadTimeExpired && !lateAcceptGranted) {
         await tx.lead.update({
           where: { id: lead.id },
           data: { status: 'EXPIRED', respondedAt: new Date() },
@@ -2679,6 +2756,9 @@ export async function acceptAssignmentOffer(params: {
       // (the "Confirm accept" tap on the lead page or the WhatsApp accept button),
       // never from a bare lead-link page load - so the credit spend is confirmed.
       confirmed: true,
+      // Late-response grace: when granted, the unlock must tolerate a lead the
+      // cron already flipped to EXPIRED / whose expiresAt has passed.
+      allowExpiredLeadWithinGrace: lateAcceptGranted,
     })
     const alreadyUnlocked = unlockResult.alreadyUnlocked
     const remainingCreditBalance = remainingBalanceFromUnlock(
@@ -2884,6 +2964,7 @@ export async function acceptAssignmentOffer(params: {
       currentCreditBalance: remainingCreditBalance,
       leadStatusBefore: lead.status,
       leadStatusAfter: 'ACCEPTED',
+      lateAccepted: lateAcceptGranted,
     }
     }, {
       maxWait: ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS,
@@ -2974,6 +3055,8 @@ export async function acceptAssignmentOffer(params: {
     }
   }
 
+  const lateAccepted = 'lateAccepted' in transactionResult && transactionResult.lateAccepted === true
+
   console.info('[matching] lead unlock/accept attempt', {
     provider_id: params.providerId,
     lead_id: params.leadId,
@@ -2983,6 +3066,7 @@ export async function acceptAssignmentOffer(params: {
     lead_status_before: transactionResult.leadStatusBefore,
     lead_status_after: transactionResult.leadStatusAfter,
     credit_transaction_id: transactionResult.creditTransactionId,
+    late_accepted: lateAccepted,
     result: 'ACCEPTED',
     trace_id: traceId,
   })
@@ -3017,6 +3101,7 @@ export async function acceptAssignmentOffer(params: {
       providerId: params.providerId,
       bookingId: transactionResult.bookingId ?? '',
       latencyMs: Date.now() - acceptStart,
+      ...(lateAccepted ? { lateAccepted: true } : {}),
     })
   }
 
@@ -3030,6 +3115,7 @@ export async function acceptAssignmentOffer(params: {
     alreadyUnlocked: transactionResult.alreadyUnlocked,
     assignmentHoldId: transactionResult.assignmentHoldId,
     nextOfferedProviderId: transactionResult.nextOfferedProviderId,
+    lateAccepted,
   }
 }
 
