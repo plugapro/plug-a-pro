@@ -32,6 +32,7 @@ import { checkProviderCanUnlockLead } from '../provider-lead-eligibility'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import { isOutsideStandardLeadHours } from './filter'
+import { recordWorkflowEvent } from '../workflow-events'
 import type {
   CoverageTier,
   DispatchActor,
@@ -2021,6 +2022,7 @@ async function createOfferForAttempt(params: {
   } catch (error) {
     console.error('[matching] Could not derive signed lead URL for job_offer template:', error)
   }
+  let leadOfferDelivered = false
   if (!signedUrl) {
     console.error('[matching] Skipping job_offer template - no signed lead URL available', { leadId: lead.id })
   } else {
@@ -2041,6 +2043,8 @@ async function createOfferForAttempt(params: {
         dispatchDecisionId: params.dispatchDecisionId,
         path: 'rotation',
       },
+    }).then(() => {
+      leadOfferDelivered = true
     }).catch((error) => {
       console.error('[matching] Failed to send job_offer template to provider:', error)
     })
@@ -2092,6 +2096,30 @@ async function createOfferForAttempt(params: {
     })
   } catch (error) {
     console.error('[matching] Skipping lead action buttons - non-fatal:', error)
+  }
+
+  // Tier 1 funnel observability: emit PROVIDER_NOTIFIED once per rotation
+  // re-offer, mirroring the initial-dispatch emit in dispatch.ts. Guarded so
+  // observability failures never break the rotation cascade.
+  // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
+  try {
+    await recordWorkflowEvent({
+      eventType: 'PROVIDER_NOTIFIED',
+      actorType: 'system',
+      entityType: 'LEAD',
+      entityId: lead.id,
+      source: 'matching/create-offer-for-attempt',
+      metadata: {
+        providerId: params.providerId,
+        jobRequestId: params.jobRequestId,
+        template: 'provider_lead_offer',
+        channel: 'WHATSAPP',
+        path: 'rotation',
+        delivered: leadOfferDelivered,
+      },
+    })
+  } catch (error) {
+    console.error('[matching] Failed to record PROVIDER_NOTIFIED workflow event (non-fatal):', error)
   }
 
   return { hold, lead }
