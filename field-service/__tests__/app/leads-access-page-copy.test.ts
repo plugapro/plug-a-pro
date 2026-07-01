@@ -58,6 +58,23 @@ describe('signed provider lead page copy', () => {
     expect(source).toContain('canRespondToLead && confirmingAccept')
   })
 
+  it('decline stays available for an in-grace late-response candidate (no dead-end)', () => {
+    // Review fix (2026-07-02): the page renders Decline whenever the lead is
+    // respondable — which includes an in-grace EXPIRED AUTO_ASSIGN lead — so
+    // declineLeadWithToken must mirror the accept path's lateAcceptCandidate
+    // guard instead of pre-rejecting on status EXPIRED / past expiresAt.
+    expect(source).toContain('const lateResponseCandidate =')
+    expect(source).toContain('const closedForDecline =')
+    expect(source).toContain('!lateResponseCandidate &&')
+    expect(source).toContain(
+      "if (closedForDecline || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {",
+    )
+    // The old unconditional pre-reject must be gone.
+    expect(source).not.toContain(
+      "if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {",
+    )
+  })
+
   it('lead detail page no longer renders expiry countdown once a lead is accepted', () => {
     expect(authenticatedSource).toContain('const isAcceptedLead =')
     expect(authenticatedSource).toContain("lead.status === 'PROVIDER_ACCEPTED'")

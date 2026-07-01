@@ -350,6 +350,48 @@ describe('acceptAssignmentOffer late-response grace', () => {
     })
   })
 
+  it('rejects the late accept when a Match row already exists for the jobRequest (condition b)', async () => {
+    primeAcceptFixture()
+    // The rotation already matched another provider. match.findUnique is the
+    // transaction's authoritative load — the grace must not fire.
+    mockDb.match.findUnique.mockResolvedValue({
+      id: 'match-existing',
+      jobRequestId: JOB_REQUEST_ID,
+      providerId: 'provider-2',
+      status: 'MATCHED',
+    })
+
+    const result = await acceptAssignmentOffer({ leadId: LEAD_ID, providerId: PROVIDER_ID, source: 'whatsapp' })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      // Hold is EXPIRED so guard A (TAKEN) fires; EXPIRED also acceptable —
+      // either way the accept must NOT be honored.
+      expect(['EXPIRED', 'TAKEN']).toContain(result.reason)
+    }
+    expect(mockDb.match.create).not.toHaveBeenCalled()
+    // No credit spend on a rejected late accept.
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+  })
+
+  it.each(['MATCHED', 'CANCELLED'] as const)(
+    'rejects the late accept when jobRequest.status is %s (condition c: job no longer open)',
+    async (jobRequestStatus) => {
+      primeAcceptFixture({ jobRequestStatus })
+
+      const result = await acceptAssignmentOffer({ leadId: LEAD_ID, providerId: PROVIDER_ID, source: 'whatsapp' })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(['EXPIRED', 'TAKEN']).toContain(result.reason)
+      }
+      expect(mockDb.match.create).not.toHaveBeenCalled()
+      expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+      expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+    },
+  )
+
   it('rejects the late accept when another lead on the job is already ACCEPTED', async () => {
     primeAcceptFixture({ otherAcceptedLead: { id: 'lead-2' } })
 

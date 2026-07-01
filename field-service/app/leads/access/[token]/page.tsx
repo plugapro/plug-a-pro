@@ -332,7 +332,21 @@ async function declineLeadWithToken(formData: FormData) {
   if (lead.status === 'DECLINED') {
     redirect(`/leads/access/${encodeURIComponent(token)}?declined=already&actionTraceId=${encodeURIComponent(traceId)}`)
   }
-  if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {
+  // Late-response grace (2026-07-01 incident): mirror lateAcceptCandidate in
+  // acceptLeadWithToken above. The page renders the Decline button whenever
+  // the lead is respondable — which now includes an in-grace EXPIRED
+  // AUTO_ASSIGN lead — so pre-rejecting here would dead-end that button.
+  // Declining a graceable lead is legitimate: declineLead/rejectAssignmentOffer
+  // stay the authority (a hold the cron already rotated resolves gracefully as
+  // alreadyClosed instead of recording a duplicate decline).
+  const lateResponseCandidate =
+    lead.jobRequest.assignmentMode === 'AUTO_ASSIGN' &&
+    ['EXPIRED', 'SENT', 'VIEWED'].includes(lead.status) &&
+    isWithinLateResponseGraceWindow(lead.expiresAt)
+  const closedForDecline =
+    !lateResponseCandidate &&
+    (lead.status === 'EXPIRED' || Boolean(lead.expiresAt && lead.expiresAt <= new Date()))
+  if (closedForDecline || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {
     redirectLeadActionError(token, {
       error: 'closed',
       errorCode: lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED' ? 'LEAD_ALREADY_ACCEPTED' : 'LEAD_EXPIRED',

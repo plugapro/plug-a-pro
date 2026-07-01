@@ -3,6 +3,7 @@ import { db } from './db'
 import { checkPhaseOneLeadDetailEligibility } from './provider-lead-eligibility'
 import { previewNotes } from './provider-lead-detail'
 import { getProviderLeadPublicAppUrl } from './provider-credit-copy'
+import { isWithinLateResponseGraceWindow } from './matching/config'
 import { maskPhone } from './support-diagnostics'
 
 const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
@@ -701,16 +702,30 @@ export async function resolveProviderLeadAttachmentScope(token: string) {
 
   const lead = resolved.lead
 
+  // Late-response grace (2026-07-01 incident): the signed lead page still
+  // invites an accept for an in-grace AUTO_ASSIGN lead (see lateAcceptCandidate
+  // in app/leads/access/[token]/page.tsx), so preview attachments must stay
+  // reachable for that same candidate — otherwise the customer photos 401 on a
+  // page that says "Accept job". Mirrors the page's candidate check plus the
+  // job-still-open condition acceptAssignmentOffer enforces; a lead on a job
+  // that was matched elsewhere stays closed.
+  const lateResponseCandidate =
+    lead.jobRequest.assignmentMode === 'AUTO_ASSIGN' &&
+    ['EXPIRED', 'SENT', 'VIEWED'].includes(lead.status) &&
+    (lead.jobRequest.status === 'OPEN' || lead.jobRequest.status === 'MATCHING') &&
+    isWithinLateResponseGraceWindow(lead.expiresAt)
+
   // Lead offers are short-lived; signed HMAC links live for the full token TTL.
   // A lead won by another provider is marked EXPIRED, but expiresAt is not always
   // moved into the past. Treat EXPIRED (or a past expiresAt) as a closed state so
   // a losing/declined/timed-out provider cannot keep pulling customer photos via
-  // the attachment proxy until the HMAC token expires.
+  // the attachment proxy until the HMAC token expires. DECLINED/CANCELLED leads
+  // stay closed unconditionally — the grace never resurrects them.
   const leadClosed =
-    lead.status === 'EXPIRED' ||
     lead.status === 'DECLINED' ||
     lead.status === 'CANCELLED' ||
-    Boolean(lead.expiresAt && lead.expiresAt <= new Date())
+    (!lateResponseCandidate &&
+      (lead.status === 'EXPIRED' || Boolean(lead.expiresAt && lead.expiresAt <= new Date())))
   if (leadClosed) {
     console.warn('[provider-lead-access] attachment scope rejected: lead closed', {
       traceId: resolved.traceId,
