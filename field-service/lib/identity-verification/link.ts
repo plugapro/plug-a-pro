@@ -13,7 +13,7 @@ import { issueProviderVerificationToken } from '@/lib/provider-verification-toke
 
 export class ProviderIdentityVerificationLinkError extends Error {
   constructor(
-    public readonly code: 'PROVIDER_NOT_FOUND' | VerificationStartBlockReason,
+    public readonly code: 'PROVIDER_NOT_FOUND' | 'VERIFICATION_NOT_RESUMABLE' | VerificationStartBlockReason,
     message: string,
   ) {
     super(message)
@@ -23,6 +23,10 @@ export class ProviderIdentityVerificationLinkError extends Error {
 
 export type IssueProviderIdentityVerificationLinkInput = {
   providerId: string
+  // When set, the caller has already selected the exact verification row to
+  // resume (e.g. the in-flight re-nudge cron): the fail-safe gate and the
+  // channel-scoped legacy lookup are both skipped.
+  verificationId?: string
   providerApplicationId?: string | null
   channel?: VerificationChannel
   identityBasis?: IdentityBasis
@@ -52,6 +56,34 @@ export async function issueProviderIdentityVerificationLink(
       'PROVIDER_NOT_FOUND',
       'Provider account not found for identity verification link.',
     )
+  }
+
+  if (input.verificationId) {
+    const selected = await db.providerIdentityVerification.findFirst({
+      where: {
+        id: input.verificationId,
+        providerId: input.providerId,
+        status: { in: [...NON_TERMINAL_VERIFICATION_STATUSES] },
+      },
+      select: { id: true, status: true },
+    })
+    if (!selected) {
+      throw new ProviderIdentityVerificationLinkError(
+        'VERIFICATION_NOT_RESUMABLE',
+        'The requested identity verification is not resumable for this provider.',
+      )
+    }
+    const { token, expiresAt } = await issueProviderVerificationToken({
+      verificationId: selected.id,
+      now: input.now,
+    })
+    return {
+      verificationId: selected.id,
+      verificationUrl: getPublicAppUrl(`/provider/verify/${encodeURIComponent(token)}`) || null,
+      expiresAt,
+      reused: true,
+      status: selected.status,
+    }
   }
 
   const failSafeEnabled = await isEnabled('provider.identity.verification.fail_safe', {

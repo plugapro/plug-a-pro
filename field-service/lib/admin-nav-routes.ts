@@ -58,6 +58,13 @@ export const ADMIN_NAV_ITEMS = [
     icon: 'reports' as const,
     flag: 'admin.reports.customer_funnel' as const,
   },
+  // Provider KYC funnel report (PR #148) — page 404s while its flag is off.
+  {
+    href: '/admin/reports/kyc-funnel',
+    label: 'KYC Funnel',
+    icon: 'reports' as const,
+    flag: 'admin.reports.kyc_funnel' as const,
+  },
 ] as const
 
 // Smoke suite route targets are derived from the sidebar source to prevent

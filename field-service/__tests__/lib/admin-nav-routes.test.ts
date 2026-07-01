@@ -39,6 +39,8 @@ describe('flag-gated launch routes', () => {
   const FLAGGED = [
     { href: '/admin/launch-readiness', flag: 'launch.west_rand_pilot.readiness_report' },
     { href: '/admin/nudges', flag: 'launch.west_rand_pilot.nudge_console' },
+    { href: '/admin/reports/funnel', flag: 'admin.reports.customer_funnel' },
+    { href: '/admin/reports/kyc-funnel', flag: 'admin.reports.kyc_funnel' },
   ] as const
 
   for (const { href, flag } of FLAGGED) {

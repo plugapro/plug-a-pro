@@ -6,6 +6,7 @@ import {
   IN_FLIGHT_NUDGE_WINDOW_END_HOURS,
   IN_FLIGHT_NUDGE_WINDOW_START_HOURS,
   listInFlightRenudgeCandidates,
+  resolveBatchCap,
   sendInFlightRenudges,
   summarizeInFlightRenudgeRows,
   templateForStatus,
@@ -62,6 +63,21 @@ describe('templateForStatus', () => {
       expect(templateForStatus(status as never)).toBeNull()
     },
   )
+})
+
+describe('resolveBatchCap', () => {
+  it.each([
+    [undefined, 100],
+    ['', 100],
+    ['abc', 100],
+    ['-5', 100],
+    ['NaN', 100],
+    ['0', 0],
+    ['1', 1],
+    ['250', 250],
+  ])('resolveBatchCap(%j) -> %d', (raw, expected) => {
+    expect(resolveBatchCap(raw)).toBe(expected)
+  })
 })
 
 describe('listInFlightRenudgeCandidates', () => {
@@ -147,7 +163,7 @@ describe('listInFlightRenudgeCandidates', () => {
     expect(byProvider.get('p-stale')?.eligibleNow).toBe(true)
   })
 
-  it('blocks eligibility when at the lifetime cap regardless of recency', async () => {
+  it('blocks eligibility when the verification is at the lifetime cap regardless of recency', async () => {
     const stale = new Date(NOW.getTime() - 40 * HOUR_MS)
     const client = clientWith(
       [
@@ -157,11 +173,92 @@ describe('listInFlightRenudgeCandidates', () => {
         to: '+27820000001',
         templateName: 'provider_verification_resume_consent',
         createdAt: new Date(stale.getTime() - i * 24 * HOUR_MS),
+        metadata: { identityInFlightRenudge: true, verificationId: 'v' },
       })),
     )
     const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
     expect(rows[0].priorSendsForVerification).toBe(IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION)
     expect(rows[0].eligibleNow).toBe(false)
+  })
+
+  it('counts the lifetime cap per verification, not per phone: sends for an older verification do not burn a new one', async () => {
+    const stale = new Date(NOW.getTime() - 40 * HOUR_MS)
+    const client = clientWith(
+      [
+        verification({ id: 'v-new', providerId: 'p1', provider: { id: 'p1', firstName: 'C', name: null, phone: '+27820000001', active: true } }),
+      ],
+      Array.from({ length: IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION }, (_, i) => ({
+        to: '+27820000001',
+        templateName: 'provider_verification_resume_consent',
+        createdAt: new Date(stale.getTime() - i * 24 * HOUR_MS),
+        metadata: { identityInFlightRenudge: true, verificationId: 'v-old' },
+      })),
+    )
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(rows[0].priorSendsForVerification).toBe(0)
+    expect(rows[0].eligibleNow).toBe(true)
+  })
+
+  it('excludes FAILED events from dedup and cap counting', async () => {
+    const findMany = vi.fn().mockResolvedValue([])
+    const client = {
+      providerIdentityVerification: {
+        findMany: vi.fn().mockResolvedValue([verification()]),
+      },
+      messageEvent: { findMany },
+    }
+    await listInFlightRenudgeCandidates(client, { now: NOW })
+    const where = (findMany.mock.calls[0][0] as { where: { status: unknown } }).where
+    expect(where.status).toEqual({ in: ['SENT', 'DELIVERED', 'READ'] })
+  })
+
+  it('bounds the MessageEvent scan to the last 90 days', async () => {
+    const findMany = vi.fn().mockResolvedValue([])
+    const client = {
+      providerIdentityVerification: {
+        findMany: vi.fn().mockResolvedValue([verification()]),
+      },
+      messageEvent: { findMany },
+    }
+    await listInFlightRenudgeCandidates(client, { now: NOW })
+    const where = (findMany.mock.calls[0][0] as { where: { createdAt: { gte: Date } } }).where
+    expect(where.createdAt.gte.getTime()).toBe(NOW.getTime() - 90 * 24 * HOUR_MS)
+  })
+
+  it('includes provider_kyc_nudge in the dedup query so a kyc-drive nudge <24h ago blocks a resume nudge', async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        to: '+27820000001',
+        templateName: 'provider_kyc_nudge',
+        createdAt: new Date(NOW.getTime() - 2 * HOUR_MS),
+      },
+    ])
+    const client = {
+      providerIdentityVerification: {
+        findMany: vi.fn().mockResolvedValue([verification()]),
+      },
+      messageEvent: { findMany },
+    }
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    const where = (findMany.mock.calls[0][0] as { where: { templateName: { in: string[] } } }).where
+    expect(where.templateName.in).toContain('provider_kyc_nudge')
+    expect(rows[0].eligibleNow).toBe(false)
+  })
+
+  it('does not count provider_kyc_nudge events toward the per-verification cap', async () => {
+    const stale = new Date(NOW.getTime() - 40 * HOUR_MS)
+    const client = clientWith(
+      [verification()],
+      Array.from({ length: IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION }, (_, i) => ({
+        to: '+27820000001',
+        templateName: 'provider_kyc_nudge',
+        createdAt: new Date(stale.getTime() - i * 24 * HOUR_MS),
+        metadata: { verificationId: 'v1' },
+      })),
+    )
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(rows[0].priorSendsForVerification).toBe(0)
+    expect(rows[0].eligibleNow).toBe(true)
   })
 
   it('summarizes candidates, eligible, and exhausted counts', () => {
@@ -183,7 +280,8 @@ describe('sendInFlightRenudges', () => {
   function deps() {
     return {
       issueLink: vi.fn().mockResolvedValue({ verificationUrl: 'https://app.example/provider/verify/tok' }),
-      recordAttempt: vi.fn().mockResolvedValue(undefined),
+      recordAttempt: vi.fn().mockResolvedValue({ id: 'evt-1' }),
+      markAttemptFailed: vi.fn().mockResolvedValue(undefined),
       sendConsentResume: vi.fn().mockResolvedValue('wamid.consent'),
       sendDocumentResume: vi.fn().mockResolvedValue('wamid.doc'),
       sendSelfieResume: vi.fn().mockResolvedValue('wamid.selfie'),
@@ -290,6 +388,111 @@ describe('sendInFlightRenudges', () => {
     const client = clientWith([])
     const d = deps()
     const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
-    expect(result).toEqual({ rows: [], sent: 0, skipped: 0, errors: 0 })
+    expect(result).toEqual({ rows: [], sent: 0, skipped: 0, errors: 0, aborted: false })
+  })
+
+  it('passes the candidate verificationId to issueLink so the link targets the stalled row', async () => {
+    const client = clientWith([
+      verification({ id: 'v-target', providerId: 'p1', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+    ])
+    const d = deps()
+    await sendInFlightRenudges(client, { batchCap: 1, deps: d, now: NOW })
+    expect(d.issueLink).toHaveBeenCalledWith({ providerId: 'p1', verificationId: 'v-target' })
+  })
+
+  it('marks the attempt event FAILED when the send throws', async () => {
+    const client = clientWith([
+      verification({ providerId: 'p1', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+    ])
+    const d = deps()
+    d.recordAttempt.mockResolvedValue({ id: 'evt-77' })
+    d.sendDocumentResume.mockRejectedValue(new Error('meta 500'))
+    const result = await sendInFlightRenudges(client, { batchCap: 1, deps: d, now: NOW })
+    expect(result.errors).toBe(1)
+    expect(d.markAttemptFailed).toHaveBeenCalledWith({ eventId: 'evt-77', failureReason: 'meta 500' })
+  })
+
+  it('does not call markAttemptFailed when the failure happens before recordAttempt', async () => {
+    const client = clientWith([
+      verification({ providerId: 'p1', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+    ])
+    const d = deps()
+    d.issueLink.mockRejectedValue(new Error('link boom'))
+    await sendInFlightRenudges(client, { batchCap: 1, deps: d, now: NOW })
+    expect(d.markAttemptFailed).not.toHaveBeenCalled()
+  })
+
+  it('keeps looping when markAttemptFailed itself fails (event stays SENT — polite bias)', async () => {
+    const client = clientWith([
+      verification({ id: 'v-a', providerId: 'p-a', status: 'CONSENTED', provider: { id: 'p-a', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+      verification({ id: 'v-b', providerId: 'p-b', status: 'AWAITING_SELFIE', provider: { id: 'p-b', firstName: 'B', name: null, phone: '+27820000002', active: true } }),
+    ])
+    const d = deps()
+    d.sendConsentResume.mockRejectedValueOnce(new Error('meta 500'))
+    d.markAttemptFailed.mockRejectedValue(new Error('db down'))
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(result.sent).toBe(1)
+    expect(result.errors).toBe(1)
+    expect(d.sendSelfieResume).toHaveBeenCalledTimes(1)
+  })
+
+  it('never sends twice to the same phone within one run, even across verification rows', async () => {
+    const client = clientWith([
+      verification({ id: 'v-a', providerId: 'p1', status: 'CONSENTED', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+      verification({ id: 'v-b', providerId: 'p1', status: 'AWAITING_SELFIE', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+    ])
+    const d = deps()
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(result.sent).toBe(1)
+    expect(result.skipped).toBe(1)
+    expect(d.recordAttempt).toHaveBeenCalledTimes(1)
+    expect(d.sendConsentResume).toHaveBeenCalledTimes(1)
+    expect(d.sendSelfieResume).not.toHaveBeenCalled()
+  })
+
+  it('holds the same-phone guard even when the first send fails after the slot was consumed', async () => {
+    const client = clientWith([
+      verification({ id: 'v-a', providerId: 'p1', status: 'CONSENTED', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+      verification({ id: 'v-b', providerId: 'p1', status: 'AWAITING_SELFIE', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+    ])
+    const d = deps()
+    d.sendConsentResume.mockRejectedValueOnce(new Error('meta 500'))
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(result.sent).toBe(0)
+    expect(result.errors).toBe(1)
+    expect(result.skipped).toBe(1)
+    expect(d.sendSelfieResume).not.toHaveBeenCalled()
+  })
+
+  it.each(['TEMPLATE_NOT_APPROVED', 'Meta error 132001: template not approved'])(
+    'aborts the run on systemic template failure (%s)',
+    async (message) => {
+      const client = clientWith([
+        verification({ id: 'v-a', providerId: 'p-a', status: 'CONSENTED', provider: { id: 'p-a', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+        verification({ id: 'v-b', providerId: 'p-b', status: 'CONSENTED', provider: { id: 'p-b', firstName: 'B', name: null, phone: '+27820000002', active: true } }),
+        verification({ id: 'v-c', providerId: 'p-c', status: 'CONSENTED', provider: { id: 'p-c', firstName: 'C', name: null, phone: '+27820000003', active: true } }),
+      ])
+      const d = deps()
+      d.recordAttempt.mockResolvedValue({ id: 'evt-1' })
+      d.sendConsentResume.mockRejectedValue(new Error(message))
+      const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+      expect(result.aborted).toBe(true)
+      expect(result.sent).toBe(0)
+      expect(result.errors).toBe(1)
+      expect(d.sendConsentResume).toHaveBeenCalledTimes(1)
+      expect(d.markAttemptFailed).toHaveBeenCalledWith({ eventId: 'evt-1', failureReason: message })
+    },
+  )
+
+  it('does not abort on ordinary per-candidate failures', async () => {
+    const client = clientWith([
+      verification({ id: 'v-a', providerId: 'p-a', status: 'CONSENTED', provider: { id: 'p-a', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
+      verification({ id: 'v-b', providerId: 'p-b', status: 'CONSENTED', provider: { id: 'p-b', firstName: 'B', name: null, phone: '+27820000002', active: true } }),
+    ])
+    const d = deps()
+    d.sendConsentResume.mockRejectedValueOnce(new Error('meta 500'))
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(result.aborted).toBe(false)
+    expect(result.sent).toBe(1)
   })
 })

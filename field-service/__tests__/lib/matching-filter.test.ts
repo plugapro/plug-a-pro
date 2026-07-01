@@ -2,6 +2,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { filterEligibleProviders } from '../../lib/matching/filter'
+import {
+  KYC_GRACE_FLAG,
+  KYC_GRACE_INELIGIBLE_STATUSES,
+  buildProviderKycVisibilityWhere,
+} from '../../lib/matching/kyc-grace'
 import type { CandidatePoolEntry } from '../../lib/matching/candidate-pool'
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
@@ -763,5 +768,52 @@ describe('filterEligibleProviders - KYC gate is mandatory', () => {
 
     const call = mockDb.provider.findMany.mock.calls[0]?.[0]
     expect(call?.where).toHaveProperty('kycStatus', 'VERIFIED')
+  })
+})
+
+describe('filterEligibleProviders - KYC grace clause derives from lib/matching/kyc-grace', () => {
+  // Drift guard: kyc-grace.ts is the canonical source for the grace predicate
+  // (cutoff + ineligible-status set). The matching query must be byte-identical
+  // to buildProviderKycVisibilityWhere so customer-facing visibility and
+  // matching can never disagree about who is grandfathered.
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockIsEnabled.mockResolvedValue(false)
+    setupDefaultBatchMocks()
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])  // timedOutRows
+      .mockResolvedValueOnce([])  // declinedLeadRows
+      .mockResolvedValueOnce([])  // dailyJobRows
+  })
+
+  async function capturedProviderWhere(graceOn: boolean) {
+    mockIsEnabled.mockImplementation((flag: string) =>
+      Promise.resolve(graceOn && flag === KYC_GRACE_FLAG),
+    )
+    await filterEligibleProviders([makeCandidate()], makeJobRequest())
+    return mockDb.provider.findMany.mock.calls[0]?.[0]?.where
+  }
+
+  it('grace OFF: query carries exactly the canonical strict clause', async () => {
+    const where = await capturedProviderWhere(false)
+    expect(where).toMatchObject(buildProviderKycVisibilityWhere(false))
+    expect(where).not.toHaveProperty('OR')
+  })
+
+  it('grace ON: query carries exactly the canonical grace clause', async () => {
+    const where = await capturedProviderWhere(true)
+    expect(where).toMatchObject(buildProviderKycVisibilityWhere(true))
+    // The strict kycStatus=VERIFIED key must move inside the OR, not remain top-level
+    // (a top-level kycStatus would AND with the OR and nullify the grace).
+    expect(where).not.toHaveProperty('kycStatus')
+  })
+
+  it('grace ON: ineligible-status set in the query === KYC_GRACE_INELIGIBLE_STATUSES (would catch drift)', async () => {
+    const where = await capturedProviderWhere(true)
+    const graceArm = (where?.OR as Array<Record<string, unknown>>)?.[1] as {
+      AND: Array<{ kycStatus?: { notIn: string[] } }>
+    }
+    const notIn = graceArm?.AND?.find((c) => c.kycStatus)?.kycStatus?.notIn
+    expect(notIn).toEqual([...KYC_GRACE_INELIGIBLE_STATUSES])
   })
 })
