@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { classifyApplication, type TriageInput } from '../../scripts/application-triage-sweep'
 
 const base: TriageInput = {
@@ -83,5 +83,89 @@ describe('classifyApplication', () => {
     const d = classifyApplication({ ...base, skills: ['Plumbing', 'Painting'], serviceAreas: ['Constantia Kloof'] })
     expect(d.rule).toBe('RULE_2_PARTIAL_APPROVE')
     expect(d.heldSkills).toEqual(['plumbing'])
+  })
+})
+
+const { mockDb, mockSendTemplate, mockSync } = vi.hoisted(() => ({
+  mockDb: {
+    providerApplication: { findMany: vi.fn(), update: vi.fn() },
+    provider: { findMany: vi.fn().mockResolvedValue([]) },
+    providerIdentityVerification: { findMany: vi.fn().mockResolvedValue([]) },
+    messageEvent: { findFirst: vi.fn().mockResolvedValue(null) },
+    serviceAreaWaitlist: { upsert: vi.fn() },
+    auditLog: { create: vi.fn() },
+  },
+  mockSendTemplate: vi.fn().mockResolvedValue({ externalId: 'wamid-1' }),
+  mockSync: vi.fn().mockResolvedValue({ providerId: 'prov-1' }),
+}))
+
+vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/whatsapp', () => ({ sendTemplate: mockSendTemplate }))
+vi.mock('@/lib/provider-record', () => ({ syncProviderRecord: mockSync }))
+
+describe('runSweep', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  const pendingApp = {
+    id: 'app-1', name: 'Sipho T', phone: '+27820000001',
+    skills: ['plumbing', 'painting'], serviceAreas: ['Honeydew'],
+    idNumber: '9001015800081', status: 'PENDING', notes: null, providerId: null,
+  }
+
+  it('dry-run performs zero writes and zero sends', async () => {
+    mockDb.providerApplication.findMany.mockResolvedValue([pendingApp])
+    const { runSweep } = await import('../../scripts/application-triage-sweep')
+    const report = await runSweep({ execute: false, rules: [1, 2, 3] })
+
+    expect(report.rows).toHaveLength(1)
+    expect(mockDb.providerApplication.update).not.toHaveBeenCalled()
+    expect(mockDb.auditLog.create).not.toHaveBeenCalled()
+    expect(mockSendTemplate).not.toHaveBeenCalled()
+    expect(mockSync).not.toHaveBeenCalled()
+  })
+
+  it('execute rule 2: syncProviderRecord with approved skills, AuditLog, cert nudge, notes marker', async () => {
+    mockDb.providerApplication.findMany.mockResolvedValue([pendingApp])
+    const { runSweep } = await import('../../scripts/application-triage-sweep')
+    await runSweep({ execute: true, rules: [2] })
+
+    expect(mockSync).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      skills: ['painting'],
+      verified: true,
+    }))
+    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'app-1' },
+      data: expect.objectContaining({
+        status: 'APPROVED',
+        notes: expect.stringContaining('[triage-sweep'),
+      }),
+    }))
+    expect(mockDb.auditLog.create).toHaveBeenCalled()
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      template: 'provider_high_risk_cert_nudge',
+      to: '+27820000001',
+    }))
+  })
+
+  it('message dedup: recent same-template send → status change still applies, send skipped', async () => {
+    mockDb.providerApplication.findMany.mockResolvedValue([pendingApp])
+    mockDb.messageEvent.findFirst.mockResolvedValue({ id: 'me-recent' })
+    const { runSweep } = await import('../../scripts/application-triage-sweep')
+    const report = await runSweep({ execute: true, rules: [2] })
+
+    expect(mockSendTemplate).not.toHaveBeenCalled()
+    expect(report.rows[0].sendSkippedReason).toBe('RECENTLY_MESSAGED')
+  })
+
+  it('rule 3 without Meta approval: status+waitlist apply, send deferred', async () => {
+    mockDb.providerApplication.findMany.mockResolvedValue([
+      { ...pendingApp, serviceAreas: ['Midrand'] },
+    ])
+    const { runSweep } = await import('../../scripts/application-triage-sweep')
+    const report = await runSweep({ execute: true, rules: [3], waitlistTemplateApproved: false })
+
+    expect(mockDb.serviceAreaWaitlist.upsert).toHaveBeenCalled()
+    expect(mockSendTemplate).not.toHaveBeenCalled()
+    expect(report.rows[0].sendSkippedReason).toBe('TEMPLATE_NOT_APPROVED')
   })
 })
