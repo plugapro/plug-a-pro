@@ -8,6 +8,7 @@
 //   pnpm tsx scripts/application-triage-sweep.ts --execute       # apply all rules
 //   pnpm tsx scripts/application-triage-sweep.ts --execute --rule=3
 
+import type { Prisma } from '@prisma/client'
 import { areaInPilot } from '@/lib/ops-agents/pilot-area'
 import { getServiceComplianceRequirement } from '@/lib/service-category-policy'
 
@@ -156,7 +157,7 @@ export interface SweepRow {
 
 export interface SweepReport {
   rows: SweepRow[]
-  kyc?: { targeted: number; sent: number; skipped: number }
+  kyc?: { targeted: number; sent: number; skipped: number; error: string | null }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -312,8 +313,8 @@ export async function runSweep(opts: SweepOptions): Promise<SweepReport> {
         action: 'application.triage_sweep',
         entityType: 'ProviderApplication',
         entityId: app.id,
-        before: JSON.stringify({ status: oldStatus }),
-        after: JSON.stringify({ status: newStatus, rule: decision.rule }),
+        before: { status: oldStatus } as Prisma.InputJsonValue,
+        after: { status: newStatus, rule: decision.rule } as Prisma.InputJsonValue,
       },
     })
 
@@ -417,8 +418,7 @@ export async function runSweep(opts: SweepOptions): Promise<SweepReport> {
                 direction: 'OUTBOUND',
                 to,
                 templateName: 'provider_kyc_nudge',
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                metadata: metadata as any,
+                metadata: metadata as Prisma.InputJsonValue,
                 sentAt: now,
               },
             })
@@ -445,10 +445,11 @@ export async function runSweep(opts: SweepOptions): Promise<SweepReport> {
         targeted: result.rows.length,
         sent: result.sent,
         skipped: result.skipped,
+        error: null,
       }
     } catch (err) {
       console.error('[triage-sweep] rule-4 KYC drive error:', err)
-      kyc = { targeted: 0, sent: 0, skipped: 0 }
+      kyc = { targeted: 0, sent: 0, skipped: 0, error: String(err) }
     }
   }
 
@@ -522,6 +523,9 @@ async function main() {
     console.log(`\nTotal: ${report.rows.length} rows`)
     if (report.kyc) {
       console.log(`KYC drive: targeted=${report.kyc.targeted} sent=${report.kyc.sent} skipped=${report.kyc.skipped}`)
+      if (report.kyc.error) {
+        console.error(`[triage-sweep] rule-4 error: ${report.kyc.error}`)
+      }
     }
     if (!execute) {
       console.log('\n[dry-run] Pass --execute to apply changes.')

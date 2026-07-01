@@ -65,9 +65,9 @@ describe('classifyApplication', () => {
     expect(d.template).toBe('provider_high_risk_cert_nudge')
   })
 
-  it('rule 2 holds geysers too (any non-standard risk level)', () => {
-    const d = classifyApplication({ ...base, skills: ['geysers', 'painting', 'plumbing'] })
-    expect(d.heldSkills).toEqual(expect.arrayContaining(['plumbing', 'geysers']))
+  it('rule 2 holds geyser too (any non-standard risk level)', () => {
+    const d = classifyApplication({ ...base, skills: ['geyser', 'painting', 'plumbing'] })
+    expect(d.heldSkills).toEqual(expect.arrayContaining(['plumbing', 'geyser']))
     expect(d.approvedSkills).toEqual(['painting'])
   })
 
