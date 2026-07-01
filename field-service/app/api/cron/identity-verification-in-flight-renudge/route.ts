@@ -5,9 +5,10 @@
 //
 // Report-only unless provider.identity.verification.in_flight_renudge is ON.
 // Politeness invariants are enforced by lib/identity-verification/in-flight-renudge.ts
-// (24h dedup window across all in-flight templates per phone, lifetime cap of
-// IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION sends per phone, attempt-first
-// MessageEvent logging).
+// (24h dedup window per phone across all in-flight templates plus
+// provider_kyc_nudge, lifetime cap of IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION
+// sends per verification row, attempt-first MessageEvent logging with FAILED
+// flip on confirmed send failure).
 //
 // Distinct from /api/cron/kyc-drive-nudge — kyc-drive targets the legacy
 // pre-cutoff cohort who never STARTED verification; this targets the
@@ -20,17 +21,17 @@ import { isEnabled } from '@/lib/flags'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import {
   listInFlightRenudgeCandidates,
+  resolveBatchCap,
   sendInFlightRenudges,
   summarizeInFlightRenudgeRows,
 } from '@/lib/identity-verification/in-flight-renudge'
-import { logOutboundMessage } from '@/lib/message-events'
+import { logOutboundMessage, markOutboundMessageFailed } from '@/lib/message-events'
 import {
   sendProviderVerificationResumeConsent,
   sendProviderVerificationResumeDocument,
   sendProviderVerificationResumeSelfie,
 } from '@/lib/whatsapp'
 
-const DEFAULT_BATCH_CAP = 100
 const FLAG_KEY = 'provider.identity.verification.in_flight_renudge'
 
 export async function GET(request: Request) {
@@ -69,15 +70,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: true, mode: 'report_only', durationMs, sent: 0, skipped: 0, errors: 0, ...summary })
     }
 
-    const batchCap = Number(process.env.IDENTITY_RENUDGE_BATCH_CAP ?? DEFAULT_BATCH_CAP) || DEFAULT_BATCH_CAP
+    const batchCap = resolveBatchCap(process.env.IDENTITY_RENUDGE_BATCH_CAP)
     const result = await sendInFlightRenudges(db, {
       now,
       batchCap,
       deps: {
-        issueLink: ({ providerId }) =>
-          issueProviderIdentityVerificationLink({ providerId, channel: 'WHATSAPP' }),
+        issueLink: ({ providerId, verificationId }) =>
+          issueProviderIdentityVerificationLink({ providerId, verificationId, channel: 'WHATSAPP' }),
         recordAttempt: ({ to, templateName, metadata }) =>
           logOutboundMessage({ to, templateName, metadata }),
+        markAttemptFailed: ({ eventId, failureReason }) =>
+          markOutboundMessageFailed({ eventId, failureReason }),
         sendConsentResume: sendProviderVerificationResumeConsent,
         sendDocumentResume: sendProviderVerificationResumeDocument,
         sendSelfieResume: sendProviderVerificationResumeSelfie,
@@ -93,6 +96,7 @@ export async function GET(request: Request) {
       sent: result.sent,
       skipped: result.skipped,
       errors: result.errors,
+      aborted: result.aborted,
       ...summary,
       timestamp: new Date().toISOString(),
     }))
@@ -103,6 +107,7 @@ export async function GET(request: Request) {
       sent: result.sent,
       skipped: result.skipped,
       errors: result.errors,
+      aborted: result.aborted,
       ...summary,
     })
   } catch (error) {

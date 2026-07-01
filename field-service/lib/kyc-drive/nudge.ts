@@ -17,7 +17,19 @@ export const KYC_DRIVE_TEMPLATE = 'provider_kyc_nudge'
 export const KYC_DRIVE_MAX_NUDGES = 3
 export const KYC_DRIVE_NUDGE_SPACING_DAYS = 7
 
+// Kept in sync with IN_FLIGHT_TEMPLATE_NAMES in
+// lib/identity-verification/in-flight-renudge.ts — not imported from there
+// because that module imports KYC_DRIVE_TEMPLATE from here (avoids a cycle).
+// A resume nudge within the last 24h blocks a kyc-drive nudge to the same
+// phone; it does not count toward the kyc-drive max/spacing cadence.
+const IN_FLIGHT_RESUME_TEMPLATES = [
+  'provider_verification_resume_consent',
+  'provider_verification_resume_document',
+  'provider_verification_resume_selfie',
+] as const
+
 const SPACING_MS = KYC_DRIVE_NUDGE_SPACING_DAYS * 24 * 60 * 60 * 1000
+const CROSS_CRON_DEDUP_MS = 24 * 60 * 60 * 1000
 
 export type KycNudgeCandidate = {
   providerId: string
@@ -92,15 +104,22 @@ export async function listKycNudgeCandidates(
 
   const events = (await client.messageEvent.findMany({
     where: {
-      templateName: KYC_DRIVE_TEMPLATE,
+      templateName: { in: [KYC_DRIVE_TEMPLATE, ...IN_FLIGHT_RESUME_TEMPLATES] },
       direction: 'OUTBOUND',
       to: { in: targets.map(p => p.phone as string) },
     },
-    select: { to: true, createdAt: true },
-  })) as Array<{ to: string; createdAt: Date }>
+    select: { to: true, createdAt: true, templateName: true },
+  })) as Array<{ to: string; createdAt: Date; templateName: string }>
 
+  const crossCronCutoff = new Date(now.getTime() - CROSS_CRON_DEDUP_MS)
   const history = new Map<string, { count: number; last: Date }>()
+  const recentlyResumeNudged = new Set<string>()
   for (const e of events) {
+    if (e.templateName !== KYC_DRIVE_TEMPLATE) {
+      // In-flight resume nudge: only the 24h cross-cron window applies.
+      if (e.createdAt >= crossCronCutoff) recentlyResumeNudged.add(e.to)
+      continue
+    }
     const row = history.get(e.to)
     if (!row) history.set(e.to, { count: 1, last: e.createdAt })
     else {
@@ -125,7 +144,8 @@ export async function listKycNudgeCandidates(
     )
     const eligibleNow =
       nudgeCount < KYC_DRIVE_MAX_NUDGES &&
-      (lastNudgedAt === null || now.getTime() - lastNudgedAt.getTime() >= SPACING_MS)
+      (lastNudgedAt === null || now.getTime() - lastNudgedAt.getTime() >= SPACING_MS) &&
+      !recentlyResumeNudged.has(phone)
     return {
       providerId: p.id,
       firstName: firstNameFrom(p.firstName, p.name),

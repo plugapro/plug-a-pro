@@ -13,7 +13,7 @@ import { isPilotCategorySlug } from '@/lib/launch/west-rand-pilot'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { MATCHING_CONFIG } from './config'
 import { pointFallsWithinRadius } from './geography'
-import { KYC_GRACE_CUTOFF, KYC_GRACE_FLAG } from './kyc-grace'
+import { KYC_GRACE_FLAG, buildProviderKycVisibilityWhere } from './kyc-grace'
 import {
   buildWorkingWindow,
   deriveRequestWindow,
@@ -352,24 +352,12 @@ export async function filterEligibleProviders(
           active: true,
           verified: true,
           // KYC (kycStatus VERIFIED) is the identity boundary for matching. The only
-          // permitted relaxation is the scoped, dated legacy grace (lib/matching/
-          // kyc-grace.ts): when the grace flag is ON, providers created before the
-          // cutoff are admitted without VERIFIED; everyone created after still needs it.
-          // Grace re-admits pre-cutoff providers WITHOUT VERIFIED, but never those
-          // whose KYC actively failed/expired (REJECTED/EXPIRED) — see kyc-grace.ts.
-          ...(kycGraceOn
-            ? {
-                OR: [
-                  { kycStatus: 'VERIFIED' },
-                  {
-                    AND: [
-                      { createdAt: { lt: KYC_GRACE_CUTOFF } },
-                      { kycStatus: { notIn: ['REJECTED', 'EXPIRED'] } },
-                    ],
-                  },
-                ],
-              }
-            : { kycStatus: 'VERIFIED' }),
+          // permitted relaxation is the scoped, dated legacy grace: when the grace
+          // flag is ON, providers created before the cutoff are admitted without
+          // VERIFIED — but never those whose KYC actively failed/expired
+          // (REJECTED/EXPIRED). The predicate is owned by lib/matching/kyc-grace.ts
+          // and shared with customer-facing visibility so the two cannot drift.
+          ...buildProviderKycVisibilityWhere(kycGraceOn),
           status: 'ACTIVE',
           isTestUser: Boolean(jobRequest.isTestRequest),
         },

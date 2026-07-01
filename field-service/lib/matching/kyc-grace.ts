@@ -9,6 +9,9 @@
 // real VERIFIED outcome regardless of the flag.
 //
 // Retirement: once the legacy cohort is KYC-verified, set the flag OFF (DB row).
+
+import type { Prisma } from '@prisma/client'
+
 export const KYC_GRACE_FLAG = 'matching.kyc_grace_legacy_providers'
 
 // Providers created strictly before this instant are grandfathered while the flag
@@ -44,8 +47,10 @@ export function isKycGrandfathered(
  *
  * Always-on rule: kycStatus === 'VERIFIED'. When the legacy grace flag is ON,
  * additionally admit providers created before KYC_GRACE_CUTOFF whose KYC has
- * NOT actively failed (REJECTED/EXPIRED stay excluded). Mirrors the matching
- * filter (lib/matching/filter.ts) so customer-facing visibility cannot drift.
+ * NOT actively failed (REJECTED/EXPIRED stay excluded). This is the single
+ * source for the grace predicate: the matching filter (lib/matching/filter.ts)
+ * spreads this fragment into its provider query, so customer-facing visibility
+ * and matching eligibility cannot drift.
  *
  * This is defense-in-depth: today the provider.verified=true approval gate is
  * KYC-aware (PR #114, behind provider.kyc.required_for_activation), but an
@@ -53,7 +58,7 @@ export function isKycGrandfathered(
  * change weakens the approval pipeline, customers still cannot see or pick a
  * provider whose identity has not been verified.
  */
-export function buildProviderKycVisibilityWhere(graceEnabled: boolean): Record<string, unknown> {
+export function buildProviderKycVisibilityWhere(graceEnabled: boolean): Prisma.ProviderWhereInput {
   if (!graceEnabled) {
     return { kycStatus: 'VERIFIED' }
   }

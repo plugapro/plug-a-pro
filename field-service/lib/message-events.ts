@@ -90,7 +90,7 @@ export async function logOutboundMessage(params: {
     throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
   }
 
-  await db.messageEvent.create({
+  const event = await db.messageEvent.create({
     data: {
       bookingId: params.bookingId ?? undefined,
       customerId: customer?.id,
@@ -107,6 +107,20 @@ export async function logOutboundMessage(params: {
       metadata: metadata as Prisma.InputJsonValue,
       ...testEventFields(inferredTestEvent),
     },
+    select: { id: true },
+  })
+  return { id: event.id }
+}
+
+// Flip an attempt-first SENT event to FAILED once the send is known to have
+// failed, so dedup/cap queries that exclude FAILED stop counting it.
+export async function markOutboundMessageFailed(params: {
+  eventId: string
+  failureReason: string
+}) {
+  await db.messageEvent.update({
+    where: { id: params.eventId },
+    data: { status: 'FAILED', failureReason: params.failureReason },
   })
 }
 

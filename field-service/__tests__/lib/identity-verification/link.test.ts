@@ -165,6 +165,58 @@ describe('issueProviderIdentityVerificationLink', () => {
     })
   })
 
+  it('resumes the caller-selected verification row when verificationId is provided, bypassing gate and legacy lookup', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockDb.providerIdentityVerification.findFirst.mockResolvedValue({
+      id: 'ver-picked',
+      status: 'AWAITING_SELFIE',
+    })
+    const { issueProviderIdentityVerificationLink } = await import('@/lib/identity-verification/link')
+
+    const result = await issueProviderIdentityVerificationLink({
+      providerId: 'provider-1',
+      verificationId: 'ver-picked',
+      channel: 'WHATSAPP',
+    })
+
+    expect(mockDb.providerIdentityVerification.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'ver-picked',
+        providerId: 'provider-1',
+        status: {
+          in: expect.arrayContaining(['NOT_STARTED', 'AWAITING_DOCUMENT', 'NEEDS_MANUAL_REVIEW']),
+        },
+      },
+      select: { id: true, status: true },
+    })
+    expect(mockCheckCanStartNewVerification).not.toHaveBeenCalled()
+    expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
+    expect(mockIssueToken).toHaveBeenCalledWith({
+      verificationId: 'ver-picked',
+      now: undefined,
+    })
+    expect(result).toMatchObject({
+      verificationId: 'ver-picked',
+      reused: true,
+      status: 'AWAITING_SELFIE',
+    })
+  })
+
+  it('throws VERIFICATION_NOT_RESUMABLE when the requested verification row is missing or terminal', async () => {
+    mockDb.providerIdentityVerification.findFirst.mockResolvedValue(null)
+    const { issueProviderIdentityVerificationLink } = await import('@/lib/identity-verification/link')
+
+    await expect(
+      issueProviderIdentityVerificationLink({
+        providerId: 'provider-1',
+        verificationId: 'ver-gone',
+      }),
+    ).rejects.toMatchObject({ code: 'VERIFICATION_NOT_RESUMABLE' })
+
+    expect(mockDb.providerIdentityVerification.create).not.toHaveBeenCalled()
+    expect(mockIssueToken).not.toHaveBeenCalled()
+  })
+
   it('throws the shared gate reason when a new link is blocked', async () => {
     mockIsEnabled.mockResolvedValue(true)
     mockCheckCanStartNewVerification.mockResolvedValue({
