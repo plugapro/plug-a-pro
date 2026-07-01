@@ -15,6 +15,7 @@ import { normalizePhone } from './utils'
 const API_VERSION = 'v21.0'
 const WHATSAPP_CTA_URL_BUTTON_TEXT_MAX = 20
 const WHATSAPP_QUICK_REPLY_TITLE_MAX = 20
+const WHATSAPP_LIST_TITLE_MAX = 24
 
 function getConfig() {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
@@ -100,16 +101,57 @@ function assertCtaUrlButtonTextIsValid(buttonText: string, contextName: string) 
   }
 }
 
+/**
+ * Meta counts visible characters (code points), not UTF-16 units: the
+ * pre-existing "🔄 Reschedule Booking" (20 chars, .length 21) delivers fine.
+ * Counting .length here would wrongly block emoji-bearing titles.
+ */
+function charCount(text: string): number {
+  return [...text].length
+}
+
 function assertQuickReplyTitlesAreValid(buttons: QuickReply[], contextName: string) {
   // Meta rejects the WHOLE interactive message with error #131009 when any one
   // quick-reply title exceeds 20 chars — but only at send time, so the failure
   // is invisible locally. Fail loudly here instead, like the raw-URL guard.
   for (const button of buttons) {
-    if (button.title.length > WHATSAPP_QUICK_REPLY_TITLE_MAX) {
+    const count = charCount(button.title)
+    if (count > WHATSAPP_QUICK_REPLY_TITLE_MAX) {
       throw new Error(
         `[sendButtons] Quick-reply button title must be ${WHATSAPP_QUICK_REPLY_TITLE_MAX} characters or fewer. ` +
-        `Received ${button.title.length} ("${button.title}") for id "${button.id}" in ${contextName}.`,
+        `Received ${count} ("${button.title}") for id "${button.id}" in ${contextName}.`,
       )
+    }
+  }
+}
+
+function assertListTitlesAreValid(
+  sections: ListSection[],
+  buttonLabel: string | undefined,
+  contextName: string,
+) {
+  // Same failure mode as quick replies, different limits: list row and section
+  // titles max 24 chars, the list button label max 20.
+  if (buttonLabel && charCount(buttonLabel) > WHATSAPP_QUICK_REPLY_TITLE_MAX) {
+    throw new Error(
+      `[sendList] List button label must be ${WHATSAPP_QUICK_REPLY_TITLE_MAX} characters or fewer. ` +
+      `Received ${charCount(buttonLabel)} ("${buttonLabel}") in ${contextName}.`,
+    )
+  }
+  for (const section of sections) {
+    if (section.title && charCount(section.title) > WHATSAPP_LIST_TITLE_MAX) {
+      throw new Error(
+        `[sendList] List section title must be ${WHATSAPP_LIST_TITLE_MAX} characters or fewer. ` +
+        `Received ${charCount(section.title)} ("${section.title}") in ${contextName}.`,
+      )
+    }
+    for (const row of section.rows) {
+      if (charCount(row.title) > WHATSAPP_LIST_TITLE_MAX) {
+        throw new Error(
+          `[sendList] List row title must be ${WHATSAPP_LIST_TITLE_MAX} characters or fewer. ` +
+          `Received ${charCount(row.title)} ("${row.title}") for id "${row.id}" in ${contextName}.`,
+        )
+      }
     }
   }
 }
@@ -225,6 +267,7 @@ export async function sendList(
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
   const contextName = context?.templateName ?? 'interactive:list'
+  assertListTitlesAreValid(sections, options?.buttonLabel, contextName)
   assertVisibleWhatsAppTextIsSafe(contextName, [
     ['body', body],
     ['header', options?.header],

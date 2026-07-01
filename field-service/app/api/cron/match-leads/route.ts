@@ -332,14 +332,23 @@ export async function GET(request: Request) {
 
     if (unmatched1h > 0) {
       // URL must travel in the CTA button payload: a raw URL in the text body
-      // is rejected by the central WhatsApp send guard.
-      const alert = buildUnmatchedJobsAlertMessage(unmatched1h)
-      await sendCtaUrl(
-        ADMIN_PHONE,
-        alert.body,
-        alert.buttonText,
-        `${getPublicAppUrl()}/admin/bookings`
-      ).catch(() => {})
+      // is rejected by the central WhatsApp send guard. getPublicAppUrl() can
+      // resolve to '' (missing/relative env) and Meta rejects relative CTA
+      // URLs, so fail loudly instead of sending a message Meta will drop.
+      const baseUrl = getPublicAppUrl()
+      if (!baseUrl) {
+        console.error(`[cron/match-leads:${reqId}] Skipping unmatched-jobs alert: no public app URL configured`)
+      } else {
+        const alert = buildUnmatchedJobsAlertMessage(unmatched1h)
+        await sendCtaUrl(
+          ADMIN_PHONE,
+          alert.body,
+          alert.buttonText,
+          `${baseUrl}/admin/bookings`
+        ).catch((error) => {
+          console.error(`[cron/match-leads:${reqId}] Failed to send unmatched-jobs alert`, { error })
+        })
+      }
     }
   }
 
@@ -375,10 +384,14 @@ export async function GET(request: Request) {
         continue
       }
 
-      const link = `${getPublicAppUrl()}${getQueueHref(breach.queueKey)}`
+      const baseUrl = getPublicAppUrl()
+      const link = `${baseUrl}${getQueueHref(breach.queueKey)}`
       const alert = buildQueueBreachAlertMessage(breach)
 
-      const sent = ADMIN_PHONE
+      if (!baseUrl) {
+        console.error(`[cron/match-leads:${reqId}] Skipping ops breach alert: no public app URL configured`, { queueKey: breach.queueKey })
+      }
+      const sent = ADMIN_PHONE && baseUrl
         ? await sendCtaUrl(ADMIN_PHONE, alert.body, alert.buttonText, link).catch((error) => {
             console.error(`[cron/match-leads:${reqId}] Failed to send ops WhatsApp alert`, { queueKey: breach.queueKey, error })
             return null
@@ -387,10 +400,14 @@ export async function GET(request: Request) {
 
       if (sent) opsNotified++
 
+      // Only a DELIVERED alert arms the 90-min cooldown: the cooldown query
+      // above matches action 'ops_alert.sent' only, so recording failures under
+      // a separate action keeps the audit trail without suppressing retries of
+      // alerts that never reached ops.
       await recordAuditLog({
         actorId: 'system',
         actorRole: 'system',
-        action: 'ops_alert.sent',
+        action: sent ? 'ops_alert.sent' : 'ops_alert.failed',
         entityType: 'ops_queue',
         entityId: breach.queueKey,
         after: {

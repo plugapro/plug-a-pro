@@ -579,7 +579,9 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
     if (profileNameEnabled && profileName && profileName.length >= 2) {
       // Slice the first word to 10 chars so the button title `✅ Use "<name>"`
       // (8 chars of fixed overhead) never exceeds WhatsApp's 20-char limit.
-      const firstWord = profileName.split(' ')[0].slice(0, 10)
+      // Code-point slice: String.prototype.slice counts UTF-16 units and can
+      // bisect an emoji surrogate pair in a WhatsApp profile name.
+      const firstWord = [...profileName.split(' ')[0]].slice(0, 10).join('')
       await sendButtons(
         ctx.phone,
         [

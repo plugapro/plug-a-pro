@@ -6,6 +6,7 @@ import type { Prisma } from '@prisma/client'
 import { db } from './db'
 import { logOutboundMessage } from './message-events'
 import { TEMPLATES, type TemplateName } from './messaging-templates'
+import { pickCustomerDisplayFirstName } from './customer-name'
 import { canSend } from './whatsapp-policy'
 import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
@@ -1134,6 +1135,37 @@ export interface SendCustomerMatchFoundParams {
 }
 
 /**
+ * The single source of truth for customer_match_found components. The template
+ * APPROVED at Meta (id 1508767677372957) has THREE body params — {{1}} customer
+ * first name, {{2}} service, {{3}} provider first name — plus a URL button
+ * carrying the job request id. Any other shape fails Meta 132000 at send time
+ * (the matched-not-told bug), so every sender must build through here.
+ */
+export function buildCustomerMatchFoundComponents(params: {
+  customerFirstName: string
+  serviceName: string
+  providerFirstName: string
+  jobRequestId: string
+}): WhatsAppComponent[] {
+  return [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: params.customerFirstName },
+        { type: 'text', text: params.serviceName },
+        { type: 'text', text: params.providerFirstName },
+      ],
+    },
+    {
+      type: 'button',
+      sub_type: 'url',
+      index: 0,
+      parameters: [{ type: 'text', text: params.jobRequestId }],
+    },
+  ]
+}
+
+/**
  * Notify a customer that a provider has been matched to their job request (CW2).
  *
  * Idempotency: checks `JobRequest.matchFoundWhatsappSentAt` before sending.
@@ -1162,30 +1194,20 @@ export async function sendCustomerMatchFoundNotification(
   if (reserved.count === 0) return
 
   const providerFirstName = params.providerName.split(' ')[0]
-  const customerFirstName = params.customerName?.trim().split(' ')[0] || 'there'
+  // Placeholder-aware: WhatsApp-onboarded customers carry the literal name
+  // "WhatsApp Customer"; the raw first token would greet them "Hi WhatsApp".
+  const customerFirstName =
+    pickCustomerDisplayFirstName({ customerName: params.customerName }) ?? 'there'
 
-  // The APPROVED template body has THREE params, in this order:
-  //   {{1}} customer first name, {{2}} service, {{3}} provider first name.
-  // Sending any other count fails Meta 132000 (the matched-not-told bug).
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'customer_match_found',
-    components: [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: customerFirstName },
-          { type: 'text', text: params.serviceName },
-          { type: 'text', text: providerFirstName },
-        ],
-      },
-      {
-        type: 'button',
-        sub_type: 'url',
-        index: 0,
-        parameters: [{ type: 'text', text: params.jobRequestId }],
-      },
-    ],
+    components: buildCustomerMatchFoundComponents({
+      customerFirstName,
+      serviceName: params.serviceName,
+      providerFirstName,
+      jobRequestId: params.jobRequestId,
+    }),
   }).catch(async (err) => {
     // Roll back the sentinel if the send fails so a future caller can retry.
     await db.jobRequest.updateMany({
