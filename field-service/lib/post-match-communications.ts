@@ -251,9 +251,12 @@ async function deliverCustomerPostMatchNotification(params: {
       components: [
         {
           type: 'body',
+          // Approved template order: {{1}} customer, {{2}} service, {{3}} provider.
+          // Two params fails Meta 132000 and the customer is never notified.
           parameters: [
-            { type: 'text', text: providerFirstName },
+            { type: 'text', text: customerName },
             { type: 'text', text: category },
+            { type: 'text', text: providerFirstName },
           ],
         },
         {

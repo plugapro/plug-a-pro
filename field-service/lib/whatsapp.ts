@@ -1126,6 +1126,8 @@ export async function sendProviderPaymentReleased(params: {
 
 export interface SendCustomerMatchFoundParams {
   customerPhone: string
+  /** Customer display name; first word is used for the template greeting. */
+  customerName: string | null
   providerName: string
   serviceName: string
   jobRequestId: string
@@ -1160,7 +1162,11 @@ export async function sendCustomerMatchFoundNotification(
   if (reserved.count === 0) return
 
   const providerFirstName = params.providerName.split(' ')[0]
+  const customerFirstName = params.customerName?.trim().split(' ')[0] || 'there'
 
+  // The APPROVED template body has THREE params, in this order:
+  //   {{1}} customer first name, {{2}} service, {{3}} provider first name.
+  // Sending any other count fails Meta 132000 (the matched-not-told bug).
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'customer_match_found',
@@ -1168,8 +1174,9 @@ export async function sendCustomerMatchFoundNotification(
       {
         type: 'body',
         parameters: [
-          { type: 'text', text: providerFirstName },
+          { type: 'text', text: customerFirstName },
           { type: 'text', text: params.serviceName },
+          { type: 'text', text: providerFirstName },
         ],
       },
       {
