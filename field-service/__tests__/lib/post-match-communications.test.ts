@@ -16,9 +16,15 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendButtons: vi.fn().mockResolvedValue('wamid.provider-actions'),
 }))
 
-vi.mock('@/lib/whatsapp', () => ({
-  sendTemplate: vi.fn().mockResolvedValue('wamid.template'),
-}))
+vi.mock('@/lib/whatsapp', async () => {
+  // Keep the REAL buildCustomerMatchFoundComponents so these tests pin the
+  // exact component shape the approved Meta template expects.
+  const actual = await vi.importActual<typeof import('@/lib/whatsapp')>('@/lib/whatsapp')
+  return {
+    buildCustomerMatchFoundComponents: actual.buildCustomerMatchFoundComponents,
+    sendTemplate: vi.fn().mockResolvedValue('wamid.template'),
+  }
+})
 
 vi.mock('@/lib/message-events', () => ({
   logOutboundMessage: vi.fn().mockResolvedValue(undefined),

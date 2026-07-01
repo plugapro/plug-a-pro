@@ -65,6 +65,20 @@ describe('sendCustomerMatchFoundNotification', () => {
     expect(button.parameters).toEqual([{ type: 'text', text: 'jr-123' }])
   })
 
+  it('treats the "WhatsApp Customer" onboarding placeholder as no name - never greets "Hi WhatsApp"', async () => {
+    await sendCustomerMatchFoundNotification({
+      customerPhone: '+27820000001',
+      customerName: 'WhatsApp Customer',
+      providerName: 'Jacob Hesser',
+      serviceName: 'Plumbing',
+      jobRequestId: 'jr-123',
+    })
+
+    const payload = JSON.parse((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body)
+    const body = payload.template.components.find((c: { type: string }) => c.type === 'body')
+    expect(body.parameters[0]).toEqual({ type: 'text', text: 'there' })
+  })
+
   it('falls back to a friendly greeting when the customer name is missing', async () => {
     await sendCustomerMatchFoundNotification({
       customerPhone: '+27820000001',

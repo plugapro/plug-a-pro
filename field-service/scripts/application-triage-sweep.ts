@@ -536,7 +536,7 @@ async function main() {
 }
 
 // Run CLI when invoked directly (tsx scripts/application-triage-sweep.ts)
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+ 
 if (typeof require !== 'undefined' && require.main === module) {
   main().catch((err) => {
     console.error('[triage-sweep] fatal:', err)

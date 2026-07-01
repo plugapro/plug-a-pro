@@ -50,6 +50,55 @@ describe('central WhatsApp quick-reply button title guard', () => {
 
     expect(global.fetch).toHaveBeenCalledOnce()
   })
+
+  it('counts code points, not UTF-16 units - "🔄 Reschedule Booking" (20 chars, 21 units) is delivered by Meta and must pass', async () => {
+    // Regression: the first guard version used .length (UTF-16), which broke
+    // the pre-existing help-flow reschedule button whose surrogate-pair emoji
+    // pushes .length to 21 while Meta counts 20 visible characters.
+    await expect(
+      sendButtons('+27711111111', 'Rescheduling', [
+        { id: 'start_reschedule', title: '🔄 Reschedule Booking' },
+        { id: 'back_to_help', title: '← Back to Help' },
+      ]),
+    ).resolves.toBe('wamid.test')
+
+    expect(global.fetch).toHaveBeenCalledOnce()
+  })
+})
+
+describe('central WhatsApp list title guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.WHATSAPP_ACCESS_TOKEN = 'token'
+    process.env.WHATSAPP_PHONE_NUMBER_ID = 'phone-id'
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [{ id: 'wamid.test' }] }),
+    }) as never
+  })
+
+  it('blocks list row titles longer than 24 characters before sending', async () => {
+    const { sendList } = await import('@/lib/whatsapp-interactive')
+    await expect(
+      sendList('+27711111111', 'Pick one', [
+        { title: 'Options', rows: [{ id: 'a', title: 'This row title is definitely too long' }] },
+      ]),
+    ).rejects.toThrow(/row title.*24/i)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('allows the 23-char area-not-listed row title and 22-char section titles', async () => {
+    const { sendList } = await import('@/lib/whatsapp-interactive')
+    await expect(
+      sendList('+27711111111', 'Pick one', [
+        {
+          title: 'Pay at Retailer (Pay@)', // 22 - section limit is 24
+          rows: [{ id: 'area_not_listed', title: "🔔 My area isn't listed" }], // 23 cp
+        },
+      ]),
+    ).resolves.toBe('wamid.test')
+    expect(global.fetch).toHaveBeenCalledOnce()
+  })
 })
 
 describe('known quick-reply title regressions stay fixed', () => {

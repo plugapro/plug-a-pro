@@ -13,7 +13,8 @@ import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { normaliseLocationDisplayName } from './location-format'
 import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
 import { testEventFields } from './internal-test-cohort'
-import { sendTemplate } from './whatsapp'
+import { pickCustomerDisplayFirstName } from './customer-name'
+import { buildCustomerMatchFoundComponents, sendTemplate } from './whatsapp'
 import { ctaLabelFor } from './whatsapp-copy'
 import {
   hasRecentInboundWhatsappSession,
@@ -23,7 +24,9 @@ import {
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
 function firstName(name: string | null | undefined) {
-  return name?.trim().split(/\s+/)[0] || 'there'
+  // Placeholder-aware: WhatsApp-onboarded customers carry the literal name
+  // "WhatsApp Customer"; the raw first token would greet them "Hi WhatsApp".
+  return pickCustomerDisplayFirstName({ customerName: name ?? null }) ?? 'there'
 }
 
 function providerDisplayName(providerName: string | null | undefined) {
@@ -248,24 +251,12 @@ async function deliverCustomerPostMatchNotification(params: {
     const externalId = await sendTemplate({
       to: customerPhone,
       template: 'customer_match_found',
-      components: [
-        {
-          type: 'body',
-          // Approved template order: {{1}} customer, {{2}} service, {{3}} provider.
-          // Two params fails Meta 132000 and the customer is never notified.
-          parameters: [
-            { type: 'text', text: customerName },
-            { type: 'text', text: category },
-            { type: 'text', text: providerFirstName },
-          ],
-        },
-        {
-          type: 'button',
-          sub_type: 'url',
-          index: 0,
-          parameters: [{ type: 'text', text: jobRequestId }],
-        },
-      ],
+      components: buildCustomerMatchFoundComponents({
+        customerFirstName: customerName,
+        serviceName: category,
+        providerFirstName,
+        jobRequestId,
+      }),
       metadata: { ...customerContext.metadata, deliveryPath: 'fallback_template' },
     })
     await logOutboundMessage({
