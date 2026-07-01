@@ -449,6 +449,7 @@ export async function orchestrateMatch(
     if (jobRequest.customer?.phone) {
       await sendCustomerMatchFoundNotification({
         customerPhone: jobRequest.customer.phone,
+        customerName: jobRequest.customer.name ?? null,
         providerName: reserved.provider.name,
         serviceName: matchingJobRequest.category,
         jobRequestId: jobRequest.id,

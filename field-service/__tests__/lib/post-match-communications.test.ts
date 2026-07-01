@@ -328,9 +328,12 @@ describe('post-match communications', () => {
         components: expect.arrayContaining([
           expect.objectContaining({
             type: 'body',
+            // Approved template order: {{1}} customer, {{2}} service, {{3}} provider.
+            // Sending only two params fails Meta 132000 (the matched-not-told bug).
             parameters: [
-              { type: 'text', text: 'Jacob' },
+              { type: 'text', text: 'Stephanie' },
               { type: 'text', text: 'Plumbing' },
+              { type: 'text', text: 'Jacob' },
             ],
           }),
           expect.objectContaining({

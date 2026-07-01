@@ -522,10 +522,12 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent to a customer when a provider has been matched to their job request',
-    // body: {{1}} provider first name, {{2}} service label
+    // body: {{1}} customer first name, {{2}} service label, {{3}} provider first name
     // button (url, index 0): {{1}} job request ID (appended to https://app.plugapro.co.za/requests/)
+    // NOTE: this mirrors the version APPROVED at Meta (template id 1508767677372957).
+    // Sending a different param count fails Meta 132000 at send time.
     example:
-      'Good news! {{1}} is reviewing your {{2}} request and will send a quote shortly. Tap below to view your request.',
+      "Hi {{1}} 👋\n\nGreat news! We've matched your {{2}} request with {{3}}.\n\nThey're highly rated and ready to assist you.\n\nTrack your request and approve quotes here 👇",
   },
 
   // Sent to a customer when a provider has ACCEPTED their job request (post-match
