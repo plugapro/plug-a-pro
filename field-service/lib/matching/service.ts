@@ -2031,6 +2031,16 @@ async function createOfferForAttempt(params: {
       area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
       scheduledWindow,
       jobUrl: signedUrl,
+      templateName: 'provider_lead_offer',
+      // Tier 1 funnel observability: link the message_events row to the
+      // provider/lead so rotation offers are attributable, same as dispatch.ts.
+      metadata: {
+        providerId: params.providerId,
+        leadId: lead.id,
+        jobRequestId: params.jobRequestId,
+        dispatchDecisionId: params.dispatchDecisionId,
+        path: 'rotation',
+      },
     }).catch((error) => {
       console.error('[matching] Failed to send job_offer template to provider:', error)
     })

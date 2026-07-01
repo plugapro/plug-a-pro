@@ -24,6 +24,13 @@ export async function logOutboundMessage(params: {
     typeof metadata.idempotencyKey === 'string'
       ? metadata.idempotencyKey
       : undefined
+  // Tier 1 funnel observability: populate the message_events providerId/leadId
+  // FK columns from metadata so provider lead offers carry linkage. These are
+  // FK columns, so only string values may be written; anything else is ignored.
+  const providerId =
+    typeof metadata.providerId === 'string' ? metadata.providerId : undefined
+  const leadId =
+    typeof metadata.leadId === 'string' ? metadata.leadId : undefined
   const hasExplicitCohortMarker =
     'isTestEvent' in metadata ||
     'isTestRequest' in metadata ||
@@ -59,6 +66,8 @@ export async function logOutboundMessage(params: {
         templateName: params.templateName ?? undefined,
         body: params.body ?? undefined,
         to: params.to,
+        providerId,
+        leadId,
         status: 'FAILED',
         idempotencyKey,
         failureReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
@@ -89,6 +98,8 @@ export async function logOutboundMessage(params: {
       templateName: params.templateName ?? undefined,
       body: params.body ?? undefined,
       to: params.to,
+      providerId,
+      leadId,
       externalId: params.externalId ?? undefined,
       idempotencyKey,
       status: 'SENT',
