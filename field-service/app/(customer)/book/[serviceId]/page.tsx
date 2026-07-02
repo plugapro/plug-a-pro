@@ -72,6 +72,7 @@ export default async function RequestJobPage({
     : []
 
   const addressBookEnabled = Boolean(session && customer && savedSites.length > 0)
+  const inlineOtpEnabled = await isEnabled('customer.booking.inline_otp')
 
   // Resolve template pre-fill - silently ignore invalid/missing ids.
   let initialDraft: {
@@ -159,6 +160,7 @@ export default async function RequestJobPage({
       initialAddress={initialAddress}
       initialAreaLabel={initialAreaLabel}
       preferredProviderId={eligiblePreferredProvider?.id ?? null}
+      inlineOtpEnabled={inlineOtpEnabled}
     />
   )
 }

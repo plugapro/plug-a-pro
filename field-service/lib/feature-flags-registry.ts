@@ -245,6 +245,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'customer.booking.inline_otp': {
+    description:
+      'Inline OTP dialog at booking submit instead of the /sign-in redirect. When off, BookingFlow keeps the legacy full-page sign-in detour on 401/403.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   'customer.home.notify_interest': {
     description: 'Turn unavailable home category tiles into a "Coming soon — notify me" capture: tapping one opens a WhatsApp-number sheet that records demand via the service-area waitlist (requires customer.home.serviceability_v2 to mark tiles unavailable).',
     owner: 'prod',
