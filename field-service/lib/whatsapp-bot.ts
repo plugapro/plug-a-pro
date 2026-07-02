@@ -33,7 +33,7 @@ import {
 } from './whatsapp-flows/registration'
 import { matchDeeplink } from './whatsapp-deeplinks'
 import { classifyReferralAudience, toReferralAttribution } from './whatsapp-referral'
-import { clearIncompatibleFlowData } from './whatsapp-conversation-state'
+import { clearIncompatibleFlowData, resetConversationData } from './whatsapp-conversation-state'
 import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
 import {
@@ -1106,7 +1106,13 @@ async function processInboundMessageUnlocked(
     const isExpired = conversation.expiresAt < new Date()
     flow = conversation.flow as FlowName
     step = isExpired ? 'welcome' : (conversation.step as FlowStep)
-    data = isExpired ? {} : (conversation.data as ConversationData)
+    // Expiry drops transient flow state but keeps reset-surviving keys (ad
+    // attribution) — cold leads reply days after their session expired, and a
+    // full wipe here loses the CTWA attribution before an application can
+    // persist it.
+    data = isExpired
+      ? resetConversationData(conversation.data as ConversationData)
+      : (conversation.data as ConversationData)
 
     // Override: reset keywords always restart
     const rawText = reply.text?.toLowerCase() ?? ''
@@ -1210,7 +1216,7 @@ async function processInboundMessageUnlocked(
         })
         flow = 'registration'
         step = 'reg_start'
-        data = {}
+        data = resetConversationData(data)
         deeplinkMatched = true
       }
     }
@@ -2309,7 +2315,7 @@ async function processInboundMessageUnlocked(
     } else if ((isReset || isExpired) && !isProviderMenuReply && !hasRecoverableIdentityContext) {
       flow = 'idle'
       step = 'welcome'
-      data = {}
+      data = resetConversationData(data)
     } else if (isProviderJobList && flow === 'idle') {
       flow = 'provider_job'
       step = 'tech_job_list'

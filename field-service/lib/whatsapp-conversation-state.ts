@@ -112,3 +112,25 @@ export function clearIncompatibleFlowData(
   }
   return out as ConversationData
 }
+
+/**
+ * Keys that must survive a conversation session reset (TTL expiry, reset
+ * keywords like "hi"/"menu", ad-deeplink restarts). Everything else is
+ * transient flow state and should be dropped.
+ *
+ * ctwaReferral is the canonical case: ad attribution is captured on the FIRST
+ * inbound message, but cold leads routinely reply days after their session
+ * expired — the 2026-07-02 recovery campaign lost attribution on 8/10
+ * resulting applications because the expiry reset wiped it before submit.
+ */
+const RESET_SURVIVING_KEYS = ['ctwaReferral'] as const
+
+export function resetConversationData(data: ConversationData | null | undefined): ConversationData {
+  if (!data) return {}
+  const out: Record<string, unknown> = {}
+  for (const key of RESET_SURVIVING_KEYS) {
+    const value = (data as Record<string, unknown>)[key]
+    if (value != null) out[key] = value
+  }
+  return out as ConversationData
+}
