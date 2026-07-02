@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clearIncompatibleFlowData } from '@/lib/whatsapp-conversation-state'
+import { clearIncompatibleFlowData, resetConversationData } from '@/lib/whatsapp-conversation-state'
 import type { FlowName } from '@/lib/whatsapp-flows/types'
 
 describe('clearIncompatibleFlowData', () => {
@@ -69,5 +69,33 @@ describe('clearIncompatibleFlowData', () => {
 
   it('is a no-op when input is empty', () => {
     expect(clearIncompatibleFlowData('idle', 'registration', {})).toEqual({})
+  })
+})
+
+describe('resetConversationData', () => {
+  const ctwaReferral = {
+    sourceType: 'ad',
+    sourceId: '120245406174700243',
+    ctwaClid: 'clid-1',
+    headline: 'Plug A Pro',
+    capturedAt: '2026-06-04T08:00:00.000Z',
+  }
+
+  it('keeps ctwaReferral through a session reset and drops transient flow state', () => {
+    const out = resetConversationData({
+      ctwaReferral,
+      name: 'Lebo',
+      skills: ['plumbing'],
+      selectedCategory: 'plumbing',
+      customerName: 'Lebo',
+    })
+    expect(out).toEqual({ ctwaReferral })
+  })
+
+  it('returns an empty object when there is nothing to preserve', () => {
+    expect(resetConversationData({ name: 'Lebo', skills: ['plumbing'] })).toEqual({})
+    expect(resetConversationData({})).toEqual({})
+    expect(resetConversationData(null)).toEqual({})
+    expect(resetConversationData(undefined)).toEqual({})
   })
 })
