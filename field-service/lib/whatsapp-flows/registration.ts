@@ -2644,6 +2644,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         evidenceFileUrls: submitData.evidenceAttachmentIds,
         isTestUser: cohort.isTestUser,
         cohortName: cohort.cohortName,
+
+        // CTWA ad attribution captured on the first inbound message
+        ctwaReferral: ctx.data.ctwaReferral ?? null,
       }, { source: 'whatsapp' })
 
       const providerCategoryRows = await Promise.all(

@@ -92,6 +92,65 @@ describe('emitServerConversion — request body shape', () => {
     expect(typeof body.data[0].event_time).toBe('number')
   })
 
+  it('maps provider_application_submitted to a Meta Lead event', async () => {
+    stubProd()
+    vi.stubEnv('META_CAPI_PIXEL_ID', 'p123')
+    vi.stubEnv('META_CAPI_ACCESS_TOKEN', 't123')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await emitServerConversion({ name: 'provider_application_submitted', entityId: 'app_1' })
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.data[0]).toMatchObject({
+      event_name: 'Lead',
+      event_id: 'provider_application_submitted:app_1',
+      action_source: 'website',
+    })
+  })
+
+  it('sends CTWA events as business_messaging with ctwa_clid + page_id when META_PAGE_ID is set', async () => {
+    stubProd()
+    vi.stubEnv('META_CAPI_PIXEL_ID', 'p123')
+    vi.stubEnv('META_CAPI_ACCESS_TOKEN', 't123')
+    vi.stubEnv('META_PAGE_ID', 'page_9')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await emitServerConversion({
+      name: 'provider_application_submitted',
+      entityId: 'app_2',
+      ctwaClid: 'clid-77',
+    })
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.data[0]).toMatchObject({
+      event_name: 'Lead',
+      action_source: 'business_messaging',
+      messaging_channel: 'whatsapp',
+      user_data: { ctwa_clid: 'clid-77', page_id: 'page_9' },
+    })
+  })
+
+  it('falls back to the website shape when ctwaClid is present but META_PAGE_ID is unset', async () => {
+    stubProd()
+    vi.stubEnv('META_CAPI_PIXEL_ID', 'p123')
+    vi.stubEnv('META_CAPI_ACCESS_TOKEN', 't123')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await emitServerConversion({
+      name: 'provider_application_submitted',
+      entityId: 'app_3',
+      ctwaClid: 'clid-88',
+    })
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.data[0].action_source).toBe('website')
+    expect(body.data[0].user_data).toBeUndefined()
+    expect(body.data[0].messaging_channel).toBeUndefined()
+  })
+
   it('GA4 MP body uses server-prefixed client_id and the same dedup event_id', async () => {
     stubProd()
     vi.stubEnv('GA4_MEASUREMENT_ID', 'G-XYZ')

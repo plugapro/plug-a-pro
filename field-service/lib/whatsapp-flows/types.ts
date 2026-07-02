@@ -194,6 +194,18 @@ export interface ConversationData {
    * "continue where you left off" template. Used for cron dedupe.
    */
   prewarningSentAt?: string
+  /**
+   * CTWA ad attribution captured from the webhook `referral` payload on the
+   * first inbound message (lib/whatsapp-referral.ts). Carried on the
+   * conversation until a ProviderApplication or JobRequest can persist it.
+   */
+  ctwaReferral?: {
+    sourceType: string
+    sourceId: string | null
+    ctwaClid: string | null
+    headline: string | null
+    capturedAt: string
+  }
   providerEmail?: string
   providerIdNumber?: string
   verificationMethod?: 'id_number' | 'documents' | 'skipped'

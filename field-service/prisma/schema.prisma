@@ -408,6 +408,14 @@ model ProviderApplication {
   submittedAt                   DateTime          @default(now())
   cancelledAt                   DateTime?
   updatedAt                     DateTime          @updatedAt
+  // CTWA ad attribution — captured from the WhatsApp webhook referral payload
+  // on the first inbound message and carried on Conversation.data until submit.
+  // See lib/whatsapp-referral.ts.
+  ctwaSourceType                String?
+  ctwaSourceId                  String? // Meta ad/post id (referral.source_id)
+  ctwaClid                      String? // Meta click id (referral.ctwa_clid) — CAPI join key
+  ctwaHeadline                  String? // ad creative headline snapshot, first 200 chars
+  ctwaCapturedAt                DateTime? // when the referral was seen on the conversation
 
   provider                           Provider?                                    @relation(fields: [providerId], references: [id])
   attachments                        Attachment[]

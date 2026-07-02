@@ -46,6 +46,7 @@
     "ops:fast-match:kpi-report": "tsx scripts/report-fast-match-kpis.ts",
     "ops:whatsapp:live-harness": "tsx scripts/run-live-whatsapp-harness.ts",
     "ops:provider-recovery": "tsx --env-file=.env.local scripts/provider-onboarding-recovery-queue.ts",
+    "ops:ctwa-recovery": "tsx --env-file=.env.local scripts/ctwa-cold-provider-recovery.ts",
     "cleanup:legacy-matching-backlog": "tsx scripts/cleanup-ops-review-backlog.ts",
     "db:studio": "prisma studio",
     "db:wallet-schema-drift": "tsx scripts/wallet-schema-drift-repair.ts",

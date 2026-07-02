@@ -138,6 +138,17 @@ let mockDb = {
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 
+// Funnel telemetry + server-side conversions are unit-tested separately;
+// here we only assert they are invoked with the right shape.
+const recordWorkflowEventMock = vi.fn(async (..._args: unknown[]) => ({ ok: true }))
+vi.mock('@/lib/workflow-events', () => ({
+  recordWorkflowEvent: recordWorkflowEventMock,
+}))
+const emitServerConversionMock = vi.fn(async (..._args: unknown[]) => undefined)
+vi.mock('@/lib/marketing/server-events', () => ({
+  emitServerConversion: emitServerConversionMock,
+}))
+
 // ─── Reset state before each test ────────────────────────────────────────────
 
 beforeEach(() => {
@@ -145,6 +156,8 @@ beforeEach(() => {
   convStore = new Map()
   appIdSeq = 0
   convIdSeq = 0
+  recordWorkflowEventMock.mockClear()
+  emitServerConversionMock.mockClear()
 
   const appMethods = makeAppMethods()
   const convMethods = makeConvMethods()
@@ -262,5 +275,109 @@ describe('submitProviderApplication', () => {
     // Verify state was actually updated
     const rows = Array.from(convStore.values())
     expect(rows[0].step).toBe('reg_pending')
+  })
+
+  it('persists CTWA attribution columns when ctwaReferral is provided', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    await submitProviderApplication(
+      mockDb as never,
+      {
+        ...baseInput,
+        ctwaReferral: {
+          sourceType: 'ad',
+          sourceId: '120245406174700243',
+          ctwaClid: 'clid-abc',
+          headline: 'Plug A Pro',
+          capturedAt: '2026-07-01T08:00:00.000Z',
+        },
+      },
+      { source: 'whatsapp' },
+    )
+
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ctwaSourceType: 'ad',
+          ctwaSourceId: '120245406174700243',
+          ctwaClid: 'clid-abc',
+          ctwaHeadline: 'Plug A Pro',
+          ctwaCapturedAt: new Date('2026-07-01T08:00:00.000Z'),
+        }),
+      }),
+    )
+  })
+
+  it('defaults CTWA columns to null when no referral was captured', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ctwaSourceType: null,
+          ctwaSourceId: null,
+          ctwaClid: null,
+          ctwaHeadline: null,
+          ctwaCapturedAt: null,
+        }),
+      }),
+    )
+  })
+
+  it('records a PROVIDER_APPLICATION_SUBMITTED workflow event after the submit', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    const result = await submitProviderApplication(
+      mockDb as never,
+      { ...baseInput, ctwaReferral: { sourceType: 'ad', sourceId: 'ad-1', ctwaClid: null, headline: null, capturedAt: '2026-07-01T08:00:00.000Z' } },
+      { source: 'whatsapp' },
+    )
+
+    expect(recordWorkflowEventMock).toHaveBeenCalledTimes(1)
+    expect(recordWorkflowEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'PROVIDER_APPLICATION_SUBMITTED',
+        entityType: 'PROVIDER_APPLICATION',
+        entityId: result.application.id,
+        source: 'whatsapp',
+        metadata: expect.objectContaining({ hasCtwaAttribution: true, ctwaSourceId: 'ad-1' }),
+      }),
+    )
+  })
+
+  it('does not fail the submit when the workflow event emit throws', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    recordWorkflowEventMock.mockRejectedValueOnce(new Error('telemetry down'))
+
+    const result = await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+    expect(result.application.status).toBe('PENDING')
+  })
+
+  it('emits a provider_application_submitted server conversion with the ctwa click id', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    const result = await submitProviderApplication(
+      mockDb as never,
+      { ...baseInput, ctwaReferral: { sourceType: 'ad', sourceId: 'ad-1', ctwaClid: 'clid-xyz', headline: null, capturedAt: '2026-07-01T08:00:00.000Z' } },
+      { source: 'whatsapp' },
+    )
+
+    expect(emitServerConversionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'provider_application_submitted',
+        entityId: result.application.id,
+        ctwaClid: 'clid-xyz',
+        customParams: expect.objectContaining({ source: 'whatsapp', ctwa_source_id: 'ad-1' }),
+      }),
+    )
+  })
+
+  it('does NOT emit a server conversion for test users', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    await submitProviderApplication(mockDb as never, { ...baseInput, isTestUser: true }, { source: 'whatsapp' })
+
+    expect(emitServerConversionMock).not.toHaveBeenCalled()
+    // The workflow event still fires (marked isTestUser) so funnel reports can filter it.
+    expect(recordWorkflowEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ isTestUser: true }) }),
+    )
   })
 })

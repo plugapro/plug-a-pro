@@ -74,6 +74,13 @@ export async function submitProviderApplicationFromWebAction(
       evidenceFileUrls: Array.isArray(merged.evidenceFileUrls)
         ? (merged.evidenceFileUrls as string[])
         : [],
+      // CTWA ad attribution — written by the bot on the first inbound message
+      // (ConversationData.ctwaReferral); not user-editable, so read from
+      // capturedData rather than merged payload.
+      ctwaReferral:
+        capturedData.ctwaReferral && typeof capturedData.ctwaReferral === 'object'
+          ? (capturedData.ctwaReferral as SubmitInput['ctwaReferral'])
+          : null,
     }
 
     // 6. Atomically consume the token.

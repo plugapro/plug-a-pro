@@ -464,6 +464,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'whatsapp.registration.ctwa_referral_route': {
+    description: 'Route Click-to-WhatsApp ad traffic (webhook referral payload classified as provider recruitment) straight into reg_start, bypassing the welcome menu. Robust against Meta auto-generated openers that never match a deeplink token.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   'whatsapp.registration.evidence_skip_primary': {
     description: 'Show "Skip for now" as the primary (first) button on the evidence step for non-high-risk skills; send a 24h upload-later follow-up.',
     owner: 'prod',
