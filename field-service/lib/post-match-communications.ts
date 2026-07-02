@@ -14,7 +14,11 @@ import { normaliseLocationDisplayName } from './location-format'
 import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
 import { testEventFields } from './internal-test-cohort'
 import { pickCustomerDisplayFirstName } from './customer-name'
-import { buildCustomerMatchFoundComponents, sendTemplate } from './whatsapp'
+import {
+  buildCustomerMatchFoundComponents,
+  sendProviderJobAcceptedNextSteps,
+  sendTemplate,
+} from './whatsapp'
 import { ctaLabelFor } from './whatsapp-copy'
 import {
   hasRecentInboundWhatsappSession,
@@ -80,14 +84,14 @@ function whatsappDirectUrl(phone: string, message: string) {
 
 async function hasSentPostMatchMessage(params: {
   to: string
-  templateName: string
+  templateNames: string[]
   leadId: string
 }) {
   try {
     const existing = await db.messageEvent.findFirst({
       where: {
         to: params.to,
-        templateName: params.templateName,
+        templateName: { in: params.templateNames },
         status: { in: [...SENT_OR_BETTER] },
         metadata: {
           path: ['leadId'],
@@ -102,7 +106,7 @@ async function hasSentPostMatchMessage(params: {
     // attempt rather than crashing the whole post-match flow.
     console.warn('[post-match] hasSentPostMatchMessage lookup failed (proceeding as not-sent)', {
       to: params.to,
-      templateName: params.templateName,
+      templateNames: params.templateNames,
       leadId: params.leadId,
       error: err instanceof Error ? err.message : String(err),
     })
@@ -400,7 +404,7 @@ export async function notifyPostMatchAcceptance(params: {
   //      can manually follow up.
   if (customer.phone && !(await hasSentPostMatchMessage({
     to: customer.phone,
-    templateName: 'post_match_customer_provider_accepted',
+    templateNames: ['post_match_customer_provider_accepted'],
     leadId: lead.id,
   }))) {
     const customerBody =
@@ -462,10 +466,30 @@ export async function notifyPostMatchAcceptance(params: {
     }
   }
 
+  // The provider's 24h session window — reply buttons and freeform sends only
+  // deliver inside it. Checked lazily and memoised so a single acceptance does
+  // at most one lookup.
+  let providerWindowOpen: boolean | null = null
+  const providerHasSessionWindow = async () => {
+    if (providerWindowOpen === null) {
+      providerWindowOpen = await hasRecentInboundWhatsappSession(provider.phone).catch(() => false)
+    }
+    return providerWindowOpen
+  }
+
   // Provider notification - must always be attempted regardless of customer outcome.
+  //
+  // Send strategy (mirrors the customer branch above):
+  //   1. sendProviderJobAcceptedNextSteps — UTILITY template with the signed
+  //      job link in a URL button. Works outside the 24h window.
+  //   2. On TEMPLATE_NOT_APPROVED (or when no signed URL exists to satisfy the
+  //      template's URL button): the legacy rich session send (sendCtaUrl /
+  //      sendText) — ONLY inside the 24h window.
+  //   3. Outside the window with no approved template — record the blocked
+  //      state (NO_ACTIVE_WHATSAPP_SERVICE_WINDOW) instead of a doomed send.
   if (provider.phone && !(await hasSentPostMatchMessage({
     to: provider.phone,
-    templateName: 'post_match_provider_job_accepted',
+    templateNames: ['provider_job_accepted_next_steps', 'post_match_provider_job_accepted'],
     leadId: lead.id,
   }))) {
     const body =
@@ -502,76 +526,155 @@ export async function notifyPostMatchAcceptance(params: {
       },
     }
 
-    try {
-      if (leadUrl) {
-        await sendCtaUrl(
-          provider.phone,
-          body,
-          ctaLabelFor('view_job'),
-          leadUrl,
-          { footer: 'Secure link for this accepted job only.' },
-          providerContext,
-        )
-      } else {
-        await sendText(provider.phone, body, providerContext)
+    const providerArea = [
+      normaliseLocationDisplayName(lead.jobRequest.address?.suburb),
+      normaliseLocationDisplayName(lead.jobRequest.address?.city),
+    ].filter(Boolean).join(', ') || 'your area'
+
+    // ── Step 1: UTILITY template (works outside the 24h window) ────────────
+    let providerTemplateNotApproved = false
+    if (leadUrl) {
+      try {
+        await sendProviderJobAcceptedNextSteps({
+          to: provider.phone,
+          firstName: firstName(provider.name),
+          service: category,
+          area: providerArea,
+          jobUrl: leadUrl,
+          metadata: { ...providerContext.metadata, deliveryPath: 'primary_template' },
+        })
+        providerNotified = true
+      } catch (err) {
+        if (isTemplateNotApprovedError(err)) {
+          providerTemplateNotApproved = true
+          console.info('[post-match] provider job-accepted template not approved, trying session path', {
+            lead_id: lead.id,
+            provider_id: provider.id,
+          })
+        } else {
+          const reason = err instanceof Error ? err.message : String(err)
+          console.error('[post-match] provider confirmation failed', {
+            lead_id: lead.id,
+            provider_id: provider.id,
+            error: reason,
+          })
+          await recordPostMatchSendFailure({
+            to: provider.phone,
+            templateName: 'provider_job_accepted_next_steps',
+            leadId: lead.id,
+            jobRequestId: lead.jobRequestId,
+            providerId: provider.id,
+            reason,
+            body,
+            metadata: providerContext.metadata,
+            isTestEvent: isTestLead,
+          })
+        }
       }
-      // Mark as notified here - before the Contact Customer button - so that a
-      // failure on the secondary button does not incorrectly mark providerNotified false.
-      providerNotified = true
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err)
-      console.error('[post-match] provider confirmation failed', {
-        lead_id: lead.id,
-        provider_id: provider.id,
-        error: reason,
-      })
-      await recordPostMatchSendFailure({
-        to: provider.phone,
-        templateName: 'post_match_provider_job_accepted',
-        leadId: lead.id,
-        jobRequestId: lead.jobRequestId,
-        providerId: provider.id,
-        reason,
-        body,
-        metadata: providerContext.metadata,
-        isTestEvent: isTestLead,
-      })
+    }
+
+    // ── Step 2: 24h-window-gated session send (legacy rich message) ────────
+    if (!providerNotified && (providerTemplateNotApproved || !leadUrl)) {
+      if (!(await providerHasSessionWindow())) {
+        console.error('[post-match] provider confirmation blocked: template unapproved and provider outside 24h window', {
+          lead_id: lead.id,
+          provider_id: provider.id,
+          outcome: 'outside_window_blocked',
+        })
+        await recordPostMatchSendFailure({
+          to: provider.phone,
+          templateName: 'post_match_provider_job_accepted',
+          leadId: lead.id,
+          jobRequestId: lead.jobRequestId,
+          providerId: provider.id,
+          reason: 'NO_ACTIVE_WHATSAPP_SERVICE_WINDOW',
+          body,
+          metadata: { ...providerContext.metadata, outcome: 'outside_window_blocked' },
+          isTestEvent: isTestLead,
+        })
+      } else {
+        try {
+          if (leadUrl) {
+            await sendCtaUrl(
+              provider.phone,
+              body,
+              ctaLabelFor('view_job'),
+              leadUrl,
+              { footer: 'Secure link for this accepted job only.' },
+              providerContext,
+            )
+          } else {
+            await sendText(provider.phone, body, providerContext)
+          }
+          // Mark as notified here - before the Contact Customer button - so that a
+          // failure on the secondary button does not incorrectly mark providerNotified false.
+          providerNotified = true
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err)
+          console.error('[post-match] provider confirmation failed', {
+            lead_id: lead.id,
+            provider_id: provider.id,
+            error: reason,
+          })
+          await recordPostMatchSendFailure({
+            to: provider.phone,
+            templateName: 'post_match_provider_job_accepted',
+            leadId: lead.id,
+            jobRequestId: lead.jobRequestId,
+            providerId: provider.id,
+            reason,
+            body,
+            metadata: providerContext.metadata,
+            isTestEvent: isTestLead,
+          })
+        }
+      }
     }
   }
 
   // Contact Customer button - non-fatal; failure must not affect providerNotified.
+  // Reply buttons CANNOT be templated, so this send is gated on the 24h window:
+  // outside it Meta rejects with "Re-engagement message" anyway.
   if (provider.phone && !(await hasSentPostMatchMessage({
     to: provider.phone,
-    templateName: 'post_match_provider_next_actions',
+    templateNames: ['post_match_provider_next_actions'],
     leadId: lead.id,
   }))) {
-    try {
-      await sendButtons(
-        provider.phone,
-        `Customer contact is released for this accepted job. Tap below to open WhatsApp with ${customerName}.`,
-        [{ id: `post_match_contact:${lead.id}`, title: 'Contact Customer' }],
-        { footer: 'This contact handover is logged on the ticket.' },
-        {
-          templateName: 'post_match_provider_next_actions',
-          metadata: {
-            leadId: lead.id,
-            jobRequestId: lead.jobRequestId,
-            matchId: params.matchId ?? null,
-            providerId: provider.id,
-            leadUnlockId: lead.unlock?.id,
-            creditTransactionId: params.creditTransactionId ?? null,
-            isTestLead,
-            isTestRequest: isTestLead,
-            recipientIsTest: provider.isTestUser,
-          },
-        },
-      )
-    } catch (err) {
-      console.error('[post-match] contact-customer button failed (non-fatal)', {
+    if (!(await providerHasSessionWindow())) {
+      console.info('[post-match] skipped contact-customer buttons: reply buttons cannot be templated and provider is outside the 24h window', {
         lead_id: lead.id,
         provider_id: provider.id,
-        error: err instanceof Error ? err.message : String(err),
+        result: 'outside_window_skipped',
       })
+    } else {
+      try {
+        await sendButtons(
+          provider.phone,
+          `Customer contact is released for this accepted job. Tap below to open WhatsApp with ${customerName}.`,
+          [{ id: `post_match_contact:${lead.id}`, title: 'Contact Customer' }],
+          { footer: 'This contact handover is logged on the ticket.' },
+          {
+            templateName: 'post_match_provider_next_actions',
+            metadata: {
+              leadId: lead.id,
+              jobRequestId: lead.jobRequestId,
+              matchId: params.matchId ?? null,
+              providerId: provider.id,
+              leadUnlockId: lead.unlock?.id,
+              creditTransactionId: params.creditTransactionId ?? null,
+              isTestLead,
+              isTestRequest: isTestLead,
+              recipientIsTest: provider.isTestUser,
+            },
+          },
+        )
+      } catch (err) {
+        console.error('[post-match] contact-customer button failed (non-fatal)', {
+          lead_id: lead.id,
+          provider_id: provider.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
 

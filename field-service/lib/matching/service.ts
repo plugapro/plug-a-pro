@@ -32,6 +32,9 @@ import { checkProviderCanUnlockLead } from '../provider-lead-eligibility'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import { isOutsideStandardLeadHours } from './filter'
+import { hasRecentInboundWhatsappSession, isTemplateNotApprovedError } from '../whatsapp-policy'
+import { sendProviderLeadExpired } from '../whatsapp'
+import { recordWorkflowEvent } from '../workflow-events'
 import type {
   CoverageTier,
   DispatchActor,
@@ -486,7 +489,7 @@ async function notifyCustomerProviderRotation(params: {
   ).catch(() => undefined)
 }
 
-async function notifyProviderLeadInviteExpired(params: {
+export async function notifyProviderLeadInviteExpired(params: {
   hold: ExpiredAssignmentNotificationHold
   wasReassigned: boolean
   traceId: string
@@ -505,14 +508,25 @@ async function notifyProviderLeadInviteExpired(params: {
     return
   }
 
-  const alreadySent = await hasSuccessfulMessageForRecipient({
-    to: phone,
-    templateName: 'interactive:lead_expired',
-    metadataPath: ['assignmentHoldId'],
-    metadataEquals: hold.id,
-  })
+  // A successful send under EITHER template name suppresses a resend:
+  // provider_lead_expired is the current UTILITY template; interactive:lead_expired
+  // is the legacy freeform session send that predates it.
+  const [sentViaTemplate, sentViaLegacyFreeform] = await Promise.all([
+    hasSuccessfulMessageForRecipient({
+      to: phone,
+      templateName: 'provider_lead_expired',
+      metadataPath: ['assignmentHoldId'],
+      metadataEquals: hold.id,
+    }),
+    hasSuccessfulMessageForRecipient({
+      to: phone,
+      templateName: 'interactive:lead_expired',
+      metadataPath: ['assignmentHoldId'],
+      metadataEquals: hold.id,
+    }),
+  ])
 
-  if (alreadySent) {
+  if (sentViaTemplate || sentViaLegacyFreeform) {
     console.info('[expireAssignmentOffer] skipped duplicate provider expiry notification', {
       trace_id: traceId,
       provider_id: hold.providerId,
@@ -525,6 +539,45 @@ async function notifyProviderLeadInviteExpired(params: {
 
   const category = hold.jobRequest?.category || 'job'
   const area = formatLeadExpiryArea(hold.jobRequest?.address)
+  const providerFirstName = hold.provider?.name?.trim().split(/\s+/)[0] || 'there'
+  const metadata = {
+    traceId,
+    providerId: hold.providerId,
+    jobRequestId: hold.jobRequestId,
+    assignmentHoldId: hold.id,
+    expiresAt: hold.expiresAt.toISOString(),
+    wasReassigned,
+  }
+
+  // Template-first: the UTILITY template reaches providers OUTSIDE the 24h
+  // session window, where the legacy freeform send failed Meta Re-engagement.
+  try {
+    await sendProviderLeadExpired({
+      to: phone,
+      firstName: providerFirstName,
+      service: category,
+      area,
+      metadata,
+    })
+    return
+  } catch (error) {
+    if (!isTemplateNotApprovedError(error)) throw error
+    // Template still PENDING/REJECTED at Meta — fall through to the legacy
+    // freeform send, which is only deliverable inside the 24h window.
+  }
+
+  const hasWindow = await hasRecentInboundWhatsappSession(phone).catch(() => false)
+  if (!hasWindow) {
+    console.info('[expireAssignmentOffer] skipped provider expiry notification: template unapproved and provider outside 24h window', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      result: 'outside_window_skipped',
+    })
+    return
+  }
+
   const deadline = formatProviderLeadDeadline(hold.expiresAt)
   const reassignedLine = wasReassigned ? '\n\nThis lead has now been offered to another provider.' : ''
 
@@ -533,14 +586,7 @@ async function notifyProviderLeadInviteExpired(params: {
     `⏱️ *Lead expired*\n\nThe ${category} lead in ${area} expired because there was no response before ${deadline}.\n\nNo credits were used.${reassignedLine}\n\nWe'll send you another lead when one matches your area and availability.`,
     {
       templateName: 'interactive:lead_expired',
-      metadata: {
-        traceId,
-        providerId: hold.providerId,
-        jobRequestId: hold.jobRequestId,
-        assignmentHoldId: hold.id,
-        expiresAt: hold.expiresAt.toISOString(),
-        wasReassigned,
-      },
+      metadata,
     },
   )
 }
@@ -2021,6 +2067,7 @@ async function createOfferForAttempt(params: {
   } catch (error) {
     console.error('[matching] Could not derive signed lead URL for job_offer template:', error)
   }
+  let leadOfferDelivered = false
   if (!signedUrl) {
     console.error('[matching] Skipping job_offer template - no signed lead URL available', { leadId: lead.id })
   } else {
@@ -2031,57 +2078,102 @@ async function createOfferForAttempt(params: {
       area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
       scheduledWindow,
       jobUrl: signedUrl,
+      templateName: 'provider_lead_offer',
+      // Tier 1 funnel observability: link the message_events row to the
+      // provider/lead so rotation offers are attributable, same as dispatch.ts.
+      metadata: {
+        providerId: params.providerId,
+        leadId: lead.id,
+        jobRequestId: params.jobRequestId,
+        dispatchDecisionId: params.dispatchDecisionId,
+        path: 'rotation',
+      },
+    }).then(() => {
+      leadOfferDelivered = true
     }).catch((error) => {
       console.error('[matching] Failed to send job_offer template to provider:', error)
     })
   }
 
   // Interactive paths run on top of the approved template — they upgrade the
-  // UX for providers inside the 24h re-engagement window. If they fail
-  // (cold provider), the template above already carried the lead link.
-  const { notifyProviderNewJob } = await import('../whatsapp-bot')
-  await notifyProviderNewJob({
-    providerPhone: provider.phone,
-    leadId: lead.id,
-    category: jobRequest.category,
-    area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
-    isTestLead: jobRequest.isTestRequest,
-    description: jobRequest.title || jobRequest.description || jobRequest.category,
-    customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
-    expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
-  }).catch((error) => {
-    console.error('[matching] Failed to notify provider of assignment offer (template fallback above already covers cold providers):', error)
-  })
+  // UX for providers inside the 24h re-engagement window. Meta rejects session
+  // (interactive) sends to cold providers with "Re-engagement message", so gate
+  // both extras on an actual inbound message inside the window instead of
+  // firing blind. A failed window check is treated as cold (skip) — the
+  // template above already carried the lead link either way.
+  const hasSessionWindow = await hasRecentInboundWhatsappSession(provider.phone).catch(() => false)
+  if (hasSessionWindow) {
+    const { notifyProviderNewJob } = await import('../whatsapp-bot')
+    await notifyProviderNewJob({
+      providerPhone: provider.phone,
+      leadId: lead.id,
+      category: jobRequest.category,
+      area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
+      isTestLead: jobRequest.isTestRequest,
+      description: jobRequest.title || jobRequest.description || jobRequest.category,
+      customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
+      expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
+    }).catch((error) => {
+      console.error('[matching] Failed to notify provider of assignment offer (template fallback above already covers cold providers):', error)
+    })
 
-  // Quick-response action buttons - same credit copy and Accept Lead / Decline
-  // buttons as the dispatch.ts path so providers always see a consistent UI.
-  // Will silently fail for cold providers; the template link above still works,
-  // so any failure here (no wallet, missing balance, send rejected) is non-fatal
-  // and must NOT break the rotation cascade in offerNextRankedCandidate.
+    // Quick-response action buttons - same credit copy and Accept Lead / Decline
+    // buttons as the dispatch.ts path so providers always see a consistent UI.
+    // Will silently fail for cold providers; the template link above still works,
+    // so any failure here (no wallet, missing balance, send rejected) is non-fatal
+    // and must NOT break the rotation cascade in offerNextRankedCandidate.
+    try {
+      const { sendButtons } = await import('../whatsapp-interactive')
+      const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
+      const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
+      const category = jobRequest.category
+      const balance = await getProviderWalletBalanceReadOnly(params.providerId)
+      const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
+      await sendButtons(
+        provider.phone,
+        actionsBody,
+        [
+          { id: `accept:${hold.id}`, title: 'Accept Lead' },
+          { id: `decline:${hold.id}`, title: 'Decline' },
+        ],
+        undefined,
+        {
+          templateName: 'interactive:new_lead_actions',
+          metadata: { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: params.providerId },
+        }
+      ).catch((error) => {
+        console.error('[matching] Failed to send lead action buttons to provider (template above still carries the link):', error)
+      })
+    } catch (error) {
+      console.error('[matching] Skipping lead action buttons - non-fatal:', error)
+    }
+  } else {
+    console.info('[matching] interactive lead extras skipped: outside 24h session window', { leadId: lead.id, providerId: params.providerId })
+  }
+
+  // Tier 1 funnel observability: emit PROVIDER_NOTIFIED once per rotation
+  // re-offer, mirroring the initial-dispatch emit in dispatch.ts. Guarded so
+  // observability failures never break the rotation cascade.
+  // Spec: docs/superpowers/specs/2026-06-22-funnel-observability-tier1-design.md
   try {
-    const { sendButtons } = await import('../whatsapp-interactive')
-    const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
-    const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
-    const category = jobRequest.category
-    const balance = await getProviderWalletBalanceReadOnly(params.providerId)
-    const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
-    await sendButtons(
-      provider.phone,
-      actionsBody,
-      [
-        { id: `accept:${hold.id}`, title: 'Accept Lead' },
-        { id: `decline:${hold.id}`, title: 'Decline' },
-      ],
-      undefined,
-      {
-        templateName: 'interactive:new_lead_actions',
-        metadata: { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: params.providerId },
-      }
-    ).catch((error) => {
-      console.error('[matching] Failed to send lead action buttons to provider (template above still carries the link):', error)
+    await recordWorkflowEvent({
+      eventType: 'PROVIDER_NOTIFIED',
+      actorType: 'system',
+      entityType: 'LEAD',
+      entityId: lead.id,
+      source: 'matching/create-offer-for-attempt',
+      metadata: {
+        providerId: params.providerId,
+        jobRequestId: params.jobRequestId,
+        template: 'provider_lead_offer',
+        channel: 'WHATSAPP',
+        path: 'rotation',
+        delivered: leadOfferDelivered,
+        interactiveSuppressed: !hasSessionWindow,
+      },
     })
   } catch (error) {
-    console.error('[matching] Skipping lead action buttons - non-fatal:', error)
+    console.error('[matching] Failed to record PROVIDER_NOTIFIED workflow event (non-fatal):', error)
   }
 
   return { hold, lead }
@@ -2392,6 +2484,69 @@ async function offerNextRankedCandidate(params: {
   return { nextOfferedProviderId: null, assignmentHoldId: null }
 }
 
+// ── Late-response grace ──────────────────────────────────────────────────────
+// Production incident (2026-07-01): a provider accepted 30 seconds after
+// lead.expiresAt. The rotation cron had already flipped his assignmentHold to
+// EXPIRED and dispatched the next provider; his accept bounced off guards A
+// (hold not ACTIVE → TAKEN) and B (expiresAt in the past → EXPIRED), he lost
+// the job, and the job took another hour to fill. A late accept is now honored
+// while the job is still genuinely unmatched.
+//
+// The grace bypasses ONLY guards A and B. Ownership, provider approval, KYC
+// and the credit spend still apply unchanged. Evaluated lazily — the common
+// (non-expired) accept path pays for zero extra queries.
+const LATE_ACCEPT_LEAD_STATUSES = ['EXPIRED', 'SENT', 'VIEWED'] as const
+const LATE_ACCEPT_HOLD_STATUSES = ['EXPIRED', 'ACTIVE'] as const
+
+async function evaluateLateResponseGrace(
+  tx: Prisma.TransactionClient,
+  params: {
+    lead: {
+      id: string
+      jobRequestId: string
+      status: string
+      expiresAt: Date | null
+      assignmentHold: { status: string } | null
+    }
+    hasExistingMatch: boolean
+    now: Date
+  },
+): Promise<boolean> {
+  const graceMinutes = MATCHING_CONFIG.lateResponseGraceMinutes
+  // (a) grace enabled and still inside expiresAt + grace. A lead without an
+  // expiresAt has no window to be "late" against — no grace.
+  if (graceMinutes <= 0) return false
+  const { lead, hasExistingMatch, now } = params
+  if (!lead.expiresAt) return false
+  if (now.getTime() > lead.expiresAt.getTime() + graceMinutes * 60_000) return false
+  // (b) no Match row for the jobRequest (loaded earlier in the transaction).
+  if (hasExistingMatch) return false
+  // (e) a DECLINED/CANCELLED lead is never resurrected, and a hold that was
+  // REJECTED/RELEASED (someone else got the job, or the provider declined)
+  // stays closed. Only cron-expired or still-active states qualify.
+  if (!(LATE_ACCEPT_LEAD_STATUSES as readonly string[]).includes(lead.status)) return false
+  const holdStatus = lead.assignmentHold?.status
+  if (!holdStatus || !(LATE_ACCEPT_HOLD_STATUSES as readonly string[]).includes(holdStatus)) return false
+  // (c) the job request itself must still be open for matching.
+  const jobRequest = await tx.jobRequest.findUnique({
+    where: { id: lead.jobRequestId },
+    select: { status: true },
+  })
+  if (!jobRequest) return false
+  if (jobRequest.status !== 'OPEN' && jobRequest.status !== 'MATCHING') return false
+  // (d) no OTHER lead on the same job has already been accepted.
+  const otherAcceptedLead = await tx.lead.findFirst({
+    where: {
+      jobRequestId: lead.jobRequestId,
+      id: { not: lead.id },
+      status: 'ACCEPTED',
+    },
+    select: { id: true },
+  })
+  if (otherAcceptedLead) return false
+  return true
+}
+
 export async function acceptAssignmentOffer(params: {
   leadId: string
   providerId: string
@@ -2531,10 +2686,24 @@ export async function acceptAssignmentOffer(params: {
       if (!lead.assignmentHoldId || !lead.assignmentHold) {
         return { ok: false as const, reason: existingMatch ? 'TAKEN' : 'NOT_FOUND' }
       }
-      if (lead.assignmentHold.status !== 'ACTIVE') {
+      // Guards A (hold no longer ACTIVE) and B (lead past expiresAt) may be
+      // bypassed by the late-response grace when the job is still genuinely
+      // unmatched. The verdict is computed once, and only when a guard would
+      // otherwise reject — the happy path runs zero extra queries.
+      const guardNow = new Date()
+      const holdNotActive = lead.assignmentHold.status !== 'ACTIVE'
+      const leadTimeExpired = Boolean(lead.expiresAt && lead.expiresAt < guardNow)
+      const lateAcceptGranted =
+        (holdNotActive || leadTimeExpired) &&
+        (await evaluateLateResponseGrace(tx, {
+          lead,
+          hasExistingMatch: Boolean(existingMatch),
+          now: guardNow,
+        }))
+      if (holdNotActive && !lateAcceptGranted) {
         return { ok: false as const, reason: 'TAKEN' }
       }
-      if (lead.expiresAt && lead.expiresAt < new Date()) {
+      if (leadTimeExpired && !lateAcceptGranted) {
         await tx.lead.update({
           where: { id: lead.id },
           data: { status: 'EXPIRED', respondedAt: new Date() },
@@ -2587,6 +2756,9 @@ export async function acceptAssignmentOffer(params: {
       // (the "Confirm accept" tap on the lead page or the WhatsApp accept button),
       // never from a bare lead-link page load - so the credit spend is confirmed.
       confirmed: true,
+      // Late-response grace: when granted, the unlock must tolerate a lead the
+      // cron already flipped to EXPIRED / whose expiresAt has passed.
+      allowExpiredLeadWithinGrace: lateAcceptGranted,
     })
     const alreadyUnlocked = unlockResult.alreadyUnlocked
     const remainingCreditBalance = remainingBalanceFromUnlock(
@@ -2792,6 +2964,7 @@ export async function acceptAssignmentOffer(params: {
       currentCreditBalance: remainingCreditBalance,
       leadStatusBefore: lead.status,
       leadStatusAfter: 'ACCEPTED',
+      lateAccepted: lateAcceptGranted,
     }
     }, {
       maxWait: ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS,
@@ -2882,6 +3055,8 @@ export async function acceptAssignmentOffer(params: {
     }
   }
 
+  const lateAccepted = 'lateAccepted' in transactionResult && transactionResult.lateAccepted === true
+
   console.info('[matching] lead unlock/accept attempt', {
     provider_id: params.providerId,
     lead_id: params.leadId,
@@ -2891,6 +3066,7 @@ export async function acceptAssignmentOffer(params: {
     lead_status_before: transactionResult.leadStatusBefore,
     lead_status_after: transactionResult.leadStatusAfter,
     credit_transaction_id: transactionResult.creditTransactionId,
+    late_accepted: lateAccepted,
     result: 'ACCEPTED',
     trace_id: traceId,
   })
@@ -2925,6 +3101,7 @@ export async function acceptAssignmentOffer(params: {
       providerId: params.providerId,
       bookingId: transactionResult.bookingId ?? '',
       latencyMs: Date.now() - acceptStart,
+      ...(lateAccepted ? { lateAccepted: true } : {}),
     })
   }
 
@@ -2938,6 +3115,7 @@ export async function acceptAssignmentOffer(params: {
     alreadyUnlocked: transactionResult.alreadyUnlocked,
     assignmentHoldId: transactionResult.assignmentHoldId,
     nextOfferedProviderId: transactionResult.nextOfferedProviderId,
+    lateAccepted,
   }
 }
 

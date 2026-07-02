@@ -381,3 +381,82 @@ describe('resolveProviderLeadAttachmentScope - isAccepted flag for safeForPrevie
     expect(scope.jobRequestId).toBeNull()
   })
 })
+
+describe('resolveProviderLeadAttachmentScope - late-response grace window', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+    mockDb.leadUnlock.findUnique.mockReset()
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
+    process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-pla-secret-step15'
+  })
+
+  // Mirrors the in-grace candidate on the signed lead page: an AUTO_ASSIGN
+  // lead just past expiresAt (cron may have flipped it EXPIRED) while the job
+  // is still genuinely unmatched. Default grace is 30 minutes.
+  function makeInGraceLead(overrides: Record<string, unknown> = {}) {
+    return makeLead({
+      status: 'EXPIRED',
+      expiresAt: new Date(Date.now() - 60_000), // 1 min past expiry, inside grace
+      jobRequest: {
+        ...makeLead().jobRequest,
+        assignmentMode: 'AUTO_ASSIGN',
+        status: 'MATCHING',
+      },
+      ...overrides,
+    })
+  }
+
+  it('keeps preview attachments open for an in-grace EXPIRED AUTO_ASSIGN lead', async () => {
+    // The page still invites an accept during the grace window — customer
+    // photos must not 401 out from under it.
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeInGraceLead())
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('active')
+    expect(scope.jobRequestId).toBe('jr-1')
+    expect((scope as { isAccepted?: boolean }).isAccepted).toBe(false)
+  })
+
+  it('closes attachments beyond the grace window (31+ minutes past expiry)', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeInGraceLead({ expiresAt: new Date(Date.now() - 31 * 60_000) }),
+    )
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('expired')
+    expect(scope.jobRequestId).toBeNull()
+  })
+
+  it('keeps a DECLINED lead closed even inside the grace window', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeInGraceLead({ status: 'DECLINED' }))
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('expired')
+    expect(scope.jobRequestId).toBeNull()
+  })
+
+  it('closes attachments when the job is no longer open for matching (MATCHED)', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeInGraceLead({
+        jobRequest: { ...makeLead().jobRequest, assignmentMode: 'AUTO_ASSIGN', status: 'MATCHED' },
+      }),
+    )
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('expired')
+    expect(scope.jobRequestId).toBeNull()
+  })
+})

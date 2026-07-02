@@ -87,6 +87,14 @@ vi.mock('../../lib/payments', () => ({
   initializeBookingPayment: mockInitializeBookingPayment,
 }))
 
+// Interactive extras are gated on the 24h session window; keep this suite's
+// original intent (warm provider, notifyProviderNewJob fires) by resolving the
+// window check as open.
+vi.mock(import('../../lib/whatsapp-policy'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  hasRecentInboundWhatsappSession: vi.fn().mockResolvedValue(true),
+}))
+
 describe('matching service', () => {
   beforeEach(() => {
     vi.clearAllMocks()

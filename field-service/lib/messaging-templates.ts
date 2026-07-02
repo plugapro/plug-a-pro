@@ -278,6 +278,29 @@ export const TEMPLATES = {
       'Hi {{1}}, a customer is reviewing providers for a {{2}} job in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
   },
 
+  provider_lead_expired: {
+    name: 'provider_lead_expired',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Sent when a provider lead invite expires without a response - no credits used, next matching lead promised. UTILITY so it works outside the 24h window. No buttons.',
+    // {{1}} provider first name, {{2}} service, {{3}} area
+    example:
+      "Hi {{1}}, the {{2}} lead in {{3}} expired before a response was received. No credits were used. We'll send you the next matching lead.",
+  },
+
+  provider_job_accepted_next_steps: {
+    name: 'provider_job_accepted_next_steps',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Post-acceptance provider confirmation - customer contact released, signed job page link in a template URL button. UTILITY so it works outside the 24h window.',
+    // {{1}} provider first name, {{2}} service, {{3}} area;
+    // button (url, index 0): {{1}} signed job handover suffix appended to /provider/jobs/
+    example:
+      'Hi {{1}}, you accepted the {{2}} job in {{3}}. Customer contact is released — open your job page for details and next steps.',
+  },
+
   provider_kyc_nudge: {
     name: 'provider_kyc_nudge',
     language: 'en_ZA',

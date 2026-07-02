@@ -31,6 +31,7 @@ import {
   sendFreshAcceptedJobLink,
 } from '@/lib/accepted-job-actions'
 import { createTraceId, maskPhone, safeErrorMessage, timestamp, type DiagnosticCode } from '@/lib/support-diagnostics'
+import { isWithinLateResponseGraceWindow } from '@/lib/matching/config'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
@@ -123,7 +124,19 @@ async function acceptLeadWithToken(formData: FormData) {
   }
 
   const lead = resolved.lead
-  const leadExpired = lead.status === 'EXPIRED' || Boolean(lead.expiresAt && lead.expiresAt <= new Date())
+  // Late-response grace (2026-07-01 incident): an AUTO_ASSIGN lead that just
+  // passed expiresAt (or was flipped EXPIRED by the rotation cron) may still
+  // be honored while the job is genuinely unmatched. Don't pre-reject here —
+  // acceptAssignmentOffer authoritatively decides (no Match row, jobRequest
+  // still OPEN/MATCHING, no other ACCEPTED lead) and returns EXPIRED/TAKEN
+  // when the grace does not apply.
+  const lateAcceptCandidate =
+    lead.jobRequest.assignmentMode === 'AUTO_ASSIGN' &&
+    ['EXPIRED', 'SENT', 'VIEWED'].includes(lead.status) &&
+    isWithinLateResponseGraceWindow(lead.expiresAt)
+  const leadExpired =
+    !lateAcceptCandidate &&
+    (lead.status === 'EXPIRED' || Boolean(lead.expiresAt && lead.expiresAt <= new Date()))
   const leadDeclined = lead.status === 'DECLINED'
   const leadAccepted = lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED'
   if (leadExpired || leadAccepted || leadDeclined) {
@@ -319,7 +332,21 @@ async function declineLeadWithToken(formData: FormData) {
   if (lead.status === 'DECLINED') {
     redirect(`/leads/access/${encodeURIComponent(token)}?declined=already&actionTraceId=${encodeURIComponent(traceId)}`)
   }
-  if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {
+  // Late-response grace (2026-07-01 incident): mirror lateAcceptCandidate in
+  // acceptLeadWithToken above. The page renders the Decline button whenever
+  // the lead is respondable — which now includes an in-grace EXPIRED
+  // AUTO_ASSIGN lead — so pre-rejecting here would dead-end that button.
+  // Declining a graceable lead is legitimate: declineLead/rejectAssignmentOffer
+  // stay the authority (a hold the cron already rotated resolves gracefully as
+  // alreadyClosed instead of recording a duplicate decline).
+  const lateResponseCandidate =
+    lead.jobRequest.assignmentMode === 'AUTO_ASSIGN' &&
+    ['EXPIRED', 'SENT', 'VIEWED'].includes(lead.status) &&
+    isWithinLateResponseGraceWindow(lead.expiresAt)
+  const closedForDecline =
+    !lateResponseCandidate &&
+    (lead.status === 'EXPIRED' || Boolean(lead.expiresAt && lead.expiresAt <= new Date()))
+  if (closedForDecline || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {
     redirectLeadActionError(token, {
       error: 'closed',
       errorCode: lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED' ? 'LEAD_ALREADY_ACCEPTED' : 'LEAD_EXPIRED',
@@ -737,10 +764,34 @@ export default async function ProviderLeadAccessPage({
   const isCreditRequired = lead.status === 'CREDIT_REQUIRED'
   const isCreditApplied = lead.status === 'CREDIT_APPLIED'
   const isDeclined = lead.status === 'DECLINED'
-  const isExpired = lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false)
-  const isOpenOffer = lead.status === 'SEND_PENDING' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'
+  // Late-response grace: keep the accept action reachable for an AUTO_ASSIGN
+  // lead that just expired (or was cron-flipped to EXPIRED) while still inside
+  // the grace window. The accept server action + acceptAssignmentOffer remain
+  // the authority — they re-verify the job is genuinely unmatched and return
+  // EXPIRED/TAKEN otherwise. Mirrors the guard in acceptLeadWithToken above.
+  const renderLateAcceptCandidate =
+    jr.assignmentMode === 'AUTO_ASSIGN' &&
+    ['EXPIRED', 'SENT', 'VIEWED'].includes(lead.status) &&
+    isWithinLateResponseGraceWindow(lead.expiresAt)
+  const isExpired =
+    !renderLateAcceptCandidate &&
+    (lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false))
+  const isOpenOffer =
+    lead.status === 'SEND_PENDING' ||
+    lead.status === 'SENT' ||
+    lead.status === 'VIEWED' ||
+    lead.status === 'CUSTOMER_SELECTED' ||
+    (lead.status === 'EXPIRED' && renderLateAcceptCandidate)
   const canRespondToLead = isOpenOffer && !isExpired
-  const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)
+  // Countdown (and the auto-refresh watcher) only make sense before expiry.
+  // A within-grace late-accept page shows a grace notice instead — mounting
+  // LeadExpiryWatcher with a past expiresAt would refresh-loop the page.
+  const showExpiryCountdown = Boolean(
+    lead.expiresAt && canRespondToLead && lead.expiresAt > new Date(),
+  )
+  const showLateAcceptNotice = Boolean(
+    lead.expiresAt && canRespondToLead && lead.expiresAt <= new Date(),
+  )
   const hasAcceptedDetails = isAccepted && Boolean(lead.unlock)
   const leadRef = lead.id.slice(-8).toUpperCase()
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
@@ -931,6 +982,12 @@ export default async function ProviderLeadAccessPage({
               Expires {formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · {format(lead.expiresAt, 'HH:mm, d MMM')}
             </div>
           </>
+        )}
+
+        {showLateAcceptNotice && (
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
+            This lead recently expired, but the job has not been assigned yet — you can still try to accept it.
+          </div>
         )}
 
         {isAccepted && (

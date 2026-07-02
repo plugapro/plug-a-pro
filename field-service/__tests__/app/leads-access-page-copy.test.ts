@@ -41,13 +41,38 @@ describe('signed provider lead page copy', () => {
   })
 
   it('only renders offer countdown and response actions for active lead offers', () => {
-    expect(source).toContain("const isExpired = lead.status === 'EXPIRED'")
-    expect(source).toContain("const isOpenOffer = lead.status === 'SEND_PENDING' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'")
+    // Late-response grace (2026-07-01 incident): a just-expired AUTO_ASSIGN
+    // lead stays respondable inside the grace window; acceptAssignmentOffer
+    // stays the authority on whether the accept is honored.
+    expect(source).toContain('const renderLateAcceptCandidate =')
+    expect(source).toContain('isWithinLateResponseGraceWindow(lead.expiresAt)')
+    expect(source).toContain('!renderLateAcceptCandidate &&')
+    expect(source).toContain("(lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false))")
+    expect(source).toContain("(lead.status === 'EXPIRED' && renderLateAcceptCandidate)")
     expect(source).toContain('const canRespondToLead = isOpenOffer && !isExpired')
-    expect(source).toContain('const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)')
+    // Countdown/auto-refresh only before expiry; grace shows a notice instead.
+    expect(source).toContain('lead.expiresAt && canRespondToLead && lead.expiresAt > new Date()')
     expect(source).toContain('{showExpiryCountdown && lead.expiresAt && (')
+    expect(source).toContain('{showLateAcceptNotice && (')
     expect(source).not.toContain('{lead.expiresAt && !isAccepted && (')
     expect(source).toContain('canRespondToLead && confirmingAccept')
+  })
+
+  it('decline stays available for an in-grace late-response candidate (no dead-end)', () => {
+    // Review fix (2026-07-02): the page renders Decline whenever the lead is
+    // respondable — which includes an in-grace EXPIRED AUTO_ASSIGN lead — so
+    // declineLeadWithToken must mirror the accept path's lateAcceptCandidate
+    // guard instead of pre-rejecting on status EXPIRED / past expiresAt.
+    expect(source).toContain('const lateResponseCandidate =')
+    expect(source).toContain('const closedForDecline =')
+    expect(source).toContain('!lateResponseCandidate &&')
+    expect(source).toContain(
+      "if (closedForDecline || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {",
+    )
+    // The old unconditional pre-reject must be gone.
+    expect(source).not.toContain(
+      "if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {",
+    )
   })
 
   it('lead detail page no longer renders expiry countdown once a lead is accepted', () => {

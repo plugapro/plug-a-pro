@@ -246,6 +246,18 @@ function providerLeadAccessButtonComponent(index: number, jobUrl: string): Whats
   throw new Error('Invalid provider lead access URL for WhatsApp template button')
 }
 
+function providerJobHandoverButtonComponent(index: number, jobUrl: string): WhatsAppComponent {
+  try {
+    const url = new URL(jobUrl)
+    const match = url.pathname.match(/\/provider\/jobs\/(.+)/)
+    if (match?.[1]) return urlButtonComponent(index, `${match[1]}${url.search}`)
+  } catch {
+    // Fall through to the raw-url guard below. A malformed URL must never be
+    // sent as visible text, but surfacing the context helps find bad callers.
+  }
+  throw new Error('Invalid provider job handover URL for WhatsApp template button')
+}
+
 function providerVerifyButtonComponent(index: number, verificationUrl: string): WhatsAppComponent {
   try {
     const url = new URL(verificationUrl)
@@ -956,6 +968,78 @@ export async function sendJobOffer(params: {
     bookingId: params.bookingId,
     to: params.providerPhone,
     templateName,
+    externalId,
+    metadata: params.metadata,
+  })
+  return externalId
+}
+
+export async function sendProviderLeadExpired(params: {
+  to: string
+  firstName: string
+  service: string
+  area: string // "Bromhof, Johannesburg"
+  metadata?: Record<string, unknown>
+}): Promise<string> {
+  // UTILITY template so the expiry notice reaches providers OUTSIDE the 24h
+  // session window — the legacy freeform interactive:lead_expired send failed
+  // Meta Re-engagement for cold providers. metadata should carry providerId /
+  // jobRequestId / assignmentHoldId; the message_events FK columns pick these
+  // up automatically in logOutboundMessage.
+  const externalId = await sendTemplate({
+    to: params.to,
+    template: 'provider_lead_expired',
+    metadata: params.metadata,
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.firstName },
+          { type: 'text', text: params.service },
+          { type: 'text', text: normaliseLocationDisplayName(params.area) },
+        ],
+      },
+    ],
+  })
+  await logOutboundMessage({
+    to: params.to,
+    templateName: 'provider_lead_expired',
+    externalId,
+    metadata: params.metadata,
+  })
+  return externalId
+}
+
+export async function sendProviderJobAcceptedNextSteps(params: {
+  to: string
+  firstName: string
+  service: string
+  area: string // "Bromhof, Johannesburg"
+  jobUrl: string // full signed handover URL: https://.../provider/jobs/<jobRequestId>/handover?token=...
+  metadata?: Record<string, unknown>
+}): Promise<string> {
+  // Post-acceptance provider confirmation as a UTILITY template so it works
+  // outside the 24h window. The signed job handover link travels as a URL
+  // button parameter only — the token must never appear as visible body text.
+  const externalId = await sendTemplate({
+    to: params.to,
+    template: 'provider_job_accepted_next_steps',
+    metadata: params.metadata,
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.firstName },
+          { type: 'text', text: params.service },
+          { type: 'text', text: normaliseLocationDisplayName(params.area) },
+        ],
+      },
+      providerJobHandoverButtonComponent(0, params.jobUrl),
+    ],
+  })
+  await logOutboundMessage({
+    to: params.to,
+    templateName: 'provider_job_accepted_next_steps',
     externalId,
     metadata: params.metadata,
   })

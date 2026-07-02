@@ -42,6 +42,9 @@ export type MatchDomainEvent =
       providerId: string
       bookingId: string
       latencyMs: number
+      // Present (true) when the accept was honored inside the late-response
+      // grace window after lead.expiresAt. See MATCHING_CONFIG.lateResponseGraceMinutes.
+      lateAccepted?: boolean
     }
   | {
       event: 'match.declined'
