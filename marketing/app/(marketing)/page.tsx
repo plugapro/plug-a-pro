@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
+import { jsonLdScript, localBusinessLd } from "@/lib/jsonld";
 import { Hero } from "@/components/marketing/Hero";
 import { ProblemStatement } from "@/components/marketing/ProblemStatement";
 import { ProviderStorySection } from "@/components/marketing/ProviderStorySection";
@@ -17,6 +18,10 @@ export const metadata: Metadata = buildMetadata({});
 export default function HomePage() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(localBusinessLd()) }}
+      />
       <SectionTracker />
       <ScrollDepthTracker />
       <div id="section-hero"><Hero /></div>

@@ -4,7 +4,11 @@ import { buildMetadata } from "@/lib/metadata";
 import { getAllChangelog } from "@/lib/content";
 import { Badge } from "@/components/ui/badge";
 
-export const metadata: Metadata = buildMetadata({ title: "Changelog" });
+export const metadata: Metadata = buildMetadata({
+  title: "Changelog",
+  description:
+    "Product updates and release notes for the Plug A Pro platform - new features, fixes and improvements as they ship.",
+});
 
 const TYPE_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
   feat: { label: "Feature", variant: "default" },

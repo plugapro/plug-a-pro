@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
+import { faqLd, jsonLdScript } from "@/lib/jsonld";
 import {
   Accordion,
   AccordionContent,
@@ -104,8 +105,19 @@ function FaqGroup({
 }
 
 export default function FAQPage() {
+  const faqSchema = faqLd(
+    [...CUSTOMER_FAQS, ...PROVIDER_FAQS].map((faq) => ({
+      question: faq.q,
+      answer: faq.a,
+    })),
+  );
+
   return (
     <div className="py-24 max-w-2xl mx-auto px-4">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(faqSchema) }}
+      />
       <h1 className="text-4xl font-bold mb-4 text-center">
         Frequently asked questions
       </h1>

@@ -3,7 +3,11 @@ import Link from "next/link";
 import { buildMetadata } from "@/lib/metadata";
 import { getAllDocs } from "@/lib/content";
 
-export const metadata: Metadata = buildMetadata({ title: "Documentation" });
+export const metadata: Metadata = buildMetadata({
+  title: "Documentation",
+  description:
+    "How-to guides for using Plug A Pro - requesting a job, approving quotes, bookings and getting the most out of the platform.",
+});
 
 export default async function DocsPage() {
   const docs = await getAllDocs();

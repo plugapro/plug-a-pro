@@ -102,8 +102,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   const mdxCollections: Array<[string, VeliteCollectionItem[]]> = [
     ["blog", readVeliteCollection("blog").filter((p) => !p.draft)],
-    ["changelog", readVeliteCollection("changelog")],
-    ["docs", readVeliteCollection("docs")],
+    ["changelog", readVeliteCollection("changelog").filter((p) => !p.draft)],
+    ["docs", readVeliteCollection("docs").filter((p) => !p.draft)],
   ];
   const mdxEntries: MetadataRoute.Sitemap = mdxCollections.flatMap(
     ([collection, items]) =>
