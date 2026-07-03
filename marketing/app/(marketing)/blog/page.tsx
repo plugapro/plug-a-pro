@@ -3,7 +3,11 @@ import Link from "next/link";
 import { buildMetadata } from "@/lib/metadata";
 import { getAllPosts } from "@/lib/content";
 
-export const metadata: Metadata = buildMetadata({ title: "Blog" });
+export const metadata: Metadata = buildMetadata({
+  title: "Blog",
+  description:
+    "Guides and updates from Plug A Pro on home maintenance, hiring local service providers and getting small jobs done right in South Africa.",
+});
 
 export default async function BlogPage() {
   const posts = await getAllPosts();

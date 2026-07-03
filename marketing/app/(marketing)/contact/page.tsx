@@ -3,7 +3,11 @@ import { buildMetadata } from "@/lib/metadata";
 import { ContactForm } from "@/components/marketing/ContactForm";
 import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
 
-export const metadata: Metadata = buildMetadata({ title: "Contact" });
+export const metadata: Metadata = buildMetadata({
+  title: "Contact",
+  description:
+    "Get in touch with Plug A Pro on WhatsApp or through the contact form - support for customers, service providers and partnership enquiries.",
+});
 
 export default function ContactPage() {
   return (

@@ -28,21 +28,25 @@ export async function getPostBySlug(slug: string) {
 }
 
 export async function getAllChangelog() {
-  return changelog.map((c) => ({ ...c, slug: bareSlug(c.slug) }));
+  return changelog
+    .filter((c) => !c.draft)
+    .map((c) => ({ ...c, slug: bareSlug(c.slug) }));
 }
 
 export async function getChangelogBySlug(slug: string) {
-  const entry = changelog.find((c) => bareSlug(c.slug) === slug) ?? null;
+  const entry = changelog.find((c) => bareSlug(c.slug) === slug && !c.draft) ?? null;
   if (!entry) return null;
   return { ...entry, slug: bareSlug(entry.slug) };
 }
 
 export async function getAllDocs() {
-  return docs.map((d) => ({ ...d, slug: bareSlug(d.slug) }));
+  return docs
+    .filter((d) => !d.draft)
+    .map((d) => ({ ...d, slug: bareSlug(d.slug) }));
 }
 
 export async function getDocBySlug(slug: string) {
-  const doc = docs.find((d) => bareSlug(d.slug) === slug) ?? null;
+  const doc = docs.find((d) => bareSlug(d.slug) === slug && !d.draft) ?? null;
   if (!doc) return null;
   return { ...doc, slug: bareSlug(doc.slug) };
 }

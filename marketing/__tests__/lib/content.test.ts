@@ -12,10 +12,20 @@ describe("content helpers", () => {
     expect(posts.every((p) => !p.draft)).toBe(true);
   });
 
-  it("getPostBySlug returns post or null", async () => {
-    const post = await getPostBySlug("hello-world");
-    expect(post).not.toBeNull();
-    expect(post?.slug).toBe("hello-world");
+  it("getPostBySlug returns null for drafts and unknown slugs", async () => {
+    // hello-world is the template placeholder, kept as draft: true so it
+    // never reaches lists, detail pages or the sitemap.
+    const draft = await getPostBySlug("hello-world");
+    expect(draft).toBeNull();
+    const missing = await getPostBySlug("does-not-exist");
+    expect(missing).toBeNull();
+  });
+
+  it("getAllChangelog and getAllDocs filter drafts", async () => {
+    const entries = await getAllChangelog();
+    const docs = await getAllDocs();
+    expect(entries.every((e) => !e.draft)).toBe(true);
+    expect(docs.every((d) => !d.draft)).toBe(true);
   });
 
   it("getAllChangelog returns an array", async () => {
