@@ -13,7 +13,8 @@ import {
   sendKycDriveNudges,
   summarizeKycNudgeRows,
 } from '@/lib/kyc-drive/nudge'
-import { logOutboundMessage } from '@/lib/message-events'
+import { resolveBatchCap } from '@/lib/identity-verification/nudge-shared'
+import { logOutboundMessage, markOutboundMessageFailed } from '@/lib/message-events'
 import { sendProviderKycNudge } from '@/lib/whatsapp'
 
 const DEFAULT_BATCH_CAP = 25
@@ -74,7 +75,7 @@ export async function GET(request: Request) {
       )
     }
 
-    const batchCap = Number(process.env.KYC_DRIVE_NUDGE_BATCH_CAP ?? DEFAULT_BATCH_CAP) || DEFAULT_BATCH_CAP
+    const batchCap = resolveBatchCap(process.env.KYC_DRIVE_NUDGE_BATCH_CAP, DEFAULT_BATCH_CAP)
     const result = await sendKycDriveNudges(db, {
       now,
       deadline,
@@ -83,6 +84,8 @@ export async function GET(request: Request) {
         issueLink: ({ providerId }) => issueProviderIdentityVerificationLink({ providerId, channel: 'WHATSAPP' }),
         recordAttempt: ({ to, metadata }) =>
           logOutboundMessage({ to, templateName: KYC_DRIVE_TEMPLATE, metadata }),
+        markAttemptFailed: ({ eventId, failureReason }) =>
+          markOutboundMessageFailed({ eventId, failureReason }),
         send: sendProviderKycNudge,
       },
     })

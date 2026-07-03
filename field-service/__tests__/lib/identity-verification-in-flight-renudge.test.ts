@@ -70,7 +70,10 @@ describe('resolveBatchCap', () => {
     [undefined, 100],
     ['', 100],
     ['abc', 100],
-    ['-5', 100],
+    // Negative = explicit operator disable, same as '0'. The old coercion made
+    // -1 mean "0 sends"; silently flipping it to the default (100) would
+    // invert an operator's intent.
+    ['-5', 0],
     ['NaN', 100],
     ['0', 0],
     ['1', 1],
@@ -199,7 +202,10 @@ describe('listInFlightRenudgeCandidates', () => {
     expect(rows[0].eligibleNow).toBe(true)
   })
 
-  it('excludes FAILED events from dedup and cap counting', async () => {
+  it('fetches events of EVERY status with no time bound - FAILED must block the 24h window, and the lifetime cap must be truly lifetime', async () => {
+    // Review findings 1+4 (PR #152): a status filter in the query made FAILED
+    // attempts free dedup budget (hourly re-send storms), and the 90-day scan
+    // cutoff reset the "lifetime" cap for never-expiring verification rows.
     const findMany = vi.fn().mockResolvedValue([])
     const client = {
       providerIdentityVerification: {
@@ -208,21 +214,80 @@ describe('listInFlightRenudgeCandidates', () => {
       messageEvent: { findMany },
     }
     await listInFlightRenudgeCandidates(client, { now: NOW })
-    const where = (findMany.mock.calls[0][0] as { where: { status: unknown } }).where
-    expect(where.status).toEqual({ in: ['SENT', 'DELIVERED', 'READ'] })
+    const where = (findMany.mock.calls[0][0] as { where: Record<string, unknown> }).where
+    expect(where.status).toBeUndefined()
+    expect(where.createdAt).toBeUndefined()
   })
 
-  it('bounds the MessageEvent scan to the last 90 days', async () => {
-    const findMany = vi.fn().mockResolvedValue([])
-    const client = {
-      providerIdentityVerification: {
-        findMany: vi.fn().mockResolvedValue([verification()]),
-      },
-      messageEvent: { findMany },
+  it('a FAILED attempt within 24h still blocks re-sending (retry floor), but does NOT consume the lifetime cap', async () => {
+    const failedRecent = {
+      to: '+27820000001',
+      templateName: 'provider_verification_resume_document',
+      createdAt: new Date(NOW.getTime() - 2 * HOUR_MS),
+      status: 'FAILED',
+      metadata: { verificationId: 'v1' },
     }
-    await listInFlightRenudgeCandidates(client, { now: NOW })
-    const where = (findMany.mock.calls[0][0] as { where: { createdAt: { gte: Date } } }).where
-    expect(where.createdAt.gte.getTime()).toBe(NOW.getTime() - 90 * 24 * HOUR_MS)
+    const client = clientWith([verification()], [failedRecent])
+    const [candidate] = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(candidate.eligibleNow).toBe(false) // 24h floor holds even for failures
+    expect(candidate.priorSendsForVerification).toBe(0) // cap budget preserved
+  })
+
+  it('a FAILED attempt older than 24h neither blocks nor consumes the cap - the provider gets a real retry', async () => {
+    const failedOld = {
+      to: '+27820000001',
+      templateName: 'provider_verification_resume_document',
+      createdAt: new Date(NOW.getTime() - 30 * HOUR_MS),
+      status: 'FAILED',
+      metadata: { verificationId: 'v1' },
+    }
+    const client = clientWith([verification()], [failedOld])
+    const [candidate] = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(candidate.eligibleNow).toBe(true)
+    expect(candidate.priorSendsForVerification).toBe(0)
+  })
+
+  it('SENT events older than 90 days still count toward the per-verification lifetime cap', async () => {
+    const ancient = (daysAgo: number) => ({
+      to: '+27820000001',
+      templateName: 'provider_verification_resume_document',
+      createdAt: new Date(NOW.getTime() - daysAgo * 24 * HOUR_MS),
+      status: 'SENT',
+      metadata: { verificationId: 'v1' },
+    })
+    const client = clientWith([verification()], [ancient(120), ancient(95)])
+    const [candidate] = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(candidate.priorSendsForVerification).toBe(2)
+    expect(candidate.eligibleNow).toBe(false)
+  })
+
+  it('drops rows whose provider phone is whitespace-only', async () => {
+    const client = clientWith([
+      verification({ id: 'v-ws', providerId: 'p-ws', provider: { id: 'p-ws', firstName: 'W', name: null, phone: '   ', active: true } }),
+      verification({ id: 'v-ok', providerId: 'p-ok', provider: { id: 'p-ok', firstName: 'O', name: null, phone: '+27820000009', active: true } }),
+    ])
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(rows.map(r => r.verificationId)).toEqual(['v-ok'])
+  })
+
+  it('enforces a per-phone lifetime cap across verification rows - a serially-stalling provider cannot be renudged forever', async () => {
+    // Review finding 6: PR #152 silently deleted the per-phone lifetime cap.
+    const oldSend = (i: number) => ({
+      to: '+27820000001',
+      templateName: 'provider_verification_resume_consent',
+      createdAt: new Date(NOW.getTime() - (48 + i) * HOUR_MS),
+      status: 'SENT',
+      metadata: { verificationId: `v-old-${i}` }, // all previous, different rows
+    })
+    const client = clientWith(
+      [verification({ id: 'v-new' })],
+      [oldSend(1), oldSend(2), oldSend(3), oldSend(4), oldSend(5), oldSend(6)],
+    )
+    const [candidate] = await listInFlightRenudgeCandidates(client, { now: NOW })
+    // Fresh verification row (0 sends against it), but the phone has exhausted
+    // its lifetime budget across earlier rows.
+    expect(candidate.priorSendsForVerification).toBe(0)
+    expect(candidate.eligibleNow).toBe(false)
   })
 
   it('includes provider_kyc_nudge in the dedup query so a kyc-drive nudge <24h ago blocks a resume nudge', async () => {
@@ -481,6 +546,9 @@ describe('sendInFlightRenudges', () => {
       expect(result.errors).toBe(1)
       expect(d.sendConsentResume).toHaveBeenCalledTimes(1)
       expect(d.markAttemptFailed).toHaveBeenCalledWith({ eventId: 'evt-1', failureReason: message })
+      // Review finding 10: the unprocessed remainder must stay accounted for —
+      // sent + skipped + errors covers every eligible candidate even on abort.
+      expect(result.sent + result.skipped + result.errors).toBe(3)
     },
   )
 
