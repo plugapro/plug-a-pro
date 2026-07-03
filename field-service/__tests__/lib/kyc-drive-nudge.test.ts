@@ -210,3 +210,83 @@ describe('sendKycDriveNudges', () => {
     expect(d.send).not.toHaveBeenCalled()
   })
 })
+
+// ─── PR #152 review-finding regressions ──────────────────────────────────────
+
+describe('FAILED-event bookkeeping (review findings 2+3)', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000
+
+  it('FAILED nudge events consume neither the lifetime cap nor the 7-day spacing - zero-delivery providers keep their budget', async () => {
+    const failedAt = (daysAgo: number) => ({
+      to: '+27820000001',
+      templateName: 'provider_kyc_nudge',
+      createdAt: new Date(NOW.getTime() - daysAgo * DAY_MS),
+      status: 'FAILED',
+    })
+    const client = clientWith(
+      [provider({ id: 'zero-delivery' })],
+      [failedAt(20), failedAt(13), failedAt(6)], // 3 attempts, nothing delivered
+    )
+    const [row] = await listKycNudgeCandidates(client, { now: NOW })
+    expect(row.nudgeCount).toBe(0)
+    expect(row.eligibleNow).toBe(true)
+  })
+
+  it('a FAILED attempt within the last 24h still blocks re-sending (retry floor, bounds daily retries)', async () => {
+    const client = clientWith(
+      [provider({ id: 'just-failed' })],
+      [{
+        to: '+27820000001',
+        templateName: 'provider_kyc_nudge',
+        createdAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+        status: 'FAILED',
+      }],
+    )
+    const [row] = await listKycNudgeCandidates(client, { now: NOW })
+    expect(row.nudgeCount).toBe(0)
+    expect(row.eligibleNow).toBe(false)
+  })
+
+  it('queries and keys history by the TRIMMED phone so whitespace-padded provider rows still match their own history', async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        to: '+27820000001', // events are recorded under the trimmed phone
+        templateName: 'provider_kyc_nudge',
+        createdAt: new Date(NOW.getTime() - 2 * DAY_MS),
+        status: 'SENT',
+      },
+    ])
+    const client = {
+      provider: {
+        findMany: vi.fn().mockResolvedValue([provider({ id: 'padded', phone: '  +27820000001  ' })]),
+      },
+      messageEvent: { findMany },
+    }
+    const [row] = await listKycNudgeCandidates(client, { now: NOW })
+    // Query must use the trimmed phone or the history lookup can never match.
+    const where = (findMany.mock.calls[0][0] as { where: { to: { in: string[] } } }).where
+    expect(where.to.in).toEqual(['+27820000001'])
+    // And the recent SENT event must be found: spacing blocks this provider.
+    expect(row.nudgeCount).toBe(1)
+    expect(row.eligibleNow).toBe(false)
+  })
+})
+
+describe('markAttemptFailed wiring (attempt-first symmetry with the renudge cron)', () => {
+  function depsWithFail() {
+    return {
+      issueLink: vi.fn().mockResolvedValue({ verificationUrl: 'https://app.example/provider/verify/tok' }),
+      recordAttempt: vi.fn().mockResolvedValue({ id: 'evt-9' }),
+      markAttemptFailed: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockRejectedValue(new Error('meta 500')),
+    }
+  }
+
+  it('flips the attempt event to FAILED when the send throws, so the cap is not consumed by a non-delivery', async () => {
+    const client = clientWith([provider({ id: 'a' })])
+    const d = depsWithFail()
+    const result = await sendKycDriveNudges(client, { deadline: '30 June 2026', batchCap: 10, deps: d, now: NOW })
+    expect(result.errors).toBe(1)
+    expect(d.markAttemptFailed).toHaveBeenCalledWith({ eventId: 'evt-9', failureReason: 'meta 500' })
+  })
+})

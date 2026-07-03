@@ -26,35 +26,30 @@
 
 import type { IdentityBasis, VerificationStatus } from '@prisma/client'
 
-import { KYC_DRIVE_TEMPLATE } from '@/lib/kyc-drive/nudge'
-
 import { documentFriendlyName } from './document-friendly-names'
+import {
+  countsTowardCadence,
+  IN_FLIGHT_TEMPLATE_NAMES,
+  KYC_DRIVE_TEMPLATE,
+  resolveBatchCap as resolveBatchCapShared,
+  type InFlightTemplateName,
+} from './nudge-shared'
+
+export { IN_FLIGHT_TEMPLATE_NAMES, type InFlightTemplateName }
 
 export const IN_FLIGHT_NUDGE_WINDOW_START_HOURS = 20
 export const IN_FLIGHT_NUDGE_WINDOW_END_HOURS = 28
 export const IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION = 2
+// Per-PHONE lifetime cap across ALL verification rows: a provider who serially
+// stalls new verification attempts must not be renudged forever — each row
+// gets at most 2, the phone gets at most 6, ever.
+export const IN_FLIGHT_NUDGE_MAX_PER_PHONE = 6
 export const IN_FLIGHT_DEDUP_HOURS = 24
-// Lower bound for the MessageEvent scan: verification rows expire long before
-// 90 days, so older events can never belong to a live candidate.
-export const EVENT_SCAN_DAYS = 90
-
-const IN_FLIGHT_TEMPLATE_NAMES = [
-  'provider_verification_resume_consent',
-  'provider_verification_resume_document',
-  'provider_verification_resume_selfie',
-] as const
-
-export type InFlightTemplateName = (typeof IN_FLIGHT_TEMPLATE_NAMES)[number]
 
 export const DEFAULT_IN_FLIGHT_BATCH_CAP = 100
 
-// Env-driven batch cap. An explicit "0" is a valid operator choice (send
-// nothing this run) — Number(raw) || DEFAULT would silently turn it back into
-// the default, so parse strictly instead.
 export function resolveBatchCap(raw: string | undefined): number {
-  if (raw === undefined) return DEFAULT_IN_FLIGHT_BATCH_CAP
-  const parsed = Number.parseInt(raw, 10)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_IN_FLIGHT_BATCH_CAP
+  return resolveBatchCapShared(raw, DEFAULT_IN_FLIGHT_BATCH_CAP)
 }
 
 const IN_FLIGHT_STATUSES: VerificationStatus[] = [
@@ -163,37 +158,43 @@ export async function listInFlightRenudgeCandidates(
   // (per verification) from the same result so the cron only round-trips
   // Postgres twice. Bounded to 90 days: verification rows expire well before,
   // so older events can never belong to a live candidate.
+  // Deliberately UNBOUNDED in time and status:
+  //   - lifetime caps must see all history (expiresAt:null rows can re-enter
+  //     the window months later, past any scan cutoff), and
+  //   - FAILED attempts must still enforce the 24h retry floor — excluding
+  //     them at the query freed budget for an hourly re-send storm.
   const phones = rows
-    .map(r => r.provider?.phone)
-    .filter((p): p is string => Boolean(p && p.trim()))
+    .map(r => r.provider?.phone?.trim())
+    .filter((p): p is string => Boolean(p))
   const dedupCutoff = new Date(now.getTime() - IN_FLIGHT_DEDUP_HOURS * HOUR_MS)
-  const scanCutoff = new Date(now.getTime() - EVENT_SCAN_DAYS * 24 * HOUR_MS)
 
   const events = (await client.messageEvent.findMany({
     where: {
       templateName: { in: [...IN_FLIGHT_TEMPLATE_NAMES, KYC_DRIVE_TEMPLATE] },
       direction: 'OUTBOUND',
       to: { in: phones },
-      // FAILED attempts must not consume dedup or cap budget.
-      status: { in: ['SENT', 'DELIVERED', 'READ'] },
-      createdAt: { gte: scanCutoff },
     },
-    select: { to: true, createdAt: true, templateName: true, metadata: true },
-  })) as Array<{ to: string; createdAt: Date; templateName: string; metadata?: unknown }>
+    select: { to: true, createdAt: true, templateName: true, metadata: true, status: true },
+  })) as Array<{ to: string; createdAt: Date; templateName: string; metadata?: unknown; status?: string | null }>
 
   const resumeTemplates = new Set<string>(IN_FLIGHT_TEMPLATE_NAMES)
   const recentByPhone = new Map<string, number>()
   const sendsByVerification = new Map<string, number>()
+  const sendsByPhone = new Map<string, number>()
   const lastSentByPhoneTemplate = new Map<string, Date>()
   for (const e of events) {
-    // 24h dedup is per phone across resume templates AND kyc-drive nudges —
-    // never two verification messages to one phone within a day.
+    // 24h retry floor is per phone across resume templates AND kyc-drive
+    // nudges and counts EVERY attempt including FAILED — never two
+    // verification messages (or retries) to one phone within a day.
     if (e.createdAt >= dedupCutoff) {
       recentByPhone.set(e.to, (recentByPhone.get(e.to) ?? 0) + 1)
     }
-    // The lifetime cap is per verification row and counts resume templates
-    // only; kyc-drive nudges belong to a different cadence budget.
+    // Lifetime caps count resume templates only (kyc-drive has its own
+    // budget) and only attempts that plausibly reached the recipient — a
+    // provider who received nothing keeps their budget.
     if (!resumeTemplates.has(e.templateName)) continue
+    if (!countsTowardCadence(e.status)) continue
+    sendsByPhone.set(e.to, (sendsByPhone.get(e.to) ?? 0) + 1)
     const verificationId =
       e.metadata && typeof e.metadata === 'object' && !Array.isArray(e.metadata)
         ? (e.metadata as Record<string, unknown>).verificationId
@@ -208,14 +209,18 @@ export async function listInFlightRenudgeCandidates(
 
   const candidates: InFlightRenudgeCandidate[] = []
   for (const row of rows) {
-    if (!row.provider || !row.provider.phone || !row.providerId) continue
+    // trim(): a whitespace-only phone must not become a zero-history candidate.
+    const phone = row.provider?.phone?.trim()
+    if (!row.provider || !phone || !row.providerId) continue
     const templateName = templateForStatus(row.status)
     if (!templateName) continue
-    const phone = row.provider.phone
     const priorSendsForVerification = sendsByVerification.get(row.id) ?? 0
     const recentCount = recentByPhone.get(phone) ?? 0
+    const totalSendsForPhone = sendsByPhone.get(phone) ?? 0
     const eligibleNow =
-      recentCount === 0 && priorSendsForVerification < IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION
+      recentCount === 0 &&
+      priorSendsForVerification < IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION &&
+      totalSendsForPhone < IN_FLIGHT_NUDGE_MAX_PER_PHONE
     candidates.push({
       verificationId: row.id,
       providerId: row.providerId,
@@ -298,7 +303,9 @@ export async function sendInFlightRenudges(
   // In-run same-phone guard: two stalled verification rows can share a phone;
   // the DB dedup window only sees events from BEFORE this run started.
   const sentPhones = new Set<string>()
+  let processed = 0
   for (const candidate of batch) {
+    processed += 1
     if (sentPhones.has(candidate.phone)) {
       skipped += 1
       continue
@@ -392,6 +399,10 @@ export async function sendInFlightRenudges(
       }
     }
   }
+
+  // On abort the unprocessed remainder must stay accounted for:
+  // sent + skipped + errors always covers the whole eligible set.
+  if (aborted) skipped += batch.length - processed
 
   return { rows, sent, skipped, errors, aborted }
 }

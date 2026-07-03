@@ -11,22 +11,16 @@
 // skill categories rank first so per-skill VERIFIED coverage — the
 // grace-flag-retirement gate — recovers fastest.
 
+import {
+  countsTowardCadence,
+  IN_FLIGHT_TEMPLATE_NAMES,
+  KYC_DRIVE_TEMPLATE,
+} from '@/lib/identity-verification/nudge-shared'
 import { KYC_GRACE_CUTOFF } from '@/lib/matching/kyc-grace'
 
-export const KYC_DRIVE_TEMPLATE = 'provider_kyc_nudge'
+export { KYC_DRIVE_TEMPLATE }
 export const KYC_DRIVE_MAX_NUDGES = 3
 export const KYC_DRIVE_NUDGE_SPACING_DAYS = 7
-
-// Kept in sync with IN_FLIGHT_TEMPLATE_NAMES in
-// lib/identity-verification/in-flight-renudge.ts — not imported from there
-// because that module imports KYC_DRIVE_TEMPLATE from here (avoids a cycle).
-// A resume nudge within the last 24h blocks a kyc-drive nudge to the same
-// phone; it does not count toward the kyc-drive max/spacing cadence.
-const IN_FLIGHT_RESUME_TEMPLATES = [
-  'provider_verification_resume_consent',
-  'provider_verification_resume_document',
-  'provider_verification_resume_selfie',
-] as const
 
 const SPACING_MS = KYC_DRIVE_NUDGE_SPACING_DAYS * 24 * 60 * 60 * 1000
 const CROSS_CRON_DEDUP_MS = 24 * 60 * 60 * 1000
@@ -104,22 +98,33 @@ export async function listKycNudgeCandidates(
 
   const events = (await client.messageEvent.findMany({
     where: {
-      templateName: { in: [KYC_DRIVE_TEMPLATE, ...IN_FLIGHT_RESUME_TEMPLATES] },
+      templateName: { in: [KYC_DRIVE_TEMPLATE, ...IN_FLIGHT_TEMPLATE_NAMES] },
       direction: 'OUTBOUND',
-      to: { in: targets.map(p => p.phone as string) },
+      // Events are recorded under the TRIMMED phone — query with the same key
+      // or a whitespace-padded provider row never matches its own history and
+      // escapes the cap/spacing forever.
+      to: { in: targets.map(p => (p.phone as string).trim()) },
     },
-    select: { to: true, createdAt: true, templateName: true },
-  })) as Array<{ to: string; createdAt: Date; templateName: string }>
+    select: { to: true, createdAt: true, templateName: true, status: true },
+  })) as Array<{ to: string; createdAt: Date; templateName: string; status?: string | null }>
 
   const crossCronCutoff = new Date(now.getTime() - CROSS_CRON_DEDUP_MS)
   const history = new Map<string, { count: number; last: Date }>()
   const recentlyResumeNudged = new Set<string>()
+  const recentKycAttempt = new Set<string>()
   for (const e of events) {
     if (e.templateName !== KYC_DRIVE_TEMPLATE) {
       // In-flight resume nudge: only the 24h cross-cron window applies.
       if (e.createdAt >= crossCronCutoff) recentlyResumeNudged.add(e.to)
       continue
     }
+    // 24h retry floor counts EVERY kyc-drive attempt including FAILED —
+    // bounds retries after failures to one per day.
+    if (e.createdAt >= crossCronCutoff) recentKycAttempt.add(e.to)
+    // Cap + spacing count only attempts that plausibly reached the recipient:
+    // a provider whose attempts all FAILED received nothing and keeps their
+    // full nudge budget.
+    if (!countsTowardCadence(e.status)) continue
     const row = history.get(e.to)
     if (!row) history.set(e.to, { count: 1, last: e.createdAt })
     else {
@@ -145,7 +150,8 @@ export async function listKycNudgeCandidates(
     const eligibleNow =
       nudgeCount < KYC_DRIVE_MAX_NUDGES &&
       (lastNudgedAt === null || now.getTime() - lastNudgedAt.getTime() >= SPACING_MS) &&
-      !recentlyResumeNudged.has(phone)
+      !recentlyResumeNudged.has(phone) &&
+      !recentKycAttempt.has(phone)
     return {
       providerId: p.id,
       firstName: firstNameFrom(p.firstName, p.name),
@@ -181,7 +187,11 @@ export type SendKycDriveNudgesDeps = {
   // (max nudges, spacing) hold even when a run crashes mid-batch or a post-send
   // write would have failed — a provider can never receive more messages than
   // recorded attempts.
-  recordAttempt(params: { to: string; metadata: Record<string, unknown> }): Promise<unknown>
+  recordAttempt(params: { to: string; metadata: Record<string, unknown> }): Promise<{ id: string } | null | undefined | unknown>
+  // Flips a recorded attempt to FAILED when the send throws, so a non-delivery
+  // does not consume the lifetime cap (mirrors the in-flight renudge cron).
+  // Optional for back-compat; without it a failed send burns a slot.
+  markAttemptFailed?(params: { eventId: string; failureReason: string }): Promise<unknown>
   send(params: {
     providerPhone: string
     providerFirstName: string
@@ -216,15 +226,40 @@ export async function sendKycDriveNudges(
       }
       const metadata = { kycDrive: true, providerId: candidate.providerId }
       // Attempt-first: consume the nudge slot before any message can go out.
-      // A failed send after this point burns a slot — polite bias by design.
-      await opts.deps.recordAttempt({ to: candidate.phone, metadata })
-      await opts.deps.send({
-        providerPhone: candidate.phone,
-        providerFirstName: candidate.firstName,
-        deadline: opts.deadline,
-        verificationUrl,
-        metadata,
-      })
+      // A confirmed send failure flips the event to FAILED below so the slot
+      // is returned; only the 24h retry floor keeps counting it.
+      const attempt = (await opts.deps.recordAttempt({ to: candidate.phone, metadata })) as
+        | { id?: unknown }
+        | null
+        | undefined
+      const attemptEventId = typeof attempt?.id === 'string' ? attempt.id : null
+      try {
+        await opts.deps.send({
+          providerPhone: candidate.phone,
+          providerFirstName: candidate.firstName,
+          deadline: opts.deadline,
+          verificationUrl,
+          metadata,
+        })
+      } catch (sendError) {
+        if (attemptEventId && opts.deps.markAttemptFailed) {
+          await opts.deps
+            .markAttemptFailed({
+              eventId: attemptEventId,
+              failureReason: sendError instanceof Error ? sendError.message : String(sendError),
+            })
+            .catch((markError) => {
+              // Event stays SENT and keeps consuming cap budget — polite bias:
+              // better to under-send than double-send.
+              console.error('[kyc-drive] mark-failed write failed', {
+                eventId: attemptEventId,
+                providerId: candidate.providerId,
+                error: markError instanceof Error ? markError.message : String(markError),
+              })
+            })
+        }
+        throw sendError
+      }
       sent += 1
     } catch (error) {
       errors += 1
