@@ -164,7 +164,15 @@ function isProviderPendingReview(provider: {
 }
 
 function safeProviderStatusReason(reason?: string | null) {
-  return reason?.trim() ? `\nReason: ${reason.trim()}` : ''
+  if (!reason?.trim()) return ''
+  // Strip machine-marker lines (e.g. [quality-gate], [ops-review-support]) so
+  // internal ops notes never reach the provider.
+  const stripped = reason
+    .split('\n')
+    .filter((line) => !/^\[.+\]/.test(line.trim()))
+    .join('\n')
+    .trim()
+  return stripped ? `\nReason: ${stripped}` : ''
 }
 
 function maskPhoneForJourneyLog(phone: string) {

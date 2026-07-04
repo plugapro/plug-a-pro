@@ -8,6 +8,10 @@ import { isPersistableStatus, persistDiditDecision } from '@/lib/identity-verifi
 import { getAdapter, toVendorKey } from '@/lib/identity-verification/vendors/registry'
 import type { ParseWebhookResult } from '@/lib/identity-verification/vendors/types'
 import { raiseSecurityReviewEvent } from '@/lib/security/security-event-service'
+import {
+  completeApplicationForPassedVerification,
+  recordFailedVerificationForApplication,
+} from '@/lib/provider-onboarding/quality-gate-submission'
 
 export const runtime = 'nodejs'
 
@@ -102,7 +106,7 @@ export async function POST(
 
   const verification = await db.providerIdentityVerification.findUniqueOrThrow({
     where: { id: distinctIds[0] },
-    select: { id: true },
+    select: { id: true, providerApplicationDraftId: true, providerId: true },
   })
 
   let applied: Awaited<ReturnType<typeof applyVendorVerdict>> | null = null
@@ -127,6 +131,27 @@ export async function POST(
       parsed,
       applied,
     })
+  }
+
+  // Draft-anchored completion: if this verification was issued for a draft,
+  // complete or fail the application based on the verdict.
+  if (applied && verification.providerApplicationDraftId) {
+    try {
+      if (applied.status === 'PASSED') {
+        await completeApplicationForPassedVerification(db, { verificationId: verification.id })
+      } else if (applied.status === 'FAILED') {
+        await recordFailedVerificationForApplication(db, { verificationId: verification.id })
+      }
+    } catch (completionError) {
+      // Completion error must NOT crash the webhook — record it but still return 200
+      await db.providerVerificationWebhookEvent.update({
+        where: { id: row.id },
+        data: {
+          processingError: completionError instanceof Error ? completionError.message : String(completionError),
+        },
+      })
+      // Fall through to processedAt update and return ok: true
+    }
   }
 
   await db.providerVerificationWebhookEvent.update({
