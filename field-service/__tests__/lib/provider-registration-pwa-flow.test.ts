@@ -464,8 +464,13 @@ describe('provider registration PWA flow', () => {
   })
 })
 
+// TODO: the `as any` casts below mirror the file's existing SubmitClient mock pattern —
+// remove once the Prisma tx mock is typed against SubmitClient centrally.
 describe('pwa-flow quality gate', () => {
-  beforeEach(() => gateEnabled.mockReset())
+  beforeEach(() => {
+    gateEnabled.mockReset()
+    gateEnabled.mockResolvedValue(false)
+  })
 
   it('rejects <3 photos with code QUALITY_GATE_EVIDENCE when gate ON', async () => {
     gateEnabled.mockResolvedValue(true)
@@ -515,6 +520,7 @@ describe('pwa-flow quality gate', () => {
   it('rejects high-risk skill with no certificationRef as QUALITY_GATE_CERTIFICATION when gate ON', async () => {
     gateEnabled.mockResolvedValue(true)
     const { client } = createSubmitClient()
+    // Cert gate depends on evaluateCertificationGate receiving real skills; empty array bypasses the check.
     const err = await submitProviderRegistrationApplication(client as any, {
       draftId: 'draft-1',
       resumeToken: 'resume-token',
