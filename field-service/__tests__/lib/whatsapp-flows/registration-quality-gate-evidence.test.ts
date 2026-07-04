@@ -126,4 +126,38 @@ describe('WhatsApp evidence gate', () => {
     }))
     expect(result.nextStep).toBe('reg_pending')
   })
+
+  it('plain-text note with <3 photos does NOT advance to summary when gate ON', async () => {
+    // Simulates: applicant tapped "Add work photo/note" (evidence_add) and then
+    // replied with a plain-text note — previously bypassed the evidence gate.
+    const result = await handleRegistrationFlow(buildCtx({
+      step: 'reg_collect_evidence',
+      reply: { type: 'text', text: 'I have done many plumbing jobs' },
+      data: { evidenceFileUrls: ['a', 'b'], skills: ['painting'] },
+    }))
+    expect(result.nextStep).toBe('reg_collect_evidence')
+    // Shortfall copy must be sent (contains the deficit count)
+    expect(mockSendText.mock.calls.flat().join(' ')).toMatch(/1 more|more photo/)
+  })
+
+  it('plain-text note with ≥3 photos advances to summary when gate ON', async () => {
+    const result = await handleRegistrationFlow(buildCtx({
+      step: 'reg_collect_evidence',
+      reply: { type: 'text', text: 'Quality work guaranteed' },
+      data: { evidenceFileUrls: ['a', 'b', 'c'], skills: ['painting'] },
+    }))
+    expect(result.nextStep).toBe('reg_pending')
+  })
+
+  it('plain-text note with <3 photos routes to certification when gate ON + high-risk', async () => {
+    // With ≥3 photos a high-risk provider should be routed to cert, not summary —
+    // this test uses 2 photos to confirm gate still blocks first.
+    const result = await handleRegistrationFlow(buildCtx({
+      step: 'reg_collect_evidence',
+      reply: { type: 'text', text: 'PIRB licensed since 2019' },
+      data: { evidenceFileUrls: ['a', 'b'], skills: ['plumbing'] },
+    }))
+    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(mockSendText.mock.calls.flat().join(' ')).toMatch(/1 more|more photo/)
+  })
 })

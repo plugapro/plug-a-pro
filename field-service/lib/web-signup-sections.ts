@@ -67,6 +67,14 @@ export function selectMissingSections(data: Record<string, unknown>, opts: Secti
       return !isFieldCaptured(data, 'certificationRef')
     }
 
+    // When the gate is ON and evidence is the section under evaluation, re-prompt
+    // even if some URLs are already present but the count is below the minimum.
+    // Gate OFF → fall through to the generic captured-field check (unchanged).
+    if (s.key === 'evidence' && gateEnabled) {
+      const captured = Array.isArray(data.evidenceFileUrls) ? (data.evidenceFileUrls as string[]).length : 0
+      return captured < MIN_EVIDENCE_PHOTOS
+    }
+
     return s.fields.some((f) => !isFieldCaptured(data, f))
   })
 }

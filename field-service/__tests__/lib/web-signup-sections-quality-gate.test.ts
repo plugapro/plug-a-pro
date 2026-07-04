@@ -72,3 +72,58 @@ describe('selectMissingSections — certification gate', () => {
     expect(sections.map((s) => s.key)).not.toContain('certification')
   })
 })
+
+describe('selectMissingSections — evidence gate (Fix B)', () => {
+  it('gate ON + 1 captured URL → includes evidence section (below minimum)', () => {
+    const sections = selectMissingSections(
+      { evidenceFileUrls: ['https://example.vercel-storage.com/a.jpg'] },
+      { gateEnabled: true },
+    )
+    expect(sections.map((s) => s.key)).toContain('evidence')
+  })
+
+  it('gate ON + 2 captured URLs → includes evidence section (still below minimum)', () => {
+    const sections = selectMissingSections(
+      {
+        evidenceFileUrls: [
+          'https://example.vercel-storage.com/a.jpg',
+          'https://example.vercel-storage.com/b.jpg',
+        ],
+      },
+      { gateEnabled: true },
+    )
+    expect(sections.map((s) => s.key)).toContain('evidence')
+  })
+
+  it('gate ON + 3 captured URLs → does NOT include evidence section (meets minimum)', () => {
+    const sections = selectMissingSections(
+      {
+        evidenceFileUrls: [
+          'https://example.vercel-storage.com/a.jpg',
+          'https://example.vercel-storage.com/b.jpg',
+          'https://example.vercel-storage.com/c.jpg',
+        ],
+      },
+      { gateEnabled: true },
+    )
+    expect(sections.map((s) => s.key)).not.toContain('evidence')
+  })
+
+  it('gate OFF + 1 captured URL → does NOT include evidence section (current behaviour unchanged)', () => {
+    const sections = selectMissingSections(
+      { evidenceFileUrls: ['https://example.vercel-storage.com/a.jpg'] },
+      { gateEnabled: false },
+    )
+    expect(sections.map((s) => s.key)).not.toContain('evidence')
+  })
+
+  it('gate OFF + 0 URLs → includes evidence section (field empty, gate-OFF behaviour)', () => {
+    const sections = selectMissingSections({ evidenceFileUrls: [] }, { gateEnabled: false })
+    expect(sections.map((s) => s.key)).toContain('evidence')
+  })
+
+  it('gate OFF + opts omitted + 1 URL → does NOT include evidence (backward compat)', () => {
+    const sections = selectMissingSections({ evidenceFileUrls: ['https://example.vercel-storage.com/a.jpg'] })
+    expect(sections.map((s) => s.key)).not.toContain('evidence')
+  })
+})

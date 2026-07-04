@@ -1921,6 +1921,21 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_evidence' }
   }
 
+  // ── Evidence-gate check before advancing to summary (text-note path) ───────
+  // A plain-text note must pass the same gate as evidence_done / evidence_skip.
+  // Gate OFF → unchanged behaviour (proceed directly to summary).
+  if (qualityGate) {
+    const gate = evaluateEvidenceGate(ctx.data.evidenceFileUrls ?? [])
+    if (!gate.ok) {
+      await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
+      return { nextStep: 'reg_collect_evidence' }
+    }
+    if (hasHighRiskServiceSelection(ctx.data.skills ?? [])) {
+      await sendCertificationPrompt(ctx.phone)
+      return { nextStep: 'reg_collect_certification', nextData: { evidenceNote } }
+    }
+  }
+
   return showRegistrationSummary(ctx, { evidenceNote })
 }
 
