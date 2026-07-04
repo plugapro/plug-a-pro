@@ -464,6 +464,7 @@ model ProviderApplicationDraft {
   updatedAt              DateTime  @updatedAt
 
   submittedApplication     ProviderApplication?      @relation(fields: [submittedApplicationId], references: [id], onDelete: SetNull)
+  identityVerifications    ProviderIdentityVerification[]
   registrationResumeTokens RegistrationResumeToken[]
 
   @@index([phone])
@@ -1079,6 +1080,7 @@ model ProviderIdentityVerification {
   id                           String                     @id @default(cuid())
   providerId                   String?
   providerApplicationId        String?
+  providerApplicationDraftId   String?
   channel                      VerificationChannel
   identityBasis                IdentityBasis
   issuingCountry               String?
@@ -1129,9 +1131,10 @@ model ProviderIdentityVerification {
   createdAt                    DateTime                   @default(now())
   updatedAt                    DateTime                   @updatedAt
 
-  provider            Provider?                          @relation(fields: [providerId], references: [id], onDelete: SetNull)
-  providerApplication ProviderApplication?               @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
-  documents           ProviderIdentityDocument[]
+  provider                 Provider?                          @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  providerApplication      ProviderApplication?               @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
+  providerApplicationDraft ProviderApplicationDraft?          @relation(fields: [providerApplicationDraftId], references: [id], onDelete: SetNull)
+  documents                ProviderIdentityDocument[]
   events              ProviderVerificationEvent[]
   webhookEvents       ProviderVerificationWebhookEvent[]
   consentEvents       ProviderIdentityConsentEvent[]
@@ -1145,6 +1148,7 @@ model ProviderIdentityVerification {
   @@index([providerId])
   @@index([providerId, status, countsTowardAttemptCap])
   @@index([providerApplicationId])
+  @@index([providerApplicationDraftId])
   @@index([assuranceLevel, status])
   @@index([sourceCheckProvider, vendorReference])
   @@index([sourceCheckProvider, vendorWorkflowId])
