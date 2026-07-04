@@ -14,7 +14,7 @@ function fakeClient() {
     providerApplication: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
     provider: { findFirst: vi.fn().mockResolvedValue(null) },
     // add just enough of the methods submitProviderApplication touches
-  } as any
+  } as any // TODO: type the Prisma tx stub once mock helpers are centralised
 }
 
 describe('submitProviderApplication quality gate', () => {
@@ -23,14 +23,15 @@ describe('submitProviderApplication quality gate', () => {
   it('rejects when gate ON and <3 evidence photos', async () => {
     gateEnabled.mockResolvedValue(true)
     await expect(
-      submitProviderApplication(fakeClient(), { name: 'X', phone: '+2782', skills: ['painting'], evidenceFileUrls: ['a', 'b'] } as any, { source: 'web' } as any),
+      submitProviderApplication(fakeClient(), { name: 'X', phone: '+2782', skills: ['painting'], evidenceFileUrls: ['a', 'b'] } as any, { source: 'web' } as any), // TODO: type the input payload once types are stabilised
     ).rejects.toThrow('QUALITY_GATE_EVIDENCE')
   })
 
+  // Depends on 'plumbing' being in the high-risk set (lib/service-category-policy.ts).
   it('rejects when gate ON, high-risk skill, no certification', async () => {
     gateEnabled.mockResolvedValue(true)
     await expect(
-      submitProviderApplication(fakeClient(), { name: 'X', phone: '+2782', skills: ['plumbing'], evidenceFileUrls: ['a', 'b', 'c'] } as any, { source: 'web' } as any),
+      submitProviderApplication(fakeClient(), { name: 'X', phone: '+2782', skills: ['plumbing'], evidenceFileUrls: ['a', 'b', 'c'] } as any, { source: 'web' } as any), // TODO: type the input payload once types are stabilised
     ).rejects.toThrow('QUALITY_GATE_CERTIFICATION')
   })
 
@@ -39,7 +40,8 @@ describe('submitProviderApplication quality gate', () => {
     const client = fakeClient()
     // create() resolves to a minimal application; assert it is reached
     client.providerApplication.create.mockResolvedValue({ id: 'app-1' })
-    await submitProviderApplication(client, { name: 'X', phone: '+2782', skills: ['plumbing'], evidenceFileUrls: [] } as any, { source: 'web' } as any).catch(() => {})
+    await submitProviderApplication(client, { name: 'X', phone: '+2782', skills: ['plumbing'], evidenceFileUrls: [] } as any, { source: 'web' } as any).catch(() => {}) // TODO: type the input payload once types are stabilised
     expect(gateEnabled).toHaveBeenCalled()
+    expect(client.providerApplication.create).toHaveBeenCalled()
   })
 })
