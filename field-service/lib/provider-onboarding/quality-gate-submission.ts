@@ -239,10 +239,87 @@ async function createApplicationInline(
   return application
 }
 
+// ─── Internal: create ProviderApplication inline for PWA channels (failure path) ─
+// Used when a PWA_RESUME or PWA_SELF_SERVE applicant fails KYC a 2nd+ time.
+// submitProviderApplication always creates PENDING and has a conflict guard, so
+// we create the row directly (mirroring createApplicationInline) with the status
+// override needed for the MORE_INFO_REQUIRED failure path.
+
+async function createPwaApplicationInline(
+  tx: Prisma.TransactionClient,
+  args: {
+    phone: string
+    name: string
+    email?: string | null
+    idNumber?: string | null
+    skills: string[]
+    serviceAreas: string[]
+    experience?: string | null
+    availability: string
+    evidenceNote?: string | null
+    evidenceFileUrls?: string[]
+    callOutFee?: number | null
+    reference1Name?: string | null
+    reference1Mobile?: string | null
+    reference2Name?: string | null
+    reference2Mobile?: string | null
+    ctwaReferral?: unknown | null
+    providerId?: string | null
+    status: 'PENDING' | 'MORE_INFO_REQUIRED'
+    notesAppend: string | null
+  },
+) {
+  const application = await tx.providerApplication.create({
+    data: {
+      phone: args.phone,
+      name: args.name,
+      email: args.email ?? null,
+      idNumber: args.idNumber ?? null,
+      skills: args.skills,
+      serviceAreas: args.serviceAreas,
+      experience: args.experience ?? null,
+      availability: args.availability,
+      evidenceNote: args.evidenceNote ?? null,
+      evidenceFileUrls: args.evidenceFileUrls ?? [],
+      callOutFee: args.callOutFee ?? null,
+      reference1Name: args.reference1Name ?? null,
+      reference1Mobile: args.reference1Mobile ?? null,
+      reference2Name: args.reference2Name ?? null,
+      reference2Mobile: args.reference2Mobile ?? null,
+      // Note: certificationRef is not a column on ProviderApplication; it lives
+      // only in the draft's submitPayload for quality-gate evaluation.
+      providerId: args.providerId ?? null,
+      status: args.status,
+      submittedAt: new Date(),
+      // CTWA ad attribution (null-safe)
+      ...(args.ctwaReferral != null
+        ? {
+            ctwaSourceType: (args.ctwaReferral as Record<string, unknown>).sourceType as string | undefined ?? null,
+            ctwaSourceId: (args.ctwaReferral as Record<string, unknown>).sourceId as string | undefined ?? null,
+            ctwaClid: (args.ctwaReferral as Record<string, unknown>).ctwaClid as string | undefined ?? null,
+            ctwaHeadline: (args.ctwaReferral as Record<string, unknown>).headline as string | undefined ?? null,
+            ctwaCapturedAt: (args.ctwaReferral as Record<string, unknown>).capturedAt
+              ? new Date((args.ctwaReferral as Record<string, unknown>).capturedAt as string)
+              : null,
+          }
+        : {}),
+    },
+  })
+
+  if (args.notesAppend) {
+    await tx.providerApplication.update({
+      where: { id: application.id },
+      data: { notes: args.notesAppend },
+    })
+  }
+
+  return application
+}
+
 // ─── Internal: create provider categories in tx ───────────────────────────────
 
 async function createProviderCategoryRows(
-  tx: any, // tx type not exported from Prisma client
+  tx: any, // TODO: replace with Prisma.TransactionClient once the tx type is exported/threadable
   providerId: string,
   payload: Qgv2WhatsappSubmitPayload,
 ) {
@@ -276,7 +353,7 @@ async function createProviderCategoryRows(
 // ─── Internal: link attachments non-fatally ───────────────────────────────────
 
 async function linkAttachmentToApplication(
-  tx: any, // tx type not exported from Prisma client
+  tx: any, // TODO: replace with Prisma.TransactionClient once the tx type is exported/threadable
   attachmentId: string | null | undefined,
   providerApplicationId: string,
   tag: string,
@@ -669,80 +746,181 @@ export async function recordFailedVerificationForApplication(
     },
   })
 
+  const rawPayload = draft.submitPayload as Record<string, unknown>
+  if (!rawPayload || typeof rawPayload !== 'object') {
+    throw new Error('ProviderApplicationDraft.submitPayload is missing or not an object')
+  }
+
+  const channel = rawPayload.channel as string
+
   if (failCount >= 2) {
     // 4. 2nd+ failure: create MORE_INFO_REQUIRED application
-
-    const rawPayload = draft.submitPayload as Record<string, unknown>
-    if (!rawPayload || typeof rawPayload !== 'object') {
-      throw new Error('ProviderApplicationDraft.submitPayload is missing or not an object')
-    }
-    if ((rawPayload.channel as string) !== 'WHATSAPP') {
-      throw new Error('Non-WHATSAPP channel not yet implemented for failure path (Task 2.6 concern)')
-    }
-
-    const payload = rawPayload as unknown as Qgv2WhatsappSubmitPayload
     let applicationId: string
+    const qualityGateNote = appendQualityGateNote(null)
 
-    await client.$transaction(async (tx) => {
-      // Sync provider record (returns id string)
-      const providerId = await syncProviderRecord(tx as unknown as typeof db, {
-        ...payload.syncProviderArgs,
-        skipEnrichment: true,
-      })
+    if (channel === 'WHATSAPP') {
+      const payload = rawPayload as unknown as Qgv2WhatsappSubmitPayload
 
-      // Create application with MORE_INFO_REQUIRED
-      const qualityGateNote = appendQualityGateNote(null)
-      const application = await createApplicationInline(tx, {
-        submitApplicationArgs: { ...payload.submitApplicationArgs, providerId },
-        providerId,
-        status: 'MORE_INFO_REQUIRED',
-        notesAppend: qualityGateNote,
-      })
-      applicationId = application.id
+      await client.$transaction(async (tx) => {
+        // Sync provider record (returns id string)
+        const providerId = await syncProviderRecord(tx as unknown as typeof db, {
+          ...payload.syncProviderArgs,
+          skipEnrichment: true,
+        })
 
-      // Link draft and verification to the new application
-      await tx.providerApplicationDraft.update({
-        where: { id: draft.id },
-        data: { submittedApplicationId: applicationId },
+        // Create application with MORE_INFO_REQUIRED
+        const application = await createApplicationInline(tx, {
+          submitApplicationArgs: { ...payload.submitApplicationArgs, providerId },
+          providerId,
+          status: 'MORE_INFO_REQUIRED',
+          notesAppend: qualityGateNote,
+        })
+        applicationId = application.id
+
+        // Link draft and verification to the new application
+        await tx.providerApplicationDraft.update({
+          where: { id: draft.id },
+          data: { submittedApplicationId: applicationId },
+        })
+        await tx.providerIdentityVerification.update({
+          where: { id: verificationId },
+          data: { providerApplicationId: applicationId },
+        })
       })
-      await tx.providerIdentityVerification.update({
-        where: { id: verificationId },
-        data: { providerApplicationId: applicationId },
+    } else if (channel === 'PWA_RESUME') {
+      // PWA_RESUME: submitProviderApplication always creates PENDING and has a
+      // conflict guard, so we create the row directly with the status override.
+      // No WhatsApp message is sent — the in-flight re-nudge cron + applicant's
+      // status polling handle the MORE_INFO_REQUIRED state on the web side.
+      const payload = rawPayload as unknown as Qgv2PwaResumeSubmitPayload
+
+      await client.$transaction(async (tx) => {
+        const application = await createPwaApplicationInline(tx, {
+          phone: payload.phone,
+          name: payload.name,
+          idNumber: payload.idNumber ?? null,
+          skills: payload.skills,
+          serviceAreas: payload.serviceAreas,
+          availability: payload.availability,
+          experience: payload.experience ?? null,
+          evidenceNote: payload.evidenceNote ?? null,
+          evidenceFileUrls: payload.evidenceFileUrls ?? [],
+          ctwaReferral: payload.ctwaReferral ?? null,
+          status: 'MORE_INFO_REQUIRED',
+          notesAppend: qualityGateNote,
+        })
+        applicationId = application.id
+
+        await tx.providerApplicationDraft.update({
+          where: { id: draft.id },
+          data: { submittedApplicationId: applicationId },
+        })
+        await tx.providerIdentityVerification.update({
+          where: { id: verificationId },
+          data: { providerApplicationId: applicationId },
+        })
       })
-    })
+    } else if (channel === 'PWA_SELF_SERVE') {
+      // PWA_SELF_SERVE: sync the Provider row first (gate-ON deferred creation),
+      // then create the application with MORE_INFO_REQUIRED directly.
+      // No WhatsApp message is sent — the web flow handles the MORE_INFO state.
+      const payload = rawPayload as unknown as Qgv2PwaSelfServeSubmitPayload
+
+      await client.$transaction(async (tx) => {
+        const providerId = await syncProviderRecord(tx as unknown as typeof db, {
+          phone: payload.phone,
+          name: payload.name,
+          email: payload.email ?? null,
+          skills: payload.skills,
+          serviceAreas: payload.serviceAreas,
+          active: true,
+          availableNow: false,
+          verified: false,
+          isTestUser: false,
+          cohortName: null,
+          locationNodeIds: payload.locationNodeIds ?? [],
+          skipEnrichment: true,
+        })
+
+        const application = await createPwaApplicationInline(tx, {
+          phone: payload.phone,
+          name: payload.name,
+          email: payload.email ?? null,
+          skills: payload.skills,
+          serviceAreas: payload.serviceAreas,
+          availability: payload.availability,
+          experience: payload.experience ?? null,
+          evidenceNote: payload.evidenceNote ?? null,
+          evidenceFileUrls: payload.evidenceFileUrls ?? [],
+          callOutFee: payload.callOutFee ?? null,
+          reference1Name: payload.reference1Name ?? null,
+          reference1Mobile: payload.reference1Mobile ?? null,
+          reference2Name: payload.reference2Name ?? null,
+          reference2Mobile: payload.reference2Mobile ?? null,
+          providerId,
+          status: 'MORE_INFO_REQUIRED',
+          notesAppend: qualityGateNote,
+        })
+        applicationId = application.id
+
+        await tx.providerApplicationDraft.update({
+          where: { id: draft.id },
+          data: { submittedApplicationId: applicationId },
+        })
+        await tx.providerIdentityVerification.update({
+          where: { id: verificationId },
+          data: { providerApplicationId: applicationId },
+        })
+      })
+    } else {
+      throw new Error(`Unknown submit payload channel: ${channel}`)
+    }
 
     console.info('[quality-gate-submission] 2nd+ KYC failure — created MORE_INFO_REQUIRED application', {
       verificationId,
       applicationId: applicationId!,
       draftId: draft.id,
       failCount,
+      channel,
     })
   } else {
-    // 5. 1st failure: re-issue the verification link so the applicant can retry
+    // 5. 1st failure: re-issue the verification link so the applicant can retry.
+    // Channel mapping: WHATSAPP → 'WHATSAPP'; PWA_RESUME/PWA_SELF_SERVE → 'PWA'.
+    // For PWA channels, no WhatsApp nudge is sent — the in-flight re-nudge cron
+    // and the applicant's status polling handle retry. Re-issuing the link is
+    // idempotent (issueProviderApplicationVerificationLink is idempotent by design).
+    const verificationChannel: 'WHATSAPP' | 'PWA' =
+      channel === 'WHATSAPP' ? 'WHATSAPP' : 'PWA'
+
     try {
       await issueProviderApplicationVerificationLink({
         providerApplicationDraftId: draft.id,
-        channel: 'WHATSAPP',
+        channel: verificationChannel,
       })
 
-      const phone = (draft.phone as string | null) ?? (
-        (draft.submitPayload as Record<string, unknown>)?.normalizedPhone as string | null
-      )
-
-      if (phone) {
-        await sendButtons(
-          phone,
-          `❌ Your identity verification was unsuccessful.\n\nYou can try again — tap the button below to re-verify.`,
-          [
-            { id: 'provider_verify_retry', title: 'Try Again' },
-            { id: 'back_home', title: 'Main Menu' },
-          ],
+      // Only send a WhatsApp nudge for WHATSAPP-channel applicants.
+      // PWA applicants have no WhatsApp contact on the verification flow.
+      if (channel === 'WHATSAPP') {
+        const phone = (draft.phone as string | null) ?? (
+          (draft.submitPayload as Record<string, unknown>)?.normalizedPhone as string | null
         )
+
+        if (phone) {
+          await sendButtons(
+            phone,
+            `❌ Your identity verification was unsuccessful.\n\nYou can try again — tap the button below to re-verify.`,
+            [
+              { id: 'provider_verify_retry', title: 'Try Again' },
+              { id: 'back_home', title: 'Main Menu' },
+            ],
+          )
+        }
       }
     } catch (err) {
       console.warn('[quality-gate-submission] 1st failure retry link/message failed (non-fatal)', {
         verificationId,
         draftId: draft.id,
+        channel,
         error: err instanceof Error ? err.message : String(err),
       })
     }

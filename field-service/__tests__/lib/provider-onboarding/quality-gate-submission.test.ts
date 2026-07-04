@@ -524,6 +524,291 @@ describe('completeApplicationForPassedVerification — PWA_RESUME channel', () =
   })
 })
 
+describe('recordFailedVerificationForApplication — PWA failure paths', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-pwa-fail',
+      providerApplicationDraftId: 'draft-pwa-fail',
+    })
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => {
+      return fn(mockDb)
+    })
+
+    mockSyncProviderRecord.mockResolvedValue('provider-pwa-fail-1')
+    mockDb.providerApplication.create.mockResolvedValue({ id: 'app-pwa-fail' })
+    mockDb.providerApplication.update.mockResolvedValue({ id: 'app-pwa-fail' })
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockIssueLink.mockResolvedValue({
+      verificationId: 'ver-new',
+      verificationUrl: 'https://verify.example.com',
+      expiresAt: new Date(),
+      reused: false,
+    })
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('PWA_RESUME 2nd failure: creates MORE_INFO_REQUIRED application with [quality-gate] note', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-fail',
+      submittedApplicationId: null,
+      submitPayload: buildPwaResumePayload(),
+      phone: '+27821234567',
+    })
+    mockDb.providerIdentityVerification.count.mockResolvedValue(2)
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa-fail',
+    })
+
+    // Application created with MORE_INFO_REQUIRED
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'MORE_INFO_REQUIRED',
+          phone: '+27821234567',
+          name: 'PWA Resume Provider',
+        }),
+      }),
+    )
+
+    // [quality-gate] note appended
+    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'app-pwa-fail' },
+        data: expect.objectContaining({
+          notes: expect.stringContaining('[quality-gate]'),
+        }),
+      }),
+    )
+
+    // Links set
+    expect(mockDb.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'draft-pwa-fail' },
+        data: { submittedApplicationId: 'app-pwa-fail' },
+      }),
+    )
+    expect(mockDb.providerIdentityVerification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ver-pwa-fail' },
+        data: { providerApplicationId: 'app-pwa-fail' },
+      }),
+    )
+
+    // No re-issue link (that is for 1st failure only)
+    expect(mockIssueLink).not.toHaveBeenCalled()
+    // No WhatsApp nudge to PWA applicant
+    expect(mockSendButtons).not.toHaveBeenCalled()
+  })
+
+  it('PWA_RESUME 2nd failure: idempotent — 2nd call (draft already has submittedApplicationId) skips', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-fail',
+      submittedApplicationId: 'app-already',
+      submitPayload: buildPwaResumePayload(),
+      phone: '+27821234567',
+    })
+    mockDb.providerIdentityVerification.count.mockResolvedValue(2)
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa-fail',
+    })
+
+    // Already submitted — no new application created
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+    expect(mockIssueLink).not.toHaveBeenCalled()
+  })
+
+  it('PWA_SELF_SERVE 2nd failure: syncs provider and creates MORE_INFO_REQUIRED application with [quality-gate] note', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-fail',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+    })
+    mockDb.providerIdentityVerification.count.mockResolvedValue(2)
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa-fail',
+    })
+
+    // Provider record synced first
+    expect(mockSyncProviderRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ skipEnrichment: true, phone: '+27829876543' }),
+    )
+
+    // Application created with MORE_INFO_REQUIRED and correct fields
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'MORE_INFO_REQUIRED',
+          phone: '+27829876543',
+          name: 'PWA Self Serve Provider',
+          providerId: 'provider-pwa-fail-1',
+        }),
+      }),
+    )
+
+    // [quality-gate] note appended
+    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'app-pwa-fail' },
+        data: expect.objectContaining({
+          notes: expect.stringContaining('[quality-gate]'),
+        }),
+      }),
+    )
+
+    // Links set
+    expect(mockDb.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'draft-pwa-fail' },
+        data: { submittedApplicationId: 'app-pwa-fail' },
+      }),
+    )
+    expect(mockDb.providerIdentityVerification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ver-pwa-fail' },
+        data: { providerApplicationId: 'app-pwa-fail' },
+      }),
+    )
+
+    // No WhatsApp nudge to PWA applicant
+    expect(mockSendButtons).not.toHaveBeenCalled()
+  })
+
+  it('PWA_SELF_SERVE 2nd failure: idempotent — skips if draft already submitted', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-fail',
+      submittedApplicationId: 'app-already',
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+    })
+    mockDb.providerIdentityVerification.count.mockResolvedValue(2)
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa-fail',
+    })
+
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+    expect(mockIssueLink).not.toHaveBeenCalled()
+  })
+
+  it('PWA_RESUME 1st failure: re-issues link with channel PWA, no application created, no WhatsApp nudge', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-fail',
+      submittedApplicationId: null,
+      submitPayload: buildPwaResumePayload(),
+      phone: '+27821234567',
+    })
+    mockDb.providerIdentityVerification.count.mockResolvedValue(1)
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa-fail',
+    })
+
+    // No application created
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+
+    // Link re-issued with PWA channel (not WHATSAPP)
+    expect(mockIssueLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerApplicationDraftId: 'draft-pwa-fail',
+        channel: 'PWA',
+      }),
+    )
+
+    // No WhatsApp message sent to PWA applicant
+    expect(mockSendButtons).not.toHaveBeenCalled()
+  })
+
+  it('PWA_SELF_SERVE 1st failure: re-issues link with channel PWA, no application created, no WhatsApp nudge', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-fail',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+    })
+    mockDb.providerIdentityVerification.count.mockResolvedValue(1)
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa-fail',
+    })
+
+    // No application created
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+
+    // Link re-issued with PWA channel
+    expect(mockIssueLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerApplicationDraftId: 'draft-pwa-fail',
+        channel: 'PWA',
+      }),
+    )
+
+    // No WhatsApp nudge for PWA applicant
+    expect(mockSendButtons).not.toHaveBeenCalled()
+  })
+
+  it('WHATSAPP 1st failure: re-issues with WHATSAPP channel and DOES send WhatsApp nudge', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-fail',
+      submittedApplicationId: null,
+      submitPayload: buildPayload(),
+      phone: '+27821234567',
+    })
+    mockDb.providerIdentityVerification.count.mockResolvedValue(1)
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa-fail',
+    })
+
+    // Link re-issued with WHATSAPP channel
+    expect(mockIssueLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerApplicationDraftId: 'draft-pwa-fail',
+        channel: 'WHATSAPP',
+      }),
+    )
+
+    // WhatsApp nudge IS sent for WHATSAPP channel applicants
+    expect(mockSendButtons).toHaveBeenCalledOnce()
+  })
+})
+
 describe('completeApplicationForPassedVerification — PWA_SELF_SERVE channel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
