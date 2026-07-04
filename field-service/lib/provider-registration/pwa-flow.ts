@@ -625,6 +625,26 @@ export async function submitProviderRegistrationApplication(
         return { kind: 'existing', outcome: 'existing_pending', applicationId: existingApp.id }
       }
 
+      // Fix B: enforce evidence/cert gates before issuing a paid KYC session.
+      // A caller POST-ing with evidenceFileUrls:[] or missing certificationRef must
+      // be rejected here — not after a Didit session is consumed.
+      const evidenceResult = evaluateEvidenceGate(input.evidenceFileUrls ?? [])
+      if (!evidenceResult.ok) {
+        throw new ProviderRegistrationValidationError(
+          `Upload at least ${evidenceResult.need} work photos before submitting.`,
+          'QUALITY_GATE_EVIDENCE',
+          422,
+        )
+      }
+      const certResult = evaluateCertificationGate(canonicalData.skills, Boolean(input.certificationRef))
+      if (!certResult.ok) {
+        throw new ProviderRegistrationValidationError(
+          'A certification document or registration number is required for your selected trade(s).',
+          'QUALITY_GATE_CERTIFICATION',
+          422,
+        )
+      }
+
       const submitPayload = {
         version: 1 as const,
         channel: 'PWA_SELF_SERVE' as const,

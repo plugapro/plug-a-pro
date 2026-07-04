@@ -22,6 +22,7 @@ import { sendButtons } from '@/lib/whatsapp-interactive'
 import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
 import { ACTIVE_PROVIDER_APPLICATION_STATUSES } from '@/lib/provider-applications'
 import { evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
+import { createTestCohortContext } from '@/lib/internal-test-cohort'
 
 // ─── Local helpers (mirrors registration.ts, not exported there) ──────────────
 
@@ -330,6 +331,9 @@ async function createPwaApplicationInline(
     reference2Mobile?: string | null
     ctwaReferral?: unknown | null
     providerId?: string | null
+    // Fix C: test-cohort fields — caller computes createTestCohortContext(phone)
+    isTestUser?: boolean
+    cohortName?: string | null
     status: 'PENDING' | 'MORE_INFO_REQUIRED'
     notesAppend: string | null
     draft?: { id: string }
@@ -385,6 +389,9 @@ async function createPwaApplicationInline(
       reference2Mobile: args.reference2Mobile ?? null,
       // Note: certificationRef is not a column on ProviderApplication; it lives
       // only in the draft's submitPayload for quality-gate evaluation.
+      // Fix C: test-cohort fields — caller passes from createTestCohortContext
+      isTestUser: args.isTestUser ?? false,
+      cohortName: args.cohortName ?? null,
       providerId: args.providerId ?? null,
       status: args.status,
       submittedAt: new Date(),
@@ -644,6 +651,8 @@ async function completePwaSelfServeChannel(
   await client.$transaction(async (tx) => {
     // PWA_SELF_SERVE: the Provider row does not exist yet (gate-ON deferred creation).
     // Sync it first, mirroring the gate-OFF create path in pwa-flow.ts.
+    // Fix C: compute test cohort from phone (deterministic — matches gate-OFF path).
+    const cohort = createTestCohortContext(payload.phone)
     providerId = await syncProviderRecord(tx as unknown as typeof db, {
       phone: payload.phone,
       name: payload.name,
@@ -653,8 +662,8 @@ async function completePwaSelfServeChannel(
       active: true,
       availableNow: false,
       verified: false,
-      isTestUser: false,
-      cohortName: null,
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
       locationNodeIds: payload.locationNodeIds ?? [],
       skipEnrichment: true,
     })
@@ -729,6 +738,9 @@ async function completePwaSelfServeChannel(
         reference1Mobile: payload.reference1Mobile ?? null,
         reference2Name: payload.reference2Name ?? null,
         reference2Mobile: payload.reference2Mobile ?? null,
+        // Fix C: preserve test-cohort classification at completion time
+        isTestUser: cohort.isTestUser,
+        cohortName: cohort.cohortName,
         providerId,
         status: finalStatus,
         submittedAt: new Date(),
@@ -1077,6 +1089,8 @@ export async function recordFailedVerificationForApplication(
       const payload = rawPayload as unknown as Qgv2PwaResumeSubmitPayload
 
       await client.$transaction(async (tx) => {
+        // Fix C: compute test cohort from phone
+        const resumeFailCohort = createTestCohortContext(payload.phone)
         const application = await createPwaApplicationInline(tx, {
           phone: payload.phone,
           name: payload.name,
@@ -1088,6 +1102,8 @@ export async function recordFailedVerificationForApplication(
           evidenceNote: payload.evidenceNote ?? null,
           evidenceFileUrls: payload.evidenceFileUrls ?? [],
           ctwaReferral: payload.ctwaReferral ?? null,
+          isTestUser: resumeFailCohort.isTestUser,
+          cohortName: resumeFailCohort.cohortName,
           status: 'MORE_INFO_REQUIRED',
           notesAppend: qualityGateNote,
         })
@@ -1109,6 +1125,8 @@ export async function recordFailedVerificationForApplication(
       const payload = rawPayload as unknown as Qgv2PwaSelfServeSubmitPayload
 
       await client.$transaction(async (tx) => {
+        // Fix C: compute test cohort from phone (deterministic — matches gate-OFF path)
+        const failCohort = createTestCohortContext(payload.phone)
         const providerId = await syncProviderRecord(tx as unknown as typeof db, {
           phone: payload.phone,
           name: payload.name,
@@ -1118,8 +1136,8 @@ export async function recordFailedVerificationForApplication(
           active: true,
           availableNow: false,
           verified: false,
-          isTestUser: false,
-          cohortName: null,
+          isTestUser: failCohort.isTestUser,
+          cohortName: failCohort.cohortName,
           locationNodeIds: payload.locationNodeIds ?? [],
           skipEnrichment: true,
         })
@@ -1139,6 +1157,9 @@ export async function recordFailedVerificationForApplication(
           reference1Mobile: payload.reference1Mobile ?? null,
           reference2Name: payload.reference2Name ?? null,
           reference2Mobile: payload.reference2Mobile ?? null,
+          // Fix C: forward test-cohort computed above for syncProviderRecord
+          isTestUser: failCohort.isTestUser,
+          cohortName: failCohort.cohortName,
           providerId,
           status: 'MORE_INFO_REQUIRED',
           notesAppend: qualityGateNote,
@@ -1207,4 +1228,175 @@ export async function recordFailedVerificationForApplication(
       })
     }
   }
+}
+
+// ─── Public: handle manual-review verdict for draft-anchored flow (Fix A) ──────
+//
+// Didit "Declined" / "In Review" verdicts map to NEEDS_MANUAL_REVIEW (not FAILED).
+// For draft-anchored verifications this status was previously unhandled → the
+// webhook marked processed, no application was created, and the applicant was
+// silently stranded. This function creates a MORE_INFO_REQUIRED application with
+// a [quality-gate] ops note so the ops team can see and action the applicant.
+// EXPIRED and CANCELLED terminal statuses are handled identically — they represent
+// sessions that cannot be recovered and ops must decide next steps.
+
+export async function recordManualReviewForApplication(
+  client: typeof db,
+  { verificationId, reason = 'KYC needs manual review' }: { verificationId: string; reason?: string },
+): Promise<void> {
+  // 1. Load verification
+  const verification = await client.providerIdentityVerification.findUniqueOrThrow({
+    where: { id: verificationId },
+    select: { id: true, providerApplicationDraftId: true },
+  })
+
+  if (!verification.providerApplicationDraftId) {
+    // Not draft-anchored — nothing to do here
+    return
+  }
+
+  // 2. Load draft
+  const draft = await client.providerApplicationDraft.findUniqueOrThrow({
+    where: { id: verification.providerApplicationDraftId },
+    select: { id: true, submittedApplicationId: true, submitPayload: true, phone: true },
+  })
+
+  // Guard: if draft already has a submitted application, skip (idempotent)
+  if (draft.submittedApplicationId) {
+    return
+  }
+
+  const rawPayload = draft.submitPayload as Record<string, unknown>
+  if (!rawPayload || typeof rawPayload !== 'object') {
+    throw new Error('ProviderApplicationDraft.submitPayload is missing or not an object')
+  }
+
+  const channel = rawPayload.channel as string
+  const qualityGateNote = appendQualityGateNote(null, reason)
+  let applicationId: string
+
+  if (channel === 'WHATSAPP') {
+    const payload = rawPayload as unknown as Qgv2WhatsappSubmitPayload
+
+    await client.$transaction(async (tx) => {
+      const providerId = await syncProviderRecord(tx as unknown as typeof db, {
+        ...payload.syncProviderArgs,
+        skipEnrichment: true,
+      })
+
+      const application = await createApplicationInline(tx, {
+        submitApplicationArgs: { ...payload.submitApplicationArgs, providerId },
+        providerId,
+        status: 'MORE_INFO_REQUIRED',
+        notesAppend: qualityGateNote,
+        draft,
+      })
+      applicationId = application.id
+
+      await tx.providerApplicationDraft.update({
+        where: { id: draft.id },
+        data: { submittedApplicationId: applicationId },
+      })
+      await tx.providerIdentityVerification.update({
+        where: { id: verificationId },
+        data: { providerApplicationId: applicationId },
+      })
+    })
+  } else if (channel === 'PWA_RESUME') {
+    const payload = rawPayload as unknown as Qgv2PwaResumeSubmitPayload
+
+    await client.$transaction(async (tx) => {
+      const manualCohort = createTestCohortContext(payload.phone)
+      const application = await createPwaApplicationInline(tx, {
+        phone: payload.phone,
+        name: payload.name,
+        idNumber: payload.idNumber ?? null,
+        skills: payload.skills,
+        serviceAreas: payload.serviceAreas,
+        availability: payload.availability,
+        experience: payload.experience ?? null,
+        evidenceNote: payload.evidenceNote ?? null,
+        evidenceFileUrls: payload.evidenceFileUrls ?? [],
+        ctwaReferral: payload.ctwaReferral ?? null,
+        isTestUser: manualCohort.isTestUser,
+        cohortName: manualCohort.cohortName,
+        status: 'MORE_INFO_REQUIRED',
+        notesAppend: qualityGateNote,
+        draft,
+      })
+      applicationId = application.id
+
+      await tx.providerApplicationDraft.update({
+        where: { id: draft.id },
+        data: { submittedApplicationId: applicationId },
+      })
+      await tx.providerIdentityVerification.update({
+        where: { id: verificationId },
+        data: { providerApplicationId: applicationId },
+      })
+    })
+  } else if (channel === 'PWA_SELF_SERVE') {
+    const payload = rawPayload as unknown as Qgv2PwaSelfServeSubmitPayload
+
+    await client.$transaction(async (tx) => {
+      const manualCohort = createTestCohortContext(payload.phone)
+      const providerId = await syncProviderRecord(tx as unknown as typeof db, {
+        phone: payload.phone,
+        name: payload.name,
+        email: payload.email ?? null,
+        skills: payload.skills,
+        serviceAreas: payload.serviceAreas,
+        active: true,
+        availableNow: false,
+        verified: false,
+        isTestUser: manualCohort.isTestUser,
+        cohortName: manualCohort.cohortName,
+        locationNodeIds: payload.locationNodeIds ?? [],
+        skipEnrichment: true,
+      })
+
+      const application = await createPwaApplicationInline(tx, {
+        phone: payload.phone,
+        name: payload.name,
+        email: payload.email ?? null,
+        skills: payload.skills,
+        serviceAreas: payload.serviceAreas,
+        availability: payload.availability,
+        experience: payload.experience ?? null,
+        evidenceNote: payload.evidenceNote ?? null,
+        evidenceFileUrls: payload.evidenceFileUrls ?? [],
+        callOutFee: payload.callOutFee ?? null,
+        reference1Name: payload.reference1Name ?? null,
+        reference1Mobile: payload.reference1Mobile ?? null,
+        reference2Name: payload.reference2Name ?? null,
+        reference2Mobile: payload.reference2Mobile ?? null,
+        isTestUser: manualCohort.isTestUser,
+        cohortName: manualCohort.cohortName,
+        providerId,
+        status: 'MORE_INFO_REQUIRED',
+        notesAppend: qualityGateNote,
+        draft,
+      })
+      applicationId = application.id
+
+      await tx.providerApplicationDraft.update({
+        where: { id: draft.id },
+        data: { submittedApplicationId: applicationId },
+      })
+      await tx.providerIdentityVerification.update({
+        where: { id: verificationId },
+        data: { providerApplicationId: applicationId },
+      })
+    })
+  } else {
+    throw new Error(`Unknown submit payload channel: ${channel}`)
+  }
+
+  console.info('[quality-gate-submission] manual-review verdict — created MORE_INFO_REQUIRED application', {
+    verificationId,
+    applicationId: applicationId!,
+    draftId: draft.id,
+    channel,
+    reason,
+  })
 }

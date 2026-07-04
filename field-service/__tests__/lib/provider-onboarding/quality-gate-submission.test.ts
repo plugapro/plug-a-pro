@@ -1523,3 +1523,210 @@ describe('Fix C: providerRate rows replayed on PASS', () => {
     expect(mockDb.providerRate.createMany).not.toHaveBeenCalled()
   })
 })
+
+// Fix A: NEEDS_MANUAL_REVIEW / EXPIRED / CANCELLED → recordManualReviewForApplication
+// creates a MORE_INFO_REQUIRED application so the applicant is never silently stranded.
+describe('recordManualReviewForApplication (Fix A)', () => {
+  const INTERNAL_TEST_COHORT_PHONE = '+27823035070' // from INTERNAL_TEST_PHONE_NUMBERS list
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-manual',
+      providerApplicationDraftId: 'draft-manual',
+    })
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb))
+
+    mockSyncProviderRecord.mockResolvedValue('provider-manual-1')
+    mockDb.providerApplication.create.mockResolvedValue({ id: 'app-manual-1' })
+    mockDb.providerApplication.update.mockResolvedValue({ id: 'app-manual-1' })
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockDb.providerRate.createMany.mockResolvedValue({ count: 0 })
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('WHATSAPP channel: creates MORE_INFO_REQUIRED with [quality-gate] note and provided reason', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-manual',
+      submittedApplicationId: null,
+      submitPayload: buildPayload({ normalizedPhone: '+27821234567' }),
+      phone: '+27821234567',
+      name: 'Test Provider',
+    })
+
+    const { recordManualReviewForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordManualReviewForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-manual',
+      reason: 'KYC needs manual review',
+    })
+
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'MORE_INFO_REQUIRED',
+          phone: '+27821234567',
+        }),
+      }),
+    )
+
+    // [quality-gate] note includes the reason
+    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          notes: expect.stringContaining('[quality-gate]'),
+        }),
+      }),
+    )
+
+    // Draft and verification linked
+    expect(mockDb.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { submittedApplicationId: 'app-manual-1' } }),
+    )
+    expect(mockDb.providerIdentityVerification.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { providerApplicationId: 'app-manual-1' } }),
+    )
+  })
+
+  it('PWA_RESUME channel: creates MORE_INFO_REQUIRED, no WhatsApp nudge', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-manual',
+      submittedApplicationId: null,
+      submitPayload: buildPwaResumePayload(),
+      phone: '+27821234567',
+      name: 'PWA Resume Provider',
+    })
+
+    const { recordManualReviewForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordManualReviewForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-manual',
+      reason: 'KYC session expired',
+    })
+
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'MORE_INFO_REQUIRED', phone: '+27821234567' }),
+      }),
+    )
+    // No WhatsApp nudge for PWA applicants
+    expect(mockSendButtons).not.toHaveBeenCalled()
+  })
+
+  it('PWA_SELF_SERVE channel: syncs provider record, creates MORE_INFO_REQUIRED', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-manual',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+      name: 'PWA Self Serve Provider',
+    })
+
+    const { recordManualReviewForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordManualReviewForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-manual',
+      reason: 'KYC session cancelled',
+    })
+
+    // Provider record synced
+    expect(mockSyncProviderRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ phone: '+27829876543', skipEnrichment: true }),
+    )
+
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'MORE_INFO_REQUIRED',
+          phone: '+27829876543',
+          providerId: 'provider-manual-1',
+        }),
+      }),
+    )
+  })
+
+  it('is idempotent: skips if draft already has a submittedApplicationId', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-manual',
+      submittedApplicationId: 'app-already',
+      submitPayload: buildPayload(),
+      phone: '+27821234567',
+      name: 'Test Provider',
+    })
+
+    const { recordManualReviewForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordManualReviewForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-manual',
+    })
+
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+  })
+
+  // Fix C: test-cohort phones must be classified correctly at completion time
+  it('Fix C — test-cohort phone: isTestUser=true and cohortName set on created application (PWA_RESUME)', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-manual',
+      submittedApplicationId: null,
+      submitPayload: buildPwaResumePayload({ phone: INTERNAL_TEST_COHORT_PHONE }),
+      phone: INTERNAL_TEST_COHORT_PHONE,
+      name: 'Internal Tester',
+    })
+
+    const { recordManualReviewForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordManualReviewForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-manual',
+      reason: 'KYC needs manual review',
+    })
+
+    // Test-cohort context computed from phone → isTestUser: true, cohortName set
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          isTestUser: true,
+          cohortName: 'internal_staff_test',
+        }),
+      }),
+    )
+  })
+
+  it('Fix C — non-test phone: isTestUser=false and cohortName=null on created application (PWA_SELF_SERVE)', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-manual',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload({ phone: '+27829876543' }),
+      phone: '+27829876543',
+      name: 'Normal Provider',
+    })
+
+    const { recordManualReviewForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordManualReviewForApplication(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-manual',
+    })
+
+    // Non-test phone → isTestUser: false
+    expect(mockSyncProviderRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ isTestUser: false, cohortName: null }),
+    )
+  })
+})

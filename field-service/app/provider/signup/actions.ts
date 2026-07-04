@@ -8,7 +8,7 @@ import { validateProviderResumeToken, consumeProviderResumeToken } from '@/lib/p
 import { submitProviderApplication, type SubmitInput } from '@/lib/provider-applications-submit'
 import { findLatestActiveProviderApplicationByPhone } from '@/lib/provider-applications'
 import { buildDynamicSchema, selectMissingSections } from '@/lib/web-signup-sections'
-import { isQualityGateV2Enabled } from '@/lib/provider-onboarding/quality-gate'
+import { isQualityGateV2Enabled, evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
 import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
 
 // ─── submitProviderApplicationFromWebAction ───────────────────────────────────
@@ -95,6 +95,19 @@ export async function submitProviderApplicationFromWebAction(
       }
       if (existingApp?.status === 'PENDING' || existingApp?.status === 'MORE_INFO_REQUIRED') {
         return { kind: 'existing', outcome: 'existing_pending', applicationId: existingApp.id }
+      }
+
+      // Fix B: enforce evidence/cert gates before issuing a paid KYC session.
+      const mergedEvidenceUrls = Array.isArray(merged.evidenceFileUrls) ? (merged.evidenceFileUrls as string[]) : []
+      const mergedSkills = Array.isArray(merged.skills) ? (merged.skills as string[]) : []
+      const mergedCertRef = typeof merged.certificationRef === 'string' ? merged.certificationRef : null
+      const evidenceResult = evaluateEvidenceGate(mergedEvidenceUrls)
+      if (!evidenceResult.ok) {
+        throw new Error(`QUALITY_GATE_EVIDENCE: need ${evidenceResult.need} work photos, have ${evidenceResult.have}`)
+      }
+      const certResult = evaluateCertificationGate(mergedSkills, Boolean(mergedCertRef))
+      if (!certResult.ok) {
+        throw new Error('QUALITY_GATE_CERTIFICATION: certification required for selected trade(s)')
       }
 
       // 4a. Persist merged form data back to Conversation.data.

@@ -482,28 +482,29 @@ describe('pwa-flow quality gate', () => {
     gateEnabled.mockResolvedValue(false)
   })
 
-  it('returns awaiting_verification (not QUALITY_GATE_EVIDENCE) when gate ON — validation deferred to Didit', async () => {
-    // The gate-ON path no longer validates evidence at submit time.
-    // Evidence and cert checks happen post-Didit-PASS in the replay webhook (Task 2.6).
+  it('throws QUALITY_GATE_EVIDENCE when gate ON and insufficient evidence (Fix B)', async () => {
+    // The gate-ON path now enforces evidence/cert BEFORE issuing the KYC link to
+    // avoid burning a paid Didit session for an under-qualified applicant.
     gateEnabled.mockResolvedValue(true)
     const { client } = createSubmitClient()
-    const result = await submitProviderRegistrationApplication(client as any, {
-      draftId: 'draft-1',
-      resumeToken: 'resume-token',
-      phone: '0823035070',
-      name: 'Thabo Nkosi',
-      skills: ['painting'],
-      serviceAreas: ['Maboneng'],
-      locationNodeIds: ['sub_maboneng'],
-      provinceId: 'province-gauteng',
-      cityId: 'city-johannesburg',
-      regionId: 'region-jhb-central',
-      availabilityDays: ['Mon'],
-      callOutFee: 150,
-      consentAccepted: true,
-      evidenceFileUrls: ['x'],
-    })
-    expect(result.outcome).toBe('awaiting_verification')
+    await expect(
+      submitProviderRegistrationApplication(client as any, {
+        draftId: 'draft-1',
+        resumeToken: 'resume-token',
+        phone: '0823035070',
+        name: 'Thabo Nkosi',
+        skills: ['painting'],
+        serviceAreas: ['Maboneng'],
+        locationNodeIds: ['sub_maboneng'],
+        provinceId: 'province-gauteng',
+        cityId: 'city-johannesburg',
+        regionId: 'region-jhb-central',
+        availabilityDays: ['Mon'],
+        callOutFee: 150,
+        consentAccepted: true,
+        evidenceFileUrls: ['x'], // only 1 of 3 required
+      }),
+    ).rejects.toMatchObject({ code: 'QUALITY_GATE_EVIDENCE' })
   })
 
   it('returns awaiting_verification for non-high-risk skill when gate ON', async () => {
@@ -528,29 +529,30 @@ describe('pwa-flow quality gate', () => {
     expect(result.outcome).toBe('awaiting_verification')
   })
 
-  it('returns awaiting_verification for high-risk skill even without certificationRef when gate ON', async () => {
-    // Cert validation is deferred to Task 2.6 replay; the gate-ON submit path
-    // does not throw QUALITY_GATE_CERTIFICATION.
+  it('throws QUALITY_GATE_CERTIFICATION when gate ON and high-risk skill without certificationRef (Fix B)', async () => {
+    // The gate-ON path now enforces cert BEFORE issuing the KYC link to
+    // avoid burning a paid Didit session for an under-qualified applicant.
     gateEnabled.mockResolvedValue(true)
     const { client } = createSubmitClient()
-    const result = await submitProviderRegistrationApplication(client as any, {
-      draftId: 'draft-1',
-      resumeToken: 'resume-token',
-      phone: '0823035070',
-      name: 'Thabo Nkosi',
-      skills: ['electrical'],
-      serviceAreas: ['Maboneng'],
-      locationNodeIds: ['sub_maboneng'],
-      provinceId: 'province-gauteng',
-      cityId: 'city-johannesburg',
-      regionId: 'region-jhb-central',
-      availabilityDays: ['Mon'],
-      callOutFee: 150,
-      consentAccepted: true,
-      evidenceFileUrls: ['x', 'y', 'z'],
-      certificationRef: null,
-    })
-    expect(result.outcome).toBe('awaiting_verification')
+    await expect(
+      submitProviderRegistrationApplication(client as any, {
+        draftId: 'draft-1',
+        resumeToken: 'resume-token',
+        phone: '0823035070',
+        name: 'Thabo Nkosi',
+        skills: ['electrical'], // high-risk
+        serviceAreas: ['Maboneng'],
+        locationNodeIds: ['sub_maboneng'],
+        provinceId: 'province-gauteng',
+        cityId: 'city-johannesburg',
+        regionId: 'region-jhb-central',
+        availabilityDays: ['Mon'],
+        callOutFee: 150,
+        consentAccepted: true,
+        evidenceFileUrls: ['x', 'y', 'z'],
+        certificationRef: null, // missing for high-risk skill
+      }),
+    ).rejects.toMatchObject({ code: 'QUALITY_GATE_CERTIFICATION' })
   })
 
   it('is a no-op when gate is OFF (flag returns false)', async () => {
@@ -622,6 +624,10 @@ describe('P1: gate-ON conflict guards in PWA-A (submitProviderRegistrationApplic
     availabilityDays: ['Mon'],
     callOutFee: 150,
     consentAccepted: true,
+    // Fix B: gate-ON now enforces evidence/cert before KYC.
+    // plumbing is high-risk so certificationRef is required.
+    evidenceFileUrls: ['https://e.com/1.jpg', 'https://e.com/2.jpg', 'https://e.com/3.jpg'],
+    certificationRef: 'CERT-PLUMBING-001',
   }
 
   it('gate ON + phone is a customer → throws PHONE_REGISTERED_AS_CUSTOMER, no draft, no KYC link', async () => {

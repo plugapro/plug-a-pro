@@ -17,6 +17,7 @@ const {
   mockRaiseSecurityReviewEvent,
   mockCompleteApplication,
   mockRecordFailed,
+  mockRecordManualReview,
 } = vi.hoisted(() => ({
   afterCallbacks: [] as Array<() => void | Promise<void>>,
   mockAfter: vi.fn((callback: () => void | Promise<void>) => {
@@ -46,6 +47,7 @@ const {
   mockRaiseSecurityReviewEvent: vi.fn(),
   mockCompleteApplication: vi.fn(),
   mockRecordFailed: vi.fn(),
+  mockRecordManualReview: vi.fn(),
 }))
 
 vi.mock('next/server', async (importOriginal) => {
@@ -77,6 +79,7 @@ vi.mock('@/lib/security/security-event-service', () => ({
 vi.mock('@/lib/provider-onboarding/quality-gate-submission', () => ({
   completeApplicationForPassedVerification: mockCompleteApplication,
   recordFailedVerificationForApplication: mockRecordFailed,
+  recordManualReviewForApplication: mockRecordManualReview,
 }))
 
 function request(body = '{}', headers: Record<string, string> = {}) {
@@ -121,6 +124,7 @@ describe('verification webhook — draft-anchored completion (Task 2.6)', () => 
     mockIsEnabled.mockResolvedValue(false)
     mockCompleteApplication.mockResolvedValue({ applicationId: 'app-1' })
     mockRecordFailed.mockResolvedValue(undefined)
+    mockRecordManualReview.mockResolvedValue(undefined)
   })
 
   it('PASSED verdict for draft-anchored verification calls completeApplicationForPassedVerification', async () => {
@@ -151,6 +155,33 @@ describe('verification webhook — draft-anchored completion (Task 2.6)', () => 
     expect(mockRecordFailed).toHaveBeenCalledWith(mockDb, { verificationId: 'ver-1' })
     expect(mockCompleteApplication).not.toHaveBeenCalled()
   })
+
+  // Fix A: terminal-but-not-PASSED statuses must call recordManualReviewForApplication
+  // so the applicant is never silently stranded with no application created.
+  it.each([
+    ['NEEDS_MANUAL_REVIEW', 'KYC needs manual review'],
+    ['EXPIRED', 'KYC session expired'],
+    ['CANCELLED', 'KYC session cancelled'],
+  ] as const)(
+    'Fix A: %s verdict for draft-anchored verification calls recordManualReviewForApplication with reason "%s"',
+    async (status, expectedReason) => {
+      mockApplyVendorVerdict.mockResolvedValue({ verificationId: 'ver-1', status, vendorReference: 'job-1' })
+
+      const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+      const response = await POST(request(`{"event_id":"evt-${status}"}`), {
+        params: Promise.resolve({ vendor: 'smile_id' }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(mockRecordManualReview).toHaveBeenCalledWith(mockDb, {
+        verificationId: 'ver-1',
+        reason: expectedReason,
+      })
+      expect(mockCompleteApplication).not.toHaveBeenCalled()
+      expect(mockRecordFailed).not.toHaveBeenCalled()
+    },
+  )
 
   it('PASSED verdict for non-draft verification (providerApplicationDraftId null): does NOT call completeApplicationForPassedVerification', async () => {
     // Non-draft verification (existing provider-centric flow)

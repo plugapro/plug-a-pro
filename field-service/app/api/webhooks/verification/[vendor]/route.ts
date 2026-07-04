@@ -11,6 +11,7 @@ import { raiseSecurityReviewEvent } from '@/lib/security/security-event-service'
 import {
   completeApplicationForPassedVerification,
   recordFailedVerificationForApplication,
+  recordManualReviewForApplication,
 } from '@/lib/provider-onboarding/quality-gate-submission'
 
 export const runtime = 'nodejs'
@@ -141,6 +142,23 @@ export async function POST(
         await completeApplicationForPassedVerification(db, { verificationId: verification.id })
       } else if (applied.status === 'FAILED') {
         await recordFailedVerificationForApplication(db, { verificationId: verification.id })
+      } else if (
+        // Fix A: handle terminal-but-not-PASSED statuses so the applicant is never
+        // silently stranded. NEEDS_MANUAL_REVIEW covers Didit "Declined"/"In Review"
+        // verdicts. EXPIRED/CANCELLED can also be terminal for draft-anchored sessions.
+        applied.status === 'NEEDS_MANUAL_REVIEW' ||
+        applied.status === 'EXPIRED' ||
+        applied.status === 'CANCELLED'
+      ) {
+        const reasonMap: Record<string, string> = {
+          NEEDS_MANUAL_REVIEW: 'KYC needs manual review',
+          EXPIRED: 'KYC session expired',
+          CANCELLED: 'KYC session cancelled',
+        }
+        await recordManualReviewForApplication(db, {
+          verificationId: verification.id,
+          reason: reasonMap[applied.status] ?? 'KYC terminal without PASS',
+        })
       }
     } catch (completionError) {
       // Completion failure must stay retryable: record the error but do NOT set
