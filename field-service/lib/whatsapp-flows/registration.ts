@@ -1758,7 +1758,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       }
       if (hasHighRiskServiceSelection(ctx.data.skills ?? [])) {
         await sendCertificationPrompt(ctx.phone)
-        return { nextStep: 'reg_collect_certification' }
+        return { nextStep: 'reg_collect_certification', nextData: { evidenceNote: '' } }
       }
     }
     return showRegistrationSummary(ctx, { evidenceNote: '' })

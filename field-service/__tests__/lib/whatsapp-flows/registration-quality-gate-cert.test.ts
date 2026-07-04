@@ -135,4 +135,25 @@ describe('WhatsApp certification gate', () => {
     }))
     expect(result.nextStep).toBe('reg_collect_certification')
   })
+
+  it('certification step: cert document upload advances with attachment id', async () => {
+    const result = await handleRegistrationFlow(buildCtx({
+      step: 'reg_collect_certification',
+      reply: { type: 'image', mediaId: 'media-cert-1' },
+      data: { evidenceFileUrls: ['a', 'b', 'c'], skills: ['plumbing'] },
+    }))
+    expect(result.nextStep).toBe('reg_pending')
+    expect(result.nextData?.certificationDocAttachmentId).toBe('att_cert_001')
+    expect(result.nextData?.certificationRef).toBe('attachment:att_cert_001')
+  })
+
+  it('evidence_skip with high-risk skill routes to certification and preserves evidenceNote', async () => {
+    const result = await handleRegistrationFlow(buildCtx({
+      step: 'reg_collect_evidence',
+      reply: { type: 'interactive', id: 'evidence_skip' },
+      data: { evidenceFileUrls: ['a', 'b', 'c'], skills: ['plumbing'] },
+    }))
+    expect(result.nextStep).toBe('reg_collect_certification')
+    expect(result.nextData?.evidenceNote).toBe('')
+  })
 })
