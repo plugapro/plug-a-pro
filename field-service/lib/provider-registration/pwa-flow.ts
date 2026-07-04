@@ -13,6 +13,7 @@ import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
 import { isQualityGateV2Enabled, evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '@/lib/location-format'
+import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
 import { hashRegistrationResumeToken } from './tokens'
 
 const RESUME_TOKEN_PURPOSE = 'provider_registration_resume'
@@ -495,6 +496,7 @@ export async function submitProviderRegistrationApplication(
 ): Promise<
   | { outcome: 'created'; applicationId: string; ref: string }
   | { outcome: 'existing_pending' | 'existing_approved' | 'existing_more_info'; applicationId: string; ref: string }
+  | { outcome: 'awaiting_verification'; verificationUrl: string | null }
 > {
   const baseData = normalizeDraftInputBase({ ...input, lastCompletedStep: 8 })
   const name = cleanString(input.name)
@@ -515,6 +517,95 @@ export async function submitProviderRegistrationApplication(
   }
 
   const tokenHash = await hashRegistrationResumeToken(input.resumeToken)
+
+  // Check quality gate BEFORE entering the transaction so we can branch cleanly.
+  const gateEnabled = await isQualityGateV2Enabled()
+
+  if (gateEnabled) {
+    // Gate ON: validate token (without consuming it), persist submitPayload onto
+    // the draft, issue a verification link, and return awaiting_verification.
+    const draftId = await client.$transaction(async (tx) => {
+      const genericTokenError = new ProviderRegistrationValidationError(
+        'Could not verify this registration. Please restart and try again.',
+        'INVALID_RESUME_TOKEN',
+        400,
+      )
+
+      const resumeToken = await tx.registrationResumeToken.findUnique({
+        where: { tokenHash },
+        select: {
+          draftId: true,
+          purpose: true,
+          expiresAt: true,
+          consumedAt: true,
+          draft: { select: { id: true, phone: true } },
+        },
+      })
+
+      if (
+        !resumeToken ||
+        resumeToken.purpose !== RESUME_TOKEN_PURPOSE ||
+        resumeToken.consumedAt ||
+        resumeToken.expiresAt.getTime() <= Date.now() ||
+        resumeToken.draftId !== input.draftId
+      ) {
+        throw genericTokenError
+      }
+
+      const tokenDraftPhone = resumeToken.draft?.phone
+      if (
+        !tokenDraftPhone ||
+        normalizeProviderApplicationPhone(tokenDraftPhone) !== normalizeProviderApplicationPhone(baseData.phone)
+      ) {
+        throw genericTokenError
+      }
+
+      const submitPayload = {
+        version: 1 as const,
+        channel: 'PWA_SELF_SERVE' as const,
+        submittedAt: new Date().toISOString(),
+        name,
+        phone: baseData.phone,
+        email: baseData.email,
+        skills: baseData.skills,
+        // In the PWA flow, skills serve as category slugs
+        categorySlugs: baseData.skills,
+        serviceAreas: baseData.serviceAreas,
+        locationNodeIds: baseData.locationNodeIds,
+        experience: baseData.experience,
+        availability: baseData.availability,
+        availabilityDays: baseData.availabilityDays,
+        emergencyAvailable: baseData.emergencyAvailable,
+        callOutFee: baseData.callOutFee,
+        travelRadiusKm: baseData.travelRadiusKm,
+        evidenceNote: baseData.evidenceNote,
+        evidenceFileUrls: input.evidenceFileUrls ?? [],
+        certificationRef: input.certificationRef ?? null,
+        reference1Name: baseData.reference1Name,
+        reference1Mobile: baseData.reference1Mobile,
+        reference2Name: baseData.reference2Name,
+        reference2Mobile: baseData.reference2Mobile,
+        bio: baseData.bio,
+        profilePhotoUrl: baseData.profilePhotoUrl,
+      }
+
+      await tx.providerApplicationDraft.update({
+        where: { id: input.draftId },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { submitPayload: submitPayload as unknown as any, lastCompletedStep: 8 },
+      })
+
+      return input.draftId
+    })
+
+    // Issue verification link outside the transaction (idempotent, uses db internally).
+    const link = await issueProviderApplicationVerificationLink({
+      providerApplicationDraftId: draftId,
+      channel: 'PWA',
+    })
+
+    return { outcome: 'awaiting_verification', verificationUrl: link.verificationUrl }
+  }
 
   return client.$transaction(async (tx) => {
     // SECURITY: validate the resume token FIRST, before any DB write or any
@@ -581,25 +672,6 @@ export async function submitProviderRegistrationApplication(
     })
     if (!completeness.canSubmit) {
       throw new ProviderRegistrationValidationError('Complete the required registration fields before submitting.', 'INCOMPLETE_APPLICATION')
-    }
-
-    if (await isQualityGateV2Enabled()) {
-      const evidence = evaluateEvidenceGate(input.evidenceFileUrls ?? [])
-      if (!evidence.ok) {
-        throw new ProviderRegistrationValidationError(
-          'At least 3 work photos are required.',
-          'QUALITY_GATE_EVIDENCE',
-          422,
-        )
-      }
-      const cert = evaluateCertificationGate(data.skills ?? [], Boolean(input.certificationRef))
-      if (!cert.ok) {
-        throw new ProviderRegistrationValidationError(
-          'A certification is required for high-risk trades.',
-          'QUALITY_GATE_CERTIFICATION',
-          422,
-        )
-      }
     }
 
     const existingCustomer = await tx.customer.findFirst({

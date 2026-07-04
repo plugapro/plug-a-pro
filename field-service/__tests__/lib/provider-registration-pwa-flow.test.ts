@@ -5,6 +5,16 @@ vi.mock('@/lib/provider-onboarding/quality-gate', async (orig) => ({
   ...(await orig<typeof import('@/lib/provider-onboarding/quality-gate')>()),
   isQualityGateV2Enabled: gateEnabled,
 }))
+// When the gate is ON, pwa-flow now calls issueProviderApplicationVerificationLink
+// instead of validating evidence/certs. Mock it so tests don't hit the real DB.
+vi.mock('@/lib/identity-verification/application-link', () => ({
+  issueProviderApplicationVerificationLink: vi.fn(async () => ({
+    verificationId: 'ver-test',
+    verificationUrl: 'https://verify.example.com/test-token',
+    expiresAt: new Date(),
+    reused: false,
+  })),
+}))
 import {
   ProviderRegistrationValidationError,
   saveProviderRegistrationDraft,
@@ -472,10 +482,12 @@ describe('pwa-flow quality gate', () => {
     gateEnabled.mockResolvedValue(false)
   })
 
-  it('rejects <3 photos with code QUALITY_GATE_EVIDENCE when gate ON', async () => {
+  it('returns awaiting_verification (not QUALITY_GATE_EVIDENCE) when gate ON — validation deferred to Didit', async () => {
+    // The gate-ON path no longer validates evidence at submit time.
+    // Evidence and cert checks happen post-Didit-PASS in the replay webhook (Task 2.6).
     gateEnabled.mockResolvedValue(true)
     const { client } = createSubmitClient()
-    const err = await submitProviderRegistrationApplication(client as any, {
+    const result = await submitProviderRegistrationApplication(client as any, {
       draftId: 'draft-1',
       resumeToken: 'resume-token',
       phone: '0823035070',
@@ -490,12 +502,11 @@ describe('pwa-flow quality gate', () => {
       callOutFee: 150,
       consentAccepted: true,
       evidenceFileUrls: ['x'],
-    }).catch((e) => e)
-    expect(err).toBeInstanceOf(ProviderRegistrationValidationError)
-    expect(err.code).toBe('QUALITY_GATE_EVIDENCE')
+    })
+    expect(result.outcome).toBe('awaiting_verification')
   })
 
-  it('allows >=3 photos for non-high-risk skill when gate ON', async () => {
+  it('returns awaiting_verification for non-high-risk skill when gate ON', async () => {
     gateEnabled.mockResolvedValue(true)
     const { client } = createSubmitClient()
     const result = await submitProviderRegistrationApplication(client as any, {
@@ -514,14 +525,15 @@ describe('pwa-flow quality gate', () => {
       consentAccepted: true,
       evidenceFileUrls: ['x', 'y', 'z'],
     })
-    expect(result.outcome).toBe('created')
+    expect(result.outcome).toBe('awaiting_verification')
   })
 
-  it('rejects high-risk skill with no certificationRef as QUALITY_GATE_CERTIFICATION when gate ON', async () => {
+  it('returns awaiting_verification for high-risk skill even without certificationRef when gate ON', async () => {
+    // Cert validation is deferred to Task 2.6 replay; the gate-ON submit path
+    // does not throw QUALITY_GATE_CERTIFICATION.
     gateEnabled.mockResolvedValue(true)
     const { client } = createSubmitClient()
-    // Cert gate depends on evaluateCertificationGate receiving real skills; empty array bypasses the check.
-    const err = await submitProviderRegistrationApplication(client as any, {
+    const result = await submitProviderRegistrationApplication(client as any, {
       draftId: 'draft-1',
       resumeToken: 'resume-token',
       phone: '0823035070',
@@ -537,9 +549,8 @@ describe('pwa-flow quality gate', () => {
       consentAccepted: true,
       evidenceFileUrls: ['x', 'y', 'z'],
       certificationRef: null,
-    }).catch((e) => e)
-    expect(err).toBeInstanceOf(ProviderRegistrationValidationError)
-    expect(err.code).toBe('QUALITY_GATE_CERTIFICATION')
+    })
+    expect(result.outcome).toBe('awaiting_verification')
   })
 
   it('is a no-op when gate is OFF (flag returns false)', async () => {

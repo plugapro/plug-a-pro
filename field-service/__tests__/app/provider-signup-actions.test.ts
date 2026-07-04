@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// Keep the quality gate OFF for all tests in this file — these tests cover the
+// gate-OFF submit path. Gate-ON behaviour is tested separately.
+vi.mock('@/lib/provider-onboarding/quality-gate', async (orig) => ({
+  ...(await orig<typeof import('@/lib/provider-onboarding/quality-gate')>()),
+  isQualityGateV2Enabled: vi.fn(async () => false),
+}))
+
 // ─── In-memory stores (defined outside hoisted so tests can read them) ────────
 
 const tokenStore = new Map<string, any>()

@@ -56,7 +56,15 @@ export function RemainingFieldsForm(props: RemainingFieldsFormProps) {
   const onSubmit: SubmitHandler<Record<string, unknown>> = (values) =>
     startTransition(async () => {
       try {
-        await submitProviderApplicationFromWebAction({ rawToken: props.rawToken, payload: values })
+        const result = await submitProviderApplicationFromWebAction({ rawToken: props.rawToken, payload: values })
+        if ('awaitingVerification' in result && result.awaitingVerification) {
+          if (result.verificationUrl) {
+            window.location.href = result.verificationUrl
+          } else {
+            toast.info('Verification in progress. We\'ll confirm here once verification passes.')
+          }
+          return
+        }
         router.push('/provider/signup/confirmation')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Could not submit. Try again.')

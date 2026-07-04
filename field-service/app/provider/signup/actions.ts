@@ -8,6 +8,7 @@ import { validateProviderResumeToken, consumeProviderResumeToken } from '@/lib/p
 import { submitProviderApplication, type SubmitInput } from '@/lib/provider-applications-submit'
 import { buildDynamicSchema, selectMissingSections } from '@/lib/web-signup-sections'
 import { isQualityGateV2Enabled } from '@/lib/provider-onboarding/quality-gate'
+import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
 
 // ─── submitProviderApplicationFromWebAction ───────────────────────────────────
 
@@ -18,7 +19,10 @@ const SubmitSchema = z.object({
 
 export async function submitProviderApplicationFromWebAction(
   input: z.infer<typeof SubmitSchema>,
-): Promise<{ ok: true; applicationId: string }> {
+): Promise<
+  | { ok: true; applicationId: string }
+  | { ok: true; awaitingVerification: true; verificationUrl: string | null }
+> {
   if (!(await isEnabled('whatsapp.registration.web_resume'))) {
     throw new Error('feature_disabled')
   }
@@ -29,6 +33,95 @@ export async function submitProviderApplicationFromWebAction(
   // section selection both see the same value.
   const gateEnabled = await isQualityGateV2Enabled()
   const gateOpts = { gateEnabled }
+
+  if (gateEnabled) {
+    // Gate ON: validate token (without consuming it), persist submitPayload onto
+    // the draft, issue a verification link, and return awaitingVerification.
+    let draftId: string
+
+    await db.$transaction(async (tx) => {
+      // 1. Validate the token (does not consume it).
+      const v = await validateProviderResumeToken(tx, rawToken)
+      if (!v.ok) throw new Error(`token_${v.reason}`)
+
+      // 2. Load captured conversation data.
+      const conv = await tx.conversation.findUniqueOrThrow({ where: { id: v.conversationId } })
+      const capturedData = (conv.data as Record<string, unknown>) ?? {}
+      if (!capturedData.idNumber && typeof capturedData.providerIdNumber === 'string') {
+        capturedData.idNumber = capturedData.providerIdNumber
+      }
+
+      // 3. Build a dynamic Zod schema for any fields still missing from captured data.
+      const sections = selectMissingSections(capturedData, gateOpts)
+      const schema = buildDynamicSchema(sections, gateOpts)
+      const parsed = schema.safeParse(payload)
+      if (!parsed.success) {
+        throw new Error('validation: ' + parsed.error.issues.map((i) => i.message).join('; '))
+      }
+
+      // 4. Merge captured + submitted data.
+      const merged: Record<string, unknown> = { ...capturedData, ...parsed.data }
+
+      // 4a. Persist merged form data back to Conversation.data.
+      await tx.conversation.update({
+        where: { id: conv.id },
+        data: { data: merged as never },
+      })
+
+      // 5. Build the replayable submitPayload for the draft.
+      const draftColumns = {
+        phone: conv.phone,
+        submitPayload: {
+          version: 1 as const,
+          channel: 'PWA_RESUME' as const,
+          submittedAt: new Date().toISOString(),
+          phone: conv.phone,
+          name: String(merged.name ?? ''),
+          idNumber: typeof merged.idNumber === 'string' ? merged.idNumber : null,
+          skills: Array.isArray(merged.skills) ? (merged.skills as string[]) : [],
+          serviceAreas: [String(merged.regionLabel ?? '')].filter(Boolean),
+          availability: Array.isArray(merged.availability)
+            ? (merged.availability as string[]).join(', ')
+            : typeof merged.availability === 'string'
+              ? merged.availability
+              : '',
+          experience: typeof merged.experience === 'string' ? merged.experience : null,
+          evidenceNote: typeof merged.evidenceNote === 'string' ? merged.evidenceNote : null,
+          evidenceFileUrls: Array.isArray(merged.evidenceFileUrls) ? (merged.evidenceFileUrls as string[]) : [],
+          certificationRef: typeof merged.certificationRef === 'string' ? merged.certificationRef : null,
+          ctwaReferral:
+            capturedData.ctwaReferral && typeof capturedData.ctwaReferral === 'object'
+              ? capturedData.ctwaReferral
+              : null,
+        } as unknown as never,
+      }
+
+      // Upsert the draft (no unique on phone, so findFirst + update/create).
+      const existingDraft = await tx.providerApplicationDraft.findFirst({
+        where: { phone: conv.phone, submittedApplicationId: null },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true },
+      })
+
+      if (existingDraft) {
+        await tx.providerApplicationDraft.update({ where: { id: existingDraft.id }, data: draftColumns })
+        draftId = existingDraft.id
+      } else {
+        const created = await tx.providerApplicationDraft.create({ data: draftColumns, select: { id: true } })
+        draftId = created.id
+      }
+
+      // 6. Do NOT consume the token — verification must happen first.
+    })
+
+    // Issue verification link outside the transaction (idempotent, uses db internally).
+    const link = await issueProviderApplicationVerificationLink({
+      providerApplicationDraftId: draftId!,
+      channel: 'PWA',
+    })
+
+    return { ok: true as const, awaitingVerification: true as const, verificationUrl: link.verificationUrl }
+  }
 
   return db.$transaction(async (tx) => {
     // 1. Validate the token (does not consume it yet).

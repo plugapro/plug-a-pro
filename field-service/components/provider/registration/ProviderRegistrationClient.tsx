@@ -846,6 +846,15 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
         setError(payload.message ?? payload.error?.message ?? 'Could not submit your application.')
         return
       }
+      if (payload.outcome === 'awaiting_verification') {
+        window.localStorage.removeItem(TOKEN_KEY)
+        if (payload.verificationUrl) {
+          window.location.href = payload.verificationUrl
+        } else {
+          setError('We need to verify your identity. We\'ll confirm here once verification passes.')
+        }
+        return
+      }
       const nextForm = { ...form, submittedRef: payload.ref ?? '' }
       setForm(nextForm)
       window.localStorage.setItem(STATE_KEY, JSON.stringify(nextForm))
