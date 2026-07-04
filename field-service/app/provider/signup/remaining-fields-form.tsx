@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { selectMissingSections, buildDynamicSchema } from '@/lib/web-signup-sections'
+import { MIN_EVIDENCE_PHOTOS } from '@/lib/provider-onboarding/quality-gate'
 import { submitProviderApplicationFromWebAction } from './actions'
 import { NameSection } from './sections/name'
 import { IdentitySection } from './sections/identity'
@@ -18,8 +19,12 @@ import { ProfilePhotoSection } from './sections/profile-photo'
 import { BioSection } from './sections/bio'
 import { ReferencesSection } from './sections/references'
 import { EvidenceSection } from './sections/evidence'
+import { CertificationSection } from './sections/certification'
+import type { SectionKey } from '@/lib/web-signup-sections'
 
-const COMPONENTS = {
+type SimpleComponent = () => React.JSX.Element
+
+const SIMPLE_COMPONENTS: Partial<Record<SectionKey, SimpleComponent>> = {
   name: NameSection,
   identity: IdentitySection,
   skills: SkillsSection,
@@ -29,19 +34,21 @@ const COMPONENTS = {
   profile_photo: ProfilePhotoSection,
   bio: BioSection,
   references: ReferencesSection,
-  evidence: EvidenceSection,
-} as const
+}
 
 export interface RemainingFieldsFormProps {
   rawToken: string
   conversationId: string
   phone: string
   capturedData: Record<string, unknown>
+  gateEnabled?: boolean
 }
 
 export function RemainingFieldsForm(props: RemainingFieldsFormProps) {
-  const sections = selectMissingSections(props.capturedData)
-  const schema = buildDynamicSchema(sections)
+  const { gateEnabled = false } = props
+  const opts = { gateEnabled }
+  const sections = selectMissingSections(props.capturedData, opts)
+  const schema = buildDynamicSchema(sections, opts)
   const methods = useForm<Record<string, unknown>>({ resolver: zodResolver(schema), mode: 'onBlur' })
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -71,7 +78,21 @@ export function RemainingFieldsForm(props: RemainingFieldsFormProps) {
     <FormProvider {...methods}>
       <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
         {sections.map((s) => {
-          const Component = COMPONENTS[s.key]
+          if (s.key === 'evidence') {
+            return (
+              <EvidenceSection
+                key={s.key}
+                rawToken={props.rawToken}
+                gateEnabled={gateEnabled}
+                minPhotos={MIN_EVIDENCE_PHOTOS}
+              />
+            )
+          }
+          if (s.key === 'certification') {
+            return <CertificationSection key={s.key} />
+          }
+          const Component = SIMPLE_COMPONENTS[s.key]
+          if (!Component) return null
           return <Component key={s.key} />
         })}
         <Button type="submit" disabled={pending} className="w-full">

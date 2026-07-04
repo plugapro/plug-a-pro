@@ -7,6 +7,7 @@ import { isEnabled } from '@/lib/flags'
 import { validateProviderResumeToken, consumeProviderResumeToken } from '@/lib/provider-resume-tokens'
 import { submitProviderApplication, type SubmitInput } from '@/lib/provider-applications-submit'
 import { buildDynamicSchema, selectMissingSections } from '@/lib/web-signup-sections'
+import { isQualityGateV2Enabled } from '@/lib/provider-onboarding/quality-gate'
 
 // ─── submitProviderApplicationFromWebAction ───────────────────────────────────
 
@@ -24,6 +25,11 @@ export async function submitProviderApplicationFromWebAction(
 
   const { rawToken, payload } = SubmitSchema.parse(input)
 
+  // Resolve the gate flag once, outside the DB transaction, so the schema and
+  // section selection both see the same value.
+  const gateEnabled = await isQualityGateV2Enabled()
+  const gateOpts = { gateEnabled }
+
   return db.$transaction(async (tx) => {
     // 1. Validate the token (does not consume it yet).
     const v = await validateProviderResumeToken(tx, rawToken)
@@ -38,8 +44,8 @@ export async function submitProviderApplicationFromWebAction(
     }
 
     // 3. Build a dynamic Zod schema for any fields still missing from captured data.
-    const sections = selectMissingSections(capturedData)
-    const schema = buildDynamicSchema(sections)
+    const sections = selectMissingSections(capturedData, gateOpts)
+    const schema = buildDynamicSchema(sections, gateOpts)
     const parsed = schema.safeParse(payload)
     if (!parsed.success) {
       throw new Error('validation: ' + parsed.error.issues.map((i) => i.message).join('; '))
@@ -74,6 +80,7 @@ export async function submitProviderApplicationFromWebAction(
       evidenceFileUrls: Array.isArray(merged.evidenceFileUrls)
         ? (merged.evidenceFileUrls as string[])
         : [],
+      certificationRef: typeof merged.certificationRef === 'string' ? merged.certificationRef : undefined,
       // CTWA ad attribution — written by the bot on the first inbound message
       // (ConversationData.ctwaReferral); not user-editable, so read from
       // capturedData rather than merged payload.
@@ -109,7 +116,7 @@ const UpdateSchema = z.object({
 // I3: Allowlist — token holders may only write these fields to Conversation.data.
 const ALLOWED_FIELDS = new Set([
   'name', 'idNumber', 'skills', 'regionLabel', 'cityLabel', 'availability',
-  'hourlyRate', 'profilePhotoUrl', 'bio', 'references', 'evidenceFileUrls',
+  'hourlyRate', 'profilePhotoUrl', 'bio', 'references', 'evidenceFileUrls', 'certificationRef',
 ])
 
 export async function updateCapturedFieldAction(

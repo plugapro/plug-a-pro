@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { selectMissingSections, buildDynamicSchema, SECTION_REGISTRY } from '@/lib/web-signup-sections'
 
 describe('selectMissingSections', () => {
-  it('returns all sections when data is empty', () => {
+  it('returns all non-gated sections when data is empty', () => {
     const r = selectMissingSections({})
-    expect(r.map((s) => s.key)).toEqual(SECTION_REGISTRY.map((s) => s.key))
+    // 'certification' is excluded by default (gateEnabled: false)
+    const expected = SECTION_REGISTRY.filter((s) => s.key !== 'certification').map((s) => s.key)
+    expect(r.map((s) => s.key)).toEqual(expected)
   })
 
   it('omits name and identity sections when both are captured', () => {

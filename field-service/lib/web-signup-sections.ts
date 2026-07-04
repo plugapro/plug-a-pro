@@ -1,7 +1,9 @@
 import { z } from 'zod'
+import { MIN_EVIDENCE_PHOTOS } from '@/lib/provider-onboarding/quality-gate'
+import { hasHighRiskServiceSelection } from '@/lib/service-category-policy'
 
 export const SECTION_KEYS = [
-  'name', 'identity', 'skills', 'service_areas', 'availability', 'rates', 'profile_photo', 'bio', 'references', 'evidence',
+  'name', 'identity', 'skills', 'service_areas', 'availability', 'rates', 'profile_photo', 'bio', 'references', 'evidence', 'certification',
 ] as const
 export type SectionKey = typeof SECTION_KEYS[number]
 
@@ -32,7 +34,13 @@ export const SECTION_REGISTRY: readonly SectionDef[] = [
     schema: { references: z.string().min(10).max(500) } },
   { key: 'evidence',      fields: ['evidenceFileUrls'],
     schema: { evidenceFileUrls: z.array(z.string().url()).optional() } },
+  { key: 'certification', fields: ['certificationRef'],
+    schema: { certificationRef: z.string().min(1, 'Certification or registration number required') } },
 ]
+
+export interface SectionOpts {
+  gateEnabled?: boolean
+}
 
 function isFieldCaptured(data: Record<string, unknown>, field: string): boolean {
   const v = data[field]
@@ -42,21 +50,46 @@ function isFieldCaptured(data: Record<string, unknown>, field: string): boolean 
   return true
 }
 
-export function selectMissingSections(data: Record<string, unknown>): readonly SectionDef[] {
+export function selectMissingSections(data: Record<string, unknown>, opts: SectionOpts = {}): readonly SectionDef[] {
+  const { gateEnabled = false } = opts
+  const skills = Array.isArray(data.skills) ? (data.skills as string[]) : []
+
   return SECTION_REGISTRY.filter((s) => {
     if (s.key === 'identity') {
-      // Don't prompt for SA ID if the provider deferred verification or already
-      // uploaded verification documents during WhatsApp onboarding.
       if (data.verificationMethod === 'skipped') return false
       if (typeof data.verificationDocAttachmentId === 'string' && data.verificationDocAttachmentId) return false
       if (typeof data.verificationSelfieAttachmentId === 'string' && data.verificationSelfieAttachmentId) return false
     }
+
+    if (s.key === 'certification') {
+      if (!gateEnabled) return false
+      if (!hasHighRiskServiceSelection(skills)) return false
+      return !isFieldCaptured(data, 'certificationRef')
+    }
+
     return s.fields.some((f) => !isFieldCaptured(data, f))
   })
 }
 
-export function buildDynamicSchema(sections: readonly SectionDef[]): z.ZodObject<z.ZodRawShape> {
+export function buildDynamicSchema(sections: readonly SectionDef[], opts: SectionOpts = {}): z.ZodObject<z.ZodRawShape> {
+  const { gateEnabled = false } = opts
   const shape: Record<string, z.ZodType<unknown>> = {}
-  for (const s of sections) for (const k of Object.keys(s.schema)) shape[k] = (s.schema as Record<string, z.ZodType<unknown>>)[k]
+
+  for (const s of sections) {
+    for (const k of Object.keys(s.schema)) {
+      let fieldSchema = (s.schema as Record<string, z.ZodType<unknown>>)[k]
+
+      // When gate is ON, evidence must have at least MIN_EVIDENCE_PHOTOS URLs.
+      if (s.key === 'evidence' && k === 'evidenceFileUrls' && gateEnabled) {
+        fieldSchema = z.array(z.string().url()).min(
+          MIN_EVIDENCE_PHOTOS,
+          `At least ${MIN_EVIDENCE_PHOTOS} work photos required`,
+        )
+      }
+
+      shape[k] = fieldSchema
+    }
+  }
+
   return z.object(shape as z.ZodRawShape)
 }

@@ -1,37 +1,54 @@
 'use client'
 
-// TODO: replace text URL input with Vercel Blob client upload in follow-on PR
 import { useFormContext, useController } from 'react-hook-form'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
+import { EvidenceUploader } from '@/components/provider/registration/EvidenceUploader'
 
-export function EvidenceSection() {
+export interface EvidenceSectionProps {
+  rawToken?: string
+  gateEnabled?: boolean
+  minPhotos?: number
+}
+
+export function EvidenceSection({ rawToken, gateEnabled = false, minPhotos = 3 }: EvidenceSectionProps) {
   const { control, formState: { errors } } = useFormContext<{ evidenceFileUrls?: string[] }>()
   const { field } = useController({ name: 'evidenceFileUrls', control, defaultValue: [] })
 
-  function clear() {
-    field.onChange([])
+  async function uploadFile(file: File): Promise<string> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/provider/signup/evidence-photo', {
+      method: 'POST',
+      headers: rawToken ? { 'x-provider-resume-token': rawToken } : {},
+      body: fd,
+    })
+    const json = await res.json() as { ok: boolean; url?: string; message?: string }
+    if (!json.ok || !json.url) {
+      throw new Error(json.message ?? 'Upload failed')
+    }
+    return json.url
   }
+
+  const errorMessage = errors.evidenceFileUrls?.message
+    ? String(errors.evidenceFileUrls.message)
+    : (errors.evidenceFileUrls as { root?: { message?: string } } | undefined)?.root?.message
 
   return (
     <fieldset className="space-y-3">
       <legend className="text-base font-semibold">Supporting evidence</legend>
-      <div>
-        <Label htmlFor="evidenceFileUrls">Evidence URL (portfolio, certificates, etc.)</Label>
-        <Input
-          id="evidenceFileUrls"
-          type="url"
-          placeholder="https://…"
-          onChange={(e) => field.onChange(e.target.value ? [e.target.value] : [])}
-          value={(field.value as string[])?.[0] ?? ''}
-        />
-        <p className="mt-1 text-xs text-muted-foreground">Paste a public URL. Direct upload coming soon.</p>
-        {errors.evidenceFileUrls && <p className="mt-1 text-xs text-destructive">{String(errors.evidenceFileUrls.message)}</p>}
-      </div>
-      <Button type="button" variant="ghost" size="sm" onClick={clear} className="text-xs text-muted-foreground">
-        Skip evidence for now
-      </Button>
+      {gateEnabled && (
+        <p className="text-sm text-muted-foreground">
+          Upload at least {minPhotos} photos of your past work (e.g. completed jobs, tools, equipment).
+        </p>
+      )}
+      <EvidenceUploader
+        value={(field.value as string[]) ?? []}
+        onChange={field.onChange}
+        min={gateEnabled ? minPhotos : 1}
+        uploadFile={uploadFile}
+      />
+      {errorMessage && (
+        <p className="mt-1 text-xs text-destructive">{errorMessage}</p>
+      )}
     </fieldset>
   )
 }
