@@ -35,3 +35,14 @@ export function evidenceShortfallMessage(have: number, need: number): string {
 export function certificationRequiredMessage(): string {
   return 'One of your selected trades is high-risk, so we need a certification document or registration number before you can finish.'
 }
+
+/**
+ * Pure helper — determines whether the evidence step is complete.
+ * When the gate is disabled the step is always complete; when enabled it
+ * delegates to evaluateEvidenceGate. Kept separate so it can be unit-tested
+ * without a DOM or React.
+ */
+export function evidenceStepComplete(evidenceFileUrls: string[], gateEnabled: boolean): boolean {
+  if (!gateEnabled) return true
+  return evaluateEvidenceGate(evidenceFileUrls).ok
+}

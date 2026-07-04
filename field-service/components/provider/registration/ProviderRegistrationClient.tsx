@@ -23,11 +23,14 @@ import {
 } from 'lucide-react'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
+import { EvidenceUploader } from '@/components/provider/registration/EvidenceUploader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { OtpInput } from '@/components/ui/otp-input'
 import { Textarea } from '@/components/ui/textarea'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
+import { evidenceStepComplete, MIN_EVIDENCE_PHOTOS } from '@/lib/provider-onboarding/quality-gate'
+import { hasHighRiskServiceSelection } from '@/lib/service-category-policy'
 import type { ServiceCategoryOption } from '@/lib/service-categories'
 
 const STATE_KEY = 'pap_provider_registration_state_v2'
@@ -97,6 +100,8 @@ type RegistrationFormState = {
   emergencyAvailable: boolean
   callOutFee: string
   evidenceNote: string
+  evidenceFileUrls: string[]
+  certificationRef: string
   reference1Name: string
   reference1Mobile: string
   reference2Name: string
@@ -111,6 +116,7 @@ type Props = {
   initialApplicationRef?: string | null
   initialDraftResumeStep?: StepKey
   skillOptions: ServiceCategoryOption[]
+  qualityGateEnabled?: boolean
 }
 
 const DEFAULT_STATE: RegistrationFormState = {
@@ -138,6 +144,8 @@ const DEFAULT_STATE: RegistrationFormState = {
   emergencyAvailable: false,
   callOutFee: '',
   evidenceNote: '',
+  evidenceFileUrls: [],
+  certificationRef: '',
   reference1Name: '',
   reference1Mobile: '',
   reference2Name: '',
@@ -330,7 +338,7 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
   }
 }
 
-export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions }: Props) {
+export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions, qualityGateEnabled = false }: Props) {
   const router = useRouter()
   const profilePhotoInputRef = useRef<HTMLInputElement>(null)
   const otpSubmitRef = useRef(false)
@@ -600,6 +608,8 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       callOutFee: form.callOutFee,
       travelRadiusKm: form.travelRadiusKm,
       evidenceNote: form.evidenceNote,
+      evidenceFileUrls: form.evidenceFileUrls,
+      certificationRef: form.certificationRef || undefined,
       reference1Name: form.reference1Name,
       reference1Mobile: form.reference1Mobile,
       reference2Name: form.reference2Name,
@@ -635,6 +645,16 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
     if (currentStep === 'availability' && (form.availabilityDays.length === 0 || !form.callOutFee.trim())) {
       setError('Choose availability days and enter your call-out fee.')
       return false
+    }
+    if (currentStep === 'evidence' && qualityGateEnabled) {
+      if (!evidenceStepComplete(form.evidenceFileUrls, true)) {
+        setError(`Add ${MIN_EVIDENCE_PHOTOS} work photos before continuing.`)
+        return false
+      }
+      if (hasHighRiskServiceSelection(serviceTags(form)) && !form.certificationRef.trim()) {
+        setError('Enter your certification or registration number for the high-risk trade you selected.')
+        return false
+      }
     }
     if (currentStep === 'review' && !form.consentAccepted) {
       setError('Accept the provider terms before submitting.')
@@ -1336,7 +1356,49 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
           )}
 
           {step === 'evidence' && (
-            <ScreenPanel icon={meta.icon} title="Show your work" description="Add optional evidence that helps the team review your trade fit faster.">
+            <ScreenPanel
+              icon={meta.icon}
+              title="Show your work"
+              description={
+                qualityGateEnabled
+                  ? `Add at least ${MIN_EVIDENCE_PHOTOS} work photos. This is required to progress your application.`
+                  : 'Add optional evidence that helps the team review your trade fit faster.'
+              }
+            >
+              {qualityGateEnabled && (
+                <Field label={`Work photos (${MIN_EVIDENCE_PHOTOS} required)`}>
+                  <EvidenceUploader
+                    value={form.evidenceFileUrls}
+                    onChange={(urls) => update('evidenceFileUrls', urls)}
+                    min={MIN_EVIDENCE_PHOTOS}
+                    uploadFile={async (file) => {
+                      const fd = new FormData()
+                      fd.append('file', file)
+                      const res = await fetch('/api/provider/registration/evidence-photo', {
+                        method: 'POST',
+                        body: fd,
+                      })
+                      const payload = await res.json()
+                      if (!res.ok || !payload.ok) {
+                        throw new Error(payload.message ?? 'Upload failed')
+                      }
+                      return payload.url as string
+                    }}
+                  />
+                </Field>
+              )}
+              {qualityGateEnabled && hasHighRiskServiceSelection(serviceTags(form)) && (
+                <Field label="Certification / registration number">
+                  <Input
+                    value={form.certificationRef}
+                    onChange={(event) => update('certificationRef', event.target.value)}
+                    placeholder="e.g. wireman licence, gas installer number"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    One of your selected trades requires a certification reference. Enter your licence or registration number.
+                  </p>
+                </Field>
+              )}
               <Field label="Work note">
                 <Textarea
                   value={form.evidenceNote}
@@ -1358,7 +1420,11 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                   <Input inputMode="tel" value={form.reference2Mobile} onChange={(event) => update('reference2Mobile', event.target.value)} placeholder="082 000 0000" />
                 </Field>
               </div>
-              <Notice>Evidence is optional. Do not upload customer private records here.</Notice>
+              <Notice>
+                {qualityGateEnabled
+                  ? 'Do not upload customer private records here.'
+                  : 'Evidence is optional. Do not upload customer private records here.'}
+              </Notice>
               <FooterActions>
                 <Button fullWidth onClick={() => goTo('review')} loading={saving}>
                   Review application
