@@ -213,3 +213,32 @@ test.describe('Pay@ sprint — unauthenticated route checks', () => {
     expect(CLIENT_PUBLIC_SMOKE_ROUTES).toContain('/security/otp/report?token=smoke-invalid')
   })
 })
+
+// ─── Provider signup surfaces — quality-gate-v2 flag-OFF smoke ────────────────
+// Verifies that /provider/register and /provider/signup render without an error
+// boundary when the quality gate flag is OFF (the default). These tests run
+// unauthenticated because both entry pages are publicly reachable before auth.
+// provider.onboarding.quality_gate_v2 defaults to false, so no DB flag flip is
+// needed for these smoke checks to validate gate-OFF behaviour.
+
+test.describe('provider signup surfaces (gate OFF by default)', () => {
+  test('/provider/register loads without error boundary', async ({ page }) => {
+    const response = await page.goto('/provider/register')
+    expect(response?.status()).toBeLessThan(400)
+    await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
+    await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
+  })
+
+  test('/provider/signup renders or 404s cleanly with an invalid token (gate OFF)', async ({ page }) => {
+    // An invalid token causes a graceful error message, not a 5xx or error boundary.
+    const response = await page.goto('/provider/signup?t=invalid')
+    const status = response?.status() ?? 0
+    expect(status === 404 || status < 400, `expected <400 or 404, got ${status}`).toBe(true)
+    await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
+    await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
+  })
+
+  test('CLIENT_PUBLIC_SMOKE_ROUTES includes /provider/register', () => {
+    expect(CLIENT_PUBLIC_SMOKE_ROUTES).toContain('/provider/register')
+  })
+})
