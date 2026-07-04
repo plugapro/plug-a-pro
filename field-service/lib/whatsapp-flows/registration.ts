@@ -63,6 +63,7 @@ import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
 import { submitProviderApplication, ProviderApplicationConflictError } from '../provider-applications-submit'
 import { isEnabled } from '../flags'
+import { isQualityGateV2Enabled, evaluateEvidenceGate, evidenceShortfallMessage } from '../provider-onboarding/quality-gate'
 import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -1704,6 +1705,9 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
 }
 
 async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
+  // Resolve the quality gate ONCE per turn so all branches share the same value.
+  const qualityGate = await isQualityGateV2Enabled()
+
   const availMap: Record<string, { label: string; days: string[] }> = {
     avail_weekdays_only: { label: 'Weekdays only', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
     avail_incl_sat: { label: 'Mon–Sat', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] },
@@ -1744,6 +1748,13 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'evidence_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
+    if (qualityGate) {
+      const gate = evaluateEvidenceGate(ctx.data.evidenceFileUrls ?? [])
+      if (!gate.ok) {
+        await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
+        return { nextStep: 'reg_collect_evidence' }
+      }
+    }
     return showRegistrationSummary(ctx, { evidenceNote: '' })
   }
 
@@ -1845,6 +1856,13 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'evidence_done') {
+    if (qualityGate) {
+      const gate = evaluateEvidenceGate(ctx.data.evidenceFileUrls ?? [])
+      if (!gate.ok) {
+        await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
+        return { nextStep: 'reg_collect_evidence' }
+      }
+    }
     return showRegistrationSummary(ctx, {})
   }
 
@@ -2350,10 +2368,26 @@ async function handleCollectReference2(ctx: FlowContext): Promise<FlowResult> {
 async function promptEvidenceAfterBio(
   ctx: FlowContext,
   nextData: Partial<typeof ctx.data>,
+  // Pass the already-resolved gate value when calling from within the same turn
+  // (e.g. handleCollectEvidence). When undefined, the gate is resolved here so
+  // callers that do not yet have the value (e.g. handleCollectReference2) stay
+  // correct without an extra flag read per-turn in the common path.
+  qualityGateForPrompt?: boolean,
 ): Promise<FlowResult> {
+  const resolvedGate = qualityGateForPrompt ?? (await isQualityGateV2Enabled())
   const highRiskRequirements = selectedHighRiskServices(ctx.data.skills)
   if (highRiskRequirements.length > 0) {
     const labels = highRiskRequirements.map((requirement) => requirement.label)
+    const highRiskButtons = resolvedGate
+      ? [
+          { id: 'evidence_add', title: '✍🏽 Add proof note' },
+          { id: 'evidence_upload', title: '📎 Upload proof' },
+        ]
+      : [
+          { id: 'evidence_add', title: '✍🏽 Add proof note' },
+          { id: 'evidence_upload', title: '📎 Upload proof' },
+          { id: 'evidence_skip', title: '⏭️ Skip for now' },
+        ]
     await sendButtons(
       ctx.phone,
       [
@@ -2365,30 +2399,47 @@ async function promptEvidenceAfterBio(
         '',
         'Submitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.',
       ].join('\n'),
-      [
-        { id: 'evidence_add', title: '✍🏽 Add proof note' },
-        { id: 'evidence_upload', title: '📎 Upload proof' },
-        { id: 'evidence_skip', title: '⏭️ Skip for now' },
-      ],
+      highRiskButtons,
     )
     return { nextStep: 'reg_collect_evidence', nextData: { ...nextData, highRiskServiceLabels: labels } }
   }
 
-  await sendEvidencePrompt(ctx.phone, ctx.data, nextData)
+  await sendEvidencePrompt(ctx.phone, ctx.data, nextData, resolvedGate)
   return { nextStep: 'reg_collect_evidence', nextData }
 }
 
 /**
- * Sends the evidence-step prompt for non-high-risk skill sets. When the
- * whatsapp.registration.evidence_skip_primary flag is enabled, "Skip for now"
- * is the primary (first) button so providers don't get stuck at the file-upload
- * step. Falls back to the legacy ordering when the flag is off.
+ * Sends the evidence-step prompt for non-high-risk skill sets.
+ *
+ * When `qualityGateForPrompt` is true (gate ON), the skip button is suppressed
+ * entirely — only the "add work photo/note" button is rendered, and the
+ * evidence_skip_primary path is bypassed regardless of the flag.
+ *
+ * When the gate is OFF, the existing evidence_skip_primary flag logic is
+ * preserved unchanged: when the flag is on, "Skip for now" is the primary
+ * (first) button so providers don't get stuck at the file-upload step.
  */
 export async function sendEvidencePrompt(
   phone: string,
   _data: ConversationData,
   _nextData: Partial<ConversationData>,
+  qualityGateForPrompt = false,
 ): Promise<void> {
+  if (qualityGateForPrompt) {
+    await sendButtons(
+      phone,
+      [
+        '🧾 Add at least 3 work photos or proof documents to continue.',
+        '',
+        'Examples: completed jobs, references, certificates, or relevant past work. Photos help Plug A Pro verify your skills during review.',
+      ].join('\n'),
+      [
+        { id: 'evidence_add', title: '✍🏽 Add work photo/note' },
+      ],
+    )
+    return
+  }
+
   const skipPrimary = await isEnabled('whatsapp.registration.evidence_skip_primary')
 
   const buttons = skipPrimary
