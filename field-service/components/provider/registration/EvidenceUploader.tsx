@@ -73,8 +73,8 @@ export function EvidenceUploader({
     }
   }
 
-  function handleRemove(url: string) {
-    onChange(value.filter((u) => u !== url))
+  function handleRemove(idx: number) {
+    onChange(value.filter((_, i) => i !== idx))
   }
 
   const addDisabled = disabled || uploading
@@ -91,8 +91,8 @@ export function EvidenceUploader({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {value.map((url, idx) => (
-            <div key={url} className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+            <div key={`${idx}-${url}`} className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
+              {/* eslint-disable-next-line @next/next/no-img-element -- Vercel Blob URLs are pre-optimised; next/image would require domain config */}
               <img
                 src={url}
                 alt={`Evidence photo ${idx + 1}`}
@@ -102,7 +102,7 @@ export function EvidenceUploader({
                 type="button"
                 aria-label={`Remove photo ${idx + 1}`}
                 disabled={disabled}
-                onClick={() => handleRemove(url)}
+                onClick={() => handleRemove(idx)}
                 className={cn(
                   'absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white',
                   'disabled:cursor-not-allowed disabled:opacity-50',
@@ -131,7 +131,7 @@ export function EvidenceUploader({
           className="sr-only"
           disabled={addDisabled}
           onChange={handleFileChange}
-          aria-label="Add photo"
+          aria-hidden="true"
         />
         <Button
           type="button"

@@ -22,6 +22,9 @@ describe('EvidenceUploader', () => {
     expect(html).toContain('2 of 3')
     // The add-photo control must be present (button text or input type=file)
     expect(html.toLowerCase()).toContain('add photo')
+    // Add button must not be disabled when min is not reached
+    expect(html).toMatch(/<button[^>]*aria-label="Add photo"[^>]*>/)
+    expect(html).not.toMatch(/<button[^>]*aria-label="Add photo"[^>]*\bdisabled\b[^>]*>/)
   })
 
   it('renders one <img per url and shows "3 of 3" when all three are present', () => {
