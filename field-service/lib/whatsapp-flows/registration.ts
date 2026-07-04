@@ -2734,6 +2734,7 @@ async function launchQgv2DraftAndVerification(ctx: FlowContext): Promise<FlowRes
   }
 
   let verificationUrl: string | null = null
+  let issuerFailed = false
   try {
     const link = await issueProviderApplicationVerificationLink({
       providerApplicationDraftId: draftId,
@@ -2741,6 +2742,7 @@ async function launchQgv2DraftAndVerification(ctx: FlowContext): Promise<FlowRes
     })
     verificationUrl = link.verificationUrl
   } catch (err) {
+    issuerFailed = true
     console.error('[registration-flow] qgv2 verification link issue failed', {
       trace_id: traceId,
       draft_id: draftId,
@@ -2775,8 +2777,15 @@ async function launchQgv2DraftAndVerification(ctx: FlowContext): Promise<FlowRes
         "⏳ Your verification is being prepared — we'll message you here with the link shortly.",
       )
     }
+  } else if (issuerFailed) {
+    // Didit threw (disabled or API error): tell the applicant to expect the link shortly.
+    // Draft stays persisted; the in-flight re-nudge cron will retry.
+    await sendText(
+      ctx.phone,
+      "⏳ Identity verification is temporarily unavailable — we'll send you the link here shortly.",
+    )
   } else {
-    // Task 2.8 hardens the null-URL path; a gentle hold message is enough here.
+    // Issuer returned null URL without throwing (e.g. gate disabled at link level).
     await sendText(
       ctx.phone,
       "⏳ Your verification is being prepared — we'll message you here with the link shortly.",

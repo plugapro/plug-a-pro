@@ -258,3 +258,31 @@ describe('submitProviderRegistrationApplication — gate ON', () => {
     )
   })
 })
+
+describe('Task 2.8: Didit unavailable at submitProviderRegistrationApplication (gate ON)', () => {
+  beforeEach(() => {
+    mockIsQualityGateV2Enabled.mockResolvedValue(true)
+  })
+
+  it('issueLink throws generic Error → returns awaiting_verification with verificationUrl null, no application created', async () => {
+    mockIssueLink.mockRejectedValueOnce(new Error('didit down'))
+    const input = await buildValidInput()
+    const result = await submitProviderRegistrationApplication(mockClient as never, input as any)
+
+    expect(result.outcome).toBe('awaiting_verification')
+    expect((result as any).verificationUrl).toBeNull()
+    expect(applicationStore).toHaveLength(0)
+    expect(mockIssueLink).toHaveBeenCalledTimes(1)
+  })
+
+  it('issueLink throws DiditDisabledError → same awaiting_verification outcome, no application', async () => {
+    const { DiditDisabledError } = await import('@/lib/identity-verification/vendors/didit/client')
+    mockIssueLink.mockRejectedValueOnce(new DiditDisabledError('DIDIT_API_KEY not set'))
+    const input = await buildValidInput()
+    const result = await submitProviderRegistrationApplication(mockClient as never, input as any)
+
+    expect(result.outcome).toBe('awaiting_verification')
+    expect((result as any).verificationUrl).toBeNull()
+    expect(applicationStore).toHaveLength(0)
+  })
+})

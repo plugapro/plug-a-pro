@@ -236,6 +236,56 @@ describe('WhatsApp summary → Didit launch (quality gate v2 create-on-PASS)', (
   })
 })
 
+describe('Task 2.8: Didit unavailable at launchQgv2DraftAndVerification (gate ON)', () => {
+  it('issueLink throws generic Error → sends temporarily-unavailable text, lands reg_awaiting_kyc, draft stays, no application', async () => {
+    mockDraftCreate.mockResolvedValueOnce({ id: 'draft_mock_err_001' })
+    mockIssueLink.mockRejectedValueOnce(new Error('didit down'))
+
+    const result = await handleRegistrationFlow(buildCtx())
+
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+    // Draft was persisted
+    const draftPersisted = mockDraftCreate.mock.calls.length > 0 || mockDraftUpdate.mock.calls.length > 0
+    expect(draftPersisted).toBe(true)
+    // No CTA URL sent
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+    // Temporarily-unavailable text sent
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining('temporarily unavailable'),
+    )
+    // No application or provider created
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
+  })
+
+  it('issueLink throws DiditDisabledError → same temporarily-unavailable outcome', async () => {
+    const { DiditDisabledError } = await import('@/lib/identity-verification/vendors/didit/client')
+    mockDraftCreate.mockResolvedValueOnce({ id: 'draft_mock_err_002' })
+    mockIssueLink.mockRejectedValueOnce(new DiditDisabledError('DIDIT_API_KEY not set'))
+
+    const result = await handleRegistrationFlow(buildCtx())
+
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining('temporarily unavailable'),
+    )
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
+  })
+
+  it('no manual vendor fallback on throw — submitProviderApplication never called', async () => {
+    mockDraftCreate.mockResolvedValueOnce({ id: 'draft_mock_err_003' })
+    mockIssueLink.mockRejectedValueOnce(new Error('connection refused'))
+
+    await handleRegistrationFlow(buildCtx())
+
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+  })
+})
+
 describe('handleAwaitingKyc (re-nudge flow)', () => {
   it('re-nudge happy path: draft exists, link issued, CTA-URL sent, stays reg_awaiting_kyc', async () => {
     // Draft exists for the phone number

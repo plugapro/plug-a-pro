@@ -118,10 +118,19 @@ export async function submitProviderApplicationFromWebAction(
     })
 
     // Issue verification link outside the transaction (idempotent, uses db internally).
-    const link = await issueProviderApplicationVerificationLink({
-      providerApplicationDraftId: draftId!,
-      channel: 'PWA',
-    })
+    let link: { verificationUrl: string | null }
+    try {
+      link = await issueProviderApplicationVerificationLink({
+        providerApplicationDraftId: draftId!,
+        channel: 'PWA',
+      })
+    } catch (err) {
+      console.error('[web-action] verification link issue failed (Didit unavailable, draft retained)', {
+        draft_id: draftId!,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return { ok: true as const, awaitingVerification: true as const, verificationUrl: null }
+    }
 
     return { ok: true as const, awaitingVerification: true as const, verificationUrl: link.verificationUrl }
   }

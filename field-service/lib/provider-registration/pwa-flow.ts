@@ -601,10 +601,19 @@ export async function submitProviderRegistrationApplication(
     })
 
     // Issue verification link outside the transaction (idempotent, uses db internally).
-    const link = await issueProviderApplicationVerificationLink({
-      providerApplicationDraftId: draftId,
-      channel: 'PWA',
-    })
+    let link: { verificationUrl: string | null }
+    try {
+      link = await issueProviderApplicationVerificationLink({
+        providerApplicationDraftId: draftId,
+        channel: 'PWA',
+      })
+    } catch (err) {
+      console.error('[pwa-flow] verification link issue failed (Didit unavailable, draft retained)', {
+        draft_id: draftId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return { outcome: 'awaiting_verification', verificationUrl: null }
+    }
 
     return { outcome: 'awaiting_verification', verificationUrl: link.verificationUrl }
   }
