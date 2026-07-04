@@ -20,8 +20,8 @@ import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { getServiceComplianceRequirement } from '@/lib/service-category-policy'
 import { sendButtons } from '@/lib/whatsapp-interactive'
 import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
-import { submitProviderApplication } from '@/lib/provider-applications-submit'
-import { findLatestActiveProviderApplicationByPhone, ACTIVE_PROVIDER_APPLICATION_STATUSES } from '@/lib/provider-applications'
+import { ACTIVE_PROVIDER_APPLICATION_STATUSES } from '@/lib/provider-applications'
+import { evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
 
 // ─── Local helpers (mirrors registration.ts, not exported there) ──────────────
 
@@ -45,9 +45,9 @@ function skillLevelFromExperienceLabel(label: string | undefined | null): string
  * Appends a [quality-gate] marker line to the ops notes field.
  * Idempotent: existing marker lines are replaced rather than duplicated.
  */
-function appendQualityGateNote(existing: string | null): string {
+function appendQualityGateNote(existing: string | null, message = 'KYC failed at application'): string {
   const marker = '[quality-gate]'
-  const line = `${marker} KYC failed at application`
+  const line = `${marker} ${message}`
   if (!existing) return line
   const preservedLines = existing.split('\n').filter((l) => !l.startsWith(`${marker} `))
   const cleaned = preservedLines.join('\n').trimEnd()
@@ -218,6 +218,33 @@ async function createApplicationInline(
       phone: a.phone,
     })
     return { id: conflict.id, _skippedDuplicate: true as const }
+  }
+
+  // Fix B — defense-in-depth: re-evaluate the evidence and certification gates
+  // at completion time. The gate was evaluated when the draft was created, but
+  // the WhatsApp path bypasses submitProviderApplication (which enforces the
+  // gate when the flag is ON). If an upstream path skipped the gate (flag was
+  // OFF at draft-create time and turned ON before completion, or a concurrent
+  // path bypassed the check), a PENDING application must not be created for an
+  // under-qualified applicant. Downgrade to MORE_INFO_REQUIRED with a note so
+  // ops can review rather than silently dropping the applicant.
+  if (args.status === 'PENDING') {
+    const evidenceResult = evaluateEvidenceGate(a.evidenceFileUrls ?? [])
+    const certResult = evaluateCertificationGate(a.skills ?? [], Boolean(a.certificationRef))
+    if (!evidenceResult.ok || !certResult.ok) {
+      console.warn('[quality-gate-submission] createApplicationInline: evidence/cert gate failed at completion — downgrading to MORE_INFO_REQUIRED', {
+        phone: a.phone,
+        evidenceHave: evidenceResult.have,
+        evidenceNeed: evidenceResult.need,
+        certRequired: certResult.required,
+        certOk: certResult.ok,
+      })
+      args = {
+        ...args,
+        status: 'MORE_INFO_REQUIRED',
+        notesAppend: appendQualityGateNote(args.notesAppend ?? null, 'evidence/certification incomplete at KYC completion'),
+      }
+    }
   }
 
   const availabilityStr = Array.isArray(a.availability)
@@ -444,7 +471,16 @@ async function linkAttachmentToApplication(
   }
 }
 
-// ─── Internal: PWA_RESUME channel — rebuild SubmitInput and create application ─
+// ─── Internal: PWA_RESUME channel — conflict-aware inline create on PASS ─────
+//
+// Fix A: previously called submitProviderApplication which throws
+// ProviderApplicationConflictError when an active application exists for the
+// phone. That throw (during the KYC completion webhook) had no processedAt
+// set → the webhook treated it as retryable → the completion retried forever.
+//
+// Fix: do the conflict check ourselves inside the transaction. If an active
+// application already exists, link the draft and verification to it and return
+// the existing id — no throw, no duplicate.
 
 async function completePwaResumeChannel(
   client: typeof db,
@@ -455,31 +491,96 @@ async function completePwaResumeChannel(
   let applicationId: string
 
   await client.$transaction(async (tx) => {
-    // PWA_RESUME: the payload IS essentially a SubmitInput. Map fields directly.
     // Resume-token decision: the draft's resume token was left unconsumed by Task 2.5
     // intentionally. We do NOT consume it here — the draft.submittedApplicationId link
     // + the idempotency guard already prevent a double-submit, making a stale token
     // harmless. Consuming it would require loading the ProviderResumeToken by some
     // key not present in this payload, so we skip it to avoid a partial-data lookup.
-    const { application } = await submitProviderApplication(
-      tx,
-      {
+
+    // Fix A: conflict-aware create. If a live application already exists for this
+    // phone (created concurrently during the KYC window), link the draft to it and
+    // return its id rather than throwing ProviderApplicationConflictError.
+    const conflict = await tx.providerApplication.findFirst({
+      where: {
+        phone: payload.phone,
+        status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
+      },
+      select: { id: true, status: true },
+    })
+
+    if (conflict) {
+      console.warn('[quality-gate-submission] completePwaResumeChannel: active application already exists, linking draft (no duplicate create)', {
+        existingApplicationId: conflict.id,
+        existingStatus: conflict.status,
+        phone: payload.phone,
+      })
+      await tx.providerApplicationDraft.update({
+        where: { id: draft.id },
+        data: { submittedApplicationId: conflict.id },
+      })
+      await tx.providerIdentityVerification.update({
+        where: { id: verificationId },
+        data: { providerApplicationId: conflict.id },
+      })
+      applicationId = conflict.id
+      return
+    }
+
+    // Fix B: evidence/cert defense-in-depth before creating PENDING.
+    const evidenceResult = evaluateEvidenceGate(payload.evidenceFileUrls ?? [])
+    const certResult = evaluateCertificationGate(payload.skills ?? [], Boolean(payload.certificationRef))
+    const gatePass = evidenceResult.ok && certResult.ok
+    const finalStatus: 'PENDING' | 'MORE_INFO_REQUIRED' = gatePass ? 'PENDING' : 'MORE_INFO_REQUIRED'
+
+    if (!gatePass) {
+      console.warn('[quality-gate-submission] completePwaResumeChannel: evidence/cert gate failed — creating MORE_INFO_REQUIRED', {
+        phone: payload.phone,
+        evidenceHave: evidenceResult.have,
+        evidenceNeed: evidenceResult.need,
+        certRequired: certResult.required,
+        certOk: certResult.ok,
+      })
+    }
+
+    const availabilityStr = Array.isArray(payload.availability)
+      ? (payload.availability as string[]).join(', ')
+      : payload.availability ?? null
+
+    const application = await tx.providerApplication.create({
+      data: {
         phone: payload.phone,
         name: payload.name,
         idNumber: payload.idNumber ?? null,
         skills: payload.skills,
         serviceAreas: payload.serviceAreas,
-        availability: payload.availability,
+        availability: availabilityStr,
         experience: payload.experience ?? null,
         evidenceNote: payload.evidenceNote ?? null,
         evidenceFileUrls: payload.evidenceFileUrls ?? [],
-        certificationRef: payload.certificationRef ?? null,
         hourlyRate: payload.hourlyRate ?? null,
-        ctwaReferral: payload.ctwaReferral as import('@/lib/whatsapp-referral').CtwaReferralAttribution | null,
+        status: finalStatus,
+        submittedAt: new Date(),
+        ...(payload.ctwaReferral != null
+          ? {
+              ctwaSourceType: (payload.ctwaReferral as Record<string, unknown>).sourceType as string | undefined ?? null,
+              ctwaSourceId: (payload.ctwaReferral as Record<string, unknown>).sourceId as string | undefined ?? null,
+              ctwaClid: (payload.ctwaReferral as Record<string, unknown>).ctwaClid as string | undefined ?? null,
+              ctwaHeadline: (payload.ctwaReferral as Record<string, unknown>).headline as string | undefined ?? null,
+              ctwaCapturedAt: (payload.ctwaReferral as Record<string, unknown>).capturedAt
+                ? new Date((payload.ctwaReferral as Record<string, unknown>).capturedAt as string)
+                : null,
+            }
+          : {}),
       },
-      { source: 'web' },
-    )
+    })
     applicationId = application.id
+
+    if (!gatePass) {
+      await tx.providerApplication.update({
+        where: { id: applicationId },
+        data: { notes: appendQualityGateNote(null, 'evidence/certification incomplete at KYC completion') },
+      })
+    }
 
     await tx.providerApplicationDraft.update({
       where: { id: draft.id },
@@ -518,7 +619,18 @@ async function completePwaResumeChannel(
   return { applicationId: applicationId! }
 }
 
-// ─── Internal: PWA_SELF_SERVE channel — sync provider, rebuild SubmitInput ───
+// ─── Internal: PWA_SELF_SERVE channel — sync provider, conflict-aware inline create ─
+//
+// Fix A: previously called submitProviderApplication which throws
+// ProviderApplicationConflictError when an active application exists for the
+// phone. That throw (during the KYC completion webhook) had no processedAt
+// set → the webhook treated it as retryable → the completion retried forever.
+//
+// Fix: do the conflict check ourselves. If an active application already exists,
+// link the draft and verification to it and return the existing id — no throw.
+//
+// Fix C: replay providerRate rows using callOutFee / hourlyRate from the payload
+// (mirrors the gate-OFF self-serve path in pwa-flow.ts).
 
 async function completePwaSelfServeChannel(
   client: typeof db,
@@ -547,23 +659,70 @@ async function completePwaSelfServeChannel(
       skipEnrichment: true,
     })
 
+    // Fix A: conflict-aware create. If a live application already exists for this
+    // phone (created concurrently during the KYC window), link the draft to it and
+    // return its id rather than throwing ProviderApplicationConflictError.
+    const conflict = await tx.providerApplication.findFirst({
+      where: {
+        phone: payload.phone,
+        status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
+      },
+      select: { id: true, status: true },
+    })
+
+    if (conflict) {
+      console.warn('[quality-gate-submission] completePwaSelfServeChannel: active application already exists, linking draft (no duplicate create)', {
+        existingApplicationId: conflict.id,
+        existingStatus: conflict.status,
+        phone: payload.phone,
+      })
+      await tx.providerApplicationDraft.update({
+        where: { id: draft.id },
+        data: { submittedApplicationId: conflict.id },
+      })
+      await tx.providerIdentityVerification.update({
+        where: { id: verificationId },
+        data: { providerApplicationId: conflict.id },
+      })
+      applicationId = conflict.id
+      return
+    }
+
+    // Fix B: evidence/cert defense-in-depth before creating PENDING.
+    const evidenceResult = evaluateEvidenceGate(payload.evidenceFileUrls ?? [])
+    const certResult = evaluateCertificationGate(payload.skills ?? [], Boolean(payload.certificationRef))
+    const gatePass = evidenceResult.ok && certResult.ok
+    const finalStatus: 'PENDING' | 'MORE_INFO_REQUIRED' = gatePass ? 'PENDING' : 'MORE_INFO_REQUIRED'
+
+    if (!gatePass) {
+      console.warn('[quality-gate-submission] completePwaSelfServeChannel: evidence/cert gate failed — creating MORE_INFO_REQUIRED', {
+        phone: payload.phone,
+        evidenceHave: evidenceResult.have,
+        evidenceNeed: evidenceResult.need,
+        certRequired: certResult.required,
+        certOk: certResult.ok,
+      })
+    }
+
     // Resume-token decision: same as PWA_RESUME — the resume token is not stored
     // in the submitPayload and retrieving it by phone/draftId would require an
     // extra lookup. The idempotency guard (draft.submittedApplicationId) makes
     // a stale token harmless, so we skip consumption here.
-    const { application } = await submitProviderApplication(
-      tx,
-      {
+    const availabilityStr = Array.isArray(payload.availability)
+      ? (payload.availability as string[]).join(', ')
+      : payload.availability ?? null
+
+    const application = await tx.providerApplication.create({
+      data: {
         phone: payload.phone,
         name: payload.name,
         email: payload.email ?? null,
         skills: payload.skills,
         serviceAreas: payload.serviceAreas,
-        availability: payload.availability,
+        availability: availabilityStr,
         experience: payload.experience ?? null,
         evidenceNote: payload.evidenceNote ?? null,
         evidenceFileUrls: payload.evidenceFileUrls ?? [],
-        certificationRef: payload.certificationRef ?? null,
         callOutFee: payload.callOutFee ?? null,
         hourlyRate: payload.hourlyRate ?? null,
         reference1Name: payload.reference1Name ?? null,
@@ -571,10 +730,38 @@ async function completePwaSelfServeChannel(
         reference2Name: payload.reference2Name ?? null,
         reference2Mobile: payload.reference2Mobile ?? null,
         providerId,
+        status: finalStatus,
+        submittedAt: new Date(),
       },
-      { source: 'web' },
-    )
+    })
     applicationId = application.id
+
+    if (!gatePass) {
+      await tx.providerApplication.update({
+        where: { id: applicationId },
+        data: { notes: appendQualityGateNote(null, 'evidence/certification incomplete at KYC completion') },
+      })
+    }
+
+    // Fix C: replay providerRate rows, mirroring the gate-OFF self-serve path in
+    // pwa-flow.ts. Only written when callOutFee is present (the trigger condition
+    // used by the gate-OFF path). hourlyRate is replayed alongside when present.
+    if (payload.callOutFee !== null && payload.callOutFee !== undefined && payload.skills.length > 0) {
+      const rateRows = payload.skills.map((skill) => {
+        const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
+        return {
+          providerId,
+          categorySlug,
+          callOutFee: payload.callOutFee,
+          hourlyRate: typeof payload.hourlyRate === 'number' ? payload.hourlyRate : null,
+          rateNegotiable: true,
+          quoteAfterInspection: false,
+        }
+      })
+      // providerRate may not exist in all env migrations; guard with optional chaining
+      // TODO: remove optional chaining once providerRate migration is confirmed in all envs
+      await (tx as any).providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
+    }
 
     await tx.providerApplicationDraft.update({
       where: { id: draft.id },
@@ -681,6 +868,29 @@ export async function completeApplicationForPassedVerification(
 
     // c. Create provider category rows
     await createProviderCategoryRows(tx, providerId, payload)
+
+    // Fix C: replay providerRate rows, mirroring the gate-OFF WhatsApp path in
+    // registration.ts. Only written when callOutFee is present (the trigger condition
+    // used by the gate-OFF path). hourlyRate and rateNegotiable are replayed alongside.
+    if (
+      typeof payload.replayInputs.callOutFee === 'number' &&
+      payload.canonicalSkills.length > 0
+    ) {
+      const rateRows = payload.canonicalSkills.map((skill: string) => {
+        const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
+        return {
+          providerId,
+          categorySlug,
+          callOutFee: payload.replayInputs.callOutFee,
+          hourlyRate: typeof payload.replayInputs.hourlyRate === 'number' ? payload.replayInputs.hourlyRate : null,
+          rateNegotiable: payload.replayInputs.rateNegotiable !== false,
+          quoteAfterInspection: false,
+        }
+      })
+      // providerRate may not exist in all env migrations; guard with optional chaining
+      // TODO: remove optional chaining once providerRate migration is confirmed in all envs
+      await (tx as any).providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
+    }
 
     // d. Link evidence attachments (non-fatal for each)
     for (const attId of payload.replayInputs.evidenceAttachmentIds ?? []) {
