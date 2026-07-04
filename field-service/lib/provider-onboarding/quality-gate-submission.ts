@@ -200,10 +200,17 @@ async function createApplicationInline(
   })
   if (conflict) {
     if (args.draft) {
+      const draftId = args.draft.id
       await tx.providerApplicationDraft.update({
-        where: { id: args.draft.id },
+        where: { id: draftId },
         data: { submittedApplicationId: conflict.id },
-      }).catch(() => undefined)
+      }).catch((err) => {
+        console.error('[quality-gate-submission] createApplicationInline: failed to link draft to existing application', {
+          draftId,
+          conflictApplicationId: conflict.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
     }
     console.warn('[quality-gate-submission] createApplicationInline: active application already exists, skipping duplicate create', {
       existingApplicationId: conflict.id,
@@ -312,10 +319,17 @@ async function createPwaApplicationInline(
   })
   if (conflict) {
     if (args.draft) {
+      const draftId = args.draft.id
       await tx.providerApplicationDraft.update({
-        where: { id: args.draft.id },
+        where: { id: draftId },
         data: { submittedApplicationId: conflict.id },
-      }).catch(() => undefined)
+      }).catch((err) => {
+        console.error('[quality-gate-submission] createPwaApplicationInline: failed to link draft to existing application', {
+          draftId,
+          conflictApplicationId: conflict.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
     }
     console.warn('[quality-gate-submission] createPwaApplicationInline: active application already exists, skipping duplicate create', {
       existingApplicationId: conflict.id,
