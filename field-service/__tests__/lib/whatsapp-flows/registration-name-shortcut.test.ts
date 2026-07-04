@@ -25,6 +25,11 @@ vi.mock('@/lib/flags', async () => {
   return { ...actual, isEnabled: vi.fn().mockResolvedValue(true) }
 })
 
+vi.mock('@/lib/provider-onboarding/quality-gate', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/provider-onboarding/quality-gate')>('@/lib/provider-onboarding/quality-gate')
+  return { ...actual, isQualityGateV2Enabled: vi.fn().mockResolvedValue(false) }
+})
+
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 import { sendText, sendButtons } from '@/lib/whatsapp-interactive'
 import type { FlowContext } from '@/lib/whatsapp-flows/types'
