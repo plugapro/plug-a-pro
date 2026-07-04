@@ -115,6 +115,7 @@ describe('WhatsApp evidence gate', () => {
       data: { evidenceFileUrls: ['a'], skills: ['painting'] },
     }))
     expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(mockSendText.mock.calls.flat().join(' ')).toContain('more')
   })
 
   it('evidence_done with 3 photos advances (to certification/summary)', async () => {
@@ -123,6 +124,6 @@ describe('WhatsApp evidence gate', () => {
       reply: { type: 'interactive', id: 'evidence_done' },
       data: { evidenceFileUrls: ['a', 'b', 'c'], skills: ['painting'] },
     }))
-    expect(result.nextStep).not.toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_pending')
   })
 })

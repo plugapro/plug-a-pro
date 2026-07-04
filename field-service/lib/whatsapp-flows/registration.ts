@@ -1761,7 +1761,10 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   // ── Media upload (image or document) ──────────────────────────────────────
   if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
     if (!ctx.reply.mediaId) {
-      await sendText(ctx.phone, "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one.")
+      const hint = qualityGate
+        ? "⚠️ Couldn't process that file. Please try again."
+        : "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one."
+      await sendText(ctx.phone, hint)
       return { nextStep: 'reg_collect_evidence' }
     }
     const existing = uniqueStrings(ctx.data.evidenceFileUrls ?? [])
@@ -1850,7 +1853,10 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
         `[registration:handleCollectEvidence] media upload failed - mediaId=${ctx.reply.mediaId} mimeType=${ctx.reply.mimeType ?? 'unknown'}:`,
         err
       )
-      await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one.")
+      const hint = qualityGate
+        ? "⚠️ Couldn't upload that file. Please try again."
+        : "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one."
+      await sendText(ctx.phone, hint)
       return { nextStep: 'reg_collect_evidence' }
     }
   }
