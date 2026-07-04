@@ -87,6 +87,12 @@ describe('issueProviderApplicationVerificationLink', () => {
     })
     expect(result.verificationId).toBe('ver-existing')
     expect(result.reused).toBe(true)
+
+    // Assert that the reuse query is correct: must anchor on providerApplicationDraftId and non-terminal statuses
+    const findFirstArg = mockDb.providerIdentityVerification.findFirst.mock.calls[0][0]
+    expect(findFirstArg.where.providerApplicationDraftId).toBe('d1')
+    expect(findFirstArg.where.status.in).toBeDefined()
+    expect(Array.isArray(findFirstArg.where.status.in)).toBe(true)
   })
 
   it('asserts create data has providerId: null — the key application-stage invariant', async () => {
@@ -102,5 +108,7 @@ describe('issueProviderApplicationVerificationLink', () => {
     const createCall = mockDb.providerIdentityVerification.create.mock.calls[0][0]
     expect(createCall.data.providerId).toBeNull()
     expect(createCall.data.providerApplicationDraftId).toBe('d1')
+    // Assert the default identityBasis is SA_ID when caller omits it
+    expect(createCall.data.identityBasis).toBe('SA_ID')
   })
 })
