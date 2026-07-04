@@ -242,8 +242,7 @@ async function createApplicationInline(
 // ─── Internal: create provider categories in tx ───────────────────────────────
 
 async function createProviderCategoryRows(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx type not exported
-  tx: any,
+  tx: any, // tx type not exported from Prisma client
   providerId: string,
   payload: Qgv2WhatsappSubmitPayload,
 ) {
@@ -277,8 +276,7 @@ async function createProviderCategoryRows(
 // ─── Internal: link attachments non-fatally ───────────────────────────────────
 
 async function linkAttachmentToApplication(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx type not exported
-  tx: any,
+  tx: any, // tx type not exported from Prisma client
   attachmentId: string | null | undefined,
   providerApplicationId: string,
   tag: string,
