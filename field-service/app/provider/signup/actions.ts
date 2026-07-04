@@ -103,11 +103,11 @@ export async function submitProviderApplicationFromWebAction(
       const mergedCertRef = typeof merged.certificationRef === 'string' ? merged.certificationRef : null
       const evidenceResult = evaluateEvidenceGate(mergedEvidenceUrls)
       if (!evidenceResult.ok) {
-        throw new Error(`QUALITY_GATE_EVIDENCE: need ${evidenceResult.need} work photos, have ${evidenceResult.have}`)
+        throw new Error('QUALITY_GATE_EVIDENCE')
       }
       const certResult = evaluateCertificationGate(mergedSkills, Boolean(mergedCertRef))
       if (!certResult.ok) {
-        throw new Error('QUALITY_GATE_CERTIFICATION: certification required for selected trade(s)')
+        throw new Error('QUALITY_GATE_CERTIFICATION')
       }
 
       // 4a. Persist merged form data back to Conversation.data.

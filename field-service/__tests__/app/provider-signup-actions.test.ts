@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockGateEnabled, mockIssueLinkWebAction } = vi.hoisted(() => ({
+const { mockGateEnabled, mockIssueLinkWebAction, mockEvaluateEvidenceGate, mockEvaluateCertificationGate } = vi.hoisted(() => ({
   mockGateEnabled: vi.fn(async () => false),
   mockIssueLinkWebAction: vi.fn(async () => ({
     verificationId: 'ver-web-1',
@@ -8,12 +8,16 @@ const { mockGateEnabled, mockIssueLinkWebAction } = vi.hoisted(() => ({
     expiresAt: new Date(),
     reused: false,
   })),
+  mockEvaluateEvidenceGate: vi.fn((urls: string[]) => ({ ok: true, have: urls.length, need: 3 })),
+  mockEvaluateCertificationGate: vi.fn((skills: string[], hasCert: boolean) => ({ ok: true, required: false })),
 }))
 
 // Keep the quality gate OFF for all gate-OFF tests — Task 2.8 gate-ON tests use mockGateEnabled.mockResolvedValueOnce(true).
 vi.mock('@/lib/provider-onboarding/quality-gate', async (orig) => ({
   ...(await orig<typeof import('@/lib/provider-onboarding/quality-gate')>()),
   isQualityGateV2Enabled: mockGateEnabled,
+  evaluateEvidenceGate: mockEvaluateEvidenceGate,
+  evaluateCertificationGate: mockEvaluateCertificationGate,
 }))
 
 vi.mock('@/lib/identity-verification/application-link', () => ({
@@ -245,6 +249,8 @@ beforeEach(() => {
     expiresAt: new Date(),
     reused: false,
   })
+  mockEvaluateEvidenceGate.mockImplementation((urls: string[]) => ({ ok: true, have: urls.length, need: 3 }))
+  mockEvaluateCertificationGate.mockImplementation((skills: string[], hasCert: boolean) => ({ ok: true, required: false }))
 
   mockDb.providerApplicationDraft.findFirst.mockResolvedValue(null)
   mockDb.providerApplicationDraft.create.mockResolvedValue({ id: 'draft-web-1' })
@@ -626,5 +632,118 @@ describe('P1: gate-ON conflict guards in PWA-B (submitProviderApplicationFromWeb
     expect(result).toMatchObject({ ok: true, awaitingVerification: true })
     expect(mockIssueLinkWebAction).toHaveBeenCalledTimes(1)
     expect(getApplicationStore()).toHaveLength(0)
+  })
+
+  it('gate ON + evidenceFileUrls below minimum → throws Error("QUALITY_GATE_EVIDENCE"), no application', async () => {
+    const phone = '+27821111105'
+    const conv = {
+      id: `conv-gate-evidence-${Date.now()}`,
+      phone,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'Bad Evidence User',
+        idNumber: '8001015009087',
+        skills: ['plumbing'],
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        hourlyRate: 350,
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+        bio: 'I am an experienced plumber with five years of work history.',
+        references: 'Available on request from past clients on demand.',
+        // Good evidence in captured data
+        evidenceFileUrls: [
+          'https://blob.example.com/ev1.jpg',
+          'https://blob.example.com/ev2.jpg',
+          'https://blob.example.com/ev3.jpg',
+        ],
+        certificationRef: 'PIRB-12345',
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+      updatedAt: new Date(),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    mockGateEnabled.mockResolvedValueOnce(true)
+    // Mock the evaluator to return failure for insufficient evidence
+    mockEvaluateEvidenceGate.mockReturnValueOnce({ ok: false, have: 1, need: 3 })
+
+    // Override evidence with insufficient data in payload (below minimum of 3)
+    await expect(
+      submitProviderApplicationFromWebAction({
+        rawToken,
+        payload: {
+          evidenceFileUrls: ['https://blob.example.com/ev1.jpg'],
+        }
+      })
+    ).rejects.toThrow('QUALITY_GATE_EVIDENCE')
+
+    expect(getApplicationStore()).toHaveLength(0)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + high-risk skill without certification → throws Error("QUALITY_GATE_CERTIFICATION"), no application', async () => {
+    const phone = '+27821111106'
+    const conv = {
+      id: `conv-gate-cert-${Date.now()}`,
+      phone,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'No Cert User',
+        idNumber: '8001015009087',
+        skills: ['electrical'], // high-risk skill requiring certification
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        hourlyRate: 350,
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+        bio: 'I am an experienced electrician.',
+        references: 'Available on request from past clients on demand.',
+        evidenceFileUrls: [
+          'https://blob.example.com/ev1.jpg',
+          'https://blob.example.com/ev2.jpg',
+          'https://blob.example.com/ev3.jpg',
+        ],
+        certificationRef: 'VALID-CERT', // captured good certification
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+      updatedAt: new Date(),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    mockGateEnabled.mockResolvedValueOnce(true)
+    // Mock the evaluator to return failure — high-risk skill without cert
+    mockEvaluateCertificationGate.mockReturnValueOnce({ ok: false, required: true })
+
+    // Override skills to select a high-risk one WITHOUT overriding certification —
+    // the explicit gate will re-evaluate and find the mismatch
+    await expect(
+      submitProviderApplicationFromWebAction({
+        rawToken,
+        payload: {
+          skills: ['electrical'], // high-risk skill still selected
+          certificationRef: null, // but now certification is null in payload override
+        }
+      })
+    ).rejects.toThrow('QUALITY_GATE_CERTIFICATION')
+
+    expect(getApplicationStore()).toHaveLength(0)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
   })
 })

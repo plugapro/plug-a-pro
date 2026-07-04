@@ -1284,6 +1284,7 @@ export async function recordManualReviewForApplication(
         skipEnrichment: true,
       })
 
+      // WHATSAPP: isTestUser/cohortName already carried in payload.submitApplicationArgs — no createTestCohortContext needed here.
       const application = await createApplicationInline(tx, {
         submitApplicationArgs: { ...payload.submitApplicationArgs, providerId },
         providerId,
