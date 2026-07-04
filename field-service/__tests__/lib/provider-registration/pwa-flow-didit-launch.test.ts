@@ -117,8 +117,12 @@ vi.mock('@/lib/provider-applications', () => ({
   findLatestActiveProviderApplicationByPhone: vi.fn(async () => null),
   normalizeProviderApplicationPhone: vi.fn((p: string) => p),
 }))
+const { mockSyncProviderRecord } = vi.hoisted(() => ({
+  mockSyncProviderRecord: vi.fn(async () => 'provider-1'),
+}))
+
 vi.mock('@/lib/provider-record', () => ({
-  syncProviderRecord: vi.fn(async () => 'provider-1'),
+  syncProviderRecord: mockSyncProviderRecord,
   upsertStructuredServiceAreas: vi.fn(async () => {}),
 }))
 vi.mock('@/lib/service-categories', () => ({
@@ -273,6 +277,7 @@ describe('Task 2.8: Didit unavailable at submitProviderRegistrationApplication (
     expect((result as any).verificationUrl).toBeNull()
     expect(applicationStore).toHaveLength(0)
     expect(mockIssueLink).toHaveBeenCalledTimes(1)
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
   })
 
   it('issueLink throws DiditDisabledError → same awaiting_verification outcome, no application', async () => {
@@ -284,5 +289,6 @@ describe('Task 2.8: Didit unavailable at submitProviderRegistrationApplication (
     expect(result.outcome).toBe('awaiting_verification')
     expect((result as any).verificationUrl).toBeNull()
     expect(applicationStore).toHaveLength(0)
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
   })
 })

@@ -247,6 +247,8 @@ describe('Task 2.8: Didit unavailable at launchQgv2DraftAndVerification (gate ON
     // Draft was persisted
     const draftPersisted = mockDraftCreate.mock.calls.length > 0 || mockDraftUpdate.mock.calls.length > 0
     expect(draftPersisted).toBe(true)
+    // Draft NOT deleted (deletion mock does not exist on providerApplicationDraft, making deletion structurally impossible)
+    expect(dbMock.providerApplicationDraft.delete).toBeUndefined()
     // No CTA URL sent
     expect(mockSendCtaUrl).not.toHaveBeenCalled()
     // Temporarily-unavailable text sent
@@ -267,6 +269,8 @@ describe('Task 2.8: Didit unavailable at launchQgv2DraftAndVerification (gate ON
     const result = await handleRegistrationFlow(buildCtx())
 
     expect(result.nextStep).toBe('reg_awaiting_kyc')
+    // Draft NOT deleted (deletion mock does not exist on providerApplicationDraft, making deletion structurally impossible)
+    expect(dbMock.providerApplicationDraft.delete).toBeUndefined()
     expect(mockSendCtaUrl).not.toHaveBeenCalled()
     expect(mockSendText).toHaveBeenCalledWith(
       '+27821234567',
@@ -283,6 +287,8 @@ describe('Task 2.8: Didit unavailable at launchQgv2DraftAndVerification (gate ON
     await handleRegistrationFlow(buildCtx())
 
     expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+    // Draft NOT deleted (deletion mock does not exist on providerApplicationDraft, making deletion structurally impossible)
+    expect(dbMock.providerApplicationDraft.delete).toBeUndefined()
   })
 })
 
