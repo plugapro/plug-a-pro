@@ -70,6 +70,7 @@ export type FlowStep =
   | 'reg_collect_certification'
   | 'reg_confirm'
   | 'reg_pending'
+  | 'reg_awaiting_kyc'        // quality gate v2: draft persisted, Didit link sent, awaiting PASS
   | 'reg_edit_field'          // field-level edit selection
   // Optional identity verification (post-name, pre-skills)
   | 'reg_verify_enter_id'     // text-based SA ID / passport entry with Luhn validation

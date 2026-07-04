@@ -1,0 +1,237 @@
+// Task 2.4: When provider.onboarding.quality_gate_v2 is ON, the WhatsApp
+// registration summary confirm (reg_pending + submit_yes) must NOT create a
+// ProviderApplication/Provider immediately. Instead it persists a replayable
+// ProviderApplicationDraft (submitPayload bundle), issues a Didit verification
+// link anchored to that draft, sends the hosted link via a CTA-URL button, and
+// lands on the new reg_awaiting_kyc step (create-on-PASS). When the gate is OFF
+// the existing submitProviderApplication path runs unchanged.
+
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const { gateEnabled, mockSendText } = vi.hoisted(() => ({
+  gateEnabled: vi.fn(),
+  mockSendText: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/provider-onboarding/quality-gate', async (orig) => ({
+  ...(await orig<typeof import('@/lib/provider-onboarding/quality-gate')>()),
+  isQualityGateV2Enabled: gateEnabled,
+}))
+
+vi.mock('@/lib/kyc-policy', () => ({
+  isKycRequiredForActivation: vi.fn().mockResolvedValue(false),
+  KYC_REQUIRED_FLAG: 'provider.kyc.required_for_activation',
+  KYC_EXISTING_PROVIDER_GRACE_DAYS: 30,
+}))
+
+const { mockDraftUpsert, mockDraftCreate, mockDraftFindFirst, mockDraftUpdate, dbMock } = vi.hoisted(() => {
+  const dbMock: any = {
+    customer: { findFirst: vi.fn().mockResolvedValue(null) },
+    providerApplication: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
+    provider: { findUnique: vi.fn(), findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn(), createMany: vi.fn() },
+    providerCategory: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    providerRate: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    attachment: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() },
+    auditLog: { create: vi.fn().mockResolvedValue({}) },
+    providerApplicationDraft: {
+      upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      findFirst: vi.fn(),
+    },
+    conversation: {
+      findUnique: vi.fn().mockResolvedValue({ data: {} }),
+      update: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+  }
+  // The gate-OFF submit path runs one $transaction; hand it the same mock so its
+  // inner queries resolve. The gate-ON path must never reach here.
+  dbMock.$transaction = vi.fn(async (fn: any) => fn(dbMock))
+  return {
+    dbMock,
+    mockDraftUpsert: dbMock.providerApplicationDraft.upsert,
+    mockDraftCreate: dbMock.providerApplicationDraft.create,
+    mockDraftUpdate: dbMock.providerApplicationDraft.update,
+    mockDraftFindFirst: dbMock.providerApplicationDraft.findFirst,
+  }
+})
+
+vi.mock('@/lib/db', () => ({ db: dbMock }))
+
+const { mockSyncProviderRecord, mockSubmitProviderApplication } = vi.hoisted(() => ({
+  mockSyncProviderRecord: vi.fn().mockResolvedValue('prov_mock_001'),
+  mockSubmitProviderApplication: vi.fn().mockResolvedValue({ application: { id: 'app_mock_00000001' } }),
+}))
+
+vi.mock('@/lib/provider-record', async (orig) => ({
+  ...(await orig<typeof import('@/lib/provider-record')>()),
+  syncProviderRecord: mockSyncProviderRecord,
+}))
+
+vi.mock('@/lib/provider-applications-submit', async (orig) => ({
+  ...(await orig<typeof import('@/lib/provider-applications-submit')>()),
+  submitProviderApplication: mockSubmitProviderApplication,
+}))
+
+const { mockIssueLink } = vi.hoisted(() => ({
+  mockIssueLink: vi.fn(),
+}))
+
+vi.mock('@/lib/identity-verification/application-link', () => ({
+  issueProviderApplicationVerificationLink: mockIssueLink,
+}))
+
+const {
+  mockSendButtons,
+  mockSendList,
+  mockSendCtaUrl,
+} = vi.hoisted(() => ({
+  mockSendButtons: vi.fn().mockResolvedValue(undefined),
+  mockSendList: vi.fn().mockResolvedValue(undefined),
+  mockSendCtaUrl: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/whatsapp-interactive', () => ({
+  sendText: mockSendText,
+  sendButtons: mockSendButtons,
+  sendList: mockSendList,
+  sendCtaUrl: mockSendCtaUrl,
+}))
+
+vi.mock('@/lib/whatsapp', () => ({
+  sendTemplate: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/whatsapp-media', () => ({
+  downloadAndStoreWhatsAppMedia: vi.fn().mockResolvedValue({ attachmentId: 'att_mock_001' }),
+}))
+
+vi.mock('@/lib/whatsapp-media-batch', () => ({
+  debounceMediaBatch: vi.fn().mockResolvedValue({ mySeq: 1, isLatest: true }),
+  readMediaBatchSeq: vi.fn().mockResolvedValue(1),
+  claimMediaBatchSeq: vi.fn().mockResolvedValue(1),
+  awaitAndCheckLatest: vi.fn().mockResolvedValue(true),
+  WHATSAPP_MEDIA_BATCH_DEBOUNCE_MS: 0,
+}))
+
+vi.mock('@/lib/journey-recovery', () => ({
+  sendWhatsAppJourneyRecovery: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/matching/customer-recontact', () => ({
+  checkJobsForNewProviderAvailability: vi.fn().mockResolvedValue(undefined),
+}))
+
+import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
+
+// Complete, submittable ctx.data — passes validateSubmitData + quality gate.
+function completeData(overrides: any = {}) {
+  return {
+    name: 'Test Provider',
+    skills: ['plumbing'],
+    serviceAreas: ['Soweto'],
+    availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    experience: '3–5 years',
+    evidenceFileUrls: ['ev_a', 'ev_b', 'ev_c'],
+    evidenceNote: 'work photos',
+    certificationRef: 'PIRB-12345',
+    providerEmail: 'test@example.com',
+    ...overrides,
+  }
+}
+
+function buildCtx(overrides: any = {}) {
+  return {
+    phone: '+27821234567',
+    flow: 'registration',
+    step: 'reg_pending',
+    data: completeData(),
+    reply: { type: 'interactive', id: 'submit_yes' },
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  gateEnabled.mockReset().mockResolvedValue(true)
+  mockSendText.mockReset().mockResolvedValue(undefined)
+  mockSendButtons.mockClear()
+  mockSendList.mockClear()
+  mockSendCtaUrl.mockClear()
+  mockDraftUpsert.mockReset().mockResolvedValue({ id: 'draft_mock_001' })
+  mockDraftCreate.mockReset().mockResolvedValue({ id: 'draft_mock_001' })
+  mockDraftUpdate.mockReset().mockResolvedValue({ id: 'draft_mock_001' })
+  mockDraftFindFirst.mockReset().mockResolvedValue(null)
+  mockSyncProviderRecord.mockReset().mockResolvedValue('prov_mock_001')
+  mockSubmitProviderApplication.mockReset().mockResolvedValue({ application: { id: 'app_mock_00000001' } })
+  mockIssueLink.mockReset().mockResolvedValue({
+    verificationId: 'ver_mock_001',
+    verificationUrl: 'https://plugapro.example/provider/verify/tok_abc',
+    expiresAt: new Date(Date.now() + 3600_000),
+    reused: false,
+  })
+})
+
+describe('WhatsApp summary → Didit launch (quality gate v2 create-on-PASS)', () => {
+  it('gate ON: persists draft, issues link, sends CTA-URL, lands reg_awaiting_kyc, creates NO application', async () => {
+    const result = await handleRegistrationFlow(buildCtx())
+
+    // A draft was persisted (upsert or create).
+    const draftPersisted = mockDraftUpsert.mock.calls.length > 0 || mockDraftCreate.mock.calls.length > 0
+    expect(draftPersisted).toBe(true)
+
+    // Verification link issued for this draft over WhatsApp.
+    expect(mockIssueLink).toHaveBeenCalledTimes(1)
+    expect(mockIssueLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerApplicationDraftId: 'draft_mock_001',
+        channel: 'WHATSAPP',
+      }),
+    )
+
+    // The hosted link went out as a CTA-URL button.
+    expect(mockSendCtaUrl).toHaveBeenCalledTimes(1)
+    const ctaArgs = mockSendCtaUrl.mock.calls[0]
+    expect(ctaArgs[3]).toBe('https://plugapro.example/provider/verify/tok_abc')
+
+    // Landed on the new awaiting-KYC step.
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+
+    // NO application / provider created at confirm time.
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
+  })
+
+  it('gate ON: null verificationUrl → stays awaiting, sends fallback text, no CTA button', async () => {
+    mockIssueLink.mockResolvedValueOnce({
+      verificationId: 'ver_mock_001',
+      verificationUrl: null,
+      expiresAt: new Date(Date.now() + 3600_000),
+      reused: false,
+    })
+
+    const result = await handleRegistrationFlow(buildCtx())
+
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalled()
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+  })
+
+  it('gate OFF: submitProviderApplication IS called (existing path), no draft-launch', async () => {
+    gateEnabled.mockResolvedValue(false)
+    // The submit transaction validates evidence attachments exist and are
+    // unlinked before creating the application; return matching rows so the
+    // gate-OFF path reaches submitProviderApplication.
+    dbMock.attachment.findMany.mockResolvedValueOnce([
+      { id: 'ev_a', providerApplicationId: null },
+      { id: 'ev_b', providerApplicationId: null },
+      { id: 'ev_c', providerApplicationId: null },
+    ])
+
+    await handleRegistrationFlow(buildCtx())
+
+    expect(mockSubmitProviderApplication).toHaveBeenCalledTimes(1)
+    expect(mockIssueLink).not.toHaveBeenCalled()
+  })
+})

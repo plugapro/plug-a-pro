@@ -9,6 +9,7 @@
 // to skills capture. When the flag is OFF the legacy skip-allowed behavior
 // is preserved so the rollout can be flipped per environment.
 
+import { Prisma } from '@prisma/client'
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { isKycRequiredForActivation } from '../kyc-policy'
 import { WHATSAPP_COPY, ctaLabelFor } from '../whatsapp-copy'
@@ -64,6 +65,7 @@ import { captureApplicationError, generatePublicErrorRef } from '../application-
 import { submitProviderApplication, ProviderApplicationConflictError } from '../provider-applications-submit'
 import { isEnabled } from '../flags'
 import { isQualityGateV2Enabled, evaluateEvidenceGate, evidenceShortfallMessage } from '../provider-onboarding/quality-gate'
+import { issueProviderApplicationVerificationLink } from '../identity-verification/application-link'
 import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -465,6 +467,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleConfirm(ctx)
     case 'reg_pending':
       return handlePending(ctx)
+    case 'reg_awaiting_kyc':
+      return handleAwaitingKyc(ctx)
     case 'reg_edit_field':
       return handleEditField(ctx)
     default:
@@ -2534,6 +2538,284 @@ async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
   return showRegistrationSummary(ctx)
 }
 
+// ─── Quality gate v2 (create-on-PASS): draft persistence + Didit launch ───────
+//
+// When provider.onboarding.quality_gate_v2 is ON, the WhatsApp summary confirm
+// must NOT create the Provider / ProviderApplication yet. Instead we persist a
+// full replayable submit bundle on a ProviderApplicationDraft, issue a Didit
+// verification link anchored to that draft, send the hosted link, and park the
+// applicant on `reg_awaiting_kyc`. Task 2.6 (the verification-completion
+// webhook) replays the transaction from `submitPayload` once Didit returns PASS.
+type Qgv2SubmitPayload = ReturnType<typeof buildQgv2SubmitPayload>
+
+/**
+ * Assembles a JSON-serializable bundle carrying every input the deferred submit
+ * transaction will need to replay `syncProviderRecord` + `submitProviderApplication`
+ * + `providerCategory.createMany` exactly as the gate-OFF path would. Mirrors the
+ * transaction body in `handlePending` so the replay stays behaviourally identical.
+ */
+function buildQgv2SubmitPayload(ctx: FlowContext) {
+  const normalizedPhone = normalizePhone(ctx.phone)
+  const submitData = validateSubmitData(ctx)
+  const canonicalSkills = canonicalizeServiceCategoryValues(submitData.skills)
+  const cohort = createTestCohortContext(normalizedPhone)
+  const categorySlugs = canonicalSkills.map(
+    (skill) => resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
+  )
+
+  return {
+    version: 1 as const,
+    channel: 'WHATSAPP' as const,
+    submittedAt: new Date().toISOString(),
+    normalizedPhone,
+    isTestUser: cohort.isTestUser,
+    cohortName: cohort.cohortName,
+    canonicalSkills,
+    categorySlugs,
+    // Exact args for syncProviderRecord (skipEnrichment mirrors the tx path).
+    syncProviderArgs: {
+      phone: normalizedPhone,
+      name: submitData.name,
+      email: ctx.data.providerEmail ?? null,
+      skills: canonicalSkills,
+      serviceAreas: submitData.resolvedAreaLabels,
+      active: true,
+      availableNow: true,
+      verified: false,
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
+      locationNodeIds: submitData.locationNodeIds,
+    },
+    // Exact SubmitInput for submitProviderApplication.
+    submitApplicationArgs: {
+      phone: normalizedPhone,
+      name: submitData.name,
+      idNumber: submitData.idNumber ?? null,
+      skills: canonicalSkills,
+      serviceAreas: submitData.resolvedAreaLabels,
+      availability: formatAvailabilityLabel(submitData.availability),
+      experience: ctx.data.experience ?? null,
+      evidenceNote: ctx.data.evidenceNote ?? null,
+      evidenceFileUrls: submitData.evidenceAttachmentIds,
+      certificationRef: ctx.data.certificationRef ?? null,
+      // REPLAY CONTRACT (Task 2.6): the Provider row does not exist yet at
+      // draft time. The completion webhook MUST call syncProviderRecord(
+      // syncProviderArgs + { skipEnrichment: true }) first, then pass the
+      // resulting providerId into submitProviderApplication — do NOT rely on
+      // this null. Kept as an explicit placeholder so the field is present in
+      // the bundle contract rather than silently absent.
+      providerId: null as string | null,
+      email: ctx.data.providerEmail ?? null,
+      alternateMobileE164: submitData.alternateMobileE164 ?? null,
+      preferredLanguage: submitData.preferredLanguage ?? null,
+      reference1Name: submitData.reference1Name ?? null,
+      reference1Mobile: submitData.reference1Mobile ?? null,
+      reference2Name: submitData.reference2Name ?? null,
+      reference2Mobile: submitData.reference2Mobile ?? null,
+      callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+      hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+      rateNegotiable: ctx.data.rateNegotiable !== false,
+      weekendJobs:
+        (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
+      sameDayJobs: true,
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
+      ctwaReferral: ctx.data.ctwaReferral ?? null,
+    },
+    // Raw ctx.data replay inputs the tx reads directly (category rows, post-tx links).
+    replayInputs: {
+      experience: ctx.data.experience ?? null,
+      callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+      hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+      rateNegotiable: ctx.data.rateNegotiable !== false,
+      certificationProofAttachmentIds: uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []),
+      evidenceAttachmentIds: submitData.evidenceAttachmentIds,
+      profilePhotoAttachmentId: ctx.data.profilePhotoAttachmentId ?? null,
+      providerBio: ctx.data.providerBio ?? null,
+      verificationDocAttachmentId: ctx.data.verificationDocAttachmentId ?? null,
+      verificationSelfieAttachmentId: ctx.data.verificationSelfieAttachmentId ?? null,
+      locationNodeIds: submitData.locationNodeIds,
+      selectedRegionStatus: ctx.data.selectedRegionStatus ?? null,
+    },
+  }
+}
+
+/**
+ * Upserts a ProviderApplicationDraft for this phone carrying the replay bundle,
+ * then issues the draft-anchored Didit link and sends it via a CTA-URL button.
+ * Returns the FlowResult that parks the applicant on `reg_awaiting_kyc`.
+ */
+async function launchQgv2DraftAndVerification(ctx: FlowContext): Promise<FlowResult> {
+  const payload = buildQgv2SubmitPayload(ctx)
+  const traceId = createSubmitTraceId()
+
+  // Plain, queryable columns alongside the full submitPayload bundle. Keyed on
+  // phone so re-confirms reuse the same un-submitted draft rather than piling up
+  // duplicate rows (one applicant → one live draft).
+  const draftColumns = {
+    phone: payload.normalizedPhone,
+    email: payload.submitApplicationArgs.email,
+    name: payload.submitApplicationArgs.name,
+    skills: payload.canonicalSkills,
+    categorySlugs: payload.categorySlugs,
+    serviceAreas: payload.submitApplicationArgs.serviceAreas,
+    locationNodeIds: payload.replayInputs.locationNodeIds,
+    experience: payload.submitApplicationArgs.experience,
+    availability: payload.submitApplicationArgs.availability,
+    evidenceFileUrls: payload.replayInputs.evidenceAttachmentIds,
+    evidenceNote: payload.submitApplicationArgs.evidenceNote,
+    reference1Name: payload.submitApplicationArgs.reference1Name,
+    reference1Mobile: payload.submitApplicationArgs.reference1Mobile,
+    reference2Name: payload.submitApplicationArgs.reference2Name,
+    reference2Mobile: payload.submitApplicationArgs.reference2Mobile,
+    submitPayload: payload as unknown as Prisma.InputJsonValue,
+  }
+
+  // Reuse an existing un-submitted draft for this phone if one already exists,
+  // otherwise create. There is no unique constraint on phone, so we cannot use
+  // Prisma upsert directly; do a guarded find-then-write.
+  let draftId: string | undefined
+  try {
+    const existing = await db.providerApplicationDraft.findFirst({
+      where: { phone: payload.normalizedPhone, submittedApplicationId: null },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    })
+    if (existing?.id) {
+      await db.providerApplicationDraft.update({ where: { id: existing.id }, data: draftColumns })
+      draftId = existing.id
+    } else {
+      const created = await db.providerApplicationDraft.create({ data: draftColumns, select: { id: true } })
+      draftId = created.id
+    }
+  } catch (err) {
+    console.error('[registration-flow] qgv2 draft persist failed', {
+      trace_id: traceId,
+      normalized_phone: payload.normalizedPhone,
+      error: safeErrorMessage(err),
+    })
+    // Without a draft we cannot anchor the verification. Keep the applicant on
+    // the summary so they can retry; Task 2.8 hardens this further.
+    await sendText(
+      ctx.phone,
+      "⏳ We couldn't start your verification just now. Please tap *Submit* again in a moment.",
+    )
+    return { nextStep: 'reg_pending' }
+  }
+
+  if (!draftId) {
+    await sendText(
+      ctx.phone,
+      "⏳ We couldn't start your verification just now. Please tap *Submit* again in a moment.",
+    )
+    return { nextStep: 'reg_pending' }
+  }
+
+  let verificationUrl: string | null = null
+  try {
+    const link = await issueProviderApplicationVerificationLink({
+      providerApplicationDraftId: draftId,
+      channel: 'WHATSAPP',
+    })
+    verificationUrl = link.verificationUrl
+  } catch (err) {
+    console.error('[registration-flow] qgv2 verification link issue failed', {
+      trace_id: traceId,
+      draft_id: draftId,
+      error: safeErrorMessage(err),
+    })
+  }
+
+  const awaitingBody = [
+    "✅ Almost there! One quick step left.",
+    '',
+    'Tap the button below to verify your identity securely. Once you pass, your application goes straight to our review team.',
+  ].join('\n')
+
+  if (verificationUrl) {
+    try {
+      await sendCtaUrl(
+        ctx.phone,
+        awaitingBody,
+        ctaLabelFor('identity_verification'),
+        verificationUrl,
+        undefined,
+        { templateName: 'interactive:provider_application_verify_cta', metadata: { traceId, draftId } },
+      )
+    } catch (err) {
+      console.warn('[registration-flow] qgv2 verification CTA send failed (non-fatal)', {
+        trace_id: traceId,
+        draft_id: draftId,
+        error: safeErrorMessage(err),
+      })
+      await sendText(
+        ctx.phone,
+        "⏳ Your verification is being prepared — we'll message you here with the link shortly.",
+      )
+    }
+  } else {
+    // Task 2.8 hardens the null-URL path; a gentle hold message is enough here.
+    await sendText(
+      ctx.phone,
+      "⏳ Your verification is being prepared — we'll message you here with the link shortly.",
+    )
+  }
+
+  console.info('[registration-flow] qgv2 draft launched, awaiting verification', {
+    trace_id: traceId,
+    draft_id: draftId,
+    has_verification_url: Boolean(verificationUrl),
+  })
+
+  return { nextStep: 'reg_awaiting_kyc' }
+}
+
+async function handleAwaitingKyc(ctx: FlowContext): Promise<FlowResult> {
+  // Re-issue the verification link idempotently (reuses the existing non-terminal
+  // verification) so an applicant who lost the message can request it again.
+  let verificationUrl: string | null = null
+  try {
+    const draft = await db.providerApplicationDraft.findFirst({
+      where: { phone: normalizePhone(ctx.phone), submittedApplicationId: null },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    })
+    if (draft?.id) {
+      const link = await issueProviderApplicationVerificationLink({
+        providerApplicationDraftId: draft.id,
+        channel: 'WHATSAPP',
+      })
+      verificationUrl = link.verificationUrl
+    }
+  } catch (err) {
+    console.warn('[registration-flow] qgv2 re-issue verification failed (non-fatal)', {
+      error: safeErrorMessage(err),
+    })
+  }
+
+  if (verificationUrl) {
+    try {
+      await sendCtaUrl(
+        ctx.phone,
+        "You're almost done — verify your identity to finish your application.",
+        ctaLabelFor('identity_verification'),
+        verificationUrl,
+        undefined,
+        { templateName: 'interactive:provider_application_verify_cta' },
+      )
+      return { nextStep: 'reg_awaiting_kyc' }
+    } catch {
+      // fall through to the text nudge below
+    }
+  }
+
+  await sendText(
+    ctx.phone,
+    "⏳ We're still waiting on your identity verification. Complete it from the link we sent to finish your application.",
+  )
+  return { nextStep: 'reg_awaiting_kyc' }
+}
+
 async function handlePending(ctx: FlowContext): Promise<FlowResult> {
   // Edit - show field selection, not full restart
   if (ctx.reply.id === 'reg_edit') {
@@ -2598,6 +2880,29 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
   if (ctx.reply.id !== 'submit_yes') {
     return { nextStep: 'reg_pending' }
+  }
+
+  // Quality gate v2 (create-on-PASS): when the gate is ON we do NOT create the
+  // Provider / ProviderApplication at summary time. Persist a replayable draft,
+  // launch Didit, and park on reg_awaiting_kyc. The submit transaction below is
+  // replayed by the verification-completion webhook (Task 2.6) once Didit PASSes.
+  const qualityGateOn = await isQualityGateV2Enabled()
+  if (qualityGateOn) {
+    try {
+      return await launchQgv2DraftAndVerification(ctx)
+    } catch (err) {
+      // Validation failures (incomplete ctx.data) or unexpected errors: keep the
+      // applicant on the summary rather than silently dropping them.
+      console.error('[registration-flow] qgv2 launch failed at summary', {
+        normalized_phone: normalizePhone(ctx.phone),
+        error: safeErrorMessage(err),
+      })
+      await sendText(
+        ctx.phone,
+        "⏳ We couldn't submit that just now. Please tap *Submit* again in a moment.",
+      )
+      return { nextStep: 'reg_pending' }
+    }
   }
 
   const traceId = createSubmitTraceId()

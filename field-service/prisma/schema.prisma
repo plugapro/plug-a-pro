@@ -459,6 +459,13 @@ model ProviderApplicationDraft {
   reference2Mobile       String?
   consentAt              DateTime?
   lastCompletedStep      Int       @default(0)
+  // Full replayable submit bundle captured at WhatsApp summary confirm when the
+  // quality gate v2 (create-on-PASS) flow is ON. The ProviderApplication /
+  // Provider rows are NOT created at confirm time; instead the exact inputs the
+  // submit transaction would consume are serialized here so the identity-
+  // verification completion webhook (Task 2.6) can replay the transaction once
+  // Didit returns PASS. See lib/whatsapp-flows/registration.ts handlePending.
+  submitPayload          Json?
   submittedApplicationId String?   @unique
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
