@@ -163,7 +163,7 @@ function isProviderPendingReview(provider: {
   return ['APPLICATION_PENDING', 'UNDER_REVIEW'].includes(provider.status ?? '')
 }
 
-function safeProviderStatusReason(reason?: string | null) {
+export function safeProviderStatusReason(reason?: string | null) {
   if (!reason?.trim()) return ''
   // Strip machine-marker lines (e.g. [quality-gate], [ops-review-support]) so
   // internal ops notes never reach the provider.

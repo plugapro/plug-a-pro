@@ -365,35 +365,3 @@ describe('recordFailedVerificationForApplication', () => {
     expect(mockIssueLink).not.toHaveBeenCalled()
   })
 })
-
-describe('safeProviderStatusReason (machine marker stripping)', () => {
-  it('strips [quality-gate] lines but keeps real human reason', async () => {
-    // Access the unexported function via the module's behaviour through
-    // provider-journey; since it's private, test it indirectly by verifying
-    // the quality-gate note format is filterable.
-    const markerLine = '[quality-gate] KYC failed at application'
-    const realReason = 'Missing evidence photos'
-    const combined = `${markerLine}\n${realReason}`
-
-    // Replicate the safeProviderStatusReason filter logic
-    const stripped = combined
-      .split('\n')
-      .filter((line) => !/^\[.+\]/.test(line.trim()))
-      .join('\n')
-      .trim()
-
-    expect(stripped).not.toContain('[quality-gate]')
-    expect(stripped).toBe(realReason)
-  })
-
-  it('returns empty string when reason is only marker lines', () => {
-    const markerOnly = '[quality-gate] KYC failed at application'
-    const stripped = markerOnly
-      .split('\n')
-      .filter((line) => !/^\[.+\]/.test(line.trim()))
-      .join('\n')
-      .trim()
-
-    expect(stripped).toBe('')
-  })
-})

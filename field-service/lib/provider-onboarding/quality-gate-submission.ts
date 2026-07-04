@@ -437,7 +437,19 @@ export async function recordFailedVerificationForApplication(
     return
   }
 
-  // 2. Count all FAILED verifications for this draft (includes the current one
+  // 2. Load draft
+  const draft = await client.providerApplicationDraft.findUniqueOrThrow({
+    where: { id: verification.providerApplicationDraftId },
+    select: { id: true, submittedApplicationId: true, submitPayload: true, phone: true },
+  })
+
+  // Guard: if draft already has a submitted application, skip both paths
+  if (draft.submittedApplicationId) {
+    // Already submitted from a prior PASS or prior failure path — skip
+    return
+  }
+
+  // 3. Count all FAILED verifications for this draft (includes the current one
   //    since applyVendorVerdict was already called before this function)
   const failCount = await client.providerIdentityVerification.count({
     where: {
@@ -446,17 +458,8 @@ export async function recordFailedVerificationForApplication(
     },
   })
 
-  const draft = await client.providerApplicationDraft.findUniqueOrThrow({
-    where: { id: verification.providerApplicationDraftId },
-    select: { id: true, submittedApplicationId: true, submitPayload: true, phone: true },
-  })
-
   if (failCount >= 2) {
-    // 3. 2nd+ failure: create MORE_INFO_REQUIRED application
-    if (draft.submittedApplicationId) {
-      // Already submitted from a prior PASS or prior failure path — skip
-      return
-    }
+    // 4. 2nd+ failure: create MORE_INFO_REQUIRED application
 
     const rawPayload = draft.submitPayload as Record<string, unknown>
     if (!rawPayload || typeof rawPayload !== 'object') {
@@ -504,7 +507,7 @@ export async function recordFailedVerificationForApplication(
       failCount,
     })
   } else {
-    // 4. 1st failure: re-issue the verification link so the applicant can retry
+    // 5. 1st failure: re-issue the verification link so the applicant can retry
     try {
       await issueProviderApplicationVerificationLink({
         providerApplicationDraftId: draft.id,
