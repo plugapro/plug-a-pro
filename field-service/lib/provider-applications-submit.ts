@@ -4,6 +4,7 @@ import { ACTIVE_PROVIDER_APPLICATION_STATUSES } from './provider-applications'
 import { emitServerConversion } from './marketing/server-events'
 import { recordWorkflowEvent } from './workflow-events'
 import type { CtwaReferralAttribution } from './whatsapp-referral'
+import { isQualityGateV2Enabled, evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ export interface SubmitInput {
   experience?: string | null
   evidenceNote?: string | null
   evidenceFileUrls?: string[]
+  /** cert doc URL or registration number; high-risk gate (quality gate v2) */
+  certificationRef?: string | null
 
   // Optional fields present in the WhatsApp flow create call
   email?: string | null
@@ -99,6 +102,19 @@ export async function submitProviderApplication(
   options: SubmitOptions,
 ): Promise<SubmitResult> {
   const doInTx = async (tx: Tx): Promise<ProviderApplication> => {
+    // Quality gate v2: enforce minimum evidence + high-risk certification bar
+    // when the flag is ON. Checked before the conflict guard so a bad submission
+    // is never persisted even temporarily.
+    if (await isQualityGateV2Enabled()) {
+      const evidence = evaluateEvidenceGate(input.evidenceFileUrls ?? [])
+      if (!evidence.ok) throw new Error('QUALITY_GATE_EVIDENCE')
+      // A high-risk applicant must carry a certification. At submit the certification
+      // is represented by a non-empty certificationRef on SubmitInput (see Task 1.6);
+      // treat any provided cert doc URL or registration number as satisfying.
+      const cert = evaluateCertificationGate(input.skills ?? [], Boolean(input.certificationRef))
+      if (!cert.ok) throw new Error('QUALITY_GATE_CERTIFICATION')
+    }
+
     // Guard: reject if a live (non-terminal) application already exists.
     const conflict = await tx.providerApplication.findFirst({
       where: {
