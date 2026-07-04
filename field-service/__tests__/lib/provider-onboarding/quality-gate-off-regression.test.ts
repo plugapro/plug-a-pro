@@ -115,11 +115,17 @@ describe('quality-gate OFF regression — flag preserves pre-gate behaviour', ()
         { source: 'web' } as any,
       )
 
+      // Verify the gate was consulted and resolved false
       expect(gateEnabled).toHaveBeenCalled()
+      expect(gateEnabled.mock.results[0].value).resolves.toBe(false)
+
+      // Verify create was called with empty evidenceFileUrls passed through unchallenged
       expect(client.providerApplication.create).toHaveBeenCalled()
-      // Verify create was reached without throwing
-      const createCall = client.providerApplication.create.mock.calls[0]
-      expect(createCall).toBeDefined()
+      const createArg = client.providerApplication.create.mock.calls[0][0]
+      expect(createArg).toBeDefined()
+      expect(createArg.data.evidenceFileUrls).toEqual([])
+      // High-risk skill (plumbing) should also be preserved
+      expect(createArg.data.skills).toContain('plumbing')
     })
 
     it('creates application preserving whatever evidenceFileUrls were provided when gate OFF', async () => {
