@@ -19,6 +19,7 @@ import { buildMetadata } from '@/lib/metadata'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 
 import {
   reviewRecommendationFromFormAction,
@@ -111,9 +112,13 @@ function RecommendationCard({ r }: { r: RecWithDrafts }) {
             <form key={decision} action={reviewRecommendationFromFormAction}>
               <input type="hidden" name="recommendationId" value={r.id} />
               <input type="hidden" name="decision" value={decision} />
-              <Button type="submit" size="sm" variant={decision === 'DISMISSED' ? 'ghost' : 'outline'}>
+              <FormSubmitButton
+                size="sm"
+                variant={decision === 'DISMISSED' ? 'ghost' : 'outline'}
+                pendingLabel={decision === 'ACKNOWLEDGED' ? 'Acknowledging…' : decision === 'ACTIONED' ? 'Resolving…' : 'Dismissing…'}
+              >
                 {decision === 'ACKNOWLEDGED' ? 'Acknowledge' : decision === 'ACTIONED' ? 'Resolve' : 'Dismiss'}
-              </Button>
+              </FormSubmitButton>
             </form>
           ))}
         </div>
@@ -214,7 +219,7 @@ export default async function OpsIntelligencePage({
           </p>
         </div>
         <form action={runAgentsNowAction}>
-          <Button type="submit" variant="outline">Run agents now</Button>
+          <FormSubmitButton variant="outline" pendingLabel="Running agents…">Run agents now</FormSubmitButton>
         </form>
       </div>
 
@@ -350,12 +355,12 @@ export default async function OpsIntelligencePage({
                       <form action={decideDraftFromFormAction}>
                         <input type="hidden" name="draftId" value={d.id} />
                         <input type="hidden" name="decision" value="APPROVE" />
-                        <Button type="submit" size="sm">Approve (queue, no send)</Button>
+                        <FormSubmitButton size="sm" pendingLabel="Approving…">Approve (queue, no send)</FormSubmitButton>
                       </form>
                       <form action={decideDraftFromFormAction}>
                         <input type="hidden" name="draftId" value={d.id} />
                         <input type="hidden" name="decision" value="REJECT" />
-                        <Button type="submit" size="sm" variant="ghost">Reject</Button>
+                        <FormSubmitButton size="sm" variant="ghost" pendingLabel="Rejecting…">Reject</FormSubmitButton>
                       </form>
                     </div>
                   )}

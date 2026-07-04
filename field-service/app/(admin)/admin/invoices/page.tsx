@@ -137,7 +137,7 @@ export default async function AdminInvoicesPage() {
                         refreshOnSuccess
                       >
                         <input type="hidden" name="bookingId" value={invoice.booking.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!actionsEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!actionsEnabled} pendingLabel="Generating…">
                           Generate PDF
                         </SubmitButton>
                       </ActionForm>
@@ -150,7 +150,7 @@ export default async function AdminInvoicesPage() {
                         refreshOnSuccess
                       >
                         <input type="hidden" name="invoiceId" value={invoice.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!actionsEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!actionsEnabled} pendingLabel="Sending…">
                           Send to customer
                         </SubmitButton>
                       </ActionForm>

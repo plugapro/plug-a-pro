@@ -107,7 +107,12 @@ export function ApplicationsV2View(props: ApplicationsV2ViewProps) {
         </div>
         <div className="flex items-center gap-2">
           <form action={props.actions.sendAllDueRecoveries}>
-            <SubmitButton size="sm" variant="outline" disabled={!props.crudEnabled}>
+            <SubmitButton
+              size="sm"
+              variant="outline"
+              disabled={!props.crudEnabled}
+              pendingLabel="Sending due nudges…"
+            >
               Send all due nudges
             </SubmitButton>
           </form>
@@ -1012,7 +1017,18 @@ function DrawerCategoryApproval({
                     <input type="hidden" name="id" value={app.id} />
                     <input type="hidden" name="categorySlug" value={slug} />
                     <input type="hidden" name="approvalStatus" value={next} />
-                    <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                    <SubmitButton
+                      size="sm"
+                      variant="outline"
+                      disabled={!crudEnabled}
+                      pendingLabel={
+                        next === 'APPROVED'
+                          ? 'Approving…'
+                          : next === 'REJECTED'
+                            ? 'Rejecting…'
+                            : 'Holding…'
+                      }
+                    >
                       {next === 'APPROVED' ? 'Approve' : next === 'REJECTED' ? 'Reject' : 'Hold'}
                     </SubmitButton>
                   </form>
@@ -1054,7 +1070,7 @@ function DrawerActions({
             size="sm"
             disabled={approveDisabled}
             className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-muted disabled:text-muted-foreground"
-            pendingLabel="Approving…"
+            pendingLabel="Approving verification…"
           >
             Approve application
           </SubmitButton>
@@ -1085,7 +1101,13 @@ function DrawerActions({
             placeholder="What information is needed? (min 5 chars)"
             className="text-xs"
           />
-          <SubmitButton size="sm" variant="outline" disabled={!crudEnabled} className="w-full">
+          <SubmitButton
+            size="sm"
+            variant="outline"
+            disabled={!crudEnabled}
+            className="w-full"
+            pendingLabel="Sending WhatsApp request…"
+          >
             Send WhatsApp request
           </SubmitButton>
         </form>
@@ -1114,6 +1136,7 @@ function DrawerActions({
             variant="outline"
             disabled={!crudEnabled}
             className="w-full border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-300/40 dark:text-rose-200 dark:hover:bg-rose-950/40"
+            pendingLabel="Rejecting…"
           >
             Reject
           </SubmitButton>
@@ -1125,14 +1148,26 @@ function DrawerActions({
           {row.flags.claimedByCurrentUser ? (
             <form action={actions.release} className="flex-1">
               <input type="hidden" name="id" value={app.id} />
-              <SubmitButton size="sm" variant="outline" disabled={!crudEnabled} className="w-full">
+              <SubmitButton
+                size="sm"
+                variant="outline"
+                disabled={!crudEnabled}
+                className="w-full"
+                pendingLabel="Releasing claim…"
+              >
                 Release claim
               </SubmitButton>
             </form>
           ) : (
             <form action={actions.claim} className="flex-1">
               <input type="hidden" name="id" value={app.id} />
-              <SubmitButton size="sm" variant="outline" disabled={!crudEnabled} className="w-full">
+              <SubmitButton
+                size="sm"
+                variant="outline"
+                disabled={!crudEnabled}
+                className="w-full"
+                pendingLabel={row.assignment?.claimedById ? 'Taking over…' : 'Claiming…'}
+              >
                 {row.assignment?.claimedById ? 'Take over' : 'Claim'}
               </SubmitButton>
             </form>
@@ -1151,7 +1186,17 @@ function DrawerActions({
       {row.recovery && row.recovery.messageTemplateKey !== 'submitted_no_recovery' ? (
         <form action={actions.sendRecoveryNudge} className="space-y-1">
           <input type="hidden" name="safeUserRef" value={row.recovery.safeUserRef} />
-          <SubmitButton size="sm" variant="outline" disabled={!crudEnabled} className="w-full">
+          <SubmitButton
+            size="sm"
+            variant="outline"
+            disabled={!crudEnabled}
+            className="w-full"
+            pendingLabel={
+              row.flags.outsideSessionWindow && templateFlagEnabled
+                ? 'Sending recovery template…'
+                : 'Sending recovery nudge…'
+            }
+          >
             {row.flags.outsideSessionWindow && templateFlagEnabled
               ? 'Send recovery template'
               : 'Send recovery nudge'}

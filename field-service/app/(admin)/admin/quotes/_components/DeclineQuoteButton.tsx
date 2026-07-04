@@ -53,6 +53,7 @@ export function DeclineQuoteButton({ quoteId, quoteAmount, disabled }: DeclineQu
         description="This declines the quote on behalf of the customer. Type the quote amount to confirm."
         confirmText={quoteAmount}
         confirmLabel="Decline"
+        pendingLabel="Declining…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

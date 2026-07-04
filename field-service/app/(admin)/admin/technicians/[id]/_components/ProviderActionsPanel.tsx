@@ -183,7 +183,12 @@ export function ProviderActionsPanel({
                 refreshOnSuccess
               >
                 <input type="hidden" name="providerId" value={providerId} />
-                <SubmitButton type="submit" variant={active ? 'outline' : 'default'} size="sm">
+                <SubmitButton
+                  type="submit"
+                  variant={active ? 'outline' : 'default'}
+                  size="sm"
+                  pendingLabel={active ? 'Deactivating…' : 'Activating…'}
+                >
                   {active ? 'Deactivate' : 'Activate'}
                 </SubmitButton>
               </ActionForm>
@@ -203,7 +208,7 @@ export function ProviderActionsPanel({
                   refreshOnSuccess
                 >
                   <input type="hidden" name="providerId" value={providerId} />
-                  <SubmitButton type="submit" variant="default" size="sm">
+                  <SubmitButton type="submit" variant="default" size="sm" pendingLabel="Verifying…">
                     Verify
                   </SubmitButton>
                 </ActionForm>
@@ -224,7 +229,7 @@ export function ProviderActionsPanel({
                   refreshOnSuccess
                 >
                   <input type="hidden" name="providerId" value={providerId} />
-                  <SubmitButton type="submit" variant="outline" size="sm">
+                  <SubmitButton type="submit" variant="outline" size="sm" pendingLabel="Reactivating…">
                     Reactivate
                   </SubmitButton>
                 </ActionForm>
@@ -254,8 +259,10 @@ export function ProviderActionsPanel({
               size="sm"
               disabled={!reason.trim() || statusPending}
               onClick={handleSetStatusClick}
+              loading={statusPending}
+              loadingLabel="Setting status…"
             >
-              {statusPending ? 'Saving…' : 'Set status'}
+              Set status
             </Button>
             </div>
 
@@ -280,7 +287,7 @@ export function ProviderActionsPanel({
                   <option value="REJECTED">Rejected</option>
                   <option value="EXPIRED">Expired</option>
                 </select>
-                <SubmitButton type="submit" variant="outline" size="sm">
+                <SubmitButton type="submit" variant="outline" size="sm" pendingLabel="Setting KYC…">
                   Set KYC
                 </SubmitButton>
               </ActionForm>
@@ -357,6 +364,7 @@ export function ProviderActionsPanel({
         confirmText={statusConfirmText}
         onConfirm={runSetOwnerStatusConfirmed}
         loading={statusPending}
+        pendingLabel={ownerStatus === 'ARCHIVED' ? 'Archiving…' : 'Banning…'}
       />
 
       <DestructiveConfirmDialog
@@ -368,6 +376,7 @@ export function ProviderActionsPanel({
         confirmText={confirmToken}
         onConfirm={runAddStrikeConfirmed}
         loading={strikePending}
+        pendingLabel="Adding strike…"
       />
     </>
   )
@@ -454,6 +463,7 @@ export function CertificationDeleteButton({
         confirmText={certName}
         onConfirm={runConfirmed}
         loading={pending}
+        pendingLabel="Deleting certification…"
       />
     </>
   )
@@ -511,6 +521,7 @@ export function EquipmentDeleteButton({
         confirmText={equipmentLabel}
         onConfirm={runConfirmed}
         loading={pending}
+        pendingLabel="Deleting equipment…"
       />
     </>
   )

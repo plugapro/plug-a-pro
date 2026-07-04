@@ -268,7 +268,7 @@ export default async function CustomerDetailPage({
                 />
               </label>
               <div className="md:col-span-2">
-                <SubmitButton variant="outline" size="sm" pendingLabel="Saving…">
+                <SubmitButton variant="outline" size="sm" pendingLabel="Saving profile…">
                   Save profile changes
                 </SubmitButton>
               </div>
@@ -312,7 +312,7 @@ export default async function CustomerDetailPage({
                 placeholder="Add a note…"
                 className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring flex-1"
               />
-              <SubmitButton variant="outline" size="sm" pendingLabel="Adding…">Add</SubmitButton>
+              <SubmitButton variant="outline" size="sm" pendingLabel="Adding note…">Add</SubmitButton>
             </ActionForm>
           )}
         </CardContent>

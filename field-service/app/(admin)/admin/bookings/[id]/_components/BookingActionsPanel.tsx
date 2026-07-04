@@ -96,6 +96,7 @@ export function BookingActionsPanel({
         confirmLabel="Mark Paid"
         onConfirm={handleMarkPaid}
         loading={isPending}
+        pendingLabel="Marking as paid…"
       />
 
       <DestructiveConfirmDialog
@@ -107,6 +108,7 @@ export function BookingActionsPanel({
         confirmLabel="Cancel Booking"
         onConfirm={handleCancel}
         loading={isPending}
+        pendingLabel="Cancelling booking…"
       />
     </>
   )

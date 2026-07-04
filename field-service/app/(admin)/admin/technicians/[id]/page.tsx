@@ -702,7 +702,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                     />
                   </label>
                   <div className="md:col-span-2">
-                    <SubmitButton type="submit" variant="outline" size="sm">
+                    <SubmitButton type="submit" variant="outline" size="sm" pendingLabel="Saving profile…">
                       Save provider profile
                     </SubmitButton>
                   </div>
@@ -814,7 +814,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                             <ActionForm action={verifyCertificationFromFormAction} successMessage="Certification verified" refreshOnSuccess>
                               <input type="hidden" name="certId" value={cert.id} />
                               <input type="hidden" name="providerId" value={id} />
-                              <SubmitButton type="submit" variant="ghost" size="sm" className="text-xs h-7">
+                              <SubmitButton type="submit" variant="ghost" size="sm" className="text-xs h-7" pendingLabel="Verifying…">
                                 Verify
                               </SubmitButton>
                             </ActionForm>
@@ -857,7 +857,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                                 defaultValue={cert.notes ?? ''}
                                 className="rounded-md border border-input bg-background px-2 py-1 text-xs"
                               />
-                              <SubmitButton type="submit" variant="outline" size="sm" className="h-7 text-xs">
+                              <SubmitButton type="submit" variant="outline" size="sm" className="h-7 text-xs" pendingLabel="Saving certification…">
                                 Save
                               </SubmitButton>
                             </ActionForm>
@@ -927,7 +927,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                 />
               </label>
               <div className="md:col-span-2">
-                <SubmitButton type="submit" variant="outline" size="sm">Add certification</SubmitButton>
+                <SubmitButton type="submit" variant="outline" size="sm" pendingLabel="Adding certification…">Add certification</SubmitButton>
               </div>
             </ActionForm>
           </CardContent>
@@ -970,7 +970,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                           defaultValue={eq.serialNumber ?? ''}
                           className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                         />
-                        <SubmitButton type="submit" variant="outline" size="sm" className="h-7 text-xs">
+                        <SubmitButton type="submit" variant="outline" size="sm" className="h-7 text-xs" pendingLabel="Saving equipment…">
                           Save
                         </SubmitButton>
                       </ActionForm>
@@ -1015,7 +1015,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                 />
               </label>
               <div className="md:col-span-3">
-                <SubmitButton type="submit" variant="outline" size="sm">Add equipment</SubmitButton>
+                <SubmitButton type="submit" variant="outline" size="sm" pendingLabel="Adding equipment…">Add equipment</SubmitButton>
               </div>
             </ActionForm>
           </CardContent>
@@ -1062,7 +1062,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                   placeholder="Add a note…"
                   className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring flex-1"
                 />
-                <SubmitButton type="submit" variant="outline" size="sm">Add note</SubmitButton>
+                <SubmitButton type="submit" variant="outline" size="sm" pendingLabel="Adding note…">Add note</SubmitButton>
               </ActionForm>
             </div>
           )}

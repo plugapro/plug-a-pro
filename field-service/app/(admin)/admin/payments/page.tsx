@@ -309,14 +309,14 @@ export default async function PaymentsPage({
                       {!claimedByCurrentUser ? (
                         <form action={claimPaymentAction}>
                           <input type="hidden" name="paymentId" value={p.id} />
-                          <SubmitButton type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                          <SubmitButton type="submit" variant="outline" size="sm" disabled={!crudEnabled} pendingLabel={assignment?.claimedById ? 'Taking over…' : 'Claiming…'}>
                             {assignment?.claimedById ? 'Take over' : 'Claim'}
                           </SubmitButton>
                         </form>
                       ) : (
                         <form action={releasePaymentAction}>
                           <input type="hidden" name="paymentId" value={p.id} />
-                          <SubmitButton type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                          <SubmitButton type="submit" variant="outline" size="sm" disabled={!crudEnabled} pendingLabel="Releasing…">
                             Release
                           </SubmitButton>
                         </form>

@@ -146,7 +146,7 @@ export function NudgeQueueTable({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <Button onClick={handleExport} disabled={isPending} variant="outline">
+        <Button onClick={handleExport} loading={isPending} loadingLabel="Exporting…" variant="outline">
           Export CSV
         </Button>
         <Button
@@ -273,7 +273,9 @@ export function NudgeQueueTable({
             </Button>
             <Button
               onClick={handleMarkSent}
-              disabled={isPending || confirmPhrase !== expectedConfirmPhrase}
+              loading={isPending}
+              loadingLabel="Marking…"
+              disabled={confirmPhrase !== expectedConfirmPhrase}
             >
               Mark sent
             </Button>

@@ -11,6 +11,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
@@ -400,9 +401,9 @@ export default async function ProviderWalletDetailPage({
               <input name="confirmAdjustment" type="checkbox" required className="mt-1" />
               <span>I confirm this manual credit adjustment is correct and auditable.</span>
             </label>
-            <Button type="submit" className="w-full">
+            <FormSubmitButton fullWidth pendingLabel="Adjusting…">
               Apply adjustment
-            </Button>
+            </FormSubmitButton>
           </form>
 
           <form action={suspendProviderWalletFormAction} className="space-y-3 rounded-xl border bg-card p-4">
@@ -418,9 +419,9 @@ export default async function ProviderWalletDetailPage({
               disabled={walletStatus === 'SUSPENDED'}
               required
             />
-            <Button type="submit" variant="outline" disabled={walletStatus === 'SUSPENDED'} className="w-full">
+            <FormSubmitButton variant="outline" disabled={walletStatus === 'SUSPENDED'} fullWidth pendingLabel="Suspending…">
               Suspend wallet
-            </Button>
+            </FormSubmitButton>
           </form>
 
           <form action={reactivateProviderWalletFormAction} className="space-y-3 rounded-xl border bg-card p-4">
@@ -436,9 +437,9 @@ export default async function ProviderWalletDetailPage({
               disabled={walletStatus === 'ACTIVE'}
               required
             />
-            <Button type="submit" disabled={walletStatus === 'ACTIVE'} className="w-full">
+            <FormSubmitButton disabled={walletStatus === 'ACTIVE'} fullWidth pendingLabel="Reactivating…">
               Reactivate wallet
-            </Button>
+            </FormSubmitButton>
           </form>
         </aside>
       </div>
