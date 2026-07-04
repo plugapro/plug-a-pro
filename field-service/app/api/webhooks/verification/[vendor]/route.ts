@@ -143,14 +143,16 @@ export async function POST(
         await recordFailedVerificationForApplication(db, { verificationId: verification.id })
       }
     } catch (completionError) {
-      // Completion error must NOT crash the webhook — record it but still return 200
+      // Completion failure must stay retryable: record the error but do NOT set
+      // processedAt. Returning 500 causes the vendor to redeliver the webhook so
+      // the completion can be attempted again on the retry.
       await db.providerVerificationWebhookEvent.update({
         where: { id: row.id },
         data: {
           processingError: completionError instanceof Error ? completionError.message : String(completionError),
         },
       })
-      // Fall through to processedAt update and return ok: true
+      return NextResponse.json({ ok: false }, { status: 500 })
     }
   }
 

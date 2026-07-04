@@ -124,6 +124,7 @@ export async function submitProviderApplicationFromWebAction(
           evidenceNote: typeof merged.evidenceNote === 'string' ? merged.evidenceNote : null,
           evidenceFileUrls: Array.isArray(merged.evidenceFileUrls) ? (merged.evidenceFileUrls as string[]) : [],
           certificationRef: typeof merged.certificationRef === 'string' ? merged.certificationRef : null,
+          hourlyRate: typeof merged.hourlyRate === 'number' ? merged.hourlyRate : null,
           ctwaReferral:
             capturedData.ctwaReferral && typeof capturedData.ctwaReferral === 'object'
               ? capturedData.ctwaReferral

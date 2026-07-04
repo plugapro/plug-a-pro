@@ -951,7 +951,7 @@ describe('P1: completion defense-in-depth — re-check for active application be
     mockSendButtons.mockResolvedValue(undefined)
   })
 
-  it('createApplicationInline: active app appears between submit and KYC PASS → returns existing id, no duplicate', async () => {
+  it('createApplicationInline (WHATSAPP PASS): active app appears during KYC window → returns existing id, no duplicate, and LINKS the draft', async () => {
     // Draft has no submittedApplicationId (came in clean)
     mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
       id: 'ver-race',
@@ -986,6 +986,13 @@ describe('P1: completion defense-in-depth — re-check for active application be
     expect(result).toEqual({ applicationId: 'app-race-existing' })
     // The defense-in-depth guard short-circuits before create
     expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+    // Fix 2: draft MUST be linked to the existing application (not left dangling)
+    expect(mockDb.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'draft-race' },
+        data: { submittedApplicationId: 'app-race-existing' },
+      }),
+    )
   })
 
   it('createPwaApplicationInline (PWA_RESUME 2nd fail): active app appears before 2nd fail → returns existing id, no duplicate created', async () => {
@@ -1026,6 +1033,77 @@ describe('P1: completion defense-in-depth — re-check for active application be
       expect.objectContaining({
         data: { submittedApplicationId: 'app-pwa-race-existing' },
       }),
+    )
+  })
+})
+
+describe('Fix 3: hourlyRate flows through PWA completion channels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb))
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockSyncProviderRecord.mockResolvedValue('provider-rate-test')
+    mockSendButtons.mockResolvedValue(undefined)
+    mockUpsertStructuredServiceAreas.mockResolvedValue(undefined)
+  })
+
+  it('PWA_RESUME: hourlyRate from submitPayload is forwarded to submitProviderApplication', async () => {
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-rate-resume',
+      providerApplicationDraftId: 'draft-rate-resume',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-rate-resume',
+      submittedApplicationId: null,
+      submitPayload: buildPwaResumePayload({ hourlyRate: 350 }),
+      phone: '+27821234567',
+      name: 'PWA Resume Provider',
+    })
+    mockSubmitProviderApplication.mockResolvedValue({ application: { id: 'app-rate-resume' } })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-rate-resume',
+    })
+
+    expect(mockSubmitProviderApplication).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ hourlyRate: 350 }),
+      expect.anything(),
+    )
+  })
+
+  it('PWA_SELF_SERVE: hourlyRate from submitPayload is forwarded to submitProviderApplication', async () => {
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-rate-ss',
+      providerApplicationDraftId: 'draft-rate-ss',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-rate-ss',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload({ hourlyRate: 480 }),
+      phone: '+27829876543',
+      name: 'PWA Self Serve Provider',
+    })
+    mockSubmitProviderApplication.mockResolvedValue({ application: { id: 'app-rate-ss' } })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-rate-ss',
+    })
+
+    expect(mockSubmitProviderApplication).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ hourlyRate: 480 }),
+      expect.anything(),
     )
   })
 })

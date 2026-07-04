@@ -643,6 +643,7 @@ export async function submitProviderRegistrationApplication(
         availabilityDays: canonicalData.availabilityDays,
         emergencyAvailable: canonicalData.emergencyAvailable,
         callOutFee: canonicalData.callOutFee,
+        hourlyRate: null,
         travelRadiusKm: canonicalData.travelRadiusKm,
         evidenceNote: canonicalData.evidenceNote,
         evidenceFileUrls: input.evidenceFileUrls ?? [],

@@ -171,7 +171,7 @@ describe('verification webhook — draft-anchored completion (Task 2.6)', () => 
     expect(mockRecordFailed).not.toHaveBeenCalled()
   })
 
-  it('completion function throws: still returns 200 and records processingError', async () => {
+  it('completion function throws: returns 500, records processingError, does NOT set processedAt (retryable)', async () => {
     mockCompleteApplication.mockRejectedValue(new Error('replay failed'))
 
     const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
@@ -180,9 +180,10 @@ describe('verification webhook — draft-anchored completion (Task 2.6)', () => 
       params: Promise.resolve({ vendor: 'smile_id' }),
     })
 
-    expect(response.status).toBe(200)
+    // Must return 500 so the vendor retries delivery
+    expect(response.status).toBe(500)
     const json = await response.json()
-    expect(json).toMatchObject({ ok: true })
+    expect(json).toMatchObject({ ok: false })
 
     // processingError recorded on the webhook event
     expect(mockDb.providerVerificationWebhookEvent.update).toHaveBeenCalledWith(
@@ -194,7 +195,48 @@ describe('verification webhook — draft-anchored completion (Task 2.6)', () => 
       }),
     )
 
-    // Final processedAt update still fires (in addition to the error update)
+    // processedAt must NOT be set — the event must remain retryable
+    const updateCalls = mockDb.providerVerificationWebhookEvent.update.mock.calls
+    const hasProcessedAt = updateCalls.some(
+      (call: unknown[]) =>
+        (call[0] as { data?: { processedAt?: unknown } }).data?.processedAt instanceof Date,
+    )
+    expect(hasProcessedAt).toBe(false)
+  })
+
+  it('completion failure then retry: retry does not short-circuit (processedAt is null), re-runs completion on success', async () => {
+    // First call: completion throws → processedAt not set
+    mockCompleteApplication.mockRejectedValueOnce(new Error('transient error'))
+
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const firstResponse = await POST(request('{"event_id":"evt-retry"}'), {
+      params: Promise.resolve({ vendor: 'smile_id' }),
+    })
+    expect(firstResponse.status).toBe(500)
+
+    // Retry: duplicate-webhook path finds the existing row with processedAt: null
+    // → falls through to re-run completion (does NOT short-circuit with ok: true)
+    mockDb.providerVerificationWebhookEvent.create.mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint'), { code: 'P2002' }),
+    )
+    mockDb.providerVerificationWebhookEvent.findUnique.mockResolvedValueOnce({
+      id: 'wh-1',
+      signatureValid: true,
+      processedAt: null, // not yet processed — must fall through
+    })
+    // On retry completion succeeds
+    mockCompleteApplication.mockResolvedValueOnce({ applicationId: 'app-1' })
+
+    const retryResponse = await POST(request('{"event_id":"evt-retry"}'), {
+      params: Promise.resolve({ vendor: 'smile_id' }),
+    })
+
+    // Retry must succeed and call completion again
+    expect(retryResponse.status).toBe(200)
+    expect(mockCompleteApplication).toHaveBeenCalledTimes(2)
+
+    // On success, processedAt IS set
     const updateCalls = mockDb.providerVerificationWebhookEvent.update.mock.calls
     const hasProcessedAt = updateCalls.some(
       (call: unknown[]) =>

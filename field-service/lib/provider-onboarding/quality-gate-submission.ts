@@ -139,6 +139,7 @@ interface Qgv2PwaResumeSubmitPayload {
   evidenceFileUrls: string[]
   certificationRef: string | null
   ctwaReferral: unknown | null
+  hourlyRate?: number | null
 }
 
 // ─── Type for the PWA_SELF_SERVE channel submit bundle ────────────────────────
@@ -159,6 +160,7 @@ interface Qgv2PwaSelfServeSubmitPayload {
   availabilityDays: string[]
   emergencyAvailable: boolean
   callOutFee: number | null
+  hourlyRate?: number | null
   travelRadiusKm: number | null
   evidenceNote: string | null
   evidenceFileUrls: string[]
@@ -458,6 +460,7 @@ async function completePwaResumeChannel(
         evidenceNote: payload.evidenceNote ?? null,
         evidenceFileUrls: payload.evidenceFileUrls ?? [],
         certificationRef: payload.certificationRef ?? null,
+        hourlyRate: payload.hourlyRate ?? null,
         ctwaReferral: payload.ctwaReferral as import('@/lib/whatsapp-referral').CtwaReferralAttribution | null,
       },
       { source: 'web' },
@@ -548,9 +551,7 @@ async function completePwaSelfServeChannel(
         evidenceFileUrls: payload.evidenceFileUrls ?? [],
         certificationRef: payload.certificationRef ?? null,
         callOutFee: payload.callOutFee ?? null,
-        // TODO: hourlyRate not in PWA_SELF_SERVE submitPayload (Task 2.5 shape);
-        // callOutFee is the closest analogue. Leave null until payload is extended.
-        hourlyRate: null,
+        hourlyRate: payload.hourlyRate ?? null,
         reference1Name: payload.reference1Name ?? null,
         reference1Mobile: payload.reference1Mobile ?? null,
         reference2Name: payload.reference2Name ?? null,
@@ -660,6 +661,7 @@ export async function completeApplicationForPassedVerification(
       providerId,
       status: 'PENDING',
       notesAppend: null,
+      draft,
     })
     applicationId = application.id
 
