@@ -522,9 +522,16 @@ export async function submitProviderRegistrationApplication(
   const gateEnabled = await isQualityGateV2Enabled()
 
   if (gateEnabled) {
-    // Gate ON: validate token (without consuming it), persist submitPayload onto
-    // the draft, issue a verification link, and return awaiting_verification.
-    const draftId = await client.$transaction(async (tx) => {
+    // Gate ON: validate token (without consuming it), run all pre-create guards
+    // (P1: customer-phone, existing-app, completeness, service-area canonicalization),
+    // persist submitPayload onto the draft, issue a verification link, and return
+    // awaiting_verification. Guards must mirror the gate-OFF transaction exactly so
+    // both paths reject customer-owned phones and duplicate applicants identically.
+    type GateOnTxResult =
+      | { kind: 'ok'; draftId: string }
+      | { kind: 'existing'; outcome: 'existing_approved' | 'existing_more_info' | 'existing_pending'; applicationId: string }
+
+    const txResult = await client.$transaction(async (tx): Promise<GateOnTxResult> => {
       const genericTokenError = new ProviderRegistrationValidationError(
         'Could not verify this registration. Please restart and try again.',
         'INVALID_RESUME_TOKEN',
@@ -560,33 +567,92 @@ export async function submitProviderRegistrationApplication(
         throw genericTokenError
       }
 
+      // P1 guard: run the same validation the gate-OFF path runs before it
+      // creates rows — service-area canonicalization, completeness, customer-phone
+      // rejection, and existing-application short-circuit. Token validation above
+      // gates all of these so enumeration risk is unchanged.
+      const location = await resolveCanonicalServiceAreas(
+        tx,
+        input,
+        baseData.locationNodeIds,
+        baseData.serviceAreas,
+        true,
+      )
+      const canonicalData = {
+        ...baseData,
+        serviceAreas: location.serviceAreas,
+        locationNodeIds: location.locationNodeIds,
+      }
+
+      const completeness = evaluateProviderProfileCompleteness({
+        phone: canonicalData.phone,
+        name,
+        skills: canonicalData.skills,
+        serviceAreas: canonicalData.serviceAreas,
+        locationNodeIds: canonicalData.locationNodeIds,
+        availability: canonicalData.availability,
+        callOutFee: canonicalData.callOutFee,
+      })
+      if (!completeness.canSubmit) {
+        throw new ProviderRegistrationValidationError(
+          'Complete the required registration fields before submitting.',
+          'INCOMPLETE_APPLICATION',
+        )
+      }
+
+      const existingCustomer = await tx.customer.findFirst({
+        where: { phone: { in: phoneVariants(canonicalData.phone) } },
+        select: { id: true },
+      })
+      if (existingCustomer) {
+        throw new ProviderRegistrationValidationError(
+          'This number is already registered as a customer on Plug A Pro.',
+          'PHONE_REGISTERED_AS_CUSTOMER',
+          409,
+        )
+      }
+
+      // Existing active applications: return discriminated value (not throw) so
+      // the tx commits cleanly and the caller can surface the right outcome.
+      const existingApp = await findLatestActiveProviderApplicationByPhone(tx, canonicalData.phone)
+      if (existingApp?.status === 'APPROVED') {
+        return { kind: 'existing', outcome: 'existing_approved', applicationId: existingApp.id }
+      }
+      if (existingApp?.status === 'MORE_INFO_REQUIRED') {
+        return { kind: 'existing', outcome: 'existing_more_info', applicationId: existingApp.id }
+      }
+      if (existingApp?.status === 'PENDING') {
+        return { kind: 'existing', outcome: 'existing_pending', applicationId: existingApp.id }
+      }
+
       const submitPayload = {
         version: 1 as const,
         channel: 'PWA_SELF_SERVE' as const,
         submittedAt: new Date().toISOString(),
         name,
-        phone: baseData.phone,
-        email: baseData.email,
-        skills: baseData.skills,
+        phone: canonicalData.phone,
+        email: canonicalData.email,
+        skills: canonicalData.skills,
         // In the PWA flow, skills serve as category slugs
-        categorySlugs: baseData.skills,
-        serviceAreas: baseData.serviceAreas,
-        locationNodeIds: baseData.locationNodeIds,
-        experience: baseData.experience,
-        availability: baseData.availability,
-        availabilityDays: baseData.availabilityDays,
-        emergencyAvailable: baseData.emergencyAvailable,
-        callOutFee: baseData.callOutFee,
-        travelRadiusKm: baseData.travelRadiusKm,
-        evidenceNote: baseData.evidenceNote,
+        categorySlugs: canonicalData.skills,
+        // Use canonical service areas and location node IDs (resolved above)
+        serviceAreas: canonicalData.serviceAreas,
+        locationNodeIds: canonicalData.locationNodeIds,
+        experience: canonicalData.experience,
+        availability: canonicalData.availability,
+        availabilityDays: canonicalData.availabilityDays,
+        emergencyAvailable: canonicalData.emergencyAvailable,
+        callOutFee: canonicalData.callOutFee,
+        travelRadiusKm: canonicalData.travelRadiusKm,
+        evidenceNote: canonicalData.evidenceNote,
         evidenceFileUrls: input.evidenceFileUrls ?? [],
         certificationRef: input.certificationRef ?? null,
-        reference1Name: baseData.reference1Name,
-        reference1Mobile: baseData.reference1Mobile,
-        reference2Name: baseData.reference2Name,
-        reference2Mobile: baseData.reference2Mobile,
-        bio: baseData.bio,
-        profilePhotoUrl: baseData.profilePhotoUrl,
+        reference1Name: canonicalData.reference1Name,
+        reference1Mobile: canonicalData.reference1Mobile,
+        reference2Name: canonicalData.reference2Name,
+        reference2Mobile: canonicalData.reference2Mobile,
+        bio: canonicalData.bio,
+        profilePhotoUrl: canonicalData.profilePhotoUrl,
       }
 
       await tx.providerApplicationDraft.update({
@@ -597,8 +663,20 @@ export async function submitProviderRegistrationApplication(
         data: { submitPayload: submitPayload as unknown as import('@prisma/client').Prisma.InputJsonValue, lastCompletedStep: 8 },
       })
 
-      return input.draftId
+      return { kind: 'ok', draftId: input.draftId }
     })
+
+    // If an existing active application was found, surface the same outcome as
+    // the gate-OFF path so callers see identical behaviour regardless of gate state.
+    if (txResult.kind === 'existing') {
+      return {
+        outcome: txResult.outcome,
+        applicationId: txResult.applicationId,
+        ref: applicationRef(txResult.applicationId),
+      }
+    }
+
+    const draftId = txResult.draftId
 
     // Issue verification link outside the transaction (idempotent, uses db internally).
     let link: { verificationUrl: string | null }

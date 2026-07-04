@@ -94,6 +94,9 @@ const { mockDb, mockIsEnabled, mockRevalidatePath } = vi.hoisted(() => {
         return { count }
       }),
     },
+    customer: {
+      findFirst: vi.fn(async () => null),
+    },
     providerApplication: {
       findFirst: vi.fn(async ({ where }: any) => {
         for (const app of applicationStore) {
@@ -246,6 +249,8 @@ beforeEach(() => {
   mockDb.providerApplicationDraft.findFirst.mockResolvedValue(null)
   mockDb.providerApplicationDraft.create.mockResolvedValue({ id: 'draft-web-1' })
   mockDb.providerApplicationDraft.update.mockResolvedValue({ id: 'draft-web-1' })
+
+  mockDb.customer.findFirst.mockResolvedValue(null)
 })
 
 // ─── Import helpers and actions after mocks ───────────────────────────────────
@@ -503,6 +508,123 @@ describe('Task 2.8: Didit unavailable at submitProviderApplicationFromWebAction 
     const result = await submitProviderApplicationFromWebAction({ rawToken, payload: {} })
 
     expect(result).toMatchObject({ ok: true, awaitingVerification: true, verificationUrl: null })
+    expect(getApplicationStore()).toHaveLength(0)
+  })
+})
+
+describe('P1: gate-ON conflict guards in PWA-B (submitProviderApplicationFromWebAction)', () => {
+  async function buildGateOnConvAndTokenWithPhone(phone: string) {
+    const conv = {
+      id: `conv-p1-${Date.now()}-${Math.random()}`,
+      phone,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'P1 Test User',
+        idNumber: '8001015009087',
+        skills: ['plumbing'],
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        hourlyRate: 350,
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+        bio: 'I am an experienced plumber with five years of work history.',
+        references: 'Available on request from past clients on demand.',
+        evidenceFileUrls: [
+          'https://blob.example.com/ev1.jpg',
+          'https://blob.example.com/ev2.jpg',
+          'https://blob.example.com/ev3.jpg',
+        ],
+        certificationRef: 'PIRB-12345',
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+      updatedAt: new Date(),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    return { rawToken, conv }
+  }
+
+  beforeEach(() => {
+    mockGateEnabled.mockResolvedValue(true)
+    mockIssueLinkWebAction.mockResolvedValue({
+      verificationId: 'ver-web-2',
+      verificationUrl: 'https://verify.example.com/token2',
+      expiresAt: new Date(Date.now() + 3600_000),
+      reused: false,
+    })
+  })
+
+  it('gate ON + phone is a customer → throws PHONE_REGISTERED_AS_CUSTOMER, no draft, no KYC link', async () => {
+    const phone = '+27821111101'
+    mockDb.customer.findFirst.mockResolvedValueOnce({ id: 'cust-existing' })
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+
+    await expect(
+      submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+    ).rejects.toThrow(/PHONE_REGISTERED_AS_CUSTOMER/i)
+
+    expect(getApplicationStore()).toHaveLength(0)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + PENDING application exists → throws APPLICATION_CONFLICT:existing_pending, no new app, no KYC link', async () => {
+    const phone = '+27821111102'
+    // customer check returns null (default), seed PENDING application
+    getApplicationStore().push({
+      id: 'app-existing-pending',
+      phone,
+      status: 'PENDING',
+      name: 'Existing',
+    })
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+
+    await expect(
+      submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+    ).rejects.toThrow(/APPLICATION_CONFLICT.*existing_pending/i)
+
+    // No new application was created — only the seeded one
+    expect(getApplicationStore()).toHaveLength(1)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + APPROVED application exists → throws APPLICATION_CONFLICT:existing_approved, no new app, no KYC link', async () => {
+    const phone = '+27821111103'
+    getApplicationStore().push({
+      id: 'app-existing-approved',
+      phone,
+      status: 'APPROVED',
+      name: 'Existing',
+    })
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+
+    await expect(
+      submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+    ).rejects.toThrow(/APPLICATION_CONFLICT.*existing_approved/i)
+
+    expect(getApplicationStore()).toHaveLength(1)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + clean applicant → awaitingVerification, KYC link issued', async () => {
+    const phone = '+27821111104'
+    // customer.findFirst returns null (default), applicationStore is empty for this phone
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+    const result = await submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+
+    expect(result).toMatchObject({ ok: true, awaitingVerification: true })
+    expect(mockIssueLinkWebAction).toHaveBeenCalledTimes(1)
     expect(getApplicationStore()).toHaveLength(0)
   })
 })

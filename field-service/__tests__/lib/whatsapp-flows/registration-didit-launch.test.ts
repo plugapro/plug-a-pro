@@ -236,6 +236,100 @@ describe('WhatsApp summary → Didit launch (quality gate v2 create-on-PASS)', (
   })
 })
 
+describe('P1: gate-ON conflict guards run before draft launch (WhatsApp handlePending)', () => {
+  it('gate ON + phone is a customer → rejected identically to gate-OFF, no draft, no KYC link', async () => {
+    dbMock.customer.findFirst.mockResolvedValueOnce({ id: 'cust_existing' })
+
+    const result = await handleRegistrationFlow(buildCtx())
+
+    // The applicant should be told they are registered as a customer
+    expect(mockSendText).toHaveBeenCalledTimes(1)
+    expect(mockSendText.mock.calls[0][1]).toMatch(/already registered as a customer/i)
+    // No draft created, no KYC link issued
+    const draftPersisted = mockDraftUpsert.mock.calls.length > 0 || mockDraftCreate.mock.calls.length > 0
+    expect(draftPersisted).toBe(false)
+    expect(mockIssueLink).not.toHaveBeenCalled()
+    // No application or provider created
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
+    // Ends the flow
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('gate ON + PENDING application exists → existing_pending route, no draft, no KYC link', async () => {
+    dbMock.providerApplication.findFirst.mockResolvedValueOnce({
+      id: 'app_existing_001',
+      phone: '+27821234567',
+      status: 'PENDING',
+      name: 'Test Provider',
+      providerId: null,
+      submittedAt: new Date(),
+    })
+
+    const result = await handleRegistrationFlow(buildCtx())
+
+    // The applicant should be told their application is already submitted
+    expect(mockSendButtons).toHaveBeenCalledTimes(1)
+    expect(mockSendButtons.mock.calls[0][1]).toMatch(/already submitted/i)
+    // No draft created, no KYC link issued
+    const draftPersisted = mockDraftUpsert.mock.calls.length > 0 || mockDraftCreate.mock.calls.length > 0
+    expect(draftPersisted).toBe(false)
+    expect(mockIssueLink).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('gate ON + APPROVED application exists → existing_approved route, no draft, no KYC link', async () => {
+    dbMock.providerApplication.findFirst.mockResolvedValueOnce({
+      id: 'app_existing_002',
+      phone: '+27821234567',
+      status: 'APPROVED',
+      name: 'Test Provider',
+      providerId: 'prov_001',
+      submittedAt: new Date(),
+    })
+
+    const result = await handleRegistrationFlow(buildCtx())
+
+    expect(mockSendButtons).toHaveBeenCalledTimes(1)
+    expect(mockSendButtons.mock.calls[0][1]).toMatch(/already registered/i)
+    const draftPersisted = mockDraftUpsert.mock.calls.length > 0 || mockDraftCreate.mock.calls.length > 0
+    expect(draftPersisted).toBe(false)
+    expect(mockIssueLink).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('gate ON + MORE_INFO_REQUIRED application exists → more_info route, no draft, no KYC link', async () => {
+    dbMock.providerApplication.findFirst.mockResolvedValueOnce({
+      id: 'app_existing_003',
+      phone: '+27821234567',
+      status: 'MORE_INFO_REQUIRED',
+      name: 'Test Provider',
+      providerId: null,
+      submittedAt: new Date(),
+    })
+
+    const result = await handleRegistrationFlow(buildCtx())
+
+    expect(mockSendText).toHaveBeenCalledTimes(1)
+    expect(mockSendText.mock.calls[0][1]).toMatch(/more information/i)
+    const draftPersisted = mockDraftUpsert.mock.calls.length > 0 || mockDraftCreate.mock.calls.length > 0
+    expect(draftPersisted).toBe(false)
+    expect(mockIssueLink).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('gate ON + clean applicant → happy path, draft persisted and KYC link issued', async () => {
+    // No customer, no existing application — clean happy path
+    const result = await handleRegistrationFlow(buildCtx())
+
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+    const draftPersisted = mockDraftUpsert.mock.calls.length > 0 || mockDraftCreate.mock.calls.length > 0
+    expect(draftPersisted).toBe(true)
+    expect(mockIssueLink).toHaveBeenCalledTimes(1)
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+  })
+})
+
 describe('Task 2.8: Didit unavailable at launchQgv2DraftAndVerification (gate ON)', () => {
   it('issueLink throws generic Error → sends temporarily-unavailable text, lands reg_awaiting_kyc, draft stays, no application', async () => {
     mockDraftCreate.mockResolvedValueOnce({ id: 'draft_mock_err_001' })

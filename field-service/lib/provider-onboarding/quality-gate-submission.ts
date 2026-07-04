@@ -21,6 +21,7 @@ import { getServiceComplianceRequirement } from '@/lib/service-category-policy'
 import { sendButtons } from '@/lib/whatsapp-interactive'
 import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
 import { submitProviderApplication } from '@/lib/provider-applications-submit'
+import { findLatestActiveProviderApplicationByPhone, ACTIVE_PROVIDER_APPLICATION_STATUSES } from '@/lib/provider-applications'
 
 // ─── Local helpers (mirrors registration.ts, not exported there) ──────────────
 
@@ -170,7 +171,7 @@ interface Qgv2PwaSelfServeSubmitPayload {
   profilePhotoUrl: string | null
 }
 
-// ─── Internal: create ProviderApplication inline (bypasses quality gate re-check) ─
+// ─── Internal: create ProviderApplication inline (with completion re-check) ──
 
 async function createApplicationInline(
   tx: Prisma.TransactionClient,
@@ -179,9 +180,37 @@ async function createApplicationInline(
     providerId: string
     status: 'PENDING' | 'MORE_INFO_REQUIRED'
     notesAppend: string | null
+    draft?: { id: string }
   },
 ) {
   const a = args.submitApplicationArgs
+
+  // Defense-in-depth: re-check for an active application that may have been
+  // created during the KYC window (e.g. a concurrent WhatsApp submit or a
+  // support-team manual create). If one exists, link the draft to it and skip
+  // the duplicate create rather than creating a second row.
+  const conflict = await tx.providerApplication.findFirst({
+    where: {
+      phone: a.phone,
+      status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
+    },
+    select: { id: true, status: true },
+  })
+  if (conflict) {
+    if (args.draft) {
+      await tx.providerApplicationDraft.update({
+        where: { id: args.draft.id },
+        data: { submittedApplicationId: conflict.id },
+      }).catch(() => undefined)
+    }
+    console.warn('[quality-gate-submission] createApplicationInline: active application already exists, skipping duplicate create', {
+      existingApplicationId: conflict.id,
+      existingStatus: conflict.status,
+      phone: a.phone,
+    })
+    return { id: conflict.id, _skippedDuplicate: true as const }
+  }
+
   const availabilityStr = Array.isArray(a.availability)
     ? (a.availability as string[]).join(', ')
     : a.availability ?? null
@@ -267,8 +296,33 @@ async function createPwaApplicationInline(
     providerId?: string | null
     status: 'PENDING' | 'MORE_INFO_REQUIRED'
     notesAppend: string | null
+    draft?: { id: string }
   },
 ) {
+  // Defense-in-depth: re-check for an active application that may have been
+  // created during the KYC window. If one exists, link the draft and skip.
+  const conflict = await tx.providerApplication.findFirst({
+    where: {
+      phone: args.phone,
+      status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
+    },
+    select: { id: true, status: true },
+  })
+  if (conflict) {
+    if (args.draft) {
+      await tx.providerApplicationDraft.update({
+        where: { id: args.draft.id },
+        data: { submittedApplicationId: conflict.id },
+      }).catch(() => undefined)
+    }
+    console.warn('[quality-gate-submission] createPwaApplicationInline: active application already exists, skipping duplicate create', {
+      existingApplicationId: conflict.id,
+      existingStatus: conflict.status,
+      phone: args.phone,
+    })
+    return { id: conflict.id, _skippedDuplicate: true as const }
+  }
+
   const application = await tx.providerApplication.create({
     data: {
       phone: args.phone,

@@ -601,3 +601,83 @@ describe('pwa-flow quality gate', () => {
     }))
   })
 })
+
+describe('P1: gate-ON conflict guards in PWA-A (submitProviderRegistrationApplication)', () => {
+  beforeEach(() => {
+    gateEnabled.mockReset()
+    gateEnabled.mockResolvedValue(true)
+  })
+
+  const baseGateOnInput = {
+    draftId: 'draft-1',
+    resumeToken: 'resume-token',
+    phone: '0823035070',
+    name: 'Thabo Nkosi',
+    skills: ['plumbing'],
+    serviceAreas: ['Maboneng'],
+    locationNodeIds: ['sub_maboneng'],
+    provinceId: 'province-gauteng',
+    cityId: 'city-johannesburg',
+    regionId: 'region-jhb-central',
+    availabilityDays: ['Mon'],
+    callOutFee: 150,
+    consentAccepted: true,
+  }
+
+  it('gate ON + phone is a customer → throws PHONE_REGISTERED_AS_CUSTOMER, no draft, no KYC link', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.customer.findFirst = vi.fn().mockResolvedValue({ id: 'cust_existing' })
+
+    await expect(submitProviderRegistrationApplication(client as any, baseGateOnInput))
+      .rejects.toMatchObject({ code: 'PHONE_REGISTERED_AS_CUSTOMER' })
+
+    expect(tx.providerApplicationDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + PENDING application exists → returns existing_pending, no draft update, no KYC link', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.providerApplication.findFirst = vi.fn().mockResolvedValue({
+      id: 'app_existing_001',
+      phone: '+27823035070',
+      status: 'PENDING',
+      name: 'Thabo Nkosi',
+      providerId: null,
+      submittedAt: new Date(),
+    })
+
+    const result = await submitProviderRegistrationApplication(client as any, baseGateOnInput)
+
+    expect(result.outcome).toBe('existing_pending')
+    // No draft was updated with submitPayload
+    expect(tx.providerApplicationDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + APPROVED application exists → returns existing_approved, no draft update', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.providerApplication.findFirst = vi.fn().mockResolvedValue({
+      id: 'app_existing_002',
+      phone: '+27823035070',
+      status: 'APPROVED',
+      name: 'Thabo Nkosi',
+      providerId: 'prov_001',
+      submittedAt: new Date(),
+    })
+
+    const result = await submitProviderRegistrationApplication(client as any, baseGateOnInput)
+
+    expect(result.outcome).toBe('existing_approved')
+    expect(tx.providerApplicationDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + clean applicant → awaiting_verification, draft updated', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.providerApplication.findFirst = vi.fn().mockResolvedValue(null)
+    tx.customer.findFirst = vi.fn().mockResolvedValue(null)
+
+    const result = await submitProviderRegistrationApplication(client as any, baseGateOnInput)
+
+    expect(result.outcome).toBe('awaiting_verification')
+    // Draft was updated with submitPayload
+    expect(tx.providerApplicationDraft.update).toHaveBeenCalled()
+  })
+})

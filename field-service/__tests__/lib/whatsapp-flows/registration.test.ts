@@ -526,11 +526,13 @@ describe('registration flow - duplicate prevention', () => {
 
     it('recovers cleanly when a unique constraint race creates the application first', async () => {
       const racedApp = { id: 'app_raced_pending', status: 'PENDING', name: 'Thabo Nkosi' }
-      // Call 1: registration.ts outer duplicate check → no active app yet
-      // Call 2: submitProviderApplication conflict guard inside tx → sees the raced app,
+      // Call 1: handlePending pre-check (P1 guard) → no active app yet
+      // Call 2: gate-OFF tx inner duplicate check (line 3037) → no active app yet
+      // Call 3: submitProviderApplication conflict guard inside tx → sees the raced app,
       //         throws ProviderApplicationConflictError (previously this was simulated via P2002)
-      // Call 3: catch-block race recovery lookup → same raced app
+      // Call 4: catch-block race recovery lookup → same raced app
       ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(racedApp)
         .mockResolvedValueOnce(racedApp)

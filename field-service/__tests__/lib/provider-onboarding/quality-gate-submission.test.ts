@@ -23,6 +23,7 @@ const {
     providerApplication: {
       create: vi.fn(),
       update: vi.fn(),
+      findFirst: vi.fn(),
     },
     attachment: {
       updateMany: vi.fn(),
@@ -222,6 +223,8 @@ describe('completeApplicationForPassedVerification', () => {
     mockSyncProviderRecord.mockResolvedValue('provider-1')
     mockDb.providerApplication.create.mockResolvedValue({ id: 'app-1' })
     mockDb.providerApplication.update.mockResolvedValue({ id: 'app-1' })
+    // Default: no active application conflict (happy path)
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
     mockDb.providerApplicationDraft.update.mockResolvedValue({})
     mockDb.providerIdentityVerification.update.mockResolvedValue({})
     mockDb.attachment.updateMany.mockResolvedValue({ count: 0 })
@@ -342,6 +345,8 @@ describe('recordFailedVerificationForApplication', () => {
     mockSyncProviderRecord.mockResolvedValue('provider-1')
     mockDb.providerApplication.create.mockResolvedValue({ id: 'app-fail' })
     mockDb.providerApplication.update.mockResolvedValue({ id: 'app-fail' })
+    // Default: no active application conflict (happy path)
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
     mockDb.providerApplicationDraft.update.mockResolvedValue({})
     mockDb.providerIdentityVerification.update.mockResolvedValue({})
     mockIssueLink.mockResolvedValue({ verificationId: 'ver-new', verificationUrl: 'https://verify.example.com', expiresAt: new Date(), reused: false })
@@ -928,5 +933,99 @@ describe('completeApplicationForPassedVerification — PWA_SELF_SERVE channel', 
 
     expect(result).toEqual({ skipped: 'already_submitted' })
     expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+  })
+})
+
+describe('P1: completion defense-in-depth — re-check for active application before creating duplicate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb))
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockDb.attachment.updateMany.mockResolvedValue({ count: 0 })
+    mockDb.attachment.findUnique.mockResolvedValue(null)
+    mockResolveInitialApprovalStatus.mockResolvedValue('PENDING_REVIEW')
+    mockSyncProviderSkills.mockResolvedValue(undefined)
+    mockUpsertStructuredServiceAreas.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('createApplicationInline: active app appears between submit and KYC PASS → returns existing id, no duplicate', async () => {
+    // Draft has no submittedApplicationId (came in clean)
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-race',
+      providerApplicationDraftId: 'draft-race',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-race',
+      submittedApplicationId: null,
+      submitPayload: buildPayload({ normalizedPhone: '+27821111999' }),
+      phone: '+27821111999',
+      name: 'Race Condition Test',
+    })
+
+    mockSyncProviderRecord.mockResolvedValue('prov-race')
+
+    // The conflict re-check in createApplicationInline finds an existing PENDING app
+    mockDb.providerApplication.findFirst.mockResolvedValue({
+      id: 'app-race-existing',
+      phone: '+27821111999',
+      status: 'PENDING',
+    })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    const result = await completeApplicationForPassedVerification(
+      mockDb as unknown as typeof import('@/lib/db').db,
+      { verificationId: 'ver-race' },
+    )
+
+    expect(result).toEqual({ applicationId: 'app-race-existing' })
+    // The defense-in-depth guard short-circuits before create
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+  })
+
+  it('createPwaApplicationInline (PWA_RESUME 2nd fail): active app appears before 2nd fail → returns existing id, no duplicate created', async () => {
+    // 2nd KYC failure on a PWA_RESUME draft — this calls createPwaApplicationInline
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-pwa-race',
+      providerApplicationDraftId: 'draft-pwa-race',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa-race',
+      submittedApplicationId: null,
+      submitPayload: buildPwaResumePayload({ phone: '+27821111998' }),
+      phone: '+27821111998',
+    })
+    // 2nd failure (count ≥ 2) triggers createPwaApplicationInline instead of re-issue
+    mockDb.providerIdentityVerification.count.mockResolvedValue(2)
+
+    // Defense-in-depth: active app already exists when createPwaApplicationInline fires
+    mockDb.providerApplication.findFirst.mockResolvedValue({
+      id: 'app-pwa-race-existing',
+      phone: '+27821111998',
+      status: 'APPROVED',
+    })
+
+    const { recordFailedVerificationForApplication } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await recordFailedVerificationForApplication(
+      mockDb as unknown as typeof import('@/lib/db').db,
+      { verificationId: 'ver-pwa-race' },
+    )
+
+    // Defense-in-depth guard short-circuits before create; existing app id reused
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+    // Draft was linked to the existing app id
+    expect(mockDb.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { submittedApplicationId: 'app-pwa-race-existing' },
+      }),
+    )
   })
 })

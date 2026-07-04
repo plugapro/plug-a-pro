@@ -2913,10 +2913,75 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_pending' }
   }
 
+  // P1 guard: run customer-phone and existing-application checks BEFORE forking
+  // on the quality gate. The gate-OFF path runs these inside the transaction, but
+  // the gate-ON path must see the same rejections — otherwise a customer-owned
+  // phone or a duplicate applicant can slip through to draft + KYC launch.
+  const normalizedPhone = normalizePhone(ctx.phone)
+  const digits = normalizedPhone.replace(/\D/g, '')
+  const phoneVariants = Array.from(new Set([
+    normalizedPhone,
+    digits ? `+${digits}` : null,
+    digits || null,
+    digits.startsWith('27') ? `0${digits.slice(2)}` : null,
+  ].filter(Boolean) as string[]))
+
+  const preCheckCustomer = await db.customer.findFirst({
+    where: { phone: { in: phoneVariants } },
+    select: { id: true },
+  })
+  if (preCheckCustomer) {
+    await sendText(
+      ctx.phone,
+      'This number is already registered as a customer on Plug A Pro. To apply as a provider, use a different phone number and restart with *join*.',
+    )
+    return { nextStep: 'done' }
+  }
+
+  const preCheckApp = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
+  if (preCheckApp?.status === 'APPROVED') {
+    const ref = preCheckApp.id.slice(-8).toUpperCase()
+    await sendButtons(
+      ctx.phone,
+      `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${ref}*\n\nYou can manage jobs from the provider menu.`,
+      [
+        { id: 'provider_my_jobs', title: 'My Jobs' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+      undefined,
+      { metadata: { applicationId: preCheckApp.id } },
+    )
+    return { nextStep: 'done' }
+  }
+  if (preCheckApp?.status === 'MORE_INFO_REQUIRED') {
+    const ref = preCheckApp.id.slice(-8).toUpperCase()
+    await sendText(
+      ctx.phone,
+      `⏳ Your application is under review and we've requested more information.\n\nRef: *${ref}*\n\nPlease reply with the requested information so we can complete the review.`,
+    )
+    return { nextStep: 'done' }
+  }
+  if (preCheckApp?.status === 'PENDING') {
+    const ref = preCheckApp.id.slice(-8).toUpperCase()
+    await sendButtons(
+      ctx.phone,
+      `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
+      [
+        { id: 'provider_application_status', title: 'Check Status' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+      undefined,
+      { metadata: { applicationId: preCheckApp.id } },
+    )
+    return { nextStep: 'done' }
+  }
+
   // Quality gate v2 (create-on-PASS): when the gate is ON we do NOT create the
   // Provider / ProviderApplication at summary time. Persist a replayable draft,
   // launch Didit, and park on reg_awaiting_kyc. The submit transaction below is
   // replayed by the verification-completion webhook (Task 2.6) once Didit PASSes.
+  // All conflict/customer-phone guards above have already run — gate-ON and
+  // gate-OFF paths are now equivalent for the rejection cases.
   const qualityGateOn = await isQualityGateV2Enabled()
   if (qualityGateOn) {
     try {
@@ -2925,7 +2990,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       // Validation failures (incomplete ctx.data) or unexpected errors: keep the
       // applicant on the summary rather than silently dropping them.
       console.error('[registration-flow] qgv2 launch failed at summary', {
-        normalized_phone: normalizePhone(ctx.phone),
+        normalized_phone: normalizedPhone,
         error: safeErrorMessage(err),
       })
       await sendText(
@@ -2937,14 +3002,6 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const traceId = createSubmitTraceId()
-  const normalizedPhone = normalizePhone(ctx.phone)
-  const digits = normalizedPhone.replace(/\D/g, '')
-  const phoneVariants = Array.from(new Set([
-    normalizedPhone,
-    digits ? `+${digits}` : null,
-    digits || null,
-    digits.startsWith('27') ? `0${digits.slice(2)}` : null,
-  ].filter(Boolean) as string[]))
 
   try {
     const submitData = validateSubmitData(ctx)
