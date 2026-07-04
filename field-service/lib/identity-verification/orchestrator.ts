@@ -4,6 +4,7 @@ import { isEnabled } from '../flags'
 import { getPublicAppUrl } from '../provider-credit-copy'
 import { issueProviderVerificationToken } from '../provider-verification-token'
 import { sendText } from '../whatsapp-interactive'
+import { isQualityGateV2Enabled } from '../provider-onboarding/quality-gate'
 import { decryptIdentifier, encryptIdentifier } from './crypto'
 import { logIdentityVerificationError, logIdentityVerificationEvent } from './log'
 import type { VerificationDecision, VerificationStatus } from './types'
@@ -300,12 +301,13 @@ export async function resolveIdentityVerificationConsentVendor(
 }
 
 export async function resolveIdentityVerificationConsentVendorForSubject(
-  subject: { providerId?: string | null; providerApplicationId?: string | null },
+  subject: { providerId?: string | null; providerApplicationId?: string | null; providerApplicationDraftId?: string | null },
   client = db,
 ): Promise<IdentityVerificationConsentVendor> {
   const activeConfig = await resolveActiveVendorConfig({
     providerId: subject.providerId ?? null,
     providerApplicationId: subject.providerApplicationId ?? null,
+    providerApplicationDraftId: subject.providerApplicationDraftId ?? null,
   }, client)
   return {
     vendorKey: activeConfig.vendorKey,
@@ -615,7 +617,7 @@ async function loadAutomationSnapshot(verificationId: string, client = db) {
 }
 
 async function resolveActiveVendorConfig(
-  snapshot: { providerId?: string | null; providerApplicationId?: string | null },
+  snapshot: { providerId?: string | null; providerApplicationId?: string | null; providerApplicationDraftId?: string | null },
   client = db,
 ) {
   const automationEnabled = await isEnabled('provider.identity.verification.automation', { userId: snapshot.providerId ?? undefined })
@@ -629,16 +631,25 @@ async function resolveActiveVendorConfig(
     { userId: snapshot.providerId ?? undefined },
   )
   if (pilotGateRequired) {
-    const allowlisted = await client.providerIdentityVerificationPilotAllowlist.findFirst({
-      where: {
-        OR: [
-          snapshot.providerId ? { providerId: snapshot.providerId } : undefined,
-          snapshot.providerApplicationId ? { providerApplicationId: snapshot.providerApplicationId } : undefined,
-        ].filter(Boolean) as Prisma.ProviderIdentityVerificationPilotAllowlistWhereInput[],
-      },
-      select: { id: true },
-    })
-    if (!allowlisted) return manualConfig()
+    // Application-stage subjects (no providerId) bypass the allowlist when the
+    // quality gate v2 is ON — a new applicant can run Didit without a
+    // per-provider allowlist row. Post-approval subjects (with providerId) still
+    // require an allowlist entry.
+    const isApplicationStage = !snapshot.providerId &&
+      Boolean(snapshot.providerApplicationId || snapshot.providerApplicationDraftId)
+    const gateOn = isApplicationStage ? await isQualityGateV2Enabled() : false
+    if (!(isApplicationStage && gateOn)) {
+      const allowlisted = await client.providerIdentityVerificationPilotAllowlist.findFirst({
+        where: {
+          OR: [
+            snapshot.providerId ? { providerId: snapshot.providerId } : undefined,
+            snapshot.providerApplicationId ? { providerApplicationId: snapshot.providerApplicationId } : undefined,
+          ].filter(Boolean) as Prisma.ProviderIdentityVerificationPilotAllowlistWhereInput[],
+        },
+        select: { id: true },
+      })
+      if (!allowlisted) return manualConfig()
+    }
   }
 
   const active = await client.verificationVendorConfig.findMany({
