@@ -45,7 +45,10 @@ vi.mock('@/lib/provider-credit-copy', () => ({
 vi.mock('@/lib/whatsapp-interactive', () => ({ sendText: vi.fn() }))
 vi.mock('@/lib/db', () => ({ db: {} }))
 
-import { resolveIdentityVerificationConsentVendorForSubject } from '../../../lib/identity-verification/orchestrator'
+import {
+  resolveIdentityVerificationConsentVendor,
+  resolveIdentityVerificationConsentVendorForSubject,
+} from '../../../lib/identity-verification/orchestrator'
 
 // ---------------------------------------------------------------------------
 // Helper: minimal DB client mock (no allowlist row by default)
@@ -150,5 +153,63 @@ describe('resolveActiveVendorConfig — application-stage allowlist bypass', () 
     expect(consent.vendorKey).toBe('manual')
     // Gate is OFF so allowlist check still runs.
     expect(client.providerIdentityVerificationPilotAllowlist.findFirst).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveIdentityVerificationConsentVendor (non-ForSubject variant)
+// Verifies that providerApplicationDraftId is threaded from the DB snapshot
+// through to resolveActiveVendorConfig so the allowlist bypass fires correctly.
+// ---------------------------------------------------------------------------
+describe('resolveIdentityVerificationConsentVendor — draft-anchored verification bypass', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('IDENTITY_ENC_KEY', '12345678901234567890123456789012')
+  })
+
+  it('resolves didit via the non-ForSubject variant when the verification row has providerApplicationDraftId set and providerId is null', async () => {
+    withFullFlags()
+    mocks.isQualityGateV2Enabled.mockResolvedValue(true)
+
+    // Build a client that includes both the snapshot loader (findUniqueOrThrow)
+    // and the models that resolveActiveVendorConfig touches.
+    const snapshotRow = {
+      id: 'ver_draft_1',
+      providerId: null,
+      providerApplicationId: null,
+      providerApplicationDraftId: 'draft_1',
+      documents: [],
+    }
+    const client = {
+      providerIdentityVerification: {
+        findUniqueOrThrow: vi.fn(async () => snapshotRow),
+      },
+      providerIdentityVerificationPilotAllowlist: {
+        findFirst: vi.fn(async () => null),
+      },
+      verificationVendorConfig: {
+        findMany: vi.fn(async () => [{
+          vendorKey: 'didit',
+          active: true,
+          confidenceThreshold: 0.85,
+          livenessRequired: true,
+          configJson: { displayName: 'Didit' },
+        }]),
+        findUnique: vi.fn(async () => ({
+          vendorKey: 'didit',
+          configJson: { displayName: 'Didit' },
+        })),
+      },
+    }
+
+    const consent = await resolveIdentityVerificationConsentVendor(
+      'ver_draft_1',
+      client as unknown as Parameters<typeof resolveIdentityVerificationConsentVendor>[1],
+    )
+
+    expect(consent.vendorKey).toBe('didit')
+    expect(consent.vendorDisplayName).toBe('Didit')
+    // The bypass must fire — allowlist must NOT have been queried.
+    expect(client.providerIdentityVerificationPilotAllowlist.findFirst).not.toHaveBeenCalled()
   })
 })

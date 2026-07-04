@@ -297,6 +297,7 @@ export async function resolveIdentityVerificationConsentVendor(
   return resolveIdentityVerificationConsentVendorForSubject({
     providerId: snapshot.providerId,
     providerApplicationId: snapshot.providerApplicationId,
+    providerApplicationDraftId: snapshot.providerApplicationDraftId,
   }, client)
 }
 
