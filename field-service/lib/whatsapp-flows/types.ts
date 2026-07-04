@@ -67,6 +67,7 @@ export type FlowStep =
   | 'reg_collect_reference1'      // optional first reference contact capture
   | 'reg_collect_reference2'      // optional second reference contact capture
   | 'reg_collect_evidence'
+  | 'reg_collect_certification'
   | 'reg_confirm'
   | 'reg_pending'
   | 'reg_edit_field'          // field-level edit selection
@@ -242,6 +243,8 @@ export interface ConversationData {
   certificationProofMediaIds?: string[]      // WhatsApp media IDs already processed for certification proof dedupe
   certificationProofIntent?: boolean         // true after provider chooses Upload proof document/photo
   highRiskServiceLabels?: string[]           // Selected high-risk/regulated service labels shown in proof copy/summary
+  certificationRef?: string                  // Registration/licence number or 'attachment:<id>' when doc uploaded
+  certificationDocAttachmentId?: string      // Attachment ID for the uploaded certification document
   profilePhotoAttachmentId?: string // Attachment ID for the optional profile photo
   profilePhotoMediaId?: string      // WhatsApp media ID for profile photo dedupe
   profilePhotoSkipped?: boolean     // true if provider explicitly skipped the photo step

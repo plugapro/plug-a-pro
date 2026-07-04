@@ -459,6 +459,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectRates(ctx)
     case 'reg_collect_evidence':
       return handleCollectEvidence(ctx)
+    case 'reg_collect_certification':
+      return handleCollectCertification(ctx)
     case 'reg_confirm':
       return handleConfirm(ctx)
     case 'reg_pending':
@@ -1754,6 +1756,10 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
         await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
         return { nextStep: 'reg_collect_evidence' }
       }
+      if (hasHighRiskServiceSelection(ctx.data.skills ?? [])) {
+        await sendCertificationPrompt(ctx.phone)
+        return { nextStep: 'reg_collect_certification' }
+      }
     }
     return showRegistrationSummary(ctx, { evidenceNote: '' })
   }
@@ -1868,6 +1874,10 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
         await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
         return { nextStep: 'reg_collect_evidence' }
       }
+      if (hasHighRiskServiceSelection(ctx.data.skills ?? [])) {
+        await sendCertificationPrompt(ctx.phone)
+        return { nextStep: 'reg_collect_certification' }
+      }
     }
     return showRegistrationSummary(ctx, {})
   }
@@ -1938,6 +1948,53 @@ async function handleCollectRates(ctx: FlowContext): Promise<FlowResult> {
     }
     throw error
   }
+}
+
+// ─── Certification step (high-risk trades, quality gate ON) ───────────────────
+
+async function sendCertificationPrompt(phone: string): Promise<void> {
+  await sendText(
+    phone,
+    [
+      '📋 *Certification required for your trade*',
+      '',
+      'Your selected service requires a registration number or licence.',
+      '',
+      'Please upload your certification document or photo, OR type your registration/licence number below.',
+    ].join('\n'),
+  )
+}
+
+async function handleCollectCertification(ctx: FlowContext): Promise<FlowResult> {
+  // Media upload path (cert document or photo)
+  if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, "⚠️ Couldn't read that file. Please try uploading your certification document again.")
+      return { nextStep: 'reg_collect_certification' }
+    }
+    try {
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        label: PROVIDER_CERT_DOCUMENT_LABEL,
+      })
+      return showRegistrationSummary(ctx, {
+        certificationDocAttachmentId: attachmentId,
+        certificationRef: `attachment:${attachmentId}`,
+      })
+    } catch (err) {
+      console.error('[registration:handleCollectCertification] media upload failed:', err)
+      await sendText(ctx.phone, "⚠️ Upload failed. Please try again or type your registration/licence number instead.")
+      return { nextStep: 'reg_collect_certification' }
+    }
+  }
+
+  // Text reply path (typed registration/licence number)
+  const text = ctx.reply.text?.trim()
+  if (!text) {
+    await sendText(ctx.phone, 'Please upload your certification document or type your registration/licence number.')
+    return { nextStep: 'reg_collect_certification' }
+  }
+  return showRegistrationSummary(ctx, { certificationRef: text })
 }
 
 async function showRegistrationSummary(
