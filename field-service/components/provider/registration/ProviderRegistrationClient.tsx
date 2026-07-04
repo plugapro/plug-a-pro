@@ -647,7 +647,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       return false
     }
     if (currentStep === 'evidence' && qualityGateEnabled) {
-      if (!evidenceStepComplete(form.evidenceFileUrls, true)) {
+      if (!evidenceStepComplete(form.evidenceFileUrls, qualityGateEnabled)) {
         setError(`Add ${MIN_EVIDENCE_PHOTOS} work photos before continuing.`)
         return false
       }
