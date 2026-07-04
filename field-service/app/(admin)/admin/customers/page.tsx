@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { CustomerChannel } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
+import { isCustomerNamePlaceholder } from '@/lib/customer-name'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
@@ -222,7 +223,13 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
                 >
                   <TableCell>
                     <Link href={`/admin/customers/${c.id}`} className="block">
-                      <p className="font-medium hover:text-primary">{c.name}</p>
+                      {isCustomerNamePlaceholder(c.name) ? (
+                        <p className="font-medium italic text-muted-foreground hover:text-primary">
+                          — (unnamed {c.userId ? 'web' : 'WhatsApp'} lead)
+                        </p>
+                      ) : (
+                        <p className="font-medium hover:text-primary">{c.name}</p>
+                      )}
                       {c.email && (
                         <p className="text-xs text-muted-foreground">{c.email}</p>
                       )}
