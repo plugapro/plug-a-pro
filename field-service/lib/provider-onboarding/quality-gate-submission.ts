@@ -760,7 +760,8 @@ async function completePwaSelfServeChannel(
       })
       // providerRate may not exist in all env migrations; guard with optional chaining
       // TODO: remove optional chaining once providerRate migration is confirmed in all envs
-      await (tx as any).providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
+      await (tx as any) // TODO: drop the `as any` once providerRate is guaranteed present in the Prisma tx client type (post-migration)
+        .providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
     }
 
     await tx.providerApplicationDraft.update({
@@ -889,7 +890,8 @@ export async function completeApplicationForPassedVerification(
       })
       // providerRate may not exist in all env migrations; guard with optional chaining
       // TODO: remove optional chaining once providerRate migration is confirmed in all envs
-      await (tx as any).providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
+      await (tx as any) // TODO: drop the `as any` once providerRate is guaranteed present in the Prisma tx client type (post-migration)
+        .providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
     }
 
     // d. Link evidence attachments (non-fatal for each)
