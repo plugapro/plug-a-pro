@@ -591,8 +591,10 @@ export async function submitProviderRegistrationApplication(
 
       await tx.providerApplicationDraft.update({
         where: { id: input.draftId },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: { submitPayload: submitPayload as unknown as any, lastCompletedStep: 8 },
+        // TODO: Prisma types Json fields as `InputJsonValue` but the inferred
+        // object literal doesn't satisfy that structural type. Cast via
+        // `unknown` until Prisma generates a stricter helper or we upgrade.
+        data: { submitPayload: submitPayload as unknown as import('@prisma/client').Prisma.InputJsonValue, lastCompletedStep: 8 },
       })
 
       return input.draftId

@@ -1,87 +1,91 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { hashProviderVerificationToken } from '@/lib/provider-verification-token'
+import { NextRequest } from 'next/server'
 
-const { mockDb } = vi.hoisted(() => {
-  const store = new Map<string, any>()
-  const mockDb: any = {
+// ── Hoist the mock fn so it is initialised before vi.mock is hoisted ─────────
+const { mockFindUnique } = vi.hoisted(() => ({
+  mockFindUnique: vi.fn(),
+}))
+
+vi.mock('@/lib/db', () => ({
+  db: {
     providerIdentityVerification: {
-      findUnique: vi.fn(async ({ where }: any) => {
-        for (const row of store.values()) {
-          if (row.accessTokenHash === where.accessTokenHash) {
-            return { status: row.status, decision: row.decision }
-          }
-        }
-        return null
-      }),
+      findUnique: mockFindUnique,
     },
-  }
-  ;(mockDb as any).__store = store
-  return { mockDb }
-})
+  },
+}))
 
-vi.mock('@/lib/db', () => ({ db: mockDb }))
+// Import the REAL handler after mocks are in place.
+import { GET } from '../../../../../app/api/provider/identity/application-status/route'
 
-function getStore(): Map<string, any> { return (mockDb as any).__store }
+function makeRequest(token?: string): NextRequest {
+  const url = token
+    ? `http://localhost/api/provider/identity/application-status?token=${token}`
+    : 'http://localhost/api/provider/identity/application-status'
+  return new NextRequest(url)
+}
 
 beforeEach(() => {
-  getStore().clear()
   vi.clearAllMocks()
-  mockDb.providerIdentityVerification.findUnique.mockImplementation(async ({ where }: any) => {
-    for (const row of getStore().values()) {
-      if (row.accessTokenHash === where.accessTokenHash) {
-        return { status: row.status, decision: row.decision }
-      }
-    }
-    return null
-  })
 })
 
-describe('application-status read helper', () => {
-  it('returns status and decision for a valid hashed token', async () => {
-    const token = 'abc123def456abc123def456abc123def456abc123def456'
-    const hash = hashProviderVerificationToken(token)
-    getStore().set('v1', { id: 'v1', accessTokenHash: hash, status: 'SUBMITTED', decision: null })
+describe('GET /api/provider/identity/application-status', () => {
+  it('returns 200 with { status, decision } for a valid token', async () => {
+    mockFindUnique.mockResolvedValue({ status: 'SUBMITTED', decision: null })
 
-    const result = await mockDb.providerIdentityVerification.findUnique({
-      where: { accessTokenHash: hash },
-      select: { status: true, decision: true },
-    })
+    const res = await GET(makeRequest('valid-token-abc123'))
+    expect(res.status).toBe(200)
 
-    expect(result).toEqual({ status: 'SUBMITTED', decision: null })
+    const body = await res.json()
+    expect(body).toEqual({ status: 'SUBMITTED', decision: null })
+    // No PII or extra fields
+    expect(body).not.toHaveProperty('phone')
+    expect(body).not.toHaveProperty('name')
+    expect(body).not.toHaveProperty('accessTokenHash')
+    expect(Object.keys(body).sort()).toEqual(['decision', 'status'])
   })
 
-  it('returns null for an unknown token', async () => {
-    const token = 'unknown000000000000000000000000000000000000000000'
-    const hash = hashProviderVerificationToken(token)
+  it('returns 200 with decision PASS when verification is complete', async () => {
+    mockFindUnique.mockResolvedValue({ status: 'PASSED', decision: 'PASS' })
 
-    const result = await mockDb.providerIdentityVerification.findUnique({
-      where: { accessTokenHash: hash },
-      select: { status: true, decision: true },
-    })
+    const res = await GET(makeRequest('valid-token-passed'))
+    expect(res.status).toBe(200)
 
-    expect(result).toBeNull()
+    const body = await res.json()
+    expect(body).toEqual({ status: 'PASSED', decision: 'PASS' })
   })
 
-  it('does not expose PII — only returns status and decision', async () => {
-    const token = 'abc123def456abc123def456abc123def456abc123def456'
-    const hash = hashProviderVerificationToken(token)
-    getStore().set('v2', {
-      id: 'v2',
-      accessTokenHash: hash,
-      status: 'PASSED',
-      decision: 'PASS',
-      phone: '+27000000001', // PII
-      name: 'Joe',          // PII
-    })
+  it('returns 404 for an unknown token', async () => {
+    mockFindUnique.mockResolvedValue(null)
 
-    const result = await mockDb.providerIdentityVerification.findUnique({
-      where: { accessTokenHash: hash },
-      select: { status: true, decision: true },
-    })
+    const res = await GET(makeRequest('unknown-token-xyz'))
+    expect(res.status).toBe(404)
 
-    expect(result).toEqual({ status: 'PASSED', decision: 'PASS' })
-    // The mock only returns status+decision because that's what the select would return
-    expect(result).not.toHaveProperty('phone')
-    expect(result).not.toHaveProperty('name')
+    const body = await res.json()
+    expect(body).toHaveProperty('error')
+  })
+
+  it('returns 400 when token query param is missing', async () => {
+    const res = await GET(makeRequest()) // no token
+    expect(res.status).toBe(400)
+
+    const body = await res.json()
+    expect(body).toHaveProperty('error')
+    // db must not be touched when token is missing
+    expect(mockFindUnique).not.toHaveBeenCalled()
+  })
+
+  it('does not write to the database — handler is non-mutating', async () => {
+    mockFindUnique.mockResolvedValue({ status: 'SUBMITTED', decision: null })
+
+    await GET(makeRequest('read-only-check-token'))
+
+    // Only findUnique should have been called — no create/update/delete
+    expect(mockFindUnique).toHaveBeenCalledTimes(1)
+    // Confirm db mock exposes no mutating methods
+    const { db } = await import('@/lib/db')
+    const model = (db as any).providerIdentityVerification
+    expect(model.create).toBeUndefined()
+    expect(model.update).toBeUndefined()
+    expect(model.delete).toBeUndefined()
   })
 })

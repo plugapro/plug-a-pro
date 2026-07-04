@@ -93,7 +93,10 @@ export async function submitProviderApplicationFromWebAction(
             capturedData.ctwaReferral && typeof capturedData.ctwaReferral === 'object'
               ? capturedData.ctwaReferral
               : null,
-        } as unknown as never,
+          // TODO: Prisma infers Json fields as `InputJsonValue` but the object
+          // literal doesn't satisfy that structural type directly. Cast via
+          // `unknown` until Prisma generates a stricter helper or we upgrade.
+        } as unknown as import('@prisma/client').Prisma.InputJsonValue,
       }
 
       // Upsert the draft (no unique on phone, so findFirst + update/create).
