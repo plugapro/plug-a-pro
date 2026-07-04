@@ -235,3 +235,215 @@ describe('WhatsApp summary → Didit launch (quality gate v2 create-on-PASS)', (
     expect(mockIssueLink).not.toHaveBeenCalled()
   })
 })
+
+describe('handleAwaitingKyc (re-nudge flow)', () => {
+  it('re-nudge happy path: draft exists, link issued, CTA-URL sent, stays reg_awaiting_kyc', async () => {
+    // Draft exists for the phone number
+    mockDraftFindFirst.mockResolvedValueOnce({
+      id: 'draft_mock_001',
+      phone: '+27821234567',
+      submittedApplicationId: null,
+    })
+
+    // issueProviderApplicationVerificationLink returns a URL
+    mockIssueLink.mockResolvedValueOnce({
+      verificationId: 'ver_mock_001',
+      verificationUrl: 'https://plugapro.example/provider/verify/tok_xyz789',
+      expiresAt: new Date(Date.now() + 3600_000),
+      reused: false,
+    })
+
+    const result = await handleRegistrationFlow(
+      buildCtx({
+        step: 'reg_awaiting_kyc',
+        reply: { type: 'interactive', id: 'any' },
+      })
+    )
+
+    // Handler queries the draft by phone (normalized) and submittedApplicationId: null
+    expect(mockDraftFindFirst).toHaveBeenCalledWith({
+      where: {
+        phone: '+27821234567',
+        submittedApplicationId: null,
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    })
+
+    // issueProviderApplicationVerificationLink called with the draft ID
+    expect(mockIssueLink).toHaveBeenCalledTimes(1)
+    expect(mockIssueLink).toHaveBeenCalledWith({
+      providerApplicationDraftId: 'draft_mock_001',
+      channel: 'WHATSAPP',
+    })
+
+    // CTA-URL button sent with the verification URL
+    expect(mockSendCtaUrl).toHaveBeenCalledTimes(1)
+    expect(mockSendCtaUrl).toHaveBeenCalledWith(
+      '+27821234567',
+      "You're almost done — verify your identity to finish your application.",
+      'Verify identity',
+      'https://plugapro.example/provider/verify/tok_xyz789',
+      undefined,
+      { templateName: 'interactive:provider_application_verify_cta' }
+    )
+
+    // Stay on reg_awaiting_kyc
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+
+    // Fallback text should NOT be sent when CTA-URL succeeds
+    expect(mockSendText).not.toHaveBeenCalled()
+  })
+
+  it('re-nudge fallback: no draft found, sends text nudge, stays reg_awaiting_kyc', async () => {
+    // No draft exists for this phone
+    mockDraftFindFirst.mockResolvedValueOnce(null)
+
+    const result = await handleRegistrationFlow(
+      buildCtx({
+        step: 'reg_awaiting_kyc',
+        reply: { type: 'interactive', id: 'any' },
+      })
+    )
+
+    // Handler tried to find the draft
+    expect(mockDraftFindFirst).toHaveBeenCalled()
+
+    // issueProviderApplicationVerificationLink NOT called (no draft)
+    expect(mockIssueLink).not.toHaveBeenCalled()
+
+    // No CTA-URL sent
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+
+    // Fallback text nudge sent instead
+    expect(mockSendText).toHaveBeenCalledTimes(1)
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining('waiting on your identity verification')
+    )
+
+    // Stay on reg_awaiting_kyc
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+  })
+
+  it('re-nudge fallback: link returns null verificationUrl, sends text nudge, no crash', async () => {
+    // Draft exists
+    mockDraftFindFirst.mockResolvedValueOnce({
+      id: 'draft_mock_001',
+      phone: '+27821234567',
+      submittedApplicationId: null,
+    })
+
+    // issueProviderApplicationVerificationLink returns null URL
+    mockIssueLink.mockResolvedValueOnce({
+      verificationId: 'ver_mock_001',
+      verificationUrl: null,
+      expiresAt: new Date(Date.now() + 3600_000),
+      reused: false,
+    })
+
+    const result = await handleRegistrationFlow(
+      buildCtx({
+        step: 'reg_awaiting_kyc',
+        reply: { type: 'interactive', id: 'any' },
+      })
+    )
+
+    // Handler found the draft and tried to issue a link
+    expect(mockDraftFindFirst).toHaveBeenCalled()
+    expect(mockIssueLink).toHaveBeenCalledTimes(1)
+
+    // No CTA-URL sent (no valid URL)
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+
+    // Fallback text sent
+    expect(mockSendText).toHaveBeenCalledTimes(1)
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining('waiting on your identity verification')
+    )
+
+    // Stay on reg_awaiting_kyc, no crash
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+  })
+
+  it('re-nudge fallback: issueProviderApplicationVerificationLink throws, catches, sends text', async () => {
+    // Draft exists
+    mockDraftFindFirst.mockResolvedValueOnce({
+      id: 'draft_mock_001',
+      phone: '+27821234567',
+      submittedApplicationId: null,
+    })
+
+    // issueProviderApplicationVerificationLink throws
+    mockIssueLink.mockRejectedValueOnce(new Error('Didit service unavailable'))
+
+    const result = await handleRegistrationFlow(
+      buildCtx({
+        step: 'reg_awaiting_kyc',
+        reply: { type: 'interactive', id: 'any' },
+      })
+    )
+
+    // Handler found draft and tried to issue link
+    expect(mockDraftFindFirst).toHaveBeenCalled()
+    expect(mockIssueLink).toHaveBeenCalledTimes(1)
+
+    // No CTA-URL sent (error caught)
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+
+    // Fallback text sent
+    expect(mockSendText).toHaveBeenCalledTimes(1)
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining('waiting on your identity verification')
+    )
+
+    // Stay on reg_awaiting_kyc, no crash
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+  })
+
+  it('re-nudge fallback: sendCtaUrl throws, falls through to text, no crash', async () => {
+    // Draft exists
+    mockDraftFindFirst.mockResolvedValueOnce({
+      id: 'draft_mock_001',
+      phone: '+27821234567',
+      submittedApplicationId: null,
+    })
+
+    // issueProviderApplicationVerificationLink succeeds
+    mockIssueLink.mockResolvedValueOnce({
+      verificationId: 'ver_mock_001',
+      verificationUrl: 'https://plugapro.example/provider/verify/tok_xyz789',
+      expiresAt: new Date(Date.now() + 3600_000),
+      reused: false,
+    })
+
+    // sendCtaUrl throws (transport error)
+    mockSendCtaUrl.mockRejectedValueOnce(new Error('WhatsApp service error'))
+
+    const result = await handleRegistrationFlow(
+      buildCtx({
+        step: 'reg_awaiting_kyc',
+        reply: { type: 'interactive', id: 'any' },
+      })
+    )
+
+    // Handler found draft and tried to issue link
+    expect(mockDraftFindFirst).toHaveBeenCalled()
+    expect(mockIssueLink).toHaveBeenCalledTimes(1)
+
+    // sendCtaUrl was attempted but failed
+    expect(mockSendCtaUrl).toHaveBeenCalledTimes(1)
+
+    // Fallback text sent (caught from sendCtaUrl error)
+    expect(mockSendText).toHaveBeenCalledTimes(1)
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27821234567',
+      expect.stringContaining('waiting on your identity verification')
+    )
+
+    // Stay on reg_awaiting_kyc, no crash
+    expect(result.nextStep).toBe('reg_awaiting_kyc')
+  })
+})
