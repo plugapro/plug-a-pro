@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+
+const { gateEnabled } = vi.hoisted(() => ({ gateEnabled: vi.fn() }))
+vi.mock('@/lib/provider-onboarding/quality-gate', async (orig) => ({
+  ...(await orig<typeof import('@/lib/provider-onboarding/quality-gate')>()),
+  isQualityGateV2Enabled: gateEnabled,
+}))
 import {
   ProviderRegistrationValidationError,
   saveProviderRegistrationDraft,
@@ -453,6 +459,127 @@ describe('provider registration PWA flow', () => {
     expect(tx.provider.createMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.not.objectContaining({
         avatarUrl: 'https://tracker.example.invalid/avatar.png',
+      }),
+    }))
+  })
+})
+
+describe('pwa-flow quality gate', () => {
+  beforeEach(() => gateEnabled.mockReset())
+
+  it('rejects <3 photos with code QUALITY_GATE_EVIDENCE when gate ON', async () => {
+    gateEnabled.mockResolvedValue(true)
+    const { client } = createSubmitClient()
+    const err = await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['painting'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: ['x'],
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(ProviderRegistrationValidationError)
+    expect(err.code).toBe('QUALITY_GATE_EVIDENCE')
+  })
+
+  it('allows >=3 photos for non-high-risk skill when gate ON', async () => {
+    gateEnabled.mockResolvedValue(true)
+    const { client } = createSubmitClient()
+    const result = await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['painting'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: ['x', 'y', 'z'],
+    })
+    expect(result.outcome).toBe('created')
+  })
+
+  it('rejects high-risk skill with no certificationRef as QUALITY_GATE_CERTIFICATION when gate ON', async () => {
+    gateEnabled.mockResolvedValue(true)
+    const { client } = createSubmitClient()
+    const err = await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['electrical'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: ['x', 'y', 'z'],
+      certificationRef: null,
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(ProviderRegistrationValidationError)
+    expect(err.code).toBe('QUALITY_GATE_CERTIFICATION')
+  })
+
+  it('is a no-op when gate is OFF (flag returns false)', async () => {
+    gateEnabled.mockResolvedValue(false)
+    const { client } = createSubmitClient()
+    const result = await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['painting'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: [],
+    })
+    expect(result.outcome).toBe('created')
+  })
+
+  it('carries evidenceFileUrls into the created application (not hard-coded [])', async () => {
+    gateEnabled.mockResolvedValue(false)
+    const { client, tx } = createSubmitClient()
+    await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['painting'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: ['https://store.public.blob.vercel-storage.com/a.jpg', 'https://store.public.blob.vercel-storage.com/b.jpg'],
+    })
+    expect(tx.providerApplication.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        evidenceFileUrls: ['https://store.public.blob.vercel-storage.com/a.jpg', 'https://store.public.blob.vercel-storage.com/b.jpg'],
       }),
     }))
   })

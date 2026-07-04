@@ -11,6 +11,7 @@ import {
 } from '@/lib/service-categories'
 import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { isQualityGateV2Enabled, evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '@/lib/location-format'
 import { hashRegistrationResumeToken } from './tokens'
 
@@ -66,6 +67,8 @@ export type ProviderRegistrationSubmitInput = ProviderRegistrationDraftInput & {
   resumeToken: string
   name: string
   consentAccepted: boolean
+  evidenceFileUrls?: string[] | null
+  certificationRef?: string | null
 }
 
 type DraftClient = {
@@ -580,6 +583,25 @@ export async function submitProviderRegistrationApplication(
       throw new ProviderRegistrationValidationError('Complete the required registration fields before submitting.', 'INCOMPLETE_APPLICATION')
     }
 
+    if (await isQualityGateV2Enabled()) {
+      const evidence = evaluateEvidenceGate(input.evidenceFileUrls ?? [])
+      if (!evidence.ok) {
+        throw new ProviderRegistrationValidationError(
+          'At least 3 work photos are required.',
+          'QUALITY_GATE_EVIDENCE',
+          422,
+        )
+      }
+      const cert = evaluateCertificationGate(data.skills ?? [], Boolean(input.certificationRef))
+      if (!cert.ok) {
+        throw new ProviderRegistrationValidationError(
+          'A certification is required for high-risk trades.',
+          'QUALITY_GATE_CERTIFICATION',
+          422,
+        )
+      }
+    }
+
     const existingCustomer = await tx.customer.findFirst({
       where: { phone: { in: phoneVariants(data.phone) } },
       select: { id: true },
@@ -636,7 +658,7 @@ export async function submitProviderRegistrationApplication(
         sameDayJobs: true,
         weekendJobs: hasWeekendAvailability(data.availabilityDays),
         evidenceNote: data.evidenceNote,
-        evidenceFileUrls: [],
+        evidenceFileUrls: input.evidenceFileUrls ?? [],
         isTestUser: cohort.isTestUser,
         cohortName: cohort.cohortName,
         status: 'PENDING',
