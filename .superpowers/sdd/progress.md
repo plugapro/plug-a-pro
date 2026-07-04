@@ -11,8 +11,8 @@ Base: 628ebed7702f8d81e8dee083df7d930c9fb5dbc9
 - [x] Task 1.1: complete (commits 825d0d3d,3378fa3e, review clean after fix)
 - [x] Task 1.2: complete (commits 13333296,706e3b1c, review clean after fix)
 - [x] Task 1.3: complete (commits c230800e,19458868, review clean after fix)
-- [ ] Task 1.4: WhatsApp certification step
-- [ ] Task 1.5: EvidenceUploader component
+- [x] Task 1.4: complete (commits 6dbd9f9e,4169bbea, review clean after fix)
+- [x] Task 1.5: complete (commits 1b88156d,53d4f8c4, review clean after fix)
 - [ ] Task 1.6: Flow B evidence+cert sections
 - [ ] Task 1.7: Flow A wizard uploader+cert
 - [ ] Task 1.8: flag-OFF regression guard
@@ -39,3 +39,5 @@ Task 1.2: complete (commits 3378fa3e..706e3b1c, review clean after 1 fix — as-
   Note: tests added to existing provider-registration-pwa-flow.test.ts (controller-authorized; brief fixtures-module path intentionally not used) — NOT a defect for final review
 Task 1.3: complete (commits 706e3b1c..19458868, review clean after 1 fix — skip-shortfall assert, pinned advance step, skip-hint suppressed when gate ON)
   Minor (final-review): promptEvidenceAfterBio gate param is optional — a future in-flow caller could trigger a 2nd async flag read (no double-read today)
+Task 1.4: complete (commits 19458868..4169bbea, review clean after 1 fix — evidenceNote preserved on high-risk skip, cert upload+skip routing tested)
+Task 1.5: complete (commits 4169bbea..53d4f8c4, review clean after 1 fix — remove-by-index, a11y, enabled-state test). DECISION: EvidenceUploader takes injected uploadFile prop (profile-photo route is session-authed, unusable on token-gated /provider/signup)

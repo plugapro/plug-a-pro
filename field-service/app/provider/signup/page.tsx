@@ -64,10 +64,8 @@ export default async function ProviderSignupPage({
   const conv = await db.conversation.findUnique({ where: { id: validated.conversationId } })
   if (!conv) return <ErrorPanel reason="not_found" />
 
-  const [rawCaptured, gateEnabled] = [
-    (conv.data as Record<string, unknown>) ?? {},
-    await isQualityGateV2Enabled(),
-  ]
+  const rawCaptured = (conv.data as Record<string, unknown>) ?? {}
+  const gateEnabled = await isQualityGateV2Enabled()
 
   // SECURITY (finding 4e38133b): the resume link is an anonymous bearer token, so
   // anything passed to client components is serialized into the browser/RSC

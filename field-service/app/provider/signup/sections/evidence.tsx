@@ -4,7 +4,7 @@ import { useFormContext, useController } from 'react-hook-form'
 import { EvidenceUploader } from '@/components/provider/registration/EvidenceUploader'
 
 export interface EvidenceSectionProps {
-  rawToken?: string
+  rawToken: string
   gateEnabled?: boolean
   minPhotos?: number
 }
@@ -43,7 +43,7 @@ export function EvidenceSection({ rawToken, gateEnabled = false, minPhotos = 3 }
       <EvidenceUploader
         value={(field.value as string[]) ?? []}
         onChange={field.onChange}
-        min={gateEnabled ? minPhotos : 1}
+        min={gateEnabled ? minPhotos : 0}
         uploadFile={uploadFile}
       />
       {errorMessage && (
