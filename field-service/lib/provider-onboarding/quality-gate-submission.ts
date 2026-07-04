@@ -20,6 +20,7 @@ import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { getServiceComplianceRequirement } from '@/lib/service-category-policy'
 import { sendButtons } from '@/lib/whatsapp-interactive'
 import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
+import { submitProviderApplication } from '@/lib/provider-applications-submit'
 
 // ─── Local helpers (mirrors registration.ts, not exported there) ──────────────
 
@@ -118,6 +119,55 @@ interface Qgv2WhatsappSubmitPayload {
     locationNodeIds: string[]
     selectedRegionStatus: string | null
   }
+}
+
+// ─── Type for the PWA_RESUME channel submit bundle ───────────────────────────
+
+interface Qgv2PwaResumeSubmitPayload {
+  version: 1
+  channel: 'PWA_RESUME'
+  submittedAt: string
+  phone: string
+  name: string
+  idNumber: string | null
+  skills: string[]
+  serviceAreas: string[]
+  availability: string
+  experience: string | null
+  evidenceNote: string | null
+  evidenceFileUrls: string[]
+  certificationRef: string | null
+  ctwaReferral: unknown | null
+}
+
+// ─── Type for the PWA_SELF_SERVE channel submit bundle ────────────────────────
+
+interface Qgv2PwaSelfServeSubmitPayload {
+  version: 1
+  channel: 'PWA_SELF_SERVE'
+  submittedAt: string
+  name: string
+  phone: string
+  email: string | null
+  skills: string[]
+  categorySlugs: string[]
+  serviceAreas: string[]
+  locationNodeIds: string[]
+  experience: string | null
+  availability: string
+  availabilityDays: string[]
+  emergencyAvailable: boolean
+  callOutFee: number | null
+  travelRadiusKm: number | null
+  evidenceNote: string | null
+  evidenceFileUrls: string[]
+  certificationRef: string | null
+  reference1Name: string | null
+  reference1Mobile: string | null
+  reference2Name: string | null
+  reference2Mobile: string | null
+  bio: string | null
+  profilePhotoUrl: string | null
 }
 
 // ─── Internal: create ProviderApplication inline (bypasses quality gate re-check) ─
@@ -249,6 +299,166 @@ async function linkAttachmentToApplication(
   }
 }
 
+// ─── Internal: PWA_RESUME channel — rebuild SubmitInput and create application ─
+
+async function completePwaResumeChannel(
+  client: typeof db,
+  payload: Qgv2PwaResumeSubmitPayload,
+  draft: { id: string },
+  verificationId: string,
+): Promise<{ applicationId: string }> {
+  let applicationId: string
+
+  await client.$transaction(async (tx) => {
+    // PWA_RESUME: the payload IS essentially a SubmitInput. Map fields directly.
+    // Resume-token decision: the draft's resume token was left unconsumed by Task 2.5
+    // intentionally. We do NOT consume it here — the draft.submittedApplicationId link
+    // + the idempotency guard already prevent a double-submit, making a stale token
+    // harmless. Consuming it would require loading the ProviderResumeToken by some
+    // key not present in this payload, so we skip it to avoid a partial-data lookup.
+    const { application } = await submitProviderApplication(
+      tx,
+      {
+        phone: payload.phone,
+        name: payload.name,
+        idNumber: payload.idNumber ?? null,
+        skills: payload.skills,
+        serviceAreas: payload.serviceAreas,
+        availability: payload.availability,
+        experience: payload.experience ?? null,
+        evidenceNote: payload.evidenceNote ?? null,
+        evidenceFileUrls: payload.evidenceFileUrls ?? [],
+        certificationRef: payload.certificationRef ?? null,
+        ctwaReferral: payload.ctwaReferral as import('@/lib/whatsapp-referral').CtwaReferralAttribution | null,
+      },
+      { source: 'web' },
+    )
+    applicationId = application.id
+
+    await tx.providerApplicationDraft.update({
+      where: { id: draft.id },
+      data: { submittedApplicationId: applicationId },
+    })
+    await tx.providerIdentityVerification.update({
+      where: { id: verificationId },
+      data: { providerApplicationId: applicationId },
+    })
+  })
+
+  // Confirmation: best-effort WhatsApp message if phone is available
+  if (payload.phone) {
+    try {
+      const ref = applicationId!.slice(-8).toUpperCase()
+      await sendButtons(
+        payload.phone,
+        `✅ Your identity verification passed!\n\nYour application is now submitted.\n\nRef: *${ref}*\n\nApproval is not automatic. We'll update you after the review is complete.`,
+        [
+          { id: 'provider_application_status', title: 'Check Status' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+      )
+    } catch (err) {
+      // Non-fatal: confirmation failure must never fail the application creation
+      console.warn('[quality-gate-submission] PWA_RESUME WhatsApp confirmation failed (non-fatal)', {
+        verificationId,
+        applicationId: applicationId!,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+  // Note: for PWA_RESUME a dedicated web confirmation UI exists at /provider/signup/confirmation;
+  // the webhook event should trigger a redirect there. WhatsApp send is best-effort only.
+
+  return { applicationId: applicationId! }
+}
+
+// ─── Internal: PWA_SELF_SERVE channel — sync provider, rebuild SubmitInput ───
+
+async function completePwaSelfServeChannel(
+  client: typeof db,
+  payload: Qgv2PwaSelfServeSubmitPayload,
+  draft: { id: string },
+  verificationId: string,
+): Promise<{ applicationId: string }> {
+  let providerId: string
+  let applicationId: string
+
+  await client.$transaction(async (tx) => {
+    // PWA_SELF_SERVE: the Provider row does not exist yet (gate-ON deferred creation).
+    // Sync it first, mirroring the gate-OFF create path in pwa-flow.ts.
+    providerId = await syncProviderRecord(tx as unknown as typeof db, {
+      phone: payload.phone,
+      name: payload.name,
+      email: payload.email ?? null,
+      skills: payload.skills,
+      serviceAreas: payload.serviceAreas,
+      active: true,
+      availableNow: false,
+      verified: false,
+      isTestUser: false,
+      cohortName: null,
+      locationNodeIds: payload.locationNodeIds ?? [],
+      skipEnrichment: true,
+    })
+
+    // Resume-token decision: same as PWA_RESUME — the resume token is not stored
+    // in the submitPayload and retrieving it by phone/draftId would require an
+    // extra lookup. The idempotency guard (draft.submittedApplicationId) makes
+    // a stale token harmless, so we skip consumption here.
+    const { application } = await submitProviderApplication(
+      tx,
+      {
+        phone: payload.phone,
+        name: payload.name,
+        email: payload.email ?? null,
+        skills: payload.skills,
+        serviceAreas: payload.serviceAreas,
+        availability: payload.availability,
+        experience: payload.experience ?? null,
+        evidenceNote: payload.evidenceNote ?? null,
+        evidenceFileUrls: payload.evidenceFileUrls ?? [],
+        certificationRef: payload.certificationRef ?? null,
+        callOutFee: payload.callOutFee ?? null,
+        // TODO: hourlyRate not in PWA_SELF_SERVE submitPayload (Task 2.5 shape);
+        // callOutFee is the closest analogue. Leave null until payload is extended.
+        hourlyRate: null,
+        reference1Name: payload.reference1Name ?? null,
+        reference1Mobile: payload.reference1Mobile ?? null,
+        reference2Name: payload.reference2Name ?? null,
+        reference2Mobile: payload.reference2Mobile ?? null,
+        providerId,
+      },
+      { source: 'web' },
+    )
+    applicationId = application.id
+
+    await tx.providerApplicationDraft.update({
+      where: { id: draft.id },
+      data: { submittedApplicationId: applicationId },
+    })
+    await tx.providerIdentityVerification.update({
+      where: { id: verificationId },
+      data: { providerApplicationId: applicationId },
+    })
+  })
+
+  // Post-commit enrichment (non-blocking)
+  if (payload.locationNodeIds?.length > 0) {
+    upsertStructuredServiceAreas(client, providerId!, payload.locationNodeIds).catch((err) =>
+      console.error('[quality-gate-submission] PWA_SELF_SERVE upsertStructuredServiceAreas failed (non-fatal)', {
+        providerId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    )
+  }
+
+  // Confirmation: no WhatsApp channel for PWA_SELF_SERVE applicants.
+  // The web confirmation page (/provider/signup/confirmation) is the primary
+  // post-submit destination; no server-side message is sent here.
+
+  return { applicationId: applicationId! }
+}
+
 // ─── Public: complete draft on PASSED verification ────────────────────────────
 
 export type CompleteApplicationResult =
@@ -288,9 +498,12 @@ export async function completeApplicationForPassedVerification(
 
   const channel = rawPayload.channel as string
 
-  if (channel === 'PWA_SELF_SERVE' || channel === 'PWA_RESUME') {
-    // TODO(Task 2.6): PWA channel replay not yet implemented
-    throw new Error('PWA channel replay not yet implemented (Task 2.6 concern)')
+  if (channel === 'PWA_RESUME') {
+    return completePwaResumeChannel(client, rawPayload as unknown as Qgv2PwaResumeSubmitPayload, draft, verificationId)
+  }
+
+  if (channel === 'PWA_SELF_SERVE') {
+    return completePwaSelfServeChannel(client, rawPayload as unknown as Qgv2PwaSelfServeSubmitPayload, draft, verificationId)
   }
 
   if (channel !== 'WHATSAPP') {

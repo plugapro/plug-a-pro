@@ -8,6 +8,7 @@ const {
   mockResolveInitialApprovalStatus,
   mockSendButtons,
   mockIssueLink,
+  mockSubmitProviderApplication,
 } = vi.hoisted(() => ({
   mockDb: {
     providerIdentityVerification: {
@@ -38,6 +39,7 @@ const {
   mockResolveInitialApprovalStatus: vi.fn(),
   mockSendButtons: vi.fn(),
   mockIssueLink: vi.fn(),
+  mockSubmitProviderApplication: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
@@ -66,6 +68,62 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 vi.mock('@/lib/identity-verification/application-link', () => ({
   issueProviderApplicationVerificationLink: mockIssueLink,
 }))
+vi.mock('@/lib/provider-applications-submit', () => ({
+  submitProviderApplication: mockSubmitProviderApplication,
+}))
+
+// Helper: build a minimal PWA_RESUME submit payload
+function buildPwaResumePayload(overrides?: Record<string, unknown>) {
+  return {
+    version: 1 as const,
+    channel: 'PWA_RESUME' as const,
+    submittedAt: '2026-07-04T00:00:00.000Z',
+    phone: '+27821234567',
+    name: 'PWA Resume Provider',
+    idNumber: 'ID123456',
+    skills: ['electrical'],
+    serviceAreas: ['Johannesburg'],
+    availability: 'Mon, Tue',
+    experience: '3–5 years',
+    evidenceNote: 'evidence note',
+    evidenceFileUrls: ['https://example.com/evidence.pdf'],
+    certificationRef: 'CERT-001',
+    ctwaReferral: null,
+    ...overrides,
+  }
+}
+
+// Helper: build a minimal PWA_SELF_SERVE submit payload
+function buildPwaSelfServePayload(overrides?: Record<string, unknown>) {
+  return {
+    version: 1 as const,
+    channel: 'PWA_SELF_SERVE' as const,
+    submittedAt: '2026-07-04T00:00:00.000Z',
+    name: 'PWA Self Serve Provider',
+    phone: '+27829876543',
+    email: 'provider@example.com',
+    skills: ['plumbing'],
+    categorySlugs: ['plumbing'],
+    serviceAreas: ['Cape Town'],
+    locationNodeIds: ['loc-1'],
+    experience: '1–3 years',
+    availability: 'Any day',
+    availabilityDays: ['Mon', 'Tue', 'Wed'],
+    emergencyAvailable: false,
+    callOutFee: 150,
+    travelRadiusKm: 30,
+    evidenceNote: 'my cert evidence',
+    evidenceFileUrls: ['https://example.com/cert.pdf'],
+    certificationRef: 'CERT-SS-001',
+    reference1Name: 'Ref One',
+    reference1Mobile: '+27831111111',
+    reference2Name: null,
+    reference2Mobile: null,
+    bio: 'Experienced plumber',
+    profilePhotoUrl: null,
+    ...overrides,
+  }
+}
 
 // Helper: build a minimal WHATSAPP submit payload
 function buildPayload(overrides?: Record<string, unknown>) {
@@ -363,5 +421,227 @@ describe('recordFailedVerificationForApplication', () => {
     expect(mockDb.providerIdentityVerification.count).not.toHaveBeenCalled()
     expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
     expect(mockIssueLink).not.toHaveBeenCalled()
+  })
+})
+
+describe('completeApplicationForPassedVerification — PWA_RESUME channel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-pwa',
+      providerApplicationDraftId: 'draft-pwa',
+    })
+
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa',
+      submittedApplicationId: null,
+      submitPayload: buildPwaResumePayload(),
+      phone: '+27821234567',
+      name: 'PWA Resume Provider',
+    })
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => {
+      return fn(mockDb)
+    })
+
+    mockSubmitProviderApplication.mockResolvedValue({ application: { id: 'app-pwa-1' } })
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockSyncProviderRecord.mockResolvedValue('provider-pwa-1')
+    mockSyncProviderSkills.mockResolvedValue(undefined)
+    mockUpsertStructuredServiceAreas.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('creates a PENDING application via submitProviderApplication and returns applicationId', async () => {
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    const result = await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa',
+    })
+
+    expect(result).toEqual({ applicationId: 'app-pwa-1' })
+
+    expect(mockSubmitProviderApplication).toHaveBeenCalledOnce()
+    expect(mockSubmitProviderApplication).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        phone: '+27821234567',
+        name: 'PWA Resume Provider',
+        skills: ['electrical'],
+        evidenceFileUrls: ['https://example.com/evidence.pdf'],
+        certificationRef: 'CERT-001',
+      }),
+      expect.objectContaining({ source: 'web' }),
+    )
+  })
+
+  it('links draft.submittedApplicationId and verification.providerApplicationId', async () => {
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa',
+    })
+
+    expect(mockDb.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'draft-pwa' },
+        data: { submittedApplicationId: 'app-pwa-1' },
+      }),
+    )
+    expect(mockDb.providerIdentityVerification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ver-pwa' },
+        data: { providerApplicationId: 'app-pwa-1' },
+      }),
+    )
+  })
+
+  it('is idempotent: 2nd call (draft already has submittedApplicationId) returns skipped', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-pwa',
+      submittedApplicationId: 'app-already',
+      submitPayload: buildPwaResumePayload(),
+      phone: '+27821234567',
+      name: 'PWA Resume Provider',
+    })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    const result = await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-pwa',
+    })
+
+    expect(result).toEqual({ skipped: 'already_submitted' })
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
+  })
+})
+
+describe('completeApplicationForPassedVerification — PWA_SELF_SERVE channel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-ss',
+      providerApplicationDraftId: 'draft-ss',
+    })
+
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-ss',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+      name: 'PWA Self Serve Provider',
+    })
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => {
+      return fn(mockDb)
+    })
+
+    mockSyncProviderRecord.mockResolvedValue('provider-ss-1')
+    mockSubmitProviderApplication.mockResolvedValue({ application: { id: 'app-ss-1' } })
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockResolveInitialApprovalStatus.mockResolvedValue('PENDING_REVIEW')
+    mockSyncProviderSkills.mockResolvedValue(undefined)
+    mockUpsertStructuredServiceAreas.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('creates a PENDING application via submitProviderApplication and returns applicationId', async () => {
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    const result = await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-ss',
+    })
+
+    expect(result).toEqual({ applicationId: 'app-ss-1' })
+
+    expect(mockSubmitProviderApplication).toHaveBeenCalledOnce()
+    expect(mockSubmitProviderApplication).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        phone: '+27829876543',
+        name: 'PWA Self Serve Provider',
+        skills: ['plumbing'],
+        evidenceFileUrls: ['https://example.com/cert.pdf'],
+        certificationRef: 'CERT-SS-001',
+      }),
+      expect.objectContaining({ source: 'web' }),
+    )
+  })
+
+  it('syncs provider record first (provider does not exist yet for self-serve)', async () => {
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-ss',
+    })
+
+    expect(mockSyncProviderRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ skipEnrichment: true, phone: '+27829876543' }),
+    )
+    // providerId from syncProviderRecord is passed to submitProviderApplication
+    expect(mockSubmitProviderApplication).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ providerId: 'provider-ss-1' }),
+      expect.anything(),
+    )
+  })
+
+  it('links draft.submittedApplicationId and verification.providerApplicationId', async () => {
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-ss',
+    })
+
+    expect(mockDb.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'draft-ss' },
+        data: { submittedApplicationId: 'app-ss-1' },
+      }),
+    )
+    expect(mockDb.providerIdentityVerification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ver-ss' },
+        data: { providerApplicationId: 'app-ss-1' },
+      }),
+    )
+  })
+
+  it('is idempotent: 2nd call (draft already has submittedApplicationId) returns skipped', async () => {
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-ss',
+      submittedApplicationId: 'app-already',
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+      name: 'PWA Self Serve Provider',
+    })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+
+    const result = await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-ss',
+    })
+
+    expect(result).toEqual({ skipped: 'already_submitted' })
+    expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
   })
 })
