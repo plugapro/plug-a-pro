@@ -633,6 +633,12 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
       await sendText(ctx.phone, buildSkillPromptText(`👤 Name updated to *${name}*.\n\n🔧 *What type of work do you do?*`))
       return { nextStep: 'reg_collect_skills_more', nextData: { name } }
     }
+    // Task 2.7: gate ON → skip manual KYC; identity is deferred to the Didit
+    // step at summary (handlePending). Gate OFF → unchanged.
+    if (await isQualityGateV2Enabled()) {
+      await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${name}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
+      return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
+    }
     await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
     return { nextStep: 'reg_collect_id', nextData: { name } }
   }
@@ -658,6 +664,13 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills_more', nextData: { name } }
   }
 
+  // Task 2.7: gate ON → skip manual KYC; identity is deferred to the Didit
+  // step at summary (handlePending). Gate OFF → unchanged.
+  if (await isQualityGateV2Enabled()) {
+    await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${name}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
+  }
+
   await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
   return { nextStep: 'reg_collect_id', nextData: { name } }
 }
@@ -669,6 +682,15 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 async function handleMigratedEmailStep(ctx: FlowContext): Promise<FlowResult> {
   const raw = ctx.reply.text?.trim() ?? ''
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)
+  // Task 2.7: gate ON → skip manual KYC; identity is deferred to the Didit
+  // step at summary (handlePending). Gate OFF → unchanged.
+  if (await isQualityGateV2Enabled()) {
+    await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
+    return {
+      nextStep: 'reg_collect_skills_more',
+      nextData: isValidEmail ? { providerEmail: raw.toLowerCase(), skills: [] } : { skills: [] },
+    }
+  }
   await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
   return {
     nextStep: 'reg_collect_id',
