@@ -137,6 +137,58 @@ describe('normalizeDiditDecision', () => {
     expect(unknownStatus).toBeNull()
   })
 
+  // Production Didit payloads (captured 2026-07-04, session 0d49f025) use
+  // feature status 'Approved' — not 'Passed' — and 0–100 numeric scores.
+  // The first live GA verification was wrongly routed to manual review with
+  // PROVIDER_LIVENESS_FAILED because isPassedFeature only recognised 'Passed'.
+  describe('real production payload shape (feature status Approved, 0-100 scores)', () => {
+    it('maps Approved with Approved features -> PASS + livenessVerified:true', () => {
+      const payload = envelope('Approved', {
+        liveness_checks: [{ status: 'Approved', score: 100 }],
+        face_matches: [{ status: 'Approved', score: 96.41 }],
+        id_verifications: [{ status: 'Approved' }],
+      })
+      const { result } = normalizeDiditDecision(payload, defaultCtx)
+      expect(result?.decision).toBe('PASS')
+      expect(result?.livenessVerified).toBe(true)
+    })
+
+    it('normalises 0-100 scores to the 0-1 scale the confidence threshold expects', () => {
+      const payload = envelope('Approved', {
+        liveness_checks: [{ status: 'Approved', score: 100 }],
+        face_matches: [{ status: 'Approved', score: 96.41 }],
+        id_verifications: [{ status: 'Approved', confidence: 98 }],
+      })
+      const { result } = normalizeDiditDecision(payload, defaultCtx)
+      expect(result?.livenessScore).toBeCloseTo(1.0, 5)
+      expect(result?.selfieMatchScore).toBeCloseTo(0.9641, 5)
+      expect(result?.confidence).toBeCloseTo(0.9641, 5)
+    })
+
+    it('keeps a genuinely low 0-100 score below the threshold instead of auto-passing it', () => {
+      // Raw 42 must become 0.42, NOT stay 42 (which would trivially clear
+      // the 0.9 threshold and silently kill the confidence gate).
+      const payload = envelope('Approved', {
+        liveness_checks: [{ status: 'Approved', score: 42 }],
+        face_matches: [{ status: 'Approved', score: 96 }],
+        id_verifications: [{ status: 'Approved' }],
+      })
+      const { result } = normalizeDiditDecision(payload, defaultCtx)
+      expect(result?.confidence).toBeCloseTo(0.42, 5)
+    })
+
+    it('Approved feature with no numeric score falls back to 1.0 like Passed does', () => {
+      const payload = envelope('Approved', {
+        liveness_checks: [{ status: 'Approved' }],
+        face_matches: [{ status: 'Approved' }],
+        id_verifications: [{ status: 'Approved' }],
+      })
+      const { result } = normalizeDiditDecision(payload, defaultCtx)
+      expect(result?.livenessVerified).toBe(true)
+      expect(result?.confidence).toBe(1.0)
+    })
+  })
+
   it('defaults assuranceLevelHint to MEDIUM when authoritativeWorkflowId is not configured', () => {
     // Safe default: a missing discriminator must NOT silently upgrade an
     // Approved verdict to HIGH (which would unlock credit-gate without the
