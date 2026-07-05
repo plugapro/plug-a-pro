@@ -50,6 +50,15 @@ const vendors: VendorSeed[] = [
     },
   },
   {
+    vendorKey: 'didit',
+    displayName: 'Didit',
+    livenessRequired: true,
+    configJson: {
+      displayName: 'Didit',
+      expectedTurnaroundMinutes: 10,
+    },
+  },
+  {
     vendorKey: 'thisisme',
     displayName: 'ThisIsMe',
     livenessRequired: true,

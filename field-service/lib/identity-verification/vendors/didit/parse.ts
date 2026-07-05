@@ -53,11 +53,19 @@ export async function parseDiditWebhook(input: ParseWebhookInput): Promise<Parse
   // Best-effort - when the verification record isn't found we proceed without
   // a hint (orchestrator falls back to its existing default).
   const storedWorkflowId = sessionId ? await lookupStoredWorkflowId(sessionId) : null
+  // Rows created before workflow stamping existed carry vendorWorkflowId:null.
+  // The payload's workflow_id is HMAC-attested, so it is a trustworthy
+  // fallback — but ONLY when the signature verified; a forged webhook must
+  // never be able to claim the authoritative workflow.
+  const payloadWorkflowId =
+    signatureValid && typeof envelope.workflow_id === 'string' && envelope.workflow_id.trim()
+      ? envelope.workflow_id.trim()
+      : null
   const config = getDiditConfig()
   const authoritativeWorkflowId = config.enabled ? config.workflowIds.authoritative : null
 
   const normalized = normalizeDiditDecision(envelope, {
-    storedVendorWorkflowId: storedWorkflowId,
+    storedVendorWorkflowId: storedWorkflowId ?? payloadWorkflowId,
     authoritativeWorkflowId,
   })
 

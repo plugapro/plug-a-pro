@@ -205,6 +205,28 @@ describe('provider identity verification orchestrator', () => {
     expect(client.state.verification.livenessSessionUrlEncrypted).not.toContain('vendor.test')
   })
 
+  it('stamps vendorWorkflowId on the row when the liveness session reports one', async () => {
+    // The stored workflow id is what normalize compares against the
+    // authoritative workflow env to grant HIGH assurance — without the stamp,
+    // every vendor pass is capped at MEDIUM and the credit gate never opens.
+    const client = makeClient({ livenessRequired: true })
+    mocks.getAdapter.mockReturnValue(vendorAdapter({
+      vendorReference: 'mock:job_wf',
+      immediateResult: vendorResult({ livenessVerified: false, confidence: 0.98 }),
+      expectsWebhook: true,
+      liveness: {
+        vendorReference: 'mock:live_wf',
+        sessionUrl: 'https://vendor.test/session/secret',
+        expiresAt: new Date('2026-05-26T12:30:00.000Z'),
+        vendorWorkflowId: 'wf-auth-uuid',
+      },
+    }))
+
+    await submitVerificationForAutomation('ver_1', client)
+
+    expect(client.state.verification.vendorWorkflowId).toBe('wf-auth-uuid')
+  })
+
   it('reuses an existing PWA token instead of rotating the active verification link', async () => {
     const expiresAt = new Date('2026-05-26T12:30:00.000Z')
     const client = makeClient({ livenessRequired: true })
@@ -567,6 +589,7 @@ function makeClient(options: {
       livenessSessionReference: null,
       livenessSessionUrlEncrypted: null,
       livenessSessionExpiresAt: options.livenessSessionExpiresAt ?? null,
+      vendorWorkflowId: null as string | null,
       consentVendorKey: options.consentVendorKey ?? 'mock',
       identityBasis: 'SA_ID',
       issuingCountry: 'ZA',
@@ -658,7 +681,7 @@ function vendorAdapter(
     vendorReference: string
     immediateResult?: NormalizedVerificationResult
     expectsWebhook: boolean
-    liveness?: { vendorReference: string; sessionUrl: string; expiresAt: Date }
+    liveness?: { vendorReference: string; sessionUrl: string; expiresAt: Date; vendorWorkflowId?: string }
   },
   vendorKey: VerificationVendorAdapter['vendorKey'] = 'mock',
 ): VerificationVendorAdapter {

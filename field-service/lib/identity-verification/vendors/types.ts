@@ -73,6 +73,10 @@ export type CreateLivenessSessionResult = {
   vendorReference: string
   sessionUrl: string
   expiresAt: Date
+  // Vendor workflow the session was created with. Stamped onto the
+  // verification row so normalize can attest basic-vs-authoritative
+  // assurance (HIGH requires stored === authoritative workflow id).
+  vendorWorkflowId?: string | null
 }
 
 export type ParseWebhookInput = {

@@ -51,5 +51,6 @@ export async function createDiditSession(
     // internal expiry so the existing /provider/verify/[token]/liveness
     // route's expiry validation has something to compare against.
     expiresAt: response.expires_at ? new Date(response.expires_at) : deriveSessionExpiresAt(),
+    vendorWorkflowId: workflowId,
   }
 }
