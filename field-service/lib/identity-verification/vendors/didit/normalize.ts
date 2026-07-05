@@ -93,9 +93,25 @@ function buildApprovedResult(
   const idVerification = firstFeature(featureArray(source, 'id_verifications'))
 
   const livenessVerified = isPassedFeature(liveness)
-  const livenessScore = numericScore(liveness)
-  const selfieMatchScore = numericScore(faceMatch)
-  const documentConfidence = numericScoreWithFallback(idVerification, 'confidence')
+
+  // Didit emits feature scores on either a 0-1 (fraction) or 0-100 (percent)
+  // scale depending on the workflow, but consistently within a single decision.
+  // Detect the scale ONCE across the whole decision rather than per feature: a
+  // lone score of 1 is ambiguous (perfect fraction, or 1% percent), but its
+  // siblings disambiguate. Any raw score > 1 proves the decision is on the
+  // percent scale, so every score is then divided by 100 and clamped to [0,1].
+  // Without this, a percentage score of 1 (a 1% match — a hard fail) read as
+  // 1.0 would clear the confidence threshold and auto-PASS a failing check.
+  const rawLiveness = rawScore(liveness)
+  const rawFace = rawScore(faceMatch)
+  const rawDoc = rawScore(idVerification) ?? rawFallback(idVerification, 'confidence')
+  const percentScale = [rawLiveness, rawFace, rawDoc].some(
+    (s): s is number => typeof s === 'number' && s > 1,
+  )
+
+  const livenessScore = resolveScore(liveness, rawLiveness, percentScale)
+  const selfieMatchScore = resolveScore(faceMatch, rawFace, percentScale)
+  const documentConfidence = resolveScore(idVerification, rawDoc, percentScale)
 
   // Conservative aggregate: confidence is the minimum across the three
   // feature scores. Missing-but-passed defaults to 1.0 so the orchestrator
@@ -177,33 +193,36 @@ function isPassedFeature(feature: DiditFeatureCheck | null): boolean {
   return feature.status === 'Passed' || feature.status === 'Approved'
 }
 
-// Didit reports scores on a 0-100 scale in production; the orchestrator's
-// confidenceThreshold compares on 0-1. Without this, any raw score - even
-// 5/100 - clears a 0.9 threshold.
-function normalizeScale(score: number): number {
-  return score > 1 ? score / 100 : score
-}
-
-function numericScore(feature: DiditFeatureCheck | null): number | null {
+// Raw (un-scaled) numeric score for a feature, or null when absent.
+function rawScore(feature: DiditFeatureCheck | null): number | null {
   if (!feature) return null
-  // Default to 1.0 when Didit reports passed but omits a numeric score.
-  if (isPassedFeature(feature) && (feature.score === null || feature.score === undefined)) {
-    return 1.0
-  }
-  return typeof feature.score === 'number' ? normalizeScale(feature.score) : null
+  return typeof feature.score === 'number' ? feature.score : null
 }
 
-function numericScoreWithFallback(
+// Raw fallback field (e.g. id_verifications carries `confidence` not `score`).
+function rawFallback(
   feature: DiditFeatureCheck | null,
   fallbackKey: 'confidence' | 'score',
 ): number | null {
   if (!feature) return null
-  const primary = typeof feature.score === 'number' ? normalizeScale(feature.score) : null
-  if (primary !== null) return primary
-  const fallback = typeof feature[fallbackKey] === 'number' ? normalizeScale(feature[fallbackKey] as number) : null
-  if (fallback !== null) return fallback
-  if (isPassedFeature(feature)) return 1.0
-  return null
+  return typeof feature[fallbackKey] === 'number' ? (feature[fallbackKey] as number) : null
+}
+
+// Resolve a feature's confidence on the 0-1 scale the orchestrator threshold
+// expects. `percentScale` is decided once per decision (see buildApprovedResult).
+// A Passed/Approved feature with no numeric score defaults to 1.0; a present
+// score is scaled if the decision is on the percent scale, then clamped to
+// [0,1] so a malformed out-of-range value cannot exceed a perfect confidence.
+function resolveScore(
+  feature: DiditFeatureCheck | null,
+  raw: number | null,
+  percentScale: boolean,
+): number | null {
+  if (raw === null) {
+    return isPassedFeature(feature) ? 1.0 : null
+  }
+  const scaled = percentScale ? raw / 100 : raw
+  return Math.min(1, Math.max(0, scaled))
 }
 
 function collectRiskFlags(source: DiditDecisionResponse | DiditWebhookEnvelope): string[] {
