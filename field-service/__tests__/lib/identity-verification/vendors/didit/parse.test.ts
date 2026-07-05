@@ -60,6 +60,58 @@ describe('parseDiditWebhook', () => {
     expect(parsed.result?.livenessVerified).toBe(true)
   })
 
+  it('falls back to the signed payload workflow_id when the row has no stored vendorWorkflowId', async () => {
+    // Rows created before workflow stamping existed (and any create-path miss)
+    // have vendorWorkflowId:null. The webhook payload is HMAC-verified, so its
+    // workflow_id is trustworthy — use it so those verifications can still
+    // earn HIGH assurance instead of being capped at MEDIUM forever.
+    const body = JSON.stringify({
+      event_id: 'evt-wf-fallback',
+      webhook_type: 'status.updated',
+      session_id: 'sess-wf-fallback',
+      workflow_id: WORKFLOW_AUTH,
+      status: 'Approved',
+      decision: {
+        session_id: 'sess-wf-fallback',
+        status: 'Approved',
+        liveness_checks: [{ status: 'Approved', score: 100 }],
+        face_matches: [{ status: 'Approved', score: 96 }],
+        id_verifications: [{ status: 'Approved' }],
+      },
+    })
+    const parsed = await parseDiditWebhook({ rawBody: body, headers: signedHeaders(body) })
+    expect(parsed.signatureValid).toBe(true)
+    expect(parsed.result?.decision).toBe('PASS')
+    expect(parsed.result?.assuranceLevelHint).toBe('HIGH')
+  })
+
+  it('never trusts payload workflow_id from an unsigned webhook (assurance stays MEDIUM)', async () => {
+    // Security invariant: a forged webhook must not be able to claim the
+    // authoritative workflow. The fallback only applies when the signature
+    // verified. (The route 401s unsigned payloads anyway — defense in depth.)
+    const body = JSON.stringify({
+      event_id: 'evt-wf-forged',
+      webhook_type: 'status.updated',
+      session_id: 'sess-wf-forged',
+      workflow_id: WORKFLOW_AUTH,
+      status: 'Approved',
+      decision: {
+        session_id: 'sess-wf-forged',
+        status: 'Approved',
+        liveness_checks: [{ status: 'Approved', score: 100 }],
+        face_matches: [{ status: 'Approved', score: 96 }],
+        id_verifications: [{ status: 'Approved' }],
+      },
+    })
+    const headers = {
+      'X-Timestamp': String(Math.floor(Date.now() / 1000)),
+      'X-Signature-V2': 'deadbeef'.repeat(8),
+    }
+    const parsed = await parseDiditWebhook({ rawBody: body, headers })
+    expect(parsed.signatureValid).toBe(false)
+    expect(parsed.result?.assuranceLevelHint).toBe('MEDIUM')
+  })
+
   it('returns signatureValid:false for an invalid signature (spec §6.2)', async () => {
     const body = JSON.stringify({
       event_id: 'evt-bad',

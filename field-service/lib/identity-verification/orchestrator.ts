@@ -205,6 +205,7 @@ export async function submitVerificationForAutomation(
         livenessSessionReference: livenessResult.vendorReference,
         livenessSessionUrlEncrypted: encryptIdentifier(livenessResult.sessionUrl),
         livenessSessionExpiresAt: livenessResult.expiresAt,
+        ...(livenessResult.vendorWorkflowId ? { vendorWorkflowId: livenessResult.vendorWorkflowId } : {}),
       } : {}),
     },
   })

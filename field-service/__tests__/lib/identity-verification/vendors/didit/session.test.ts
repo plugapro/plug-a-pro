@@ -66,6 +66,25 @@ describe('createDiditSession', () => {
     expect(result.expiresAt).toBeInstanceOf(Date)
   })
 
+  it('returns the workflow id it used so callers can stamp vendorWorkflowId on the row', async () => {
+    // Without this, no verification row ever stores vendorWorkflowId, the
+    // stored-vs-authoritative comparison in normalize can never match, and
+    // every Didit pass is capped at MEDIUM assurance (credit gate needs HIGH).
+    mockFetchOnce({
+      session_id: 'sess-wf',
+      url: 'https://verification.didit.me/session/sess-wf',
+      status: 'Not Started',
+    })
+    const result = await createDiditSession({
+      verificationId: 'ver-wf',
+      providerId: 'prov-wf',
+      returnUrl: 'https://app.plugapro.com/cb',
+      submittedVendorReference: null,
+      webhookCallbackUrl: 'https://app.plugapro.com/api/webhooks/verification/didit',
+    })
+    expect(result.vendorWorkflowId).toBe(WORKFLOW_AUTH)
+  })
+
   it('uses KYC_BASIC workflow id when explicitly requested', async () => {
     const fetchSpy = mockFetchOnce({
       session_id: 'sess-basic',

@@ -18,8 +18,14 @@ export async function refreshDiditSession(
   const raw = await getSessionDecision(sessionId)
   const config = getDiditConfig()
   const authoritativeWorkflowId = config.enabled ? config.workflowIds.authoritative : null
+  // The decision comes from our authenticated GET to Didit, so its
+  // workflow_id is trustworthy. Fall back to it for rows created before
+  // workflow stamping existed; an explicitly stored value always wins.
+  const rawWorkflowId = typeof raw.workflow_id === 'string' && raw.workflow_id.trim()
+    ? raw.workflow_id.trim()
+    : null
   const normalized = normalizeDiditDecision(raw, {
-    storedVendorWorkflowId: options.storedVendorWorkflowId ?? null,
+    storedVendorWorkflowId: options.storedVendorWorkflowId ?? rawWorkflowId,
     authoritativeWorkflowId,
   })
   return { raw, normalized }
