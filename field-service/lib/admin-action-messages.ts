@@ -56,6 +56,13 @@ export function getApplicationsAdminMessage(code?: string | null) {
         tone: 'error' as const,
         text: 'More-info request could not be saved or sent. Refresh and retry.',
       }
+    case 'application_id_requested':
+      return { tone: 'success' as const, text: 'ID-number request sent to the applicant on WhatsApp.' }
+    case 'application_id_request_failed':
+      return {
+        tone: 'error' as const,
+        text: 'ID-number request could not be saved or sent. Refresh and retry.',
+      }
     case 'recovery_sent':
       return { tone: 'success' as const, text: 'WhatsApp recovery message sent.' }
     case 'recovery_sent_template':

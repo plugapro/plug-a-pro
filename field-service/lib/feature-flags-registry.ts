@@ -19,6 +19,13 @@
  */
 
 export const FEATURE_FLAGS_REGISTRY = {
+  // ─── Provider application nudges ─────────────────────────────────────────────
+  'whatsapp.applications.submitted_stage_templates': {
+    description:
+      'Route submitted-stage application nudges through approved UTILITY templates so they reach cold applicants outside the 24h window: request-more-info sends provider_application_more_info (instead of the freeform interactive send), and an admin "Request ID" action sends provider_application_id_needed. Keep OFF until both templates are APPROVED on the WABA (registered PENDING 2026-07-05).',
+    owner: 'ops',
+    defaultValue: false,
+  },
   // ─── Admin reports ───────────────────────────────────────────────────────────
   'admin.reports.customer_funnel': {
     description:

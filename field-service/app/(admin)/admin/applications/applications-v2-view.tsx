@@ -49,6 +49,7 @@ export type ApplicationsV2Actions = {
   approve: (formData: FormData) => Promise<void>
   reject: (formData: FormData) => Promise<void>
   requestMoreInfo: (formData: FormData) => Promise<void>
+  requestIdNumber: (formData: FormData) => Promise<void>
   claim: (formData: FormData) => Promise<void>
   release: (formData: FormData) => Promise<void>
   updateCategoryApproval: (formData: FormData) => Promise<void>
@@ -64,6 +65,7 @@ export type ApplicationsV2ViewProps = {
   adminId: string
   crudEnabled: boolean
   templateFlagEnabled: boolean
+  submittedStageTemplatesEnabled: boolean
   bannerNode: React.ReactNode | null
   flag: string
   searchParams: Record<string, string | string[] | undefined>
@@ -160,6 +162,7 @@ export function ApplicationsV2View(props: ApplicationsV2ViewProps) {
           row={selectedRow}
           crudEnabled={props.crudEnabled}
           templateFlagEnabled={props.templateFlagEnabled}
+          submittedStageTemplatesEnabled={props.submittedStageTemplatesEnabled}
           actions={props.actions}
           filters={filters}
         />
@@ -685,12 +688,14 @@ function ApplicationDrawer({
   row,
   crudEnabled,
   templateFlagEnabled,
+  submittedStageTemplatesEnabled,
   actions,
   filters,
 }: {
   row: UnifiedApplicationRow | null
   crudEnabled: boolean
   templateFlagEnabled: boolean
+  submittedStageTemplatesEnabled: boolean
   actions: ApplicationsV2Actions
   filters: WorklistFilters
 }) {
@@ -754,6 +759,7 @@ function ApplicationDrawer({
           actions={actions}
           crudEnabled={crudEnabled}
           templateFlagEnabled={templateFlagEnabled}
+          submittedStageTemplatesEnabled={submittedStageTemplatesEnabled}
         />
       </div>
     </aside>
@@ -1047,17 +1053,26 @@ function DrawerActions({
   actions,
   crudEnabled,
   templateFlagEnabled,
+  submittedStageTemplatesEnabled,
 }: {
   row: UnifiedApplicationRow
   actions: ApplicationsV2Actions
   crudEnabled: boolean
   templateFlagEnabled: boolean
+  submittedStageTemplatesEnabled: boolean
 }) {
   const app = row.application
   const canApprove = app && (app.status === 'PENDING' || app.status === 'MORE_INFO_REQUIRED')
   // Rejectable from the same statuses as approvable — a MORE_INFO_REQUIRED
   // application (provider went cold) must be closable from the UI.
   const canReject = app && (app.status === 'PENDING' || app.status === 'MORE_INFO_REQUIRED')
+  // "Request ID" is only useful when the applicant has no ID on file, and only
+  // works once the ID template is approved (gated by the flag).
+  const canRequestId =
+    app &&
+    submittedStageTemplatesEnabled &&
+    !app.idNumber &&
+    (app.status === 'PENDING' || app.status === 'MORE_INFO_REQUIRED')
   const approveDisabled =
     !crudEnabled ||
     !canApprove ||
@@ -1086,6 +1101,24 @@ function DrawerActions({
               Disabled — missing required fields.
             </p>
           ) : null}
+        </form>
+      ) : null}
+
+      {canRequestId && app ? (
+        <form action={actions.requestIdNumber} className="space-y-1.5">
+          <input type="hidden" name="id" value={app.id} />
+          <p className="text-xs text-muted-foreground">
+            No ID number on file. Send a WhatsApp asking the applicant for their SA ID number.
+          </p>
+          <SubmitButton
+            size="sm"
+            variant="outline"
+            disabled={!crudEnabled}
+            className="w-full"
+            pendingLabel="Requesting ID…"
+          >
+            Request ID number
+          </SubmitButton>
         </form>
       ) : null}
 
