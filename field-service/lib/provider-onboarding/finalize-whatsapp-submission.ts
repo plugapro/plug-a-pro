@@ -216,10 +216,18 @@ export async function finalizeWhatsappProviderSubmission(
   if (providerCategoryRows.length > 0) {
     // providerCategory may not exist in all env migrations; guard with optional chaining.
     // TODO: drop the `as any` + optional chaining once providerCategory is guaranteed present in the Prisma tx client type (post-migration)
-    await (tx as any).providerCategory?.createMany?.({
-      data: providerCategoryRows,
-      skipDuplicates: true,
-    })
+    const pc = (tx as any).providerCategory
+    if (pc?.createMany) {
+      await pc.createMany({
+        data: providerCategoryRows,
+        skipDuplicates: true,
+      })
+    } else {
+      console.warn('[finalize-whatsapp] providerCategory model absent — category rows NOT written (migration missing?)', {
+        providerId,
+        categoryCount: providerCategoryRows.length,
+      })
+    }
   }
 
   // 4. Provider rate rows — only when a call-out fee is present (the gate-OFF trigger).
@@ -227,10 +235,18 @@ export async function finalizeWhatsappProviderSubmission(
     const rateRows = buildProviderRateRows(providerId, input.canonicalSkills, input.rate)
     // providerRate may not exist in all env migrations; guard with optional chaining.
     // TODO: drop the `as any` + optional chaining once providerRate is guaranteed present in the Prisma tx client type (post-migration)
-    await (tx as any).providerRate?.createMany?.({
-      data: rateRows,
-      skipDuplicates: true,
-    })
+    const pr = (tx as any).providerRate
+    if (pr?.createMany) {
+      await pr.createMany({
+        data: rateRows,
+        skipDuplicates: true,
+      })
+    } else {
+      console.warn('[finalize-whatsapp] providerRate model absent — rate rows NOT written (migration missing?)', {
+        providerId,
+        rateCount: rateRows.length,
+      })
+    }
   }
 
   return { providerId, application, conflicted: false }

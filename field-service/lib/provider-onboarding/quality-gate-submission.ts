@@ -680,7 +680,16 @@ async function completePwaSelfServeChannel(
       }))
       // providerCategory may not exist in all env migrations; guard with optional chaining.
       // TODO: drop the `as any` once providerCategory is guaranteed present in the Prisma tx client type (post-migration)
-      await (tx as any).providerCategory?.createMany?.({ data: categoryRows, skipDuplicates: true })
+      const pc = (tx as any).providerCategory
+      if (pc?.createMany) {
+        await pc.createMany({ data: categoryRows, skipDuplicates: true })
+      } else {
+        console.warn('[quality-gate] providerCategory model absent — category rows NOT written (migration missing?)', {
+          draftId: draft.id,
+          providerId,
+          categoryCount: categoryRows.length,
+        })
+      }
     }
 
     // Fix C: replay providerRate rows, mirroring the gate-OFF self-serve path in
@@ -697,8 +706,17 @@ async function completePwaSelfServeChannel(
       }))
       // providerRate may not exist in all env migrations; guard with optional chaining
       // TODO: remove optional chaining once providerRate migration is confirmed in all envs
-      await (tx as any) // TODO: drop the `as any` once providerRate is guaranteed present in the Prisma tx client type (post-migration)
-        .providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
+      const pr = (tx as any) // TODO: drop the `as any` once providerRate is guaranteed present in the Prisma tx client type (post-migration)
+        .providerRate
+      if (pr?.createMany) {
+        await pr.createMany({ data: rateRows, skipDuplicates: true })
+      } else {
+        console.warn('[quality-gate] providerRate model absent — rate rows NOT written (migration missing?)', {
+          draftId: draft.id,
+          providerId,
+          rateCount: rateRows.length,
+        })
+      }
     }
 
     await tx.providerApplicationDraft.update({

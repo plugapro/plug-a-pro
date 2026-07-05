@@ -129,10 +129,18 @@ export async function POST(
       // never runs on retry. Treat it as already-applied and route the draft-anchored
       // completion below with the current status. PASSED/FAILED/EXPIRED/CANCELLED
       // redelivery is already idempotent inside applyVendorVerdict (terminal short-circuit).
+      const resolvedVendorKey = toVendorKey(verification.sourceCheckProvider)
+      if (!resolvedVendorKey) {
+        console.warn('[verification-webhook] sourceCheckProvider failed to resolve vendorKey, falling back to request vendorKey', {
+          verificationId: verification.id,
+          sourceCheckProvider: verification.sourceCheckProvider,
+          requestVendorKey: vendorKey,
+        })
+      }
       applied = {
         verificationId: verification.id,
         status: verification.status,
-        vendorKey: toVendorKey(verification.sourceCheckProvider) ?? vendorKey,
+        vendorKey: resolvedVendorKey ?? vendorKey,
         vendorReference: verification.vendorReference ?? null,
         livenessUrl: null,
         livenessSessionExpiresAt: verification.livenessSessionExpiresAt ?? null,
