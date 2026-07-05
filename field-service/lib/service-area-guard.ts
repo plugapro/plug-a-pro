@@ -18,9 +18,27 @@ export const ACTIVE_CITY_NODE_KEYS = new Set([
   'johannesburg',
 ])
 
-export const ACTIVE_REGION_KEYS_SET = new Set([
+export type ServiceGate = 'onboarding' | 'matching'
+
+// Providers may register across all five City of Joburg regions.
+export const ONBOARDING_ACTIVE_REGION_KEYS = new Set([
+  'jhb_north',
+  'jhb_east',
+  'jhb_south',
+  'jhb_cbd',
   'jhb_west',
 ])
+
+// Customers may only transact where verified supply exists. Keep this narrow.
+export const MATCHING_ACTIVE_REGION_KEYS = new Set([
+  'jhb_west',
+])
+
+// Back-compat: existing callers of ACTIVE_REGION_KEYS_SET / isActiveRegion keep
+// the narrow (matching) behaviour they had before the split.
+export const ACTIVE_REGION_KEYS_SET = MATCHING_ACTIVE_REGION_KEYS
+
+export const ONBOARDING_PILOT_REGION_LABEL = 'Johannesburg'
 
 export const ACTIVE_PILOT_REGION_LABEL = 'JHB West / Roodepoort'
 export const ACTIVE_PILOT_CITY_LABEL = 'Johannesburg'
@@ -35,12 +53,14 @@ export function getRegionKeyFromSlug(slug: string | null | undefined): string {
   return normalizeLocationKey(slug?.split('__').at(-1) ?? '')
 }
 
-export function getRegionServiceStatus(input: {
-  regionKey?: string | null
-  slug?: string | null
-}): ServiceAreaStatus {
+export function getRegionServiceStatus(
+  input: { regionKey?: string | null; slug?: string | null },
+  gate: ServiceGate = 'matching',
+): ServiceAreaStatus {
   const regionKey = normalizeLocationKey(input.regionKey) || getRegionKeyFromSlug(input.slug)
-  return isActiveRegion(regionKey) ? 'active' : 'coming_soon'
+  const active =
+    gate === 'onboarding' ? isOnboardingActiveRegion(regionKey) : isMatchingActiveRegion(regionKey)
+  return active ? 'active' : 'coming_soon'
 }
 
 export function getCityServiceStatus(input: {
@@ -55,13 +75,13 @@ export function describeCityServiceStatus(input: { cityKey?: string | null }): s
     : '🔜 Coming soon - register now'
 }
 
-export function describeRegionServiceStatus(input: {
-  regionKey?: string | null
-  slug?: string | null
-}): string {
-  return getRegionServiceStatus(input) === 'active'
-    ? '🟢 Active pilot'
-    : '🔜 Coming soon - register now'
+export function describeRegionServiceStatus(
+  input: { regionKey?: string | null; slug?: string | null },
+  gate: ServiceGate = 'matching',
+): string {
+  const status = getRegionServiceStatus(input, gate)
+  if (status !== 'active') return '🔜 Coming soon - register now'
+  return gate === 'onboarding' ? '🟢 Open for registration' : '🟢 Active pilot'
 }
 
 // Normalised city keys currently accepting new job requests (legacy guard - kept
@@ -81,8 +101,17 @@ export function isActiveCity(cityKey: string): boolean {
   return ACTIVE_CITY_NODE_KEYS.has(cityKey.toLowerCase())
 }
 
+export function isOnboardingActiveRegion(regionKey: string): boolean {
+  return ONBOARDING_ACTIVE_REGION_KEYS.has(regionKey.toLowerCase())
+}
+
+export function isMatchingActiveRegion(regionKey: string): boolean {
+  return MATCHING_ACTIVE_REGION_KEYS.has(regionKey.toLowerCase())
+}
+
 export function isActiveRegion(regionKey: string): boolean {
-  return ACTIVE_REGION_KEYS_SET.has(regionKey.toLowerCase())
+  // Legacy alias — customer-side callers depend on matching (narrow) semantics.
+  return isMatchingActiveRegion(regionKey)
 }
 
 export class OutsideServiceAreaError extends Error {
