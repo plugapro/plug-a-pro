@@ -470,6 +470,28 @@ export const TEMPLATES = {
       'Hi {{1}}, thank you for applying to Plug A Pro. Unfortunately we are unable to onboard you {{2}}. You are welcome to apply again in the future.',
   },
 
+  provider_application_id_needed: {
+    name: 'provider_application_id_needed',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Nudge a submitted applicant who is missing their ID number. UTILITY so it reaches cold applicants outside the 24h window (registered 2026-07-05).',
+    // {{1}} applicant first name
+    example:
+      "Hi {{1}}, thanks for applying to join Plug A Pro. To complete your application we still need your South African ID number. Please reply to this chat with your 13-digit ID number and we'll continue your review.",
+  },
+
+  provider_application_more_info: {
+    name: 'provider_application_more_info',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Approved-template replacement for the freeform interactive:provider_more_info_required send, so request-more-info reaches cold applicants (registered 2026-07-05).',
+    // {{1}} applicant first name, {{2}} what is needed (reason text)
+    example:
+      "Hi {{1}}, we're reviewing your application to join Plug A Pro and need a bit more information: {{2}}. Please reply to this chat with the details and we'll continue your review.",
+  },
+
   // ─── Provider wallet and paid lead lifecycle ─────────────────────────────
 
   wallet_low_balance: {

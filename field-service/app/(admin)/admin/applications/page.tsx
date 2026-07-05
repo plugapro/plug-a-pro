@@ -560,24 +560,151 @@ async function requestMoreInfo(formData: FormData) {
     redirect('/admin/applications?message=application_more_info_failed')
   }
 
-  const { sendText } = await import('@/lib/whatsapp-interactive')
-  await sendText(
-    app.phone,
-    [
-      'ℹ️ *More information needed*',
-      '',
-      `Hi ${app.name.split(' ')[0] || 'there'}, Plug A Pro needs more information before approving your provider application.`,
-      '',
-      `Reason: ${reason}`,
-      '',
-      'Please reply here with the requested information. Your application is not approved yet, so you cannot receive leads.',
-    ].join('\n'),
-    {
-      templateName: 'interactive:provider_more_info_required',
+  const firstName = app.name.split(' ')[0] || 'there'
+  const submittedStageTemplates = await isEnabled(
+    'whatsapp.applications.submitted_stage_templates',
+    { userId: session.id },
+  )
+
+  if (submittedStageTemplates) {
+    // Approved UTILITY template reaches cold applicants outside the 24h window,
+    // unlike the freeform interactive send below (which fails Meta Re-engagement).
+    const { sendTemplate } = await import('@/lib/whatsapp')
+    await sendTemplate({
+      to: app.phone,
+      template: 'provider_application_more_info',
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: firstName },
+            { type: 'text', text: reason },
+          ],
+        },
+      ],
       metadata: { applicationId: app.id, reviewedById: session.id },
-    },
-  ).catch((error) => {
-    console.error('[applications] more-info WhatsApp notification failed', {
+    }).catch((error) => {
+      console.error('[applications] more-info template notification failed', {
+        applicationId: app.id,
+        phone: app.phone,
+        error,
+      })
+    })
+  } else {
+    const { sendText } = await import('@/lib/whatsapp-interactive')
+    await sendText(
+      app.phone,
+      [
+        'ℹ️ *More information needed*',
+        '',
+        `Hi ${firstName}, Plug A Pro needs more information before approving your provider application.`,
+        '',
+        `Reason: ${reason}`,
+        '',
+        'Please reply here with the requested information. Your application is not approved yet, so you cannot receive leads.',
+      ].join('\n'),
+      {
+        templateName: 'interactive:provider_more_info_required',
+        metadata: { applicationId: app.id, reviewedById: session.id },
+      },
+    ).catch((error) => {
+      console.error('[applications] more-info WhatsApp notification failed', {
+        applicationId: app.id,
+        phone: app.phone,
+        error,
+      })
+    })
+  }
+
+  revalidatePath('/admin/applications')
+  revalidatePath('/admin')
+  redirect('/admin/applications?message=application_more_info_sent')
+}
+
+async function requestIdNumber(formData: FormData) {
+  'use server'
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+  const session = await requireAdmin()
+
+  // Gated by the same flag that surfaces the button; guard defensively so the
+  // ID template is never sent while it is still PENDING Meta approval.
+  const submittedStageTemplates = await isEnabled(
+    'whatsapp.applications.submitted_stage_templates',
+    { userId: session.id },
+  )
+  if (!submittedStageTemplates) return
+
+  const app = await db.providerApplication.findUnique({
+    where: { id },
+    select: providerApplicationSelect,
+  })
+  if (!app || !['PENDING', 'MORE_INFO_REQUIRED'].includes(app.status)) return
+
+  const note = 'South African ID number required'
+  try {
+    await crudAction({
+      entity: 'ProviderApplication',
+      entityId: app.id,
+      action: 'provider_application.request_id',
+      requiredRole: [...APPLICATION_ROLES],
+      requiredFlag: FLAG,
+      schema: ApplicationActionSchema,
+      input: { id },
+      before: {
+        status: app.status,
+        providerId: app.providerId,
+        reviewedById: app.reviewedById,
+      },
+      run: async (_data, tx) => {
+        await tx.providerApplication.update({
+          where: { id },
+          data: {
+            status: 'MORE_INFO_REQUIRED',
+            reviewedAt: new Date(),
+            reviewedById: session.id,
+            notes: note,
+          },
+        })
+
+        await releaseOpsQueueItem(tx as typeof db, {
+          queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+          entityId: app.id,
+        })
+
+        return {
+          id: app.id,
+          status: 'MORE_INFO_REQUIRED',
+          reviewedById: session.id,
+          notes: note,
+        }
+      },
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] requestIdNumber failed:', error)
+    revalidatePath('/admin/applications')
+    redirect('/admin/applications?message=application_id_request_failed')
+  }
+
+  const firstName = app.name.split(' ')[0] || 'there'
+  const { sendTemplate } = await import('@/lib/whatsapp')
+  await sendTemplate({
+    to: app.phone,
+    template: 'provider_application_id_needed',
+    components: [
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: firstName }],
+      },
+    ],
+    metadata: { applicationId: app.id, reviewedById: session.id },
+  }).catch((error) => {
+    console.error('[applications] id-request template notification failed', {
       applicationId: app.id,
       phone: app.phone,
       error,
@@ -586,7 +713,7 @@ async function requestMoreInfo(formData: FormData) {
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
-  redirect('/admin/applications?message=application_more_info_sent')
+  redirect('/admin/applications?message=application_id_requested')
 }
 
 async function updateCategoryApproval(formData: FormData) {
@@ -961,6 +1088,10 @@ export default async function ApplicationsPage({
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
   const templateFlagEnabled = await isEnabled('whatsapp.recovery.template_send', { userId: admin.id })
+  const submittedStageTemplatesEnabled = await isEnabled(
+    'whatsapp.applications.submitted_stage_templates',
+    { userId: admin.id },
+  )
   const v2Enabled = await isEnabled('admin.applications.redesign_v2', { userId: admin.id })
   const resolvedSearchParams = await searchParams
   const message = typeof resolvedSearchParams.message === 'string' ? resolvedSearchParams.message : undefined
@@ -1019,6 +1150,7 @@ export default async function ApplicationsPage({
         adminId={admin.id}
         crudEnabled={crudEnabled}
         templateFlagEnabled={templateFlagEnabled}
+        submittedStageTemplatesEnabled={submittedStageTemplatesEnabled}
         bannerNode={bannerNode}
         flag={FLAG}
         searchParams={resolvedSearchParams}
@@ -1026,6 +1158,7 @@ export default async function ApplicationsPage({
           approve: approveApplication,
           reject: rejectApplication,
           requestMoreInfo,
+          requestIdNumber,
           claim: claimApplication,
           release: releaseApplication,
           updateCategoryApproval,
@@ -1354,6 +1487,20 @@ export default async function ApplicationsPage({
                       Reject
                     </SubmitButton>
                   </form>
+
+                  {submittedStageTemplatesEnabled && !app.idNumber && (
+                  <form action={requestIdNumber}>
+                    <input type="hidden" name="id" value={app.id} />
+                    <SubmitButton
+                      size="sm"
+                      variant="outline"
+                      disabled={!crudEnabled}
+                      pendingLabel="Requesting ID…"
+                    >
+                      Request ID
+                    </SubmitButton>
+                  </form>
+                  )}
 
                   {app.status === 'PENDING' && (
                   <form action={requestMoreInfo} className="flex gap-2">
