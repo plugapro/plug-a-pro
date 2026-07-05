@@ -77,10 +77,41 @@ export interface SubmitOptions {
    * advance any active registration conversation for this phone.
    */
   conversationId?: string
+  /**
+   * Status the created row is written with. Defaults to `'PENDING'` (today's
+   * behavior). When `'MORE_INFO_REQUIRED'`, the quality-gate v2 check is
+   * skipped (an under-bar MORE_INFO application is the intended ops-review
+   * outcome, not an error) and the row is created with that status.
+   *
+   * This is the completion-safe extension used by the KYC create-on-PASS
+   * completion flow (lib/provider-onboarding/quality-gate-submission.ts).
+   */
+  statusOverride?: 'PENDING' | 'MORE_INFO_REQUIRED'
+  /**
+   * How to react when an active (non-terminal) application already exists for
+   * the phone. Defaults to `'throw'` (today's ProviderApplicationConflictError).
+   * With `'link'`, the existing row is selected and returned as
+   * `{ application: existing, conflicted: true }` — no new row is created and no
+   * error is thrown. Used by the completion flow so a KYC-window race links the
+   * draft to the existing application instead of failing the webhook forever.
+   */
+  onConflict?: 'throw' | 'link'
+  /**
+   * Optional ops notes written atomically in the `create` data. Used by the
+   * completion flow for the `[quality-gate]` note so the note lands in a single
+   * write rather than a follow-up update. Defaults to undefined (no note).
+   */
+  initialNotes?: string | null
 }
 
 export interface SubmitResult {
   application: ProviderApplication
+  /**
+   * True when `onConflict: 'link'` was set and an active application already
+   * existed — `application` is that existing row and no new row was created.
+   * Undefined/false on the normal create path.
+   */
+  conflicted?: boolean
 }
 
 type Tx = Prisma.TransactionClient | typeof db
@@ -101,11 +132,21 @@ export async function submitProviderApplication(
   input: SubmitInput,
   options: SubmitOptions,
 ): Promise<SubmitResult> {
-  const doInTx = async (tx: Tx): Promise<ProviderApplication> => {
+  const status = options.statusOverride ?? 'PENDING'
+  const onConflict = options.onConflict ?? 'throw'
+
+  type TxResult = { application: ProviderApplication; conflicted: boolean }
+
+  const doInTx = async (tx: Tx): Promise<TxResult> => {
     // Quality gate v2: enforce minimum evidence + high-risk certification bar
     // when the flag is ON. Checked before the conflict guard so a bad submission
     // is never persisted even temporarily.
-    if (await isQualityGateV2Enabled()) {
+    //
+    // Skipped entirely when the caller sets statusOverride: 'MORE_INFO_REQUIRED'.
+    // An under-bar MORE_INFO application is the intended ops-review outcome (the
+    // KYC completion flow deliberately creates one for below-bar applicants);
+    // throwing the gate error there would strand the applicant.
+    if (status === 'PENDING' && (await isQualityGateV2Enabled())) {
       const evidence = evaluateEvidenceGate(input.evidenceFileUrls ?? [])
       if (!evidence.ok) throw new Error('QUALITY_GATE_EVIDENCE')
       // A high-risk applicant must carry a certification. At submit the certification
@@ -115,7 +156,11 @@ export async function submitProviderApplication(
       if (!cert.ok) throw new Error('QUALITY_GATE_CERTIFICATION')
     }
 
-    // Guard: reject if a live (non-terminal) application already exists.
+    // Guard: an active (non-terminal) application already exists for this phone.
+    // Default onConflict='throw' preserves today's ProviderApplicationConflictError.
+    // onConflict='link' (completion flow) selects the existing row and returns it
+    // without creating a duplicate — used so a KYC-window race links the draft to
+    // the existing application instead of failing the completion webhook forever.
     const conflict = await tx.providerApplication.findFirst({
       where: {
         phone: input.phone,
@@ -124,6 +169,12 @@ export async function submitProviderApplication(
       select: { id: true, status: true },
     })
     if (conflict) {
+      if (onConflict === 'link') {
+        const existing = await tx.providerApplication.findUniqueOrThrow({
+          where: { id: conflict.id },
+        })
+        return { application: existing, conflicted: true }
+      }
       throw new ProviderApplicationConflictError(conflict.status)
     }
 
@@ -159,7 +210,11 @@ export async function submitProviderApplication(
         isTestUser: input.isTestUser ?? false,
         cohortName: input.cohortName ?? null,
         providerId: input.providerId ?? null,
-        status: 'PENDING',
+        status,
+        // initialNotes: written atomically in the create (completion flow's
+        // [quality-gate] note). Omitted entirely when not provided so the
+        // default create is byte-identical to today's.
+        ...(options.initialNotes != null ? { notes: options.initialNotes } : {}),
         submittedAt: new Date(),
         // CTWA ad attribution (null-safe: most applications have none)
         ctwaSourceType: input.ctwaReferral?.sourceType ?? null,
@@ -170,7 +225,10 @@ export async function submitProviderApplication(
       },
     })
 
-    // Advance the conversation to reg_pending.
+    // Advance the conversation to reg_pending. Only the WhatsApp/web registration
+    // flows have an active conversation to advance; the completion flow does not
+    // pass a conversationId and has no live registration conversation, so the
+    // updateMany matches nothing there (harmless).
     if (options.conversationId) {
       await tx.conversation.update({
         where: { id: options.conversationId },
@@ -183,15 +241,21 @@ export async function submitProviderApplication(
       })
     }
 
-    return application
+    return { application, conflicted: false }
   }
 
   // If the caller already holds a transaction (Prisma.TransactionClient),
   // $transaction is NOT present on it. Run directly. Otherwise open a new tx.
-  const application =
+  const { application, conflicted } =
     '$transaction' in client
       ? await (client as typeof db).$transaction((tx) => doInTx(tx))
       : await doInTx(client)
+
+  // Conflict-link path: no new row was created and no submission occurred, so
+  // skip the funnel/CAPI telemetry (they must only fire on a real create).
+  if (conflicted) {
+    return { application, conflicted: true }
+  }
 
   // Funnel telemetry — post-tx, best-effort, mirroring the Tier-1
   // REQUEST_SUBMITTED pattern in lib/job-requests/create-job-request.ts.
