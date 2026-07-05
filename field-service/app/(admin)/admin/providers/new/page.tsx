@@ -7,6 +7,7 @@ import { requireRole } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { createProviderFromFormAction } from '../actions'
 
@@ -112,7 +113,7 @@ export default async function NewProviderPage({
               />
             </label>
             <div className="md:col-span-2 flex gap-2">
-              <Button type="submit">Create provider</Button>
+              <FormSubmitButton pendingLabel="Creating provider…">Create provider</FormSubmitButton>
               <Button type="button" variant="outline" asChild>
                 <Link href="/admin/providers">Cancel</Link>
               </Button>

@@ -169,16 +169,28 @@ function firstFeature(features: DiditFeatureCheck[] | undefined): DiditFeatureCh
 
 function isPassedFeature(feature: DiditFeatureCheck | null): boolean {
   if (!feature) return false
-  return feature.status === 'Passed'
+  // Production payloads report feature-level status 'Approved' (matching the
+  // session-level status); 'Passed' is kept for the documented sandbox shape.
+  // First live GA verification (2026-07-04, session 0d49f025) proved this:
+  // liveness {score:100, status:'Approved'} was treated as failed and the
+  // provider was wrongly routed to manual review.
+  return feature.status === 'Passed' || feature.status === 'Approved'
+}
+
+// Didit reports scores on a 0-100 scale in production; the orchestrator's
+// confidenceThreshold compares on 0-1. Without this, any raw score - even
+// 5/100 - clears a 0.9 threshold.
+function normalizeScale(score: number): number {
+  return score > 1 ? score / 100 : score
 }
 
 function numericScore(feature: DiditFeatureCheck | null): number | null {
   if (!feature) return null
   // Default to 1.0 when Didit reports passed but omits a numeric score.
-  if (feature.status === 'Passed' && (feature.score === null || feature.score === undefined)) {
+  if (isPassedFeature(feature) && (feature.score === null || feature.score === undefined)) {
     return 1.0
   }
-  return typeof feature.score === 'number' ? feature.score : null
+  return typeof feature.score === 'number' ? normalizeScale(feature.score) : null
 }
 
 function numericScoreWithFallback(
@@ -186,11 +198,11 @@ function numericScoreWithFallback(
   fallbackKey: 'confidence' | 'score',
 ): number | null {
   if (!feature) return null
-  const primary = typeof feature.score === 'number' ? feature.score : null
+  const primary = typeof feature.score === 'number' ? normalizeScale(feature.score) : null
   if (primary !== null) return primary
-  const fallback = typeof feature[fallbackKey] === 'number' ? (feature[fallbackKey] as number) : null
+  const fallback = typeof feature[fallbackKey] === 'number' ? normalizeScale(feature[fallbackKey] as number) : null
   if (fallback !== null) return fallback
-  if (feature.status === 'Passed') return 1.0
+  if (isPassedFeature(feature)) return 1.0
   return null
 }
 

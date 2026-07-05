@@ -60,6 +60,7 @@ export function DeactivateLocationButton({
         description={`This deactivates "${nodeLabel}" and removes it from matching. Type the slug to confirm.`}
         confirmText={nodeSlug}
         confirmLabel="Deactivate"
+        pendingLabel="Deactivating…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

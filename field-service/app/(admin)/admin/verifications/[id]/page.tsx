@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import type { Role } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
@@ -231,7 +232,9 @@ export default async function AdminIdentityVerificationDetailPage({
               </p>
               <form action={refreshDiditSessionFormAction} className="mt-3">
                 <input type="hidden" name="verificationId" value={verification.id} />
-                <Button type="submit" size="sm" variant="outline">Refresh from Didit</Button>
+                <FormSubmitButton size="sm" variant="outline" pendingLabel="Refreshing from Didit…">
+                  Refresh from Didit
+                </FormSubmitButton>
               </form>
             </div>
           ) : null}
@@ -246,23 +249,27 @@ export default async function AdminIdentityVerificationDetailPage({
                     assuranceLevel={approveAssurance}
                     action={approveIdentityVerificationFormAction}
                     buttonLabel="Approve"
+                    pendingLabel="Approving verification…"
                   />
                   <ReviewForm
                     verificationId={verification.id}
                     action={requestIdentityVerificationRetryFormAction}
                     buttonLabel="Request retry"
+                    pendingLabel="Requesting retry…"
                     variant="secondary"
                   />
                   <ReviewForm
                     verificationId={verification.id}
                     action={retryIdentityVerificationWithVendorFormAction}
                     buttonLabel="Retry with vendor"
+                    pendingLabel="Retrying with vendor…"
                     variant="secondary"
                   />
                   <ReviewForm
                     verificationId={verification.id}
                     action={rejectIdentityVerificationFormAction}
                     buttonLabel="Reject"
+                    pendingLabel="Rejecting…"
                     variant="danger"
                   />
                 </>
@@ -304,19 +311,17 @@ function ReviewForm({
   assuranceLevel,
   action,
   buttonLabel,
+  pendingLabel,
   variant = 'primary',
 }: {
   verificationId: string
   assuranceLevel?: string
   action: (formData: FormData) => Promise<void>
   buttonLabel: string
+  pendingLabel: string
   variant?: 'primary' | 'secondary' | 'danger'
 }) {
-  const className = variant === 'danger'
-    ? 'min-h-10 rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive'
-    : variant === 'secondary'
-      ? 'min-h-10 rounded-md border px-3 py-2 text-sm font-medium'
-      : 'min-h-10 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground'
+  const buttonVariant = variant === 'danger' ? 'danger' : variant === 'secondary' ? 'secondary' : 'default'
   return (
     <form action={action} className="mt-3 grid gap-2">
       <input type="hidden" name="verificationId" value={verificationId} />
@@ -327,7 +332,9 @@ function ReviewForm({
         placeholder={`${buttonLabel} note`}
         className="rounded-md border bg-background px-3 py-2 text-sm"
       />
-      <button className={className}>{buttonLabel}</button>
+      <FormSubmitButton size="sm" variant={buttonVariant} pendingLabel={pendingLabel}>
+        {buttonLabel}
+      </FormSubmitButton>
     </form>
   )
 }

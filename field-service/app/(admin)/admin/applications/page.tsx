@@ -1062,7 +1062,12 @@ export default async function ApplicationsPage({
               Stages: {RECOVERY_STAGE_KEYS.join(', ')}
             </p>
             <form action={sendAllDueRecoveryNudges}>
-              <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+              <SubmitButton
+                size="sm"
+                variant="outline"
+                disabled={!crudEnabled}
+                pendingLabel="Sending due nudges…"
+              >
                 Send all due now
               </SubmitButton>
             </form>
@@ -1091,6 +1096,7 @@ export default async function ApplicationsPage({
                 {onboardingRecoveryRows.map((row) => {
                   const outsideSessionWindow = now.getTime() - row.lastInteractionAt.getTime() > WHATSAPP_RECOVERY_SESSION_WINDOW_MS
                   const actionLabel = outsideSessionWindow && templateFlagEnabled ? 'Send template' : 'Send now'
+                  const actionPendingLabel = outsideSessionWindow && templateFlagEnabled ? 'Sending template…' : 'Sending…'
                   return (
                     <TableRow key={`${row.source}:${row.id}`} data-admin-onboarding-recovery-row={row.stage}>
                       <TableCell>
@@ -1146,7 +1152,12 @@ export default async function ApplicationsPage({
                         {row.messageTemplateKey !== 'submitted_no_recovery' ? (
                           <form action={sendRecoveryNudgeForRow} className="mt-2">
                             <input type="hidden" name="safeUserRef" value={row.safeUserRef} />
-                            <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                            <SubmitButton
+                              size="sm"
+                              variant="outline"
+                              disabled={!crudEnabled}
+                              pendingLabel={actionPendingLabel}
+                            >
                               {actionLabel}
                             </SubmitButton>
                           </form>
@@ -1272,14 +1283,24 @@ export default async function ApplicationsPage({
                   {!claimedByCurrentUser ? (
                     <form action={claimApplication}>
                       <input type="hidden" name="id" value={app.id} />
-                      <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                      <SubmitButton
+                        size="sm"
+                        variant="outline"
+                        disabled={!crudEnabled}
+                        pendingLabel={assignment?.claimedById ? 'Taking over…' : 'Claiming…'}
+                      >
                         {assignment?.claimedById ? 'Take over' : 'Claim'}
                       </SubmitButton>
                     </form>
                   ) : (
                     <form action={releaseApplication}>
                       <input type="hidden" name="id" value={app.id} />
-                      <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                      <SubmitButton
+                        size="sm"
+                        variant="outline"
+                        disabled={!crudEnabled}
+                        pendingLabel="Releasing…"
+                      >
                         Release
                       </SubmitButton>
                     </form>
@@ -1291,6 +1312,7 @@ export default async function ApplicationsPage({
                       size="sm"
                       disabled={!crudEnabled || hasConflict || approvalBlockedByCompleteness}
                       className="bg-[var(--tone-success-fg)] text-white hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground"
+                      pendingLabel="Approving…"
                     >
                       Approve
                     </SubmitButton>
@@ -1304,7 +1326,12 @@ export default async function ApplicationsPage({
                       placeholder="Reason (optional)"
                       className="h-8 w-48 text-sm"
                     />
-                    <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                    <SubmitButton
+                      size="sm"
+                      variant="outline"
+                      disabled={!crudEnabled}
+                      pendingLabel="Rejecting…"
+                    >
                       Reject
                     </SubmitButton>
                   </form>
@@ -1318,7 +1345,12 @@ export default async function ApplicationsPage({
                       className="h-8 w-48 text-sm"
                       required
                     />
-                    <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
+                    <SubmitButton
+                      size="sm"
+                      variant="outline"
+                      disabled={!crudEnabled}
+                      pendingLabel="Sending request…"
+                    >
                       More info
                     </SubmitButton>
                   </form>
@@ -1447,6 +1479,7 @@ export default async function ApplicationsPage({
                                         size="sm"
                                         variant="outline"
                                         disabled={!crudEnabled}
+                                        pendingLabel="Approving…"
                                       >
                                         Approve
                                       </SubmitButton>
@@ -1459,6 +1492,7 @@ export default async function ApplicationsPage({
                                         size="sm"
                                         variant="outline"
                                         disabled={!crudEnabled}
+                                        pendingLabel="Rejecting…"
                                       >
                                         Reject
                                       </SubmitButton>
@@ -1471,6 +1505,7 @@ export default async function ApplicationsPage({
                                         size="sm"
                                         variant="outline"
                                         disabled={!crudEnabled}
+                                        pendingLabel="Holding…"
                                       >
                                         Hold
                                       </SubmitButton>

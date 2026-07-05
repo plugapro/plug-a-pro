@@ -128,8 +128,8 @@ export function ResolveCaseDialog({ caseId, trigger }: Props) {
             >
               Cancel
             </Button>
-            <Button onClick={handleResolve} disabled={isPending}>
-              {isPending ? 'Resolving…' : 'Resolve case'}
+            <Button onClick={handleResolve} loading={isPending} loadingLabel="Resolving case…">
+              Resolve case
             </Button>
           </div>
         </div>

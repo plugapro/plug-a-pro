@@ -4,6 +4,7 @@ import * as React from 'react'
 import { notify } from '@/components/admin/ui/ActionToast'
 import { ActionForm } from '@/components/admin/ui/ActionForm'
 import { SubmitButton } from '@/components/admin/ui/SubmitButton'
+import { Button } from '@/components/ui/button'
 import { DestructiveConfirmDialog } from '@/components/admin/crud/confirm'
 import {
   changeRoleFromFormAction,
@@ -142,14 +143,18 @@ export function TeamActionsRow({
             <option value="ADMIN">Admin</option>
             <option value="OWNER">Owner</option>
           </select>
-          <button
+          <Button
             type="button"
             onClick={handleRoleSet}
-            disabled={!admin.active || isPending}
-            className="h-7 px-2 text-xs rounded-md hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none transition-colors"
+            loading={isPending}
+            loadingLabel="Setting…"
+            disabled={!admin.active}
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
           >
             Set
-          </button>
+          </Button>
         </div>
 
         {/* Resend invite - pending invite only */}
@@ -219,6 +224,7 @@ export function TeamActionsRow({
         title={`Deactivate ${admin.name}?`}
         description="This admin will immediately lose access. They can be reactivated later."
         confirmLabel="Deactivate"
+        pendingLabel="Deactivating…"
         confirmText={admin.email}
         onConfirm={handleDeactivateConfirm}
         loading={isPending}
@@ -231,6 +237,7 @@ export function TeamActionsRow({
         title={`Revoke invite for ${admin.name}?`}
         description="The pending invite will be cancelled and the admin row will be removed."
         confirmLabel="Revoke"
+        pendingLabel="Revoking…"
         confirmText={admin.email}
         onConfirm={handleRevokeConfirm}
         loading={isPending}

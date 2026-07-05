@@ -23,6 +23,13 @@ export interface ConfirmDialogProps {
   title: string
   description?: string
   confirmLabel?: string
+  /**
+   * Text shown on the confirm button (with a spinner) while the action runs.
+   * Prefer a progressive-tense CTA, e.g. confirmLabel "Refund" → "Refunding…".
+   * Falls back to confirmLabel when omitted so the button still shows a spinner
+   * rather than the old generic "Working…".
+   */
+  pendingLabel?: string
   cancelLabel?: string
   onConfirm: () => void | Promise<void>
   loading?: boolean
@@ -35,6 +42,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = 'Confirm',
+  pendingLabel,
   cancelLabel = 'Cancel',
   onConfirm,
   loading,
@@ -69,9 +77,10 @@ export function ConfirmDialog({
           <Button
             variant={variant}
             onClick={handleConfirm}
-            disabled={busy || loading}
+            loading={busy || loading}
+            loadingLabel={pendingLabel ?? confirmLabel}
           >
-            {busy || loading ? 'Working…' : confirmLabel}
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -96,6 +105,7 @@ export function DestructiveConfirmDialog({
   title,
   description,
   confirmLabel = 'Delete',
+  pendingLabel,
   cancelLabel = 'Cancel',
   onConfirm,
   loading,
@@ -154,9 +164,11 @@ export function DestructiveConfirmDialog({
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={!isMatch || busy || loading}
+            disabled={!isMatch}
+            loading={busy || loading}
+            loadingLabel={pendingLabel ?? confirmLabel}
           >
-            {busy || loading ? 'Working…' : confirmLabel}
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

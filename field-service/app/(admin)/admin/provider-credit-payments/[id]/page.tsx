@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { type PaymentIntentStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
@@ -357,9 +357,9 @@ export default async function ProviderCreditPaymentDetailPage({
                 placeholder="Admin note"
                 disabled={!canMatch}
               />
-              <Button type="submit" disabled={!canMatch} className="w-full">
+              <FormSubmitButton disabled={!canMatch} fullWidth pendingLabel="Matching…">
                 Mark matched
-              </Button>
+              </FormSubmitButton>
             </form>
           ) : null}
 
@@ -378,9 +378,9 @@ export default async function ProviderCreditPaymentDetailPage({
               disabled={!canCredit}
               required={isPayfastIntent}
             />
-            <Button type="submit" disabled={!canCredit} className="w-full">
+            <FormSubmitButton disabled={!canCredit} fullWidth pendingLabel="Crediting…">
               Confirm and credit wallet
-            </Button>
+            </FormSubmitButton>
           </form>
 
           <form action={failTopUpIntentFormAction} className="space-y-3 rounded-xl border bg-card p-4">
@@ -396,9 +396,9 @@ export default async function ProviderCreditPaymentDetailPage({
               disabled={!canFail}
               required
             />
-            <Button type="submit" variant="outline" disabled={!canFail} className="w-full">
+            <FormSubmitButton variant="outline" disabled={!canFail} fullWidth pendingLabel="Marking failed…">
               Mark failed
-            </Button>
+            </FormSubmitButton>
           </form>
 
           <form action={addTopUpIntentNoteFormAction} className="space-y-3 rounded-xl border bg-card p-4">
@@ -410,9 +410,9 @@ export default async function ProviderCreditPaymentDetailPage({
               placeholder="Note"
               required
             />
-            <Button type="submit" variant="outline" className="w-full">
+            <FormSubmitButton variant="outline" fullWidth pendingLabel="Adding note…">
               Add note
-            </Button>
+            </FormSubmitButton>
           </form>
         </aside>
       </div>

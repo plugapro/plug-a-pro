@@ -27,7 +27,7 @@ import {
 } from '@/lib/ops-queue'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -624,27 +624,31 @@ export default async function AdminDispatchPage({
                   {!claimedByCurrentUser ? (
                     <form action={claimDispatch}>
                       <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                      <Button type="submit" variant="outline" disabled={!crudEnabled}>
+                      <FormSubmitButton
+                        variant="outline"
+                        disabled={!crudEnabled}
+                        pendingLabel={assignment?.claimedById ? 'Taking over…' : 'Claiming…'}
+                      >
                         {assignment?.claimedById ? 'Take over dispatch' : 'Claim dispatch'}
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   ) : (
                     <form action={releaseDispatch}>
                       <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                      <Button type="submit" variant="outline" disabled={!crudEnabled}>
+                      <FormSubmitButton variant="outline" disabled={!crudEnabled} pendingLabel="Releasing…">
                         Release dispatch
-                      </Button>
+                      </FormSubmitButton>
                     </form>
                   )}
                   <form action={runAutoAssign}>
                     <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                    <Button type="submit" disabled={!crudEnabled}>Auto-assign top candidate</Button>
+                    <FormSubmitButton disabled={!crudEnabled} pendingLabel="Assigning…">Auto-assign top candidate</FormSubmitButton>
                   </form>
                   <form action={rerankForReview}>
                     <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                    <Button type="submit" variant="outline" disabled={!crudEnabled}>
+                    <FormSubmitButton variant="outline" disabled={!crudEnabled} pendingLabel="Refreshing…">
                       Refresh ranked shortlist
-                    </Button>
+                    </FormSubmitButton>
                   </form>
                   <DispatchControlButtons
                     jobRequestId={selectedRequest.id}
