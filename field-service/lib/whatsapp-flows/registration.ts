@@ -53,6 +53,7 @@ import {
 import {
   ACTIVE_PILOT_CITY_LABEL,
   ACTIVE_PILOT_REGION_LABEL,
+  ONBOARDING_PILOT_REGION_LABEL,
   describeCityServiceStatus,
   describeRegionServiceStatus,
   getRegionServiceStatus,
@@ -1179,7 +1180,7 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
   const rows = [
-    { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot - ${ACTIVE_PILOT_REGION_LABEL}` },
+    { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Onboarding across ${ONBOARDING_PILOT_REGION_LABEL}` },
     { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon - register now' },
     { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon - register now' },
     { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon - register now' },
@@ -1224,7 +1225,7 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       [{
         title: 'Areas',
         rows: [
-          { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot - ${ACTIVE_PILOT_REGION_LABEL}` },
+          { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Onboarding across ${ONBOARDING_PILOT_REGION_LABEL}` },
           { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon - register now' },
           { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon - register now' },
           { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon - register now' },
@@ -1349,13 +1350,13 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
     const rows = regions.slice(0, 10).map(r => ({
       id: `region_${r.id}`,
       title: r.label,
-      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }),
+      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }, 'onboarding'),
     }))
 
     await sendList(
       ctx.phone,
       cityIsActive
-        ? `🗺 Which area of *${cityLabel}* do you mainly work in?\n\nOnly *${ACTIVE_PILOT_REGION_LABEL}* is live for leads right now. Other areas are still welcome to register.`
+        ? `🗺 Which area of *${cityLabel}* do you mainly work in?\n\nWe're onboarding providers across all of *${ONBOARDING_PILOT_REGION_LABEL}*. Leads go live in *${ACTIVE_PILOT_REGION_LABEL}* first — pick your area and we'll notify you the moment we open leads there.`
         : `🗺 Which area of *${cityLabel}* do you mainly work in?\n\nThis city is coming soon. You can still register now and we will notify you when leads open there.`,
       [{ title: 'Areas', rows }],
       { buttonLabel: 'Choose Area' }
@@ -1381,7 +1382,7 @@ async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
     const rows = regions.slice(0, 10).map(r => ({
       id: `region_${r.id}`,
       title: r.label,
-      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }),
+      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }, 'onboarding'),
     }))
     await sendList(
       ctx.phone,
@@ -1426,7 +1427,7 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
     regionStatus = getRegionServiceStatus({
       regionKey: selectedRegion?.regionKey,
       slug: selectedRegion?.slug,
-    })
+    }, 'onboarding')
   } catch {
     regionStatus = 'coming_soon'
   }
