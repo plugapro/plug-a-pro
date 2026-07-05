@@ -445,6 +445,30 @@ const TEMPLATES = [
     body: "Hi {{1}}, you started a {{2}} request with us earlier and didn't finish. Tap to pick it up here — {{3}} — your details are saved.",
     examples: ['Andries', 'garden', 'https://app.plugapro.co.za/'],
   },
+  // ─── Submitted-stage application nudges (2026-07-05) ─────────────────────
+  // Close the `submitted_no_recovery` gap: an applicant who fully submitted but
+  // is stuck (no ID number, or admin requested more info) previously got no
+  // WhatsApp nudge, and requestMoreInfo only sent a freeform interactive message
+  // that fails Meta Re-engagement once the 24h window closes. UTILITY so these
+  // reach cold applicants. No buttons — the applicant replies in-chat, which
+  // re-opens the session and re-enters the registration flow.
+  // Registered PENDING 2026-07-05: id_needed=898854283232490,
+  // more_info=1680251846422315. (Rejection notice already exists as the APPROVED
+  // technician_application_declined — intentionally not duplicated here.)
+  {
+    name: 'provider_application_id_needed',
+    category: 'UTILITY',
+    // {{1}} applicant first name
+    body: "Hi {{1}}, thanks for applying to join Plug A Pro. To complete your application we still need your South African ID number. Please reply to this chat with your 13-digit ID number and we'll continue your review.",
+    examples: ['Sipho'],
+  },
+  {
+    name: 'provider_application_more_info',
+    category: 'UTILITY',
+    // {{1}} applicant first name, {{2}} what is needed (reason text)
+    body: "Hi {{1}}, we're reviewing your application to join Plug A Pro and need a bit more information: {{2}}. Please reply to this chat with the details and we'll continue your review.",
+    examples: ['Sipho', 'proof of your previous work'],
+  },
 ]
 
 // Templates that are intentionally managed outside this script's creation
