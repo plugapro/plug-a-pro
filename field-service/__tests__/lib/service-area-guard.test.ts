@@ -45,4 +45,15 @@ describe('service-area-guard gate split', () => {
     expect(describeRegionServiceStatus({ regionKey: 'jhb_west' }, 'matching')).toContain('Active pilot')
     expect(describeRegionServiceStatus({ regionKey: 'jhb_north' }, 'matching')).toContain('Coming soon')
   })
+
+  it('slug-input path resolves correctly for matching and onboarding gates', () => {
+    // Production calls pass both regionKey and slug; slug alone must also resolve.
+    // Region slugs end with the regionKey segment: gauteng__johannesburg__<regionKey>
+    expect(getRegionServiceStatus({ slug: 'gauteng__johannesburg__jhb_west' }, 'matching')).toBe('active')
+    expect(getRegionServiceStatus({ slug: 'gauteng__johannesburg__jhb_north' }, 'onboarding')).toBe('active')
+  })
+
+  it('isOnboardingActiveRegion returns false for out-of-scope regions', () => {
+    expect(isOnboardingActiveRegion('western_cape')).toBe(false)
+  })
 })

@@ -1418,29 +1418,45 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
 
   const regionId = ctx.reply.id.replace('region_', '')
   const regionLabel = ctx.reply.title ?? ''
-  let regionStatus: ServiceAreaStatus = 'coming_soon'
+  // onboardingStatus: drives mid-flow interstitial ("Coming soon area" warning).
+  // CoJ regions are onboarding-active so providers see them as registerable and
+  // the discouraging interstitial is suppressed for all five CoJ regions.
+  let onboardingStatus: ServiceAreaStatus = 'coming_soon'
+  // matchingStatus: drives the submitted-confirmation caveat — "leads aren't live
+  // in your area yet". This is a MATCHING-gate truth and must stay narrow so
+  // jhb_north/east/south/cbd providers still receive the honest expectation-setting
+  // caveat even though they can register freely.
+  let matchingStatus: ServiceAreaStatus = 'coming_soon'
 
   try {
     const { getRegions } = await import('@/lib/location-nodes')
     const regions = await getRegions(ctx.data.cityId ?? '')
     const selectedRegion = regions.find((region) => region.id === regionId)
-    regionStatus = getRegionServiceStatus({
+    onboardingStatus = getRegionServiceStatus({
       regionKey: selectedRegion?.regionKey,
       slug: selectedRegion?.slug,
     }, 'onboarding')
+    matchingStatus = getRegionServiceStatus({
+      regionKey: selectedRegion?.regionKey,
+      slug: selectedRegion?.slug,
+    }, 'matching')
   } catch {
-    regionStatus = 'coming_soon'
+    onboardingStatus = 'coming_soon'
+    matchingStatus = 'coming_soon'
   }
 
-  if (regionStatus !== 'active') {
+  if (onboardingStatus !== 'active') {
     await sendText(
       ctx.phone,
       `🔜 *Coming soon area*\n\nThanks. *${regionLabel}* is not live for leads yet, but your profile will still be saved. We'll notify you when Plug A Pro opens leads in this region.`
     )
   }
 
-  // Drill down to suburb selection within this region (numbered text list)
-  return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, regionStatus)
+  // Drill down to suburb selection within this region (numbered text list).
+  // Pass matchingStatus so the submit handler's isComingSoonRegion check reflects
+  // whether the provider will actually receive leads (matching gate), not just
+  // whether they are registerable (onboarding gate).
+  return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, matchingStatus)
 }
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
