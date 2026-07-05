@@ -25,6 +25,10 @@ const {
       create: vi.fn(),
       update: vi.fn(),
       findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
+    providerCategory: {
+      createMany: vi.fn(),
     },
     providerRate: {
       createMany: vi.fn(),
@@ -34,6 +38,14 @@ const {
       findUnique: vi.fn(),
     },
     provider: {
+      updateMany: vi.fn(),
+    },
+    // submitProviderApplication (now the canonical row creator the completion
+    // flow delegates to) advances the registration conversation via updateMany.
+    // In completion there is no live registration conversation, so it matches
+    // nothing — the mock just needs to exist.
+    conversation: {
+      update: vi.fn(),
       updateMany: vi.fn(),
     },
     $transaction: vi.fn(),
@@ -83,6 +95,29 @@ vi.mock('@/lib/provider-onboarding/quality-gate', () => ({
   isQualityGateV2Enabled: vi.fn().mockResolvedValue(false),
   MIN_EVIDENCE_PHOTOS: 3,
 }))
+// The completion flow now delegates row creation to the canonical
+// submitProviderApplication, which fires fire-and-forget funnel telemetry + a
+// CAPI Lead conversion post-tx. Stub both so the unit tests stay hermetic.
+vi.mock('@/lib/workflow-events', () => ({
+  recordWorkflowEvent: vi.fn().mockResolvedValue({ ok: true }),
+}))
+vi.mock('@/lib/marketing/server-events', () => ({
+  emitServerConversion: vi.fn().mockResolvedValue(undefined),
+}))
+
+// Shared mock defaults that the canonical submitProviderApplication needs when
+// the completion flow delegates to it. Called at the top of every beforeEach
+// (after vi.clearAllMocks, which wipes implementations). findUniqueOrThrow backs
+// the onConflict:'link' path (returns the row matching the conflict id from
+// findFirst); conversation.updateMany is the no-op registration-advance.
+function applyDelegationMockDefaults() {
+  mockDb.providerApplication.findUniqueOrThrow.mockImplementation(
+    async ({ where }: { where: { id: string } }) => ({ id: where.id, status: 'PENDING' }),
+  )
+  mockDb.conversation.update.mockResolvedValue({})
+  mockDb.conversation.updateMany.mockResolvedValue({ count: 0 })
+  mockDb.providerCategory.createMany.mockResolvedValue({ count: 0 })
+}
 
 // Helper: build a minimal PWA_RESUME submit payload
 function buildPwaResumePayload(overrides?: Record<string, unknown>) {
@@ -210,6 +245,7 @@ function buildPayload(overrides?: Record<string, unknown>) {
 describe('completeApplicationForPassedVerification', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     // Default gate evaluators: pass (evidence ok, cert not required)
     mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
@@ -341,6 +377,7 @@ describe('completeApplicationForPassedVerification', () => {
 describe('recordFailedVerificationForApplication', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     // Gate evaluators: pass by default (failure tests don't call the PASS path)
     mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
@@ -395,9 +432,9 @@ describe('recordFailedVerificationForApplication', () => {
     )
 
     // Ops note appended
-    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+    // Note now lands atomically in the create data (initialNotes), not a follow-up update.
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'app-fail' },
         data: expect.objectContaining({
           notes: expect.stringContaining('[quality-gate]'),
         }),
@@ -452,6 +489,7 @@ describe('recordFailedVerificationForApplication', () => {
 describe('completeApplicationForPassedVerification — PWA_RESUME channel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     // Gate evaluators: pass by default
     mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
@@ -598,6 +636,7 @@ describe('completeApplicationForPassedVerification — PWA_RESUME channel', () =
 describe('recordFailedVerificationForApplication — PWA failure paths', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     // Gate evaluators: pass by default (failure path tests create MORE_INFO_REQUIRED directly)
     mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
@@ -657,9 +696,9 @@ describe('recordFailedVerificationForApplication — PWA failure paths', () => {
     )
 
     // [quality-gate] note appended
-    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+    // Note now lands atomically in the create data (initialNotes), not a follow-up update.
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'app-pwa-fail' },
         data: expect.objectContaining({
           notes: expect.stringContaining('[quality-gate]'),
         }),
@@ -744,9 +783,9 @@ describe('recordFailedVerificationForApplication — PWA failure paths', () => {
     )
 
     // [quality-gate] note appended
-    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+    // Note now lands atomically in the create data (initialNotes), not a follow-up update.
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'app-pwa-fail' },
         data: expect.objectContaining({
           notes: expect.stringContaining('[quality-gate]'),
         }),
@@ -889,6 +928,7 @@ describe('recordFailedVerificationForApplication — PWA failure paths', () => {
 describe('completeApplicationForPassedVerification — PWA_SELF_SERVE channel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     // Gate evaluators: pass by default
     mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
@@ -1056,6 +1096,7 @@ describe('completeApplicationForPassedVerification — PWA_SELF_SERVE channel', 
 describe('P1: completion defense-in-depth — re-check for active application before creating duplicate', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     // Gate evaluators: pass by default
     mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
@@ -1162,6 +1203,7 @@ describe('P1: completion defense-in-depth — re-check for active application be
 describe('Fix B: evidence gate defense-in-depth — createApplicationInline never creates PENDING below the bar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb))
     mockDb.providerApplicationDraft.update.mockResolvedValue({})
@@ -1252,7 +1294,7 @@ describe('Fix B: evidence gate defense-in-depth — createApplicationInline neve
     expect(createCall.data.status).not.toBe('PENDING')
 
     // [quality-gate] note added
-    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           notes: expect.stringContaining('[quality-gate]'),
@@ -1325,7 +1367,7 @@ describe('Fix B: evidence gate defense-in-depth — createApplicationInline neve
         data: expect.objectContaining({ status: 'MORE_INFO_REQUIRED' }),
       }),
     )
-    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ notes: expect.stringContaining('[quality-gate]') }),
       }),
@@ -1336,6 +1378,7 @@ describe('Fix B: evidence gate defense-in-depth — createApplicationInline neve
 describe('Fix C: providerRate rows replayed on PASS', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     // Gate evaluators: pass by default
     mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
@@ -1531,6 +1574,7 @@ describe('recordManualReviewForApplication (Fix A)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    applyDelegationMockDefaults()
 
     mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
       id: 'ver-manual',
@@ -1577,7 +1621,7 @@ describe('recordManualReviewForApplication (Fix A)', () => {
     )
 
     // [quality-gate] note includes the reason
-    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           notes: expect.stringContaining('[quality-gate]'),

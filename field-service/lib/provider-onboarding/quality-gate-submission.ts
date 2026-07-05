@@ -15,32 +15,19 @@ import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { syncProviderRecord, upsertStructuredServiceAreas } from '@/lib/provider-record'
 import { syncProviderSkills } from '@/lib/provider-skills'
-import { resolveInitialApprovalStatus } from '@/lib/provider-categories'
-import { resolveServiceCategoryTag } from '@/lib/service-categories'
-import { getServiceComplianceRequirement } from '@/lib/service-category-policy'
+import { submitProviderApplication, type SubmitInput } from '@/lib/provider-applications-submit'
+import {
+  finalizeWhatsappProviderSubmission,
+  categorySlugForSkill,
+  type FinalizeWhatsappInput,
+  type FinalizeWhatsappOpts,
+} from '@/lib/provider-onboarding/finalize-whatsapp-submission'
 import { sendButtons } from '@/lib/whatsapp-interactive'
 import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
-import { ACTIVE_PROVIDER_APPLICATION_STATUSES } from '@/lib/provider-applications'
 import { evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
 import { createTestCohortContext } from '@/lib/internal-test-cohort'
 
-// ─── Local helpers (mirrors registration.ts, not exported there) ──────────────
-
-function yearsExperienceFromLabel(label: string | undefined | null): number | null {
-  if (!label) return null
-  if (label.includes('Less')) return 0
-  if (label.includes('1–3')) return 2
-  if (label.includes('3–5')) return 4
-  if (label.includes('5+')) return 5
-  return null
-}
-
-function skillLevelFromExperienceLabel(label: string | undefined | null): string | null {
-  if (!label) return null
-  if (label.includes('Less')) return 'BEGINNER'
-  if (label.includes('1–3')) return 'INTERMEDIATE'
-  return 'EXPERIENCED'
-}
+// ─── Local helpers ────────────────────────────────────────────────────────────
 
 /**
  * Appends a [quality-gate] marker line to the ops notes field.
@@ -53,6 +40,197 @@ function appendQualityGateNote(existing: string | null, message = 'KYC failed at
   const preservedLines = existing.split('\n').filter((l) => !l.startsWith(`${marker} `))
   const cleaned = preservedLines.join('\n').trimEnd()
   return cleaned ? `${cleaned}\n${line}` : line
+}
+
+/**
+ * Defense-in-depth evidence/certification re-evaluation at completion time.
+ *
+ * The gate was evaluated when the draft was created, but if an upstream path
+ * skipped it (flag OFF at draft-create, ON at completion; or a concurrent
+ * bypass), a PENDING application must not be created for an under-qualified
+ * applicant. When under-bar, downgrade to MORE_INFO_REQUIRED with a note so ops
+ * can review rather than silently dropping the applicant.
+ *
+ * Returns the completion opts to pass to submitProviderApplication / the
+ * finalizer: statusOverride + initialNotes. On a pass, both are undefined (→
+ * default PENDING create, no note).
+ */
+function evaluateCompletionGate(
+  skills: string[],
+  evidenceFileUrls: string[],
+  certificationRef: string | null,
+  context: string,
+): { statusOverride?: 'MORE_INFO_REQUIRED'; initialNotes?: string } {
+  const evidenceResult = evaluateEvidenceGate(evidenceFileUrls ?? [])
+  const certResult = evaluateCertificationGate(skills ?? [], Boolean(certificationRef))
+  if (evidenceResult.ok && certResult.ok) return {}
+  console.warn(`[quality-gate-submission] ${context}: evidence/cert gate failed at completion — creating MORE_INFO_REQUIRED`, {
+    evidenceHave: evidenceResult.have,
+    evidenceNeed: evidenceResult.need,
+    certRequired: certResult.required,
+    certOk: certResult.ok,
+  })
+  return {
+    statusOverride: 'MORE_INFO_REQUIRED',
+    initialNotes: appendQualityGateNote(null, 'evidence/certification incomplete at KYC completion'),
+  }
+}
+
+// ─── Shared mappers: WHATSAPP / PWA payload → canonical creator input ──────────
+
+/** Availability may arrive as string or string[]; the DB stores a joined label. */
+function joinAvailability(availability: string | string[] | null | undefined): string | null {
+  return Array.isArray(availability) ? availability.join(', ') : availability ?? null
+}
+
+/**
+ * Maps a stored WHATSAPP submit bundle to the shared finalizer input, injecting
+ * the completion-time cohort/experience context. providerId is resolved by the
+ * finalizer's syncProviderRecord and injected onto the submit input there.
+ */
+/** Maps a stored WHATSAPP submit bundle's application args to a canonical SubmitInput. */
+function toWhatsappSubmitInput(
+  a: Qgv2WhatsappSubmitPayload['submitApplicationArgs'],
+  providerId: string,
+): SubmitInput {
+  return {
+    phone: a.phone,
+    name: a.name,
+    idNumber: a.idNumber ?? null,
+    skills: a.skills,
+    serviceAreas: a.serviceAreas,
+    availability: joinAvailability(a.availability),
+    experience: a.experience ?? null,
+    evidenceNote: a.evidenceNote ?? null,
+    evidenceFileUrls: a.evidenceFileUrls ?? [],
+    certificationRef: a.certificationRef ?? null,
+    providerId,
+    email: a.email ?? null,
+    alternateMobileE164: a.alternateMobileE164 ?? null,
+    preferredLanguage: a.preferredLanguage ?? null,
+    reference1Name: a.reference1Name ?? null,
+    reference1Mobile: a.reference1Mobile ?? null,
+    reference2Name: a.reference2Name ?? null,
+    reference2Mobile: a.reference2Mobile ?? null,
+    callOutFee: a.callOutFee ?? null,
+    hourlyRate: a.hourlyRate ?? null,
+    rateNegotiable: a.rateNegotiable,
+    weekendJobs: a.weekendJobs,
+    sameDayJobs: a.sameDayJobs,
+    isTestUser: a.isTestUser ?? false,
+    cohortName: a.cohortName ?? null,
+    ctwaReferral: (a.ctwaReferral ?? null) as SubmitInput['ctwaReferral'],
+  }
+}
+
+function toWhatsappFinalizeInput(payload: Qgv2WhatsappSubmitPayload): FinalizeWhatsappInput {
+  const submitInput = toWhatsappSubmitInput(payload.submitApplicationArgs, '')
+  return {
+    syncProviderArgs: payload.syncProviderArgs,
+    submitInput,
+    canonicalSkills: payload.canonicalSkills,
+    experienceLabel: payload.replayInputs.experience,
+    certificationProofCount: payload.replayInputs.certificationProofAttachmentIds?.length ?? 0,
+    rate:
+      typeof payload.replayInputs.callOutFee === 'number'
+        ? {
+            callOutFee: payload.replayInputs.callOutFee,
+            hourlyRate:
+              typeof payload.replayInputs.hourlyRate === 'number' ? payload.replayInputs.hourlyRate : null,
+            rateNegotiable: payload.replayInputs.rateNegotiable !== false,
+          }
+        : null,
+  }
+}
+
+type TestCohort = { isTestUser: boolean; cohortName: string | null }
+
+/** Maps a stored PWA_RESUME submit bundle to a canonical SubmitInput. */
+function toPwaResumeSubmitInput(payload: Qgv2PwaResumeSubmitPayload, cohort: TestCohort): SubmitInput {
+  return {
+    phone: payload.phone,
+    name: payload.name,
+    idNumber: payload.idNumber ?? null,
+    skills: payload.skills,
+    serviceAreas: payload.serviceAreas,
+    availability: joinAvailability(payload.availability),
+    experience: payload.experience ?? null,
+    evidenceNote: payload.evidenceNote ?? null,
+    evidenceFileUrls: payload.evidenceFileUrls ?? [],
+    certificationRef: payload.certificationRef ?? null,
+    hourlyRate: payload.hourlyRate ?? null,
+    isTestUser: cohort.isTestUser,
+    cohortName: cohort.cohortName,
+    ctwaReferral: (payload.ctwaReferral ?? null) as SubmitInput['ctwaReferral'],
+  }
+}
+
+/** Maps a stored PWA_SELF_SERVE submit bundle to a canonical SubmitInput. */
+function toPwaSelfServeSubmitInput(
+  payload: Qgv2PwaSelfServeSubmitPayload,
+  cohort: TestCohort,
+  providerId: string,
+): SubmitInput {
+  return {
+    phone: payload.phone,
+    name: payload.name,
+    email: payload.email ?? null,
+    skills: payload.skills,
+    serviceAreas: payload.serviceAreas,
+    availability: joinAvailability(payload.availability),
+    experience: payload.experience ?? null,
+    evidenceNote: payload.evidenceNote ?? null,
+    evidenceFileUrls: payload.evidenceFileUrls ?? [],
+    certificationRef: payload.certificationRef ?? null,
+    callOutFee: payload.callOutFee ?? null,
+    hourlyRate: payload.hourlyRate ?? null,
+    reference1Name: payload.reference1Name ?? null,
+    reference1Mobile: payload.reference1Mobile ?? null,
+    reference2Name: payload.reference2Name ?? null,
+    reference2Mobile: payload.reference2Mobile ?? null,
+    isTestUser: cohort.isTestUser,
+    cohortName: cohort.cohortName,
+    providerId,
+  }
+}
+
+/**
+ * Shared MORE_INFO_REQUIRED creator for the FAILED×2 / manual-review paths.
+ *
+ * Creates the application row via the canonical submitProviderApplication with
+ * statusOverride:'MORE_INFO_REQUIRED' + initialNotes (the [quality-gate] note,
+ * written atomically) + onConflict:'link' (a KYC-window race links rather than
+ * throwing), then links the draft and verification. No provider category or rate
+ * rows are written on these paths — matching the original inline creators, which
+ * only wrote the application row + note. Returns the application id (existing id
+ * on a linked conflict).
+ */
+async function createMoreInfoApplicationAndLink(
+  tx: Prisma.TransactionClient,
+  args: {
+    submitInput: SubmitInput
+    note: string
+    draftId: string
+    verificationId: string
+  },
+): Promise<string> {
+  const { application } = await submitProviderApplication(tx, args.submitInput, {
+    source: 'web',
+    statusOverride: 'MORE_INFO_REQUIRED',
+    onConflict: 'link',
+    initialNotes: args.note,
+  })
+  const applicationId = application.id
+
+  await tx.providerApplicationDraft.update({
+    where: { id: args.draftId },
+    data: { submittedApplicationId: applicationId },
+  })
+  await tx.providerIdentityVerification.update({
+    where: { id: args.verificationId },
+    data: { providerApplicationId: applicationId },
+  })
+  return applicationId
 }
 
 // ─── Type for the WHATSAPP channel submit bundle ──────────────────────────────
@@ -174,286 +352,6 @@ interface Qgv2PwaSelfServeSubmitPayload {
   profilePhotoUrl: string | null
 }
 
-// ─── Internal: create ProviderApplication inline (with completion re-check) ──
-
-async function createApplicationInline(
-  tx: Prisma.TransactionClient,
-  args: {
-    submitApplicationArgs: Qgv2WhatsappSubmitPayload['submitApplicationArgs']
-    providerId: string
-    status: 'PENDING' | 'MORE_INFO_REQUIRED'
-    notesAppend: string | null
-    draft?: { id: string }
-  },
-) {
-  const a = args.submitApplicationArgs
-
-  // Defense-in-depth: re-check for an active application that may have been
-  // created during the KYC window (e.g. a concurrent WhatsApp submit or a
-  // support-team manual create). If one exists, link the draft to it and skip
-  // the duplicate create rather than creating a second row.
-  const conflict = await tx.providerApplication.findFirst({
-    where: {
-      phone: a.phone,
-      status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
-    },
-    select: { id: true, status: true },
-  })
-  if (conflict) {
-    if (args.draft) {
-      const draftId = args.draft.id
-      await tx.providerApplicationDraft.update({
-        where: { id: draftId },
-        data: { submittedApplicationId: conflict.id },
-      }).catch((err) => {
-        console.error('[quality-gate-submission] createApplicationInline: failed to link draft to existing application', {
-          draftId,
-          conflictApplicationId: conflict.id,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      })
-    }
-    console.warn('[quality-gate-submission] createApplicationInline: active application already exists, skipping duplicate create', {
-      existingApplicationId: conflict.id,
-      existingStatus: conflict.status,
-      phone: a.phone,
-    })
-    return { id: conflict.id, _skippedDuplicate: true as const }
-  }
-
-  // Fix B — defense-in-depth: re-evaluate the evidence and certification gates
-  // at completion time. The gate was evaluated when the draft was created, but
-  // the WhatsApp path bypasses submitProviderApplication (which enforces the
-  // gate when the flag is ON). If an upstream path skipped the gate (flag was
-  // OFF at draft-create time and turned ON before completion, or a concurrent
-  // path bypassed the check), a PENDING application must not be created for an
-  // under-qualified applicant. Downgrade to MORE_INFO_REQUIRED with a note so
-  // ops can review rather than silently dropping the applicant.
-  if (args.status === 'PENDING') {
-    const evidenceResult = evaluateEvidenceGate(a.evidenceFileUrls ?? [])
-    const certResult = evaluateCertificationGate(a.skills ?? [], Boolean(a.certificationRef))
-    if (!evidenceResult.ok || !certResult.ok) {
-      console.warn('[quality-gate-submission] createApplicationInline: evidence/cert gate failed at completion — downgrading to MORE_INFO_REQUIRED', {
-        phone: a.phone,
-        evidenceHave: evidenceResult.have,
-        evidenceNeed: evidenceResult.need,
-        certRequired: certResult.required,
-        certOk: certResult.ok,
-      })
-      args = {
-        ...args,
-        status: 'MORE_INFO_REQUIRED',
-        notesAppend: appendQualityGateNote(args.notesAppend ?? null, 'evidence/certification incomplete at KYC completion'),
-      }
-    }
-  }
-
-  const availabilityStr = Array.isArray(a.availability)
-    ? (a.availability as string[]).join(', ')
-    : a.availability ?? null
-
-  const application = await tx.providerApplication.create({
-    data: {
-      phone: a.phone,
-      name: a.name,
-      email: a.email ?? null,
-      idNumber: a.idNumber ?? null,
-      skills: a.skills,
-      serviceAreas: a.serviceAreas,
-      experience: a.experience ?? null,
-      availability: availabilityStr,
-      callOutFee: a.callOutFee ?? null,
-      hourlyRate: a.hourlyRate ?? null,
-      rateNegotiable: a.rateNegotiable,
-      weekendJobs: a.weekendJobs,
-      sameDayJobs: a.sameDayJobs,
-      evidenceNote: a.evidenceNote ?? null,
-      evidenceFileUrls: a.evidenceFileUrls ?? [],
-      alternateMobileE164: a.alternateMobileE164 ?? null,
-      preferredLanguage: a.preferredLanguage ?? null,
-      reference1Name: a.reference1Name ?? null,
-      reference1Mobile: a.reference1Mobile ?? null,
-      reference2Name: a.reference2Name ?? null,
-      reference2Mobile: a.reference2Mobile ?? null,
-      isTestUser: a.isTestUser ?? false,
-      cohortName: a.cohortName ?? null,
-      providerId: args.providerId,
-      status: args.status,
-      submittedAt: new Date(),
-      // CTWA ad attribution (null-safe)
-      ...(a.ctwaReferral != null
-        ? {
-            ctwaSourceType: (a.ctwaReferral as Record<string, unknown>).sourceType as string | undefined ?? null,
-            ctwaSourceId: (a.ctwaReferral as Record<string, unknown>).sourceId as string | undefined ?? null,
-            ctwaClid: (a.ctwaReferral as Record<string, unknown>).ctwaClid as string | undefined ?? null,
-            ctwaHeadline: (a.ctwaReferral as Record<string, unknown>).headline as string | undefined ?? null,
-            ctwaCapturedAt: (a.ctwaReferral as Record<string, unknown>).capturedAt
-              ? new Date((a.ctwaReferral as Record<string, unknown>).capturedAt as string)
-              : null,
-          }
-        : {}),
-    },
-  })
-
-  if (args.notesAppend) {
-    await tx.providerApplication.update({
-      where: { id: application.id },
-      data: { notes: args.notesAppend },
-    })
-  }
-
-  return application
-}
-
-// ─── Internal: create ProviderApplication inline for PWA channels (failure path) ─
-// Used when a PWA_RESUME or PWA_SELF_SERVE applicant fails KYC a 2nd+ time.
-// submitProviderApplication always creates PENDING and has a conflict guard, so
-// we create the row directly (mirroring createApplicationInline) with the status
-// override needed for the MORE_INFO_REQUIRED failure path.
-
-async function createPwaApplicationInline(
-  tx: Prisma.TransactionClient,
-  args: {
-    phone: string
-    name: string
-    email?: string | null
-    idNumber?: string | null
-    skills: string[]
-    serviceAreas: string[]
-    experience?: string | null
-    availability: string
-    evidenceNote?: string | null
-    evidenceFileUrls?: string[]
-    callOutFee?: number | null
-    reference1Name?: string | null
-    reference1Mobile?: string | null
-    reference2Name?: string | null
-    reference2Mobile?: string | null
-    ctwaReferral?: unknown | null
-    providerId?: string | null
-    // Fix C: test-cohort fields — caller computes createTestCohortContext(phone)
-    isTestUser?: boolean
-    cohortName?: string | null
-    status: 'PENDING' | 'MORE_INFO_REQUIRED'
-    notesAppend: string | null
-    draft?: { id: string }
-  },
-) {
-  // Defense-in-depth: re-check for an active application that may have been
-  // created during the KYC window. If one exists, link the draft and skip.
-  const conflict = await tx.providerApplication.findFirst({
-    where: {
-      phone: args.phone,
-      status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
-    },
-    select: { id: true, status: true },
-  })
-  if (conflict) {
-    if (args.draft) {
-      const draftId = args.draft.id
-      await tx.providerApplicationDraft.update({
-        where: { id: draftId },
-        data: { submittedApplicationId: conflict.id },
-      }).catch((err) => {
-        console.error('[quality-gate-submission] createPwaApplicationInline: failed to link draft to existing application', {
-          draftId,
-          conflictApplicationId: conflict.id,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      })
-    }
-    console.warn('[quality-gate-submission] createPwaApplicationInline: active application already exists, skipping duplicate create', {
-      existingApplicationId: conflict.id,
-      existingStatus: conflict.status,
-      phone: args.phone,
-    })
-    return { id: conflict.id, _skippedDuplicate: true as const }
-  }
-
-  const application = await tx.providerApplication.create({
-    data: {
-      phone: args.phone,
-      name: args.name,
-      email: args.email ?? null,
-      idNumber: args.idNumber ?? null,
-      skills: args.skills,
-      serviceAreas: args.serviceAreas,
-      experience: args.experience ?? null,
-      availability: args.availability,
-      evidenceNote: args.evidenceNote ?? null,
-      evidenceFileUrls: args.evidenceFileUrls ?? [],
-      callOutFee: args.callOutFee ?? null,
-      reference1Name: args.reference1Name ?? null,
-      reference1Mobile: args.reference1Mobile ?? null,
-      reference2Name: args.reference2Name ?? null,
-      reference2Mobile: args.reference2Mobile ?? null,
-      // Note: certificationRef is not a column on ProviderApplication; it lives
-      // only in the draft's submitPayload for quality-gate evaluation.
-      // Fix C: test-cohort fields — caller passes from createTestCohortContext
-      isTestUser: args.isTestUser ?? false,
-      cohortName: args.cohortName ?? null,
-      providerId: args.providerId ?? null,
-      status: args.status,
-      submittedAt: new Date(),
-      // CTWA ad attribution (null-safe)
-      ...(args.ctwaReferral != null
-        ? {
-            ctwaSourceType: (args.ctwaReferral as Record<string, unknown>).sourceType as string | undefined ?? null,
-            ctwaSourceId: (args.ctwaReferral as Record<string, unknown>).sourceId as string | undefined ?? null,
-            ctwaClid: (args.ctwaReferral as Record<string, unknown>).ctwaClid as string | undefined ?? null,
-            ctwaHeadline: (args.ctwaReferral as Record<string, unknown>).headline as string | undefined ?? null,
-            ctwaCapturedAt: (args.ctwaReferral as Record<string, unknown>).capturedAt
-              ? new Date((args.ctwaReferral as Record<string, unknown>).capturedAt as string)
-              : null,
-          }
-        : {}),
-    },
-  })
-
-  if (args.notesAppend) {
-    await tx.providerApplication.update({
-      where: { id: application.id },
-      data: { notes: args.notesAppend },
-    })
-  }
-
-  return application
-}
-
-// ─── Internal: create provider categories in tx ───────────────────────────────
-
-async function createProviderCategoryRows(
-  tx: any, // TODO: replace with Prisma.TransactionClient once the tx type is exported/threadable
-  providerId: string,
-  payload: Qgv2WhatsappSubmitPayload,
-) {
-  const providerCategoryRows = await Promise.all(
-    payload.canonicalSkills.map(async (skill: string) => {
-      const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
-      const approvalStatus = await resolveInitialApprovalStatus(providerId, categorySlug)
-      const compliance = getServiceComplianceRequirement(skill)
-      return {
-        certificationRequired: Boolean(compliance.certificationRequiredForApproval),
-        certificationStatus: compliance.certificationRecommended
-          ? (payload.replayInputs.certificationProofAttachmentIds?.length ?? 0) > 0
-            ? 'SUBMITTED'
-            : 'REQUESTED'
-          : 'NOT_REQUIRED',
-        providerId,
-        categorySlug,
-        yearsExperience: yearsExperienceFromLabel(payload.replayInputs.experience),
-        skillLevel: skillLevelFromExperienceLabel(payload.replayInputs.experience),
-        approvalStatus,
-      }
-    }),
-  )
-
-  if (providerCategoryRows.length > 0) {
-    // providerCategory may not exist in all env migrations; guard with optional chaining
-    await tx.providerCategory?.createMany?.({ data: providerCategoryRows, skipDuplicates: true })
-  }
-}
-
 // ─── Internal: link attachments non-fatally ───────────────────────────────────
 
 async function linkAttachmentToApplication(
@@ -504,88 +402,44 @@ async function completePwaResumeChannel(
     // harmless. Consuming it would require loading the ProviderResumeToken by some
     // key not present in this payload, so we skip it to avoid a partial-data lookup.
 
-    // Fix A: conflict-aware create. If a live application already exists for this
-    // phone (created concurrently during the KYC window), link the draft to it and
-    // return its id rather than throwing ProviderApplicationConflictError.
-    const conflict = await tx.providerApplication.findFirst({
-      where: {
-        phone: payload.phone,
-        status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
-      },
-      select: { id: true, status: true },
-    })
-
-    if (conflict) {
-      console.warn('[quality-gate-submission] completePwaResumeChannel: active application already exists, linking draft (no duplicate create)', {
-        existingApplicationId: conflict.id,
-        existingStatus: conflict.status,
-        phone: payload.phone,
-      })
-      await tx.providerApplicationDraft.update({
-        where: { id: draft.id },
-        data: { submittedApplicationId: conflict.id },
-      })
-      await tx.providerIdentityVerification.update({
-        where: { id: verificationId },
-        data: { providerApplicationId: conflict.id },
-      })
-      applicationId = conflict.id
-      return
-    }
-
-    // Fix B: evidence/cert defense-in-depth before creating PENDING.
-    const evidenceResult = evaluateEvidenceGate(payload.evidenceFileUrls ?? [])
-    const certResult = evaluateCertificationGate(payload.skills ?? [], Boolean(payload.certificationRef))
-    const gatePass = evidenceResult.ok && certResult.ok
-    const finalStatus: 'PENDING' | 'MORE_INFO_REQUIRED' = gatePass ? 'PENDING' : 'MORE_INFO_REQUIRED'
-
-    if (!gatePass) {
-      console.warn('[quality-gate-submission] completePwaResumeChannel: evidence/cert gate failed — creating MORE_INFO_REQUIRED', {
-        phone: payload.phone,
-        evidenceHave: evidenceResult.have,
-        evidenceNeed: evidenceResult.need,
-        certRequired: certResult.required,
-        certOk: certResult.ok,
-      })
-    }
-
-    const availabilityStr = Array.isArray(payload.availability)
-      ? (payload.availability as string[]).join(', ')
-      : payload.availability ?? null
-
-    const application = await tx.providerApplication.create({
-      data: {
+    // Delegate row creation to the canonical creator. onConflict:'link' handles the
+    // KYC-window race (link, no throw, no duplicate); the evidence/cert defense-in-
+    // depth re-check downgrades an under-bar applicant to MORE_INFO_REQUIRED with a
+    // [quality-gate] note (statusOverride + initialNotes), else a PENDING create.
+    const { application, conflicted } = await submitProviderApplication(
+      tx,
+      {
         phone: payload.phone,
         name: payload.name,
         idNumber: payload.idNumber ?? null,
         skills: payload.skills,
         serviceAreas: payload.serviceAreas,
-        availability: availabilityStr,
+        availability: joinAvailability(payload.availability),
         experience: payload.experience ?? null,
         evidenceNote: payload.evidenceNote ?? null,
         evidenceFileUrls: payload.evidenceFileUrls ?? [],
+        certificationRef: payload.certificationRef ?? null,
         hourlyRate: payload.hourlyRate ?? null,
-        status: finalStatus,
-        submittedAt: new Date(),
-        ...(payload.ctwaReferral != null
-          ? {
-              ctwaSourceType: (payload.ctwaReferral as Record<string, unknown>).sourceType as string | undefined ?? null,
-              ctwaSourceId: (payload.ctwaReferral as Record<string, unknown>).sourceId as string | undefined ?? null,
-              ctwaClid: (payload.ctwaReferral as Record<string, unknown>).ctwaClid as string | undefined ?? null,
-              ctwaHeadline: (payload.ctwaReferral as Record<string, unknown>).headline as string | undefined ?? null,
-              ctwaCapturedAt: (payload.ctwaReferral as Record<string, unknown>).capturedAt
-                ? new Date((payload.ctwaReferral as Record<string, unknown>).capturedAt as string)
-                : null,
-            }
-          : {}),
+        ctwaReferral: (payload.ctwaReferral ?? null) as SubmitInput['ctwaReferral'],
       },
-    })
+      {
+        source: 'web',
+        onConflict: 'link',
+        ...evaluateCompletionGate(
+          payload.skills ?? [],
+          payload.evidenceFileUrls ?? [],
+          payload.certificationRef ?? null,
+          'completePwaResumeChannel',
+        ),
+      },
+    )
     applicationId = application.id
 
-    if (!gatePass) {
-      await tx.providerApplication.update({
-        where: { id: applicationId },
-        data: { notes: appendQualityGateNote(null, 'evidence/certification incomplete at KYC completion') },
+    if (conflicted) {
+      console.warn('[quality-gate-submission] completePwaResumeChannel: active application already exists, linking draft (no duplicate create)', {
+        existingApplicationId: application.id,
+        existingStatus: application.status,
+        phone: payload.phone,
       })
     }
 
@@ -668,70 +522,27 @@ async function completePwaSelfServeChannel(
       skipEnrichment: true,
     })
 
-    // Fix A: conflict-aware create. If a live application already exists for this
-    // phone (created concurrently during the KYC window), link the draft to it and
-    // return its id rather than throwing ProviderApplicationConflictError.
-    const conflict = await tx.providerApplication.findFirst({
-      where: {
-        phone: payload.phone,
-        status: { in: [...ACTIVE_PROVIDER_APPLICATION_STATUSES] },
-      },
-      select: { id: true, status: true },
-    })
-
-    if (conflict) {
-      console.warn('[quality-gate-submission] completePwaSelfServeChannel: active application already exists, linking draft (no duplicate create)', {
-        existingApplicationId: conflict.id,
-        existingStatus: conflict.status,
-        phone: payload.phone,
-      })
-      await tx.providerApplicationDraft.update({
-        where: { id: draft.id },
-        data: { submittedApplicationId: conflict.id },
-      })
-      await tx.providerIdentityVerification.update({
-        where: { id: verificationId },
-        data: { providerApplicationId: conflict.id },
-      })
-      applicationId = conflict.id
-      return
-    }
-
-    // Fix B: evidence/cert defense-in-depth before creating PENDING.
-    const evidenceResult = evaluateEvidenceGate(payload.evidenceFileUrls ?? [])
-    const certResult = evaluateCertificationGate(payload.skills ?? [], Boolean(payload.certificationRef))
-    const gatePass = evidenceResult.ok && certResult.ok
-    const finalStatus: 'PENDING' | 'MORE_INFO_REQUIRED' = gatePass ? 'PENDING' : 'MORE_INFO_REQUIRED'
-
-    if (!gatePass) {
-      console.warn('[quality-gate-submission] completePwaSelfServeChannel: evidence/cert gate failed — creating MORE_INFO_REQUIRED', {
-        phone: payload.phone,
-        evidenceHave: evidenceResult.have,
-        evidenceNeed: evidenceResult.need,
-        certRequired: certResult.required,
-        certOk: certResult.ok,
-      })
-    }
-
     // Resume-token decision: same as PWA_RESUME — the resume token is not stored
     // in the submitPayload and retrieving it by phone/draftId would require an
     // extra lookup. The idempotency guard (draft.submittedApplicationId) makes
     // a stale token harmless, so we skip consumption here.
-    const availabilityStr = Array.isArray(payload.availability)
-      ? (payload.availability as string[]).join(', ')
-      : payload.availability ?? null
-
-    const application = await tx.providerApplication.create({
-      data: {
+    //
+    // Delegate row creation to the canonical creator. onConflict:'link' handles the
+    // KYC-window race; the evidence/cert re-check downgrades an under-bar applicant
+    // to MORE_INFO_REQUIRED with a [quality-gate] note (statusOverride+initialNotes).
+    const { application, conflicted } = await submitProviderApplication(
+      tx,
+      {
         phone: payload.phone,
         name: payload.name,
         email: payload.email ?? null,
         skills: payload.skills,
         serviceAreas: payload.serviceAreas,
-        availability: availabilityStr,
+        availability: joinAvailability(payload.availability),
         experience: payload.experience ?? null,
         evidenceNote: payload.evidenceNote ?? null,
         evidenceFileUrls: payload.evidenceFileUrls ?? [],
+        certificationRef: payload.certificationRef ?? null,
         callOutFee: payload.callOutFee ?? null,
         hourlyRate: payload.hourlyRate ?? null,
         reference1Name: payload.reference1Name ?? null,
@@ -742,34 +553,51 @@ async function completePwaSelfServeChannel(
         isTestUser: cohort.isTestUser,
         cohortName: cohort.cohortName,
         providerId,
-        status: finalStatus,
-        submittedAt: new Date(),
       },
-    })
+      {
+        source: 'web',
+        onConflict: 'link',
+        ...evaluateCompletionGate(
+          payload.skills ?? [],
+          payload.evidenceFileUrls ?? [],
+          payload.certificationRef ?? null,
+          'completePwaSelfServeChannel',
+        ),
+      },
+    )
     applicationId = application.id
 
-    if (!gatePass) {
-      await tx.providerApplication.update({
-        where: { id: applicationId },
-        data: { notes: appendQualityGateNote(null, 'evidence/certification incomplete at KYC completion') },
+    if (conflicted) {
+      console.warn('[quality-gate-submission] completePwaSelfServeChannel: active application already exists, linking draft (no duplicate create)', {
+        existingApplicationId: application.id,
+        existingStatus: application.status,
+        phone: payload.phone,
       })
+      // Linked to a pre-existing application: its rate rows already exist; skip the
+      // replay and just link the draft + verification below.
+      await tx.providerApplicationDraft.update({
+        where: { id: draft.id },
+        data: { submittedApplicationId: applicationId },
+      })
+      await tx.providerIdentityVerification.update({
+        where: { id: verificationId },
+        data: { providerApplicationId: applicationId },
+      })
+      return
     }
 
     // Fix C: replay providerRate rows, mirroring the gate-OFF self-serve path in
     // pwa-flow.ts. Only written when callOutFee is present (the trigger condition
     // used by the gate-OFF path). hourlyRate is replayed alongside when present.
     if (payload.callOutFee !== null && payload.callOutFee !== undefined && payload.skills.length > 0) {
-      const rateRows = payload.skills.map((skill) => {
-        const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
-        return {
-          providerId,
-          categorySlug,
-          callOutFee: payload.callOutFee,
-          hourlyRate: typeof payload.hourlyRate === 'number' ? payload.hourlyRate : null,
-          rateNegotiable: true,
-          quoteAfterInspection: false,
-        }
-      })
+      const rateRows = payload.skills.map((skill) => ({
+        providerId,
+        categorySlug: categorySlugForSkill(skill),
+        callOutFee: payload.callOutFee,
+        hourlyRate: typeof payload.hourlyRate === 'number' ? payload.hourlyRate : null,
+        rateNegotiable: true,
+        quoteAfterInspection: false,
+      }))
       // providerRate may not exist in all env migrations; guard with optional chaining
       // TODO: remove optional chaining once providerRate migration is confirmed in all envs
       await (tx as any) // TODO: drop the `as any` once providerRate is guaranteed present in the Prisma tx client type (post-migration)
@@ -861,49 +689,48 @@ export async function completeApplicationForPassedVerification(
   let applicationId: string
 
   await client.$transaction(async (tx) => {
-    // a. Sync provider record (creates or updates the Provider row)
-    // syncProviderRecord returns the provider id (string) directly
-    providerId = await syncProviderRecord(tx as unknown as typeof db, {
-      ...payload.syncProviderArgs,
-      skipEnrichment: true,
-    })
+    // a–c. Delegate to the canonical WhatsApp finalizer: syncProviderRecord →
+    //      submitProviderApplication → providerCategory.createMany →
+    //      providerRate.createMany. This is the SAME code the gate-OFF handlePending
+    //      path runs, so the two can never diverge again.
+    //
+    //   - onConflict:'link' — a live application created during the KYC window is
+    //     linked (below) rather than throwing (a throw here has no processedAt →
+    //     the completion webhook retries forever). No duplicate row is created.
+    //   - statusOverride/initialNotes — defense-in-depth evidence/cert re-check:
+    //     an under-bar applicant is created as MORE_INFO_REQUIRED with a
+    //     [quality-gate] note instead of PENDING. On a pass these are undefined
+    //     (→ PENDING create, no note), matching the gate-OFF path exactly.
+    const gateOpts: FinalizeWhatsappOpts = {
+      onConflict: 'link',
+      ...evaluateCompletionGate(
+        payload.submitApplicationArgs.skills ?? [],
+        payload.submitApplicationArgs.evidenceFileUrls ?? [],
+        payload.submitApplicationArgs.certificationRef ?? null,
+        'completeApplicationForPassedVerification (WHATSAPP)',
+      ),
+    }
+    const finalize = await finalizeWhatsappProviderSubmission(
+      tx,
+      toWhatsappFinalizeInput(payload),
+      gateOpts,
+    )
+    providerId = finalize.providerId
+    applicationId = finalize.application.id
 
-    // b. Create application inline (bypasses quality gate re-check — the gate
-    //    was already evaluated when the draft was created in registration.ts)
-    const application = await createApplicationInline(tx, {
-      submitApplicationArgs: { ...payload.submitApplicationArgs, providerId },
-      providerId,
-      status: 'PENDING',
-      notesAppend: null,
-      draft,
-    })
-    applicationId = application.id
-
-    // c. Create provider category rows
-    await createProviderCategoryRows(tx, providerId, payload)
-
-    // Fix C: replay providerRate rows, mirroring the gate-OFF WhatsApp path in
-    // registration.ts. Only written when callOutFee is present (the trigger condition
-    // used by the gate-OFF path). hourlyRate and rateNegotiable are replayed alongside.
-    if (
-      typeof payload.replayInputs.callOutFee === 'number' &&
-      payload.canonicalSkills.length > 0
-    ) {
-      const rateRows = payload.canonicalSkills.map((skill: string) => {
-        const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
-        return {
-          providerId,
-          categorySlug,
-          callOutFee: payload.replayInputs.callOutFee,
-          hourlyRate: typeof payload.replayInputs.hourlyRate === 'number' ? payload.replayInputs.hourlyRate : null,
-          rateNegotiable: payload.replayInputs.rateNegotiable !== false,
-          quoteAfterInspection: false,
-        }
+    // On a linked conflict the category/rate rows already exist and attachments
+    // belong to the pre-existing application; link the draft + verification below
+    // and skip the replay-attachment linking (mirrors the old skip-duplicate path).
+    if (finalize.conflicted) {
+      await tx.providerApplicationDraft.update({
+        where: { id: draft.id },
+        data: { submittedApplicationId: applicationId },
       })
-      // providerRate may not exist in all env migrations; guard with optional chaining
-      // TODO: remove optional chaining once providerRate migration is confirmed in all envs
-      await (tx as any) // TODO: drop the `as any` once providerRate is guaranteed present in the Prisma tx client type (post-migration)
-        .providerRate?.createMany?.({ data: rateRows, skipDuplicates: true })
+      await tx.providerIdentityVerification.update({
+        where: { id: verificationId },
+        data: { providerApplicationId: applicationId },
+      })
+      return
     }
 
     // d. Link evidence attachments (non-fatal for each)
@@ -1062,28 +889,19 @@ export async function recordFailedVerificationForApplication(
           skipEnrichment: true,
         })
 
-        // Create application with MORE_INFO_REQUIRED
-        const application = await createApplicationInline(tx, {
-          submitApplicationArgs: { ...payload.submitApplicationArgs, providerId },
-          providerId,
-          status: 'MORE_INFO_REQUIRED',
-          notesAppend: qualityGateNote,
-        })
-        applicationId = application.id
-
-        // Link draft and verification to the new application
-        await tx.providerApplicationDraft.update({
-          where: { id: draft.id },
-          data: { submittedApplicationId: applicationId },
-        })
-        await tx.providerIdentityVerification.update({
-          where: { id: verificationId },
-          data: { providerApplicationId: applicationId },
+        // Create MORE_INFO_REQUIRED via the canonical creator. No category/rate
+        // rows on the failure path (matching the original createApplicationInline,
+        // which only wrote the application row + note). onConflict:'link' avoids the
+        // retry-forever throw on a KYC-window race.
+        applicationId = await createMoreInfoApplicationAndLink(tx, {
+          submitInput: toWhatsappSubmitInput(payload.submitApplicationArgs, providerId),
+          note: qualityGateNote,
+          draftId: draft.id,
+          verificationId,
         })
       })
     } else if (channel === 'PWA_RESUME') {
-      // PWA_RESUME: submitProviderApplication always creates PENDING and has a
-      // conflict guard, so we create the row directly with the status override.
+      // PWA_RESUME: create the MORE_INFO_REQUIRED row via the canonical creator.
       // No WhatsApp message is sent — the in-flight re-nudge cron + applicant's
       // status polling handle the MORE_INFO_REQUIRED state on the web side.
       const payload = rawPayload as unknown as Qgv2PwaResumeSubmitPayload
@@ -1091,36 +909,16 @@ export async function recordFailedVerificationForApplication(
       await client.$transaction(async (tx) => {
         // Fix C: compute test cohort from phone
         const resumeFailCohort = createTestCohortContext(payload.phone)
-        const application = await createPwaApplicationInline(tx, {
-          phone: payload.phone,
-          name: payload.name,
-          idNumber: payload.idNumber ?? null,
-          skills: payload.skills,
-          serviceAreas: payload.serviceAreas,
-          availability: payload.availability,
-          experience: payload.experience ?? null,
-          evidenceNote: payload.evidenceNote ?? null,
-          evidenceFileUrls: payload.evidenceFileUrls ?? [],
-          ctwaReferral: payload.ctwaReferral ?? null,
-          isTestUser: resumeFailCohort.isTestUser,
-          cohortName: resumeFailCohort.cohortName,
-          status: 'MORE_INFO_REQUIRED',
-          notesAppend: qualityGateNote,
-        })
-        applicationId = application.id
-
-        await tx.providerApplicationDraft.update({
-          where: { id: draft.id },
-          data: { submittedApplicationId: applicationId },
-        })
-        await tx.providerIdentityVerification.update({
-          where: { id: verificationId },
-          data: { providerApplicationId: applicationId },
+        applicationId = await createMoreInfoApplicationAndLink(tx, {
+          submitInput: toPwaResumeSubmitInput(payload, resumeFailCohort),
+          note: qualityGateNote,
+          draftId: draft.id,
+          verificationId,
         })
       })
     } else if (channel === 'PWA_SELF_SERVE') {
       // PWA_SELF_SERVE: sync the Provider row first (gate-ON deferred creation),
-      // then create the application with MORE_INFO_REQUIRED directly.
+      // then create the MORE_INFO_REQUIRED row via the canonical creator.
       // No WhatsApp message is sent — the web flow handles the MORE_INFO state.
       const payload = rawPayload as unknown as Qgv2PwaSelfServeSubmitPayload
 
@@ -1142,37 +940,11 @@ export async function recordFailedVerificationForApplication(
           skipEnrichment: true,
         })
 
-        const application = await createPwaApplicationInline(tx, {
-          phone: payload.phone,
-          name: payload.name,
-          email: payload.email ?? null,
-          skills: payload.skills,
-          serviceAreas: payload.serviceAreas,
-          availability: payload.availability,
-          experience: payload.experience ?? null,
-          evidenceNote: payload.evidenceNote ?? null,
-          evidenceFileUrls: payload.evidenceFileUrls ?? [],
-          callOutFee: payload.callOutFee ?? null,
-          reference1Name: payload.reference1Name ?? null,
-          reference1Mobile: payload.reference1Mobile ?? null,
-          reference2Name: payload.reference2Name ?? null,
-          reference2Mobile: payload.reference2Mobile ?? null,
-          // Fix C: forward test-cohort computed above for syncProviderRecord
-          isTestUser: failCohort.isTestUser,
-          cohortName: failCohort.cohortName,
-          providerId,
-          status: 'MORE_INFO_REQUIRED',
-          notesAppend: qualityGateNote,
-        })
-        applicationId = application.id
-
-        await tx.providerApplicationDraft.update({
-          where: { id: draft.id },
-          data: { submittedApplicationId: applicationId },
-        })
-        await tx.providerIdentityVerification.update({
-          where: { id: verificationId },
-          data: { providerApplicationId: applicationId },
+        applicationId = await createMoreInfoApplicationAndLink(tx, {
+          submitInput: toPwaSelfServeSubmitInput(payload, failCohort, providerId),
+          note: qualityGateNote,
+          draftId: draft.id,
+          verificationId,
         })
       })
     } else {
@@ -1284,23 +1056,12 @@ export async function recordManualReviewForApplication(
         skipEnrichment: true,
       })
 
-      // WHATSAPP: isTestUser/cohortName already carried in payload.submitApplicationArgs — no createTestCohortContext needed here.
-      const application = await createApplicationInline(tx, {
-        submitApplicationArgs: { ...payload.submitApplicationArgs, providerId },
-        providerId,
-        status: 'MORE_INFO_REQUIRED',
-        notesAppend: qualityGateNote,
-        draft,
-      })
-      applicationId = application.id
-
-      await tx.providerApplicationDraft.update({
-        where: { id: draft.id },
-        data: { submittedApplicationId: applicationId },
-      })
-      await tx.providerIdentityVerification.update({
-        where: { id: verificationId },
-        data: { providerApplicationId: applicationId },
+      // WHATSAPP: isTestUser/cohortName already carried in payload.submitApplicationArgs.
+      applicationId = await createMoreInfoApplicationAndLink(tx, {
+        submitInput: toWhatsappSubmitInput(payload.submitApplicationArgs, providerId),
+        note: qualityGateNote,
+        draftId: draft.id,
+        verificationId,
       })
     })
   } else if (channel === 'PWA_RESUME') {
@@ -1308,32 +1069,11 @@ export async function recordManualReviewForApplication(
 
     await client.$transaction(async (tx) => {
       const manualCohort = createTestCohortContext(payload.phone)
-      const application = await createPwaApplicationInline(tx, {
-        phone: payload.phone,
-        name: payload.name,
-        idNumber: payload.idNumber ?? null,
-        skills: payload.skills,
-        serviceAreas: payload.serviceAreas,
-        availability: payload.availability,
-        experience: payload.experience ?? null,
-        evidenceNote: payload.evidenceNote ?? null,
-        evidenceFileUrls: payload.evidenceFileUrls ?? [],
-        ctwaReferral: payload.ctwaReferral ?? null,
-        isTestUser: manualCohort.isTestUser,
-        cohortName: manualCohort.cohortName,
-        status: 'MORE_INFO_REQUIRED',
-        notesAppend: qualityGateNote,
-        draft,
-      })
-      applicationId = application.id
-
-      await tx.providerApplicationDraft.update({
-        where: { id: draft.id },
-        data: { submittedApplicationId: applicationId },
-      })
-      await tx.providerIdentityVerification.update({
-        where: { id: verificationId },
-        data: { providerApplicationId: applicationId },
+      applicationId = await createMoreInfoApplicationAndLink(tx, {
+        submitInput: toPwaResumeSubmitInput(payload, manualCohort),
+        note: qualityGateNote,
+        draftId: draft.id,
+        verificationId,
       })
     })
   } else if (channel === 'PWA_SELF_SERVE') {
@@ -1356,37 +1096,11 @@ export async function recordManualReviewForApplication(
         skipEnrichment: true,
       })
 
-      const application = await createPwaApplicationInline(tx, {
-        phone: payload.phone,
-        name: payload.name,
-        email: payload.email ?? null,
-        skills: payload.skills,
-        serviceAreas: payload.serviceAreas,
-        availability: payload.availability,
-        experience: payload.experience ?? null,
-        evidenceNote: payload.evidenceNote ?? null,
-        evidenceFileUrls: payload.evidenceFileUrls ?? [],
-        callOutFee: payload.callOutFee ?? null,
-        reference1Name: payload.reference1Name ?? null,
-        reference1Mobile: payload.reference1Mobile ?? null,
-        reference2Name: payload.reference2Name ?? null,
-        reference2Mobile: payload.reference2Mobile ?? null,
-        isTestUser: manualCohort.isTestUser,
-        cohortName: manualCohort.cohortName,
-        providerId,
-        status: 'MORE_INFO_REQUIRED',
-        notesAppend: qualityGateNote,
-        draft,
-      })
-      applicationId = application.id
-
-      await tx.providerApplicationDraft.update({
-        where: { id: draft.id },
-        data: { submittedApplicationId: applicationId },
-      })
-      await tx.providerIdentityVerification.update({
-        where: { id: verificationId },
-        data: { providerApplicationId: applicationId },
+      applicationId = await createMoreInfoApplicationAndLink(tx, {
+        submitInput: toPwaSelfServeSubmitInput(payload, manualCohort, providerId),
+        note: qualityGateNote,
+        draftId: draft.id,
+        verificationId,
       })
     })
   } else {

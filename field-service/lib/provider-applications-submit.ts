@@ -36,8 +36,12 @@ export interface SubmitInput {
   idNumber?: string | null
   skills: string[]
   serviceAreas: string[]
-  /** Formatted label, e.g. "Mon, Tue" or "Any day". The caller must format before passing. */
-  availability: string | string[]
+  /**
+   * Formatted label, e.g. "Mon, Tue" or "Any day". The caller must format before
+   * passing. Accepts null (stored as null) for completion replays where the draft
+   * carried no availability.
+   */
+  availability: string | string[] | null
   experience?: string | null
   evidenceNote?: string | null
   evidenceFileUrls?: string[]
