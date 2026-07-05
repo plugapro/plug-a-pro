@@ -55,6 +55,7 @@ export function ReconcilePaymentButton({ paymentId, amountLabel, disabled }: Rec
         description="This marks the payment as PAID via offline collection. Type the payment amount to confirm."
         confirmText={amountLabel}
         confirmLabel="Reconcile"
+        pendingLabel="Reconciling…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

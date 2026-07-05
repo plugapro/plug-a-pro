@@ -55,6 +55,7 @@ export function WriteOffPaymentButton({ paymentId, amountLabel, disabled }: Writ
         description="This marks the payment as FAILED and records the write-off. Type the payment amount to confirm."
         confirmText={amountLabel}
         confirmLabel="Write off"
+        pendingLabel="Writing off…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

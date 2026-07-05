@@ -383,14 +383,24 @@ export default async function AdminValidationQueuePage({
                     {!claimedByCurrentUser ? (
                       <form action={claimValidation}>
                         <input type="hidden" name="jobRequestId" value={request.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton
+                          variant="outline"
+                          size="sm"
+                          disabled={!crudEnabled}
+                          pendingLabel={assignment?.claimedById ? 'Taking over…' : 'Claiming…'}
+                        >
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
                         </SubmitButton>
                       </form>
                     ) : (
                       <form action={releaseValidation}>
                         <input type="hidden" name="jobRequestId" value={request.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton
+                          variant="outline"
+                          size="sm"
+                          disabled={!crudEnabled}
+                          pendingLabel="Releasing…"
+                        >
                           Release
                         </SubmitButton>
                       </form>
@@ -398,14 +408,19 @@ export default async function AdminValidationQueuePage({
 
                     <form action={markReadyForMatching}>
                       <input type="hidden" name="jobRequestId" value={request.id} />
-                      <SubmitButton size="sm" disabled={!crudEnabled}>
+                      <SubmitButton size="sm" disabled={!crudEnabled} pendingLabel="Marking ready…">
                         Mark ready for matching
                       </SubmitButton>
                     </form>
 
                     <form action={cancelRequest}>
                       <input type="hidden" name="jobRequestId" value={request.id} />
-                      <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
+                      <SubmitButton
+                        variant="outline"
+                        size="sm"
+                        disabled={!crudEnabled}
+                        pendingLabel="Cancelling…"
+                      >
                         Cancel request
                       </SubmitButton>
                     </form>

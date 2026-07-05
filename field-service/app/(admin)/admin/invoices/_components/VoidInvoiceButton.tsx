@@ -56,6 +56,7 @@ export function VoidInvoiceButton({ invoiceId, invoiceNumber, disabled }: VoidIn
         description="This clears the invoice PDF and marks the invoice as void. Type the invoice number to confirm."
         confirmText={invoiceNumber}
         confirmLabel="Void"
+        pendingLabel="Voiding…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

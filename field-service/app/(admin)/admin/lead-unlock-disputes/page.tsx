@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { type LeadUnlockDisputeStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { Textarea } from '@/components/ui/textarea'
 import { db } from '@/lib/db'
@@ -219,7 +220,7 @@ export default async function LeadUnlockDisputesPage({
                       Refunds the original unlock credit split where available.
                     </p>
                     <Textarea name="adminNotes" rows={3} placeholder="Admin note (optional)" />
-                    <Button type="submit" className="w-full">Approve and refund</Button>
+                    <FormSubmitButton fullWidth pendingLabel="Approving refund…">Approve and refund</FormSubmitButton>
                   </form>
 
                   <form action={rejectLeadUnlockDisputeFormAction} className="space-y-3 rounded-lg border p-3">
@@ -229,7 +230,7 @@ export default async function LeadUnlockDisputesPage({
                       No wallet balance change is made.
                     </p>
                     <Textarea name="adminNotes" rows={3} required placeholder="Reason for rejection" />
-                    <Button type="submit" variant="outline" className="w-full">Reject</Button>
+                    <FormSubmitButton variant="outline" fullWidth pendingLabel="Rejecting…">Reject</FormSubmitButton>
                   </form>
                 </div>
               ) : (

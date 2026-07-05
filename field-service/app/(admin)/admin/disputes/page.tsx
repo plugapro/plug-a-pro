@@ -390,14 +390,19 @@ export default async function AdminDisputesPage({
                   {!claimedByCurrentUser ? (
                     <form action={claimDisputeAction}>
                       <input type="hidden" name="disputeId" value={dispute.id} />
-                      <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
+                      <SubmitButton
+                        variant="outline"
+                        size="sm"
+                        disabled={!crudEnabled}
+                        pendingLabel={assignment?.claimedById ? 'Taking over…' : 'Claiming…'}
+                      >
                         {assignment?.claimedById ? 'Take over' : 'Claim'}
                       </SubmitButton>
                     </form>
                   ) : (
                     <form action={releaseDisputeAction}>
                       <input type="hidden" name="disputeId" value={dispute.id} />
-                      <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
+                      <SubmitButton variant="outline" size="sm" disabled={!crudEnabled} pendingLabel="Releasing…">
                         Release
                       </SubmitButton>
                     </form>

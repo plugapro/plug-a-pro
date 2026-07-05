@@ -77,7 +77,7 @@ export function ManagePaymentDialog({
               >
                 <input type="hidden" name="paymentId" value={paymentId} />
                 <input type="hidden" name="reason" value="Reconciled offline by admin" />
-                <SubmitButton size="sm" disabled={disabled || !canReconcile}>
+                <SubmitButton size="sm" disabled={disabled || !canReconcile} pendingLabel="Reconciling…">
                   Reconcile
                 </SubmitButton>
               </ActionForm>
@@ -98,7 +98,7 @@ export function ManagePaymentDialog({
                     refreshOnSuccess
                   >
                     <input type="hidden" name="paymentId" value={paymentId} />
-                    <SubmitButton size="sm" variant="outline" disabled={disabled}>
+                    <SubmitButton size="sm" variant="outline" disabled={disabled} pendingLabel="Refreshing…">
                       Refresh status
                     </SubmitButton>
                   </ActionForm>
@@ -108,7 +108,7 @@ export function ManagePaymentDialog({
                     refreshOnSuccess
                   >
                     <input type="hidden" name="paymentId" value={paymentId} />
-                    <SubmitButton size="sm" variant="outline" disabled={disabled || !canCancelPayAtGo}>
+                    <SubmitButton size="sm" variant="outline" disabled={disabled || !canCancelPayAtGo} pendingLabel="Cancelling…">
                       Cancel request
                     </SubmitButton>
                   </ActionForm>
@@ -138,7 +138,7 @@ export function ManagePaymentDialog({
               </div>
               <div className="self-end">
                 <input type="hidden" name="paymentId" value={paymentId} />
-                <SubmitButton variant="outline" size="sm" disabled={disabled || !canRefund}>
+                <SubmitButton variant="outline" size="sm" disabled={disabled || !canRefund} pendingLabel="Refunding…">
                   Open refund
                 </SubmitButton>
               </div>
@@ -170,7 +170,7 @@ export function ManagePaymentDialog({
               </div>
               <div className="self-end">
                 <input type="hidden" name="paymentId" value={paymentId} />
-                <SubmitButton variant="destructive" size="sm" disabled={disabled || !canWriteOff}>
+                <SubmitButton variant="destructive" size="sm" disabled={disabled || !canWriteOff} pendingLabel="Writing off…">
                   Write off
                 </SubmitButton>
               </div>

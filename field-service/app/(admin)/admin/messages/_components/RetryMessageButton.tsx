@@ -55,6 +55,7 @@ export function RetryMessageButton({ messageId, disabled }: RetryMessageButtonPr
         description={`This re-queues the message for delivery. Type the message ID to confirm.`}
         confirmText={shortId}
         confirmLabel="Retry"
+        pendingLabel="Retrying…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

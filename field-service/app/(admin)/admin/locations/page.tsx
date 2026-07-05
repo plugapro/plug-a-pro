@@ -8,7 +8,6 @@ import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -24,6 +23,7 @@ import {
 } from './actions'
 import { ActionForm } from '@/components/admin/ui/ActionForm'
 import { SubmitButton } from '@/components/admin/ui/SubmitButton'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { DeactivateLocationButton } from './_components/DeactivateLocationButton'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 
@@ -149,7 +149,7 @@ export default async function LocationsPage() {
               className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
           <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
-            <SubmitButton size="sm">Add node</SubmitButton>
+            <SubmitButton size="sm" pendingLabel="Creating…">Add node</SubmitButton>
           </div>
         </ActionForm>
       </details>
@@ -204,7 +204,7 @@ export default async function LocationsPage() {
                               defaultValue={node.label}
                               className="font-medium bg-transparent border-b border-transparent hover:border-input focus:border-ring focus:outline-none text-sm w-full min-w-0"
                             />
-                            <button type="submit" className="shrink-0 text-xs text-muted-foreground hover:text-foreground px-1">✓</button>
+                            <SubmitButton pendingLabel="Saving…" variant="ghost" size="sm" className="shrink-0 text-xs text-muted-foreground hover:text-foreground px-1 h-auto">✓</SubmitButton>
                           </ActionForm>
                           <p className="text-xs text-muted-foreground font-mono mt-0.5">{node.id.slice(0, 8)}&hellip;</p>
                         </TableCell>
@@ -262,8 +262,8 @@ export default async function LocationsPage() {
                                 ) => Promise<void>
                               }
                             >
-                              <Button
-                                type="submit"
+                              <FormSubmitButton
+                                pendingLabel="Deleting…"
                                 variant="ghost"
                                 size="sm"
                                 disabled={
@@ -274,7 +274,7 @@ export default async function LocationsPage() {
                                 className="text-destructive hover:text-destructive/80"
                               >
                                 Delete
-                              </Button>
+                              </FormSubmitButton>
                             </form>
                             )}
                           </div>

@@ -65,6 +65,7 @@ export function DispatchControlButtons({ jobRequestId, disabled }: DispatchContr
         title="Re-trigger matching?"
         description="Sends the request back through automated matching. The current dispatch case will be updated."
         confirmLabel="Re-trigger"
+        pendingLabel="Re-dispatching…"
         confirmText={confirmText}
         onConfirm={handleRedispatchConfirm}
         loading={isPending}
@@ -76,6 +77,7 @@ export function DispatchControlButtons({ jobRequestId, disabled }: DispatchContr
         title="Escalate to supply?"
         description="Records an escalation on the dispatch case. Operations will need to manually find coverage."
         confirmLabel="Escalate"
+        pendingLabel="Escalating…"
         confirmText={confirmText}
         onConfirm={handleEscalateConfirm}
         loading={isPending}
@@ -122,7 +124,7 @@ export function ForceAssignButton({
         disabled={disabled || isPending}
         onClick={() => setOpen(true)}
       >
-        {isPending ? 'Working…' : 'Force assign'}
+        Force assign
       </Button>
 
       <DestructiveConfirmDialog
@@ -131,6 +133,7 @@ export function ForceAssignButton({
         title="Override assignment?"
         description="This forces the provider assignment. It cannot be undone automatically."
         confirmLabel="Force assign"
+        pendingLabel="Assigning…"
         confirmText={confirmText}
         onConfirm={handleConfirm}
         loading={isPending}

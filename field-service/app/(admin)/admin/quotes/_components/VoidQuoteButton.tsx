@@ -53,6 +53,7 @@ export function VoidQuoteButton({ quoteId, quoteAmount, disabled }: VoidQuoteBut
         description="This permanently voids the quote. Type the quote amount to confirm."
         confirmText={quoteAmount}
         confirmLabel="Void"
+        pendingLabel="Voiding…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

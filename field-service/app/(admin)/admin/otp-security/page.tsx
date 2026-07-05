@@ -11,6 +11,7 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { maskPhone } from '@/lib/support-diagnostics'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import {
   acknowledgeSecurityEventFormAction,
   clearAccountLockFormAction,
@@ -175,9 +176,9 @@ function EventActionForms({
             placeholder="Reason"
             className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
           />
-          <button className="h-8 rounded-md border border-border px-3 text-xs font-medium" type="submit">
+          <FormSubmitButton className="h-8 rounded-md border border-border px-3 text-xs font-medium" pendingLabel="Acknowledging…">
             Acknowledge
-          </button>
+          </FormSubmitButton>
         </form>
       ) : null}
       {canClose ? (
@@ -188,9 +189,9 @@ function EventActionForms({
             placeholder="Resolution"
             className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
           />
-          <button className="h-8 rounded-md border border-border px-3 text-xs font-medium" type="submit">
+          <FormSubmitButton className="h-8 rounded-md border border-border px-3 text-xs font-medium" pendingLabel="Resolving…">
             Resolve
-          </button>
+          </FormSubmitButton>
         </form>
       ) : null}
       {canClose ? (
@@ -201,9 +202,9 @@ function EventActionForms({
             placeholder="Why false positive?"
             className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
           />
-          <button className="h-8 rounded-md border border-border px-3 text-xs font-medium" type="submit">
+          <FormSubmitButton className="h-8 rounded-md border border-border px-3 text-xs font-medium" pendingLabel="Marking…">
             False positive
-          </button>
+          </FormSubmitButton>
         </form>
       ) : null}
       {event.phoneE164 ? (
@@ -215,9 +216,9 @@ function EventActionForms({
             required
             className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
           />
-          <button className="h-8 rounded-md border border-border px-3 text-xs font-medium" type="submit">
+          <FormSubmitButton className="h-8 rounded-md border border-border px-3 text-xs font-medium" pendingLabel="Clearing lock…">
             Clear lock
-          </button>
+          </FormSubmitButton>
         </form>
       ) : null}
     </div>

@@ -61,6 +61,7 @@ export function RefundPaymentButton({ paymentId, maxAmount, amountLabel, disable
         description={`This issues a refund for R ${refundAmount.toFixed(2)}. Type the full payment amount to confirm.`}
         confirmText={amountLabel}
         confirmLabel="Refund"
+        pendingLabel="Refunding…"
         onConfirm={handleConfirm}
         loading={isPending}
       />

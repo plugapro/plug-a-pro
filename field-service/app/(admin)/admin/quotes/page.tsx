@@ -270,14 +270,14 @@ export default async function AdminQuoteQueuePage() {
                     {!claimedByCurrentUser ? (
                       <ActionForm action={claimQuoteFromFormAction} successMessage="Quote claimed" refreshOnSuccess>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled} pendingLabel={assignment?.claimedById ? 'Taking over…' : 'Claiming…'}>
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
                         </SubmitButton>
                       </ActionForm>
                     ) : (
                       <ActionForm action={releaseQuoteFromFormAction} successMessage="Quote released" refreshOnSuccess>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled} pendingLabel="Releasing…">
                           Release
                         </SubmitButton>
                       </ActionForm>
@@ -292,7 +292,7 @@ export default async function AdminQuoteQueuePage() {
                     {(quote.status === 'PENDING' || quote.status === 'REVISED') && (
                       <ActionForm action={approveQuoteFromFormAction} successMessage="Quote approved" refreshOnSuccess>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!sendEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!sendEnabled} pendingLabel="Approving…">
                           Approve
                         </SubmitButton>
                       </ActionForm>
@@ -309,7 +309,7 @@ export default async function AdminQuoteQueuePage() {
                     {!quote.approvalWhatsappSentAt && (
                       <ActionForm action={sendQuoteFromFormAction} successMessage="Quote sent to customer" refreshOnSuccess>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <SubmitButton variant="outline" size="sm" disabled={!sendEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!sendEnabled} pendingLabel="Sending…">
                           Send to customer
                         </SubmitButton>
                       </ActionForm>

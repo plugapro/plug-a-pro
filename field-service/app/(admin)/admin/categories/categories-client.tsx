@@ -296,6 +296,7 @@ function CategoryCard({
         description="This removes the category and all DB-backed requirement rows. The legacy policy fallback may still apply for the same slug until it is removed from code."
         confirmText={category.slug}
         confirmLabel="Delete category"
+        pendingLabel="Deleting…"
         onConfirm={handleDelete}
         loading={deleting}
       />
@@ -425,8 +426,15 @@ function CategoryFormCard({
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           {footer ?? <span />}
-          <Button type="button" size="sm" onClick={onSubmit} disabled={disabled || loading}>
-            {loading ? 'Working…' : submitLabel}
+          <Button
+            type="button"
+            size="sm"
+            onClick={onSubmit}
+            disabled={disabled}
+            loading={loading}
+            loadingLabel={submitLabel === 'Create category' ? 'Creating…' : 'Saving…'}
+          >
+            {submitLabel}
           </Button>
         </div>
       </CardContent>

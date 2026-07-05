@@ -284,7 +284,7 @@ export function CustomerActionsPanel({
                 onClick={() => setUnblockDialogOpen(true)}
                 disabled={unblockPending}
               >
-                {unblockPending ? 'Unblocking…' : 'Unblock customer'}
+                Unblock customer
               </button>
             ) : (
               <div className="flex gap-2 items-center">
@@ -300,7 +300,7 @@ export function CustomerActionsPanel({
                   disabled={!blockReason.trim() || blockPending}
                   onClick={() => setBlockDialogOpen(true)}
                 >
-                  {blockPending ? 'Blocking…' : 'Block'}
+                  Block
                 </button>
               </div>
             )}
@@ -313,7 +313,7 @@ export function CustomerActionsPanel({
                 onClick={() => setClearSuspendDialogOpen(true)}
                 disabled={clearSuspendPending}
               >
-                {clearSuspendPending ? 'Clearing…' : 'Clear suspension'}
+                Clear suspension
               </button>
             ) : (
               <div className="flex gap-2 items-center">
@@ -335,7 +335,7 @@ export function CustomerActionsPanel({
                   disabled={!suspendUntil || !suspendReason.trim() || suspendPending}
                   onClick={() => setSuspendDialogOpen(true)}
                 >
-                  {suspendPending ? 'Suspending…' : 'Suspend'}
+                  Suspend
                 </button>
               </div>
             )}
@@ -355,7 +355,7 @@ export function CustomerActionsPanel({
                   disabled={!deactivateReason.trim() || deactivatePending}
                   onClick={() => setDeactivateDialogOpen(true)}
                 >
-                  {deactivatePending ? 'Deactivating…' : 'Deactivate'}
+                  Deactivate
                 </button>
               </div>
             )}
@@ -375,7 +375,7 @@ export function CustomerActionsPanel({
                   disabled={!archiveReason.trim() || archivePending}
                   onClick={() => setArchiveDialogOpen(true)}
                 >
-                  {archivePending ? 'Archiving…' : 'Archive'}
+                  Archive
                 </button>
               </div>
             )}
@@ -401,7 +401,7 @@ export function CustomerActionsPanel({
                   disabled={!mergeTargetId.trim() || mergeTargetId.trim().length < 6 || !mergeReason.trim() || mergePending}
                   onClick={() => setMergeDialogOpen(true)}
                 >
-                  {mergePending ? 'Merging…' : 'Merge'}
+                  Merge
                 </button>
               </div>
             )}
@@ -414,7 +414,7 @@ export function CustomerActionsPanel({
                 disabled={purgePending}
                 onClick={() => setPurgeDialogOpen(true)}
               >
-                {purgePending ? 'Purging…' : 'Purge'}
+                Purge
               </button>
             )}
           </div>
@@ -432,6 +432,7 @@ export function CustomerActionsPanel({
         confirmText={confirmToken}
         onConfirm={runBlockConfirmed}
         loading={blockPending}
+        pendingLabel="Blocking…"
       />
 
       <DestructiveConfirmDialog
@@ -443,6 +444,7 @@ export function CustomerActionsPanel({
         confirmText={confirmToken}
         onConfirm={runUnblockConfirmed}
         loading={unblockPending}
+        pendingLabel="Unblocking…"
       />
 
       <DestructiveConfirmDialog
@@ -454,6 +456,7 @@ export function CustomerActionsPanel({
         confirmText={confirmToken}
         onConfirm={runSuspendConfirmed}
         loading={suspendPending}
+        pendingLabel="Suspending…"
       />
 
       <DestructiveConfirmDialog
@@ -465,6 +468,7 @@ export function CustomerActionsPanel({
         confirmText={confirmToken}
         onConfirm={runClearSuspensionConfirmed}
         loading={clearSuspendPending}
+        pendingLabel="Clearing suspension…"
       />
 
       <DestructiveConfirmDialog
@@ -476,6 +480,7 @@ export function CustomerActionsPanel({
         confirmText={confirmToken}
         onConfirm={runDeactivateConfirmed}
         loading={deactivatePending}
+        pendingLabel="Deactivating…"
       />
 
       <DestructiveConfirmDialog
@@ -487,6 +492,7 @@ export function CustomerActionsPanel({
         confirmText={customerName}
         onConfirm={runArchiveConfirmed}
         loading={archivePending}
+        pendingLabel="Archiving…"
       />
 
       <DestructiveConfirmDialog
@@ -498,6 +504,7 @@ export function CustomerActionsPanel({
         confirmText={customerName}
         onConfirm={runMergeConfirmed}
         loading={mergePending}
+        pendingLabel="Merging…"
       />
 
       <DestructiveConfirmDialog
@@ -509,6 +516,7 @@ export function CustomerActionsPanel({
         confirmText={customerName}
         onConfirm={runPurgeConfirmed}
         loading={purgePending}
+        pendingLabel="Purging…"
       />
     </>
   )

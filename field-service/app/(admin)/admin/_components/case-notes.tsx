@@ -50,8 +50,8 @@ export function CaseNotes({ caseId, notes }: Props) {
 
       <form ref={formRef} action={handleSubmit} className="space-y-2">
         <Textarea name="body" placeholder="Add an internal note…" rows={3} required />
-        <Button type="submit" size="sm" disabled={isPending}>
-          {isPending ? 'Saving…' : 'Add note'}
+        <Button type="submit" size="sm" loading={isPending} loadingLabel="Saving note…">
+          Add note
         </Button>
       </form>
     </div>

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
@@ -103,13 +104,19 @@ export default async function VerificationVendorsPage() {
                           <input type="checkbox" name="livenessRequired" defaultChecked={livenessRequired} />
                           Require liveness
                         </label>
-                        <Button type="submit" size="sm" variant="outline">Save config</Button>
+                        <FormSubmitButton size="sm" variant="outline" pendingLabel="Saving config…">
+                          Save config
+                        </FormSubmitButton>
                       </form>
                       <form action={activateVendorConfigFormAction}>
                         <input type="hidden" name="vendorKey" value={vendorKey} />
-                        <Button type="submit" size="sm" disabled={active || isScaffoldOnly(vendorKey)}>
+                        <FormSubmitButton
+                          size="sm"
+                          disabled={active || isScaffoldOnly(vendorKey)}
+                          pendingLabel="Activating…"
+                        >
                           Make active
-                        </Button>
+                        </FormSubmitButton>
                       </form>
                     </div>
                   </td>

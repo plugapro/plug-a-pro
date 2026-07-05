@@ -9,7 +9,7 @@ import { ADMIN_NAV_ITEMS } from '@/lib/admin-nav-routes'
 import { isEnabled } from '@/lib/flags'
 import { headers } from 'next/headers'
 import { shouldRestrictAdminDomainToDesktop } from '@/lib/admin-desktop-policy'
-import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 
 export default async function AdminLayout({
   children,
@@ -81,12 +81,12 @@ export default async function AdminLayout({
               ;(await cookies()).set('sb-access-token', '', { maxAge: 0, path: '/' })
             }}
           >
-            <button
-              type="submit"
+            <FormSubmitButton
+              pendingLabel="Signing out…"
               className="w-full rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
             >
               Sign out
-            </button>
+            </FormSubmitButton>
           </form>
         </div>
       </aside>
