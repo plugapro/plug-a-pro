@@ -54,7 +54,9 @@ Apply these migrations **in order** to production **before** flipping any flag. 
 
 ### Phase 2: Vendor Configuration
 
-**Step 3:** Verify Vercel prod environment secrets are present:
+> **⚠️ 2026-07-05 update — Didit went GA in prod on 2026-07-04 (separate workstream).** Most of this phase is ALREADY DONE: prod env has `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_PROVIDER_KYC_WORKFLOW_ID`, `DIDIT_PROVIDER_KYC_AUTHORITATIVE_WORKFLOW_ID`; `verification_vendor_configs` has exactly one active `didit` row (threshold 0.9, livenessRequired true); flags `provider.identity.verification.automation` + `provider.identity.vendor.didit` are ON; `provider.identity.verification.pilot_allowlist_required` is OFF (GA). Didit normalize.ts prod-payload fixes landed in PR #166 (merged into this branch). Steps 3–4 below are therefore VERIFY-ONLY at this point; Step 5 remains a real action.
+
+**Step 3 (verify-only):** Confirm Vercel prod environment secrets are present:
 ```
 DIDIT_API_KEY
 DIDIT_WEBHOOK_SECRET
@@ -62,18 +64,18 @@ Didit workflow IDs (KYC_AUTHORITATIVE)
 ```
 - If any is missing, **STOP** and provision it before proceeding.
 
-**Step 4:** Activate the Didit vendor via database:
-- Turn ON flag: `provider.identity.verification.automation`
-- Insert one active `VerificationVendorConfig` row for vendor `didit` (set `active=true`, `enabled=true`)
-- Turn ON flag: `provider.identity.vendor.didit`
+**Step 4 (verify-only):** Confirm the Didit vendor is active:
+- Flag ON: `provider.identity.verification.automation`
+- Exactly one active `VerificationVendorConfig` row for vendor `didit`
+- Flag ON: `provider.identity.vendor.didit`
 
-**Step 5:** Activate KYC-required-for-activation (defense-in-depth):
+**Step 5:** Activate KYC-required-for-activation (defense-in-depth) — **still required**:
 - Turn ON flag: `provider.kyc.required_for_activation`
 - This prevents legacy-path applications from being APPROVED without passing verification, even if quality-gate-v2 is OFF
 
 ### Phase 3: End-to-End Verification
 
-**Step 6:** E2E test with the internal `isTestUser` provider cohort:
+**Step 6:** E2E test with the internal `isTestUser` provider cohort. **Do not skip this** — the #166 incident showed Didit's production payloads differ from sandbox/docs (`'Approved'` vs `'Passed'`, 0–100 scores); only a live run through the real webhook validates the create-on-PASS completion against real payload shapes:
 1. Submit a test application on each channel:
    - WhatsApp registration flow
    - Web PWA resume (`/provider/signup`)
