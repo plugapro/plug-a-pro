@@ -53,6 +53,10 @@ function isFieldCaptured(data: Record<string, unknown>, field: string): boolean 
 export function selectMissingSections(data: Record<string, unknown>, opts: SectionOpts = {}): readonly SectionDef[] {
   const { gateEnabled = false } = opts
   const skills = Array.isArray(data.skills) ? (data.skills as string[]) : []
+  // Skills are being collected in-form when they weren't already captured. In that
+  // case the user's high-risk selection isn't known server-side yet, so we cannot
+  // decide the certification section from captured skills alone.
+  const skillsSectionShown = !isFieldCaptured(data, 'skills')
 
   return SECTION_REGISTRY.filter((s) => {
     if (s.key === 'identity') {
@@ -63,6 +67,14 @@ export function selectMissingSections(data: Record<string, unknown>, opts: Secti
 
     if (s.key === 'certification') {
       if (!gateEnabled) return false
+      // Fix 5: when skills are selected IN THE FORM (skills section shown), the
+      // high-risk decision can only be made client-side from the live selection.
+      // Include the certification section so a field exists to fill; the client
+      // renders it only when the watched selection is high-risk, and the schema
+      // for certificationRef is made optional in buildDynamicSchema for this case
+      // (server still enforces QUALITY_GATE_CERTIFICATION at submit). Without this,
+      // an in-form high-risk selection had no cert field → guaranteed stuck-submit.
+      if (skillsSectionShown) return true
       if (!hasHighRiskServiceSelection(skills)) return false
       return !isFieldCaptured(data, 'certificationRef')
     }
@@ -83,6 +95,14 @@ export function buildDynamicSchema(sections: readonly SectionDef[], opts: Sectio
   const { gateEnabled = false } = opts
   const shape: Record<string, z.ZodType<unknown>> = {}
 
+  // Fix 5: when the skills section is also being collected in-form, the cert
+  // section is included unconditionally (see selectMissingSections). The user's
+  // selection may be non-high-risk, which must NOT demand a cert — so the
+  // certificationRef field is optional client-side here. The server re-checks the
+  // resolved skills at submit and still rejects a high-risk selection missing a
+  // cert (QUALITY_GATE_CERTIFICATION), so this only relaxes the client schema.
+  const skillsSectionInForm = sections.some((s) => s.key === 'skills')
+
   for (const s of sections) {
     for (const k of Object.keys(s.schema)) {
       let fieldSchema = (s.schema as Record<string, z.ZodType<unknown>>)[k]
@@ -93,6 +113,11 @@ export function buildDynamicSchema(sections: readonly SectionDef[], opts: Sectio
           MIN_EVIDENCE_PHOTOS,
           `At least ${MIN_EVIDENCE_PHOTOS} work photos required`,
         )
+      }
+
+      // Fix 5: relax certificationRef to optional when skills are chosen in-form.
+      if (s.key === 'certification' && k === 'certificationRef' && skillsSectionInForm) {
+        fieldSchema = z.string().optional()
       }
 
       shape[k] = fieldSchema

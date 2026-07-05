@@ -49,6 +49,10 @@ export function RemainingFieldsForm(props: RemainingFieldsFormProps) {
   const opts = { gateEnabled }
   const sections = selectMissingSections(props.capturedData, opts)
   const schema = buildDynamicSchema(sections, opts)
+  // Fix 5: when skills are also collected in-form, the certification section is
+  // included unconditionally by selectMissingSections and rendered client-side
+  // only when the live skill selection is high-risk.
+  const skillsSectionInForm = sections.some((s) => s.key === 'skills')
   const methods = useForm<Record<string, unknown>>({ resolver: zodResolver(schema), mode: 'onBlur' })
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -97,7 +101,7 @@ export function RemainingFieldsForm(props: RemainingFieldsFormProps) {
             )
           }
           if (s.key === 'certification') {
-            return <CertificationSection key={s.key} />
+            return <CertificationSection key={s.key} conditionalOnSkills={skillsSectionInForm} />
           }
           const Component = SIMPLE_COMPONENTS[s.key]
           if (!Component) return null

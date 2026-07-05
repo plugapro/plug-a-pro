@@ -73,6 +73,83 @@ describe('selectMissingSections — certification gate', () => {
   })
 })
 
+// Fix 5: when skills are chosen IN THE FORM (skills not captured), the cert
+// section must be available so a high-risk in-form selection has a field to fill.
+describe('selectMissingSections / schema — certification available when skills section shown (Fix 5)', () => {
+  it('gate ON + skills NOT captured → includes both skills and certification sections', () => {
+    const sections = selectMissingSections({}, { gateEnabled: true })
+    const keys = sections.map((s) => s.key)
+    expect(keys).toContain('skills')
+    expect(keys).toContain('certification')
+  })
+
+  it('gate OFF + skills NOT captured → does NOT include certification section', () => {
+    const sections = selectMissingSections({}, { gateEnabled: false })
+    expect(sections.map((s) => s.key)).not.toContain('certification')
+  })
+
+  it('gate ON + skills captured non-high-risk (painting) → no certification (captured path unchanged)', () => {
+    const sections = selectMissingSections({ skills: ['painting'] }, { gateEnabled: true })
+    expect(sections.map((s) => s.key)).not.toContain('certification')
+  })
+
+  it('schema: certificationRef is OPTIONAL when the skills section is in-form (non-high-risk selection must not be blocked)', () => {
+    // verificationMethod:'skipped' drops the identity section so this test isolates
+    // the certification-optionality behaviour.
+    const data = { verificationMethod: 'skipped' }
+    const sections = selectMissingSections(data, { gateEnabled: true })
+    expect(sections.map((s) => s.key)).toContain('certification')
+    const schema = buildDynamicSchema(sections, { gateEnabled: true })
+
+    // A non-high-risk selection with no cert must validate (cert optional).
+    const nonHighRisk = schema.safeParse({
+      name: 'Test Provider',
+      skills: ['painting'],
+      regionLabel: 'Gauteng',
+      cityLabel: 'Johannesburg',
+      availability: ['Mon'],
+      hourlyRate: 200,
+      profilePhotoUrl: 'https://example.com/p.jpg',
+      bio: 'A sufficiently long bio for validation.',
+      references: 'Reference details here',
+      evidenceFileUrls: [
+        'https://example.com/a.jpg',
+        'https://example.com/b.jpg',
+        'https://example.com/c.jpg',
+      ],
+      // no certificationRef
+    })
+    expect(nonHighRisk.success).toBe(true)
+  })
+
+  it('schema: certificationRef stays REQUIRED when skills already captured as high-risk (not in-form)', () => {
+    // skills captured high-risk + identity skipped → the ONLY remaining required
+    // field of interest is certificationRef, so an empty parse must fail on it.
+    const sections = selectMissingSections(
+      { skills: ['plumbing'], verificationMethod: 'skipped' },
+      { gateEnabled: true },
+    )
+    expect(sections.map((s) => s.key)).toContain('certification')
+    const schema = buildDynamicSchema(sections, { gateEnabled: true })
+    const withoutCert = schema.safeParse({
+      regionLabel: 'Gauteng',
+      cityLabel: 'Johannesburg',
+      availability: ['Mon'],
+      hourlyRate: 200,
+      profilePhotoUrl: 'https://example.com/p.jpg',
+      bio: 'A sufficiently long bio for validation.',
+      references: 'Reference details here',
+      evidenceFileUrls: [
+        'https://example.com/a.jpg',
+        'https://example.com/b.jpg',
+        'https://example.com/c.jpg',
+      ],
+      // no certificationRef → must fail (cert required when skills captured high-risk)
+    })
+    expect(withoutCert.success).toBe(false)
+  })
+})
+
 describe('selectMissingSections — evidence gate (Fix B)', () => {
   it('gate ON + 1 captured URL → includes evidence section (below minimum)', () => {
     const sections = selectMissingSections(
