@@ -6,7 +6,7 @@ import { applyVendorVerdict } from '@/lib/identity-verification/orchestrator'
 import { getSessionDecision } from '@/lib/identity-verification/vendors/didit/client'
 import { isPersistableStatus, persistDiditDecision } from '@/lib/identity-verification/vendors/didit/persist'
 import { getAdapter, toVendorKey } from '@/lib/identity-verification/vendors/registry'
-import type { ParseWebhookResult } from '@/lib/identity-verification/vendors/types'
+import type { NormalizedVerificationDecision, ParseWebhookResult } from '@/lib/identity-verification/vendors/types'
 import { raiseSecurityReviewEvent } from '@/lib/security/security-event-service'
 import {
   completeApplicationForPassedVerification,
@@ -107,21 +107,48 @@ export async function POST(
 
   const verification = await db.providerIdentityVerification.findUniqueOrThrow({
     where: { id: distinctIds[0] },
-    select: { id: true, providerApplicationDraftId: true, providerId: true },
+    select: {
+      id: true,
+      providerApplicationDraftId: true,
+      providerId: true,
+      status: true,
+      sourceCheckProvider: true,
+      vendorReference: true,
+      livenessSessionExpiresAt: true,
+    },
   })
 
   let applied: Awaited<ReturnType<typeof applyVendorVerdict>> | null = null
   if (parsed.result) {
-    try {
-      applied = await applyVendorVerdict(verification.id, parsed.result, 'webhook')
-    } catch (error) {
-      await db.providerVerificationWebhookEvent.update({
-        where: { id: row.id },
-        data: {
-          processingError: error instanceof Error ? error.message : String(error),
-        },
-      })
-      return NextResponse.json({ ok: false }, { status: 500 })
+    if (isAlreadyAppliedRedelivery(verification.status, parsed.result.decision)) {
+      // Fix 2: idempotent redelivery. The verification is already in the exact
+      // status this verdict would (re-)produce — NEEDS_MANUAL_REVIEW for a
+      // manual-review-producing decision. Re-running applyVendorVerdict would
+      // attempt a same-status transition (NEEDS_MANUAL_REVIEW → NEEDS_MANUAL_REVIEW),
+      // which is not an ALLOWED_TRANSITION and throws → 500 → the completion branch
+      // never runs on retry. Treat it as already-applied and route the draft-anchored
+      // completion below with the current status. PASSED/FAILED/EXPIRED/CANCELLED
+      // redelivery is already idempotent inside applyVendorVerdict (terminal short-circuit).
+      applied = {
+        verificationId: verification.id,
+        status: verification.status,
+        vendorKey: toVendorKey(verification.sourceCheckProvider) ?? vendorKey,
+        vendorReference: verification.vendorReference ?? null,
+        livenessUrl: null,
+        livenessSessionExpiresAt: verification.livenessSessionExpiresAt ?? null,
+      }
+    } else {
+      try {
+        applied = await applyVendorVerdict(verification.id, parsed.result, 'webhook')
+      } catch (error) {
+        await db.providerVerificationWebhookEvent.update({
+          where: { id: row.id },
+          data: {
+            processingError: error instanceof Error ? error.message : String(error),
+          },
+        })
+        return NextResponse.json({ ok: false }, { status: 500 })
+      }
     }
   }
 
@@ -158,6 +185,10 @@ export async function POST(
         await recordManualReviewForApplication(db, {
           verificationId: verification.id,
           reason: reasonMap[applied.status] ?? 'KYC terminal without PASS',
+          // Fix 1: forward the actual verdict so the draft-anchored kycStatus
+          // mapping (EXPIRED → EXPIRED; NEEDS_MANUAL_REVIEW/CANCELLED untouched)
+          // is applied to the created provider.
+          verdict: applied.status as 'NEEDS_MANUAL_REVIEW' | 'EXPIRED' | 'CANCELLED',
         })
       }
     } catch (completionError) {
@@ -182,6 +213,34 @@ export async function POST(
     },
   })
   return NextResponse.json({ ok: true })
+}
+
+// Fix 2: decisions that route to NEEDS_MANUAL_REVIEW inside applyVendorVerdict.
+// PASS/FAIL are excluded — they can legitimately transition OUT of
+// NEEDS_MANUAL_REVIEW (a late clearing/failing verdict) and are already handled
+// by applyVendorVerdict's allowed-transition set, so they must still flow through.
+const MANUAL_REVIEW_PRODUCING_DECISIONS = new Set<NormalizedVerificationDecision>([
+  'INCONCLUSIVE',
+  'MANUAL_REVIEW',
+  'PROVIDER_UNAVAILABLE',
+])
+
+/**
+ * True when a webhook redelivery carries a verdict that would re-produce the
+ * verification's CURRENT status. Only NEEDS_MANUAL_REVIEW is non-idempotent in
+ * applyVendorVerdict (terminal statuses short-circuit there); a
+ * manual-review-producing decision arriving while already in NEEDS_MANUAL_REVIEW
+ * is the redelivery case we skip. Note: a low-confidence PASS can also produce
+ * NEEDS_MANUAL_REVIEW, but re-running applyVendorVerdict for a PASS is harmless
+ * (it re-derives the same manual-review transition attempt) — however since PASS
+ * can also legitimately clear the gate, we let PASS flow through and rely on the
+ * transition guard; the observed prod loop is the INCONCLUSIVE/MANUAL_REVIEW redelivery.
+ */
+function isAlreadyAppliedRedelivery(
+  currentStatus: VerificationStatus,
+  decision: NormalizedVerificationDecision,
+): boolean {
+  return currentStatus === 'NEEDS_MANUAL_REVIEW' && MANUAL_REVIEW_PRODUCING_DECISIONS.has(decision)
 }
 
 function computeIdempotencyKey(vendorKey: string, parsed: ParseWebhookResult) {

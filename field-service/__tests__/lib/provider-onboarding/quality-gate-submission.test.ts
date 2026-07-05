@@ -38,6 +38,7 @@ const {
       findUnique: vi.fn(),
     },
     provider: {
+      update: vi.fn(),
       updateMany: vi.fn(),
     },
     // submitProviderApplication (now the canonical row creator the completion
@@ -230,6 +231,7 @@ function buildPayload(overrides?: Record<string, unknown>) {
       hourlyRate: null,
       rateNegotiable: true,
       certificationProofAttachmentIds: [],
+      certificationDocAttachmentId: null as string | null,
       evidenceAttachmentIds: [],
       profilePhotoAttachmentId: null,
       providerBio: null,
@@ -1090,6 +1092,230 @@ describe('completeApplicationForPassedVerification — PWA_SELF_SERVE channel', 
         data: { providerApplicationId: 'app-existing-ss' },
       }),
     )
+  })
+})
+
+// ─── Fix 1: PASS completion links verification.providerId + kycStatus VERIFIED ──
+describe('Fix 1: PASS completion links provider to verification + sets kycStatus VERIFIED', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    applyDelegationMockDefaults()
+    mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
+    mockEvaluateCertificationGate.mockReturnValue({ required: false, ok: true })
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb))
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockDb.provider.update.mockResolvedValue({})
+    mockDb.attachment.updateMany.mockResolvedValue({ count: 0 })
+    mockDb.attachment.findUnique.mockResolvedValue(null)
+    mockDb.providerRate.createMany.mockResolvedValue({ count: 0 })
+    mockResolveInitialApprovalStatus.mockResolvedValue('PENDING_REVIEW')
+    mockSyncProviderSkills.mockResolvedValue(undefined)
+    mockUpsertStructuredServiceAreas.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('WHATSAPP PASS: sets verification.providerId and provider.kycStatus VERIFIED', async () => {
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-1',
+      providerApplicationDraftId: 'draft-1',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-1',
+      submittedApplicationId: null,
+      submitPayload: buildPayload(),
+      phone: '+27821234567',
+      name: 'Test Provider',
+    })
+    mockSyncProviderRecord.mockResolvedValue('provider-1')
+    mockDb.providerApplication.create.mockResolvedValue({ id: 'app-1' })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-1',
+    })
+
+    // verification.providerId set to the created provider
+    expect(mockDb.providerIdentityVerification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ver-1' },
+        data: { providerId: 'provider-1' },
+      }),
+    )
+    // provider.kycStatus set to VERIFIED
+    expect(mockDb.provider.update).toHaveBeenCalledWith({
+      where: { id: 'provider-1' },
+      data: { kycStatus: 'VERIFIED' },
+    })
+  })
+
+  it('PWA_SELF_SERVE PASS: sets verification.providerId and provider.kycStatus VERIFIED', async () => {
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-ss',
+      providerApplicationDraftId: 'draft-ss',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-ss',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+      name: 'PWA Self Serve Provider',
+    })
+    mockSyncProviderRecord.mockResolvedValue('provider-ss-1')
+    mockDb.providerApplication.create.mockResolvedValue({ id: 'app-ss-1' })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-ss',
+    })
+
+    expect(mockDb.providerIdentityVerification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ver-ss' },
+        data: { providerId: 'provider-ss-1' },
+      }),
+    )
+    expect(mockDb.provider.update).toHaveBeenCalledWith({
+      where: { id: 'provider-ss-1' },
+      data: { kycStatus: 'VERIFIED' },
+    })
+  })
+})
+
+// ─── Fix 3: WHATSAPP completion links the uploaded certification document ───────
+describe('Fix 3: WHATSAPP PASS links certificationDocAttachmentId to the application', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    applyDelegationMockDefaults()
+    mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
+    mockEvaluateCertificationGate.mockReturnValue({ required: false, ok: true })
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb))
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
+    mockDb.providerApplication.create.mockResolvedValue({ id: 'app-1' })
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockDb.provider.update.mockResolvedValue({})
+    mockDb.attachment.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.attachment.findUnique.mockResolvedValue(null)
+    mockDb.providerRate.createMany.mockResolvedValue({ count: 0 })
+    mockResolveInitialApprovalStatus.mockResolvedValue('PENDING_REVIEW')
+    mockSyncProviderRecord.mockResolvedValue('provider-1')
+    mockSyncProviderSkills.mockResolvedValue(undefined)
+    mockUpsertStructuredServiceAreas.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('links the cert doc attachment when present in replayInputs', async () => {
+    const payload = buildPayload()
+    payload.replayInputs.certificationDocAttachmentId = 'cert-doc-att-1'
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-1',
+      providerApplicationDraftId: 'draft-1',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-1',
+      submittedApplicationId: null,
+      submitPayload: payload,
+      phone: '+27821234567',
+      name: 'Test Provider',
+    })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-1',
+    })
+
+    expect(mockDb.attachment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'cert-doc-att-1', providerApplicationId: null },
+      data: { providerApplicationId: 'app-1' },
+    })
+  })
+})
+
+// ─── Fix 4: PWA_SELF_SERVE completion replays providerCategory rows ─────────────
+describe('Fix 4: PWA_SELF_SERVE PASS replays providerCategory rows', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    applyDelegationMockDefaults()
+    mockEvaluateEvidenceGate.mockReturnValue({ ok: true, have: 3, need: 3 })
+    mockEvaluateCertificationGate.mockReturnValue({ required: false, ok: true })
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb))
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
+    mockDb.providerApplicationDraft.update.mockResolvedValue({})
+    mockDb.providerIdentityVerification.update.mockResolvedValue({})
+    mockDb.provider.update.mockResolvedValue({})
+    mockDb.providerRate.createMany.mockResolvedValue({ count: 0 })
+    mockDb.providerCategory.createMany.mockResolvedValue({ count: 0 })
+    mockResolveInitialApprovalStatus.mockResolvedValue('PENDING_REVIEW')
+    mockSyncProviderRecord.mockResolvedValue('provider-ss-1')
+    mockDb.providerApplication.create.mockResolvedValue({ id: 'app-ss-1' })
+    mockSyncProviderSkills.mockResolvedValue(undefined)
+    mockUpsertStructuredServiceAreas.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+  })
+
+  it('creates providerCategory rows for the selected skills', async () => {
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-ss',
+      providerApplicationDraftId: 'draft-ss',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-ss',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload({ skills: ['plumbing', 'electrical'] }),
+      phone: '+27829876543',
+      name: 'PWA Self Serve Provider',
+    })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-ss',
+    })
+
+    expect(mockDb.providerCategory.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ providerId: 'provider-ss-1', categorySlug: 'plumbing', approvalStatus: 'PENDING_REVIEW' }),
+          expect.objectContaining({ providerId: 'provider-ss-1', categorySlug: 'electrical' }),
+        ]),
+        skipDuplicates: true,
+      }),
+    )
+  })
+
+  it('skips providerCategory replay on the conflict-link path', async () => {
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-ss',
+      providerApplicationDraftId: 'draft-ss',
+    })
+    mockDb.providerApplicationDraft.findUniqueOrThrow.mockResolvedValue({
+      id: 'draft-ss',
+      submittedApplicationId: null,
+      submitPayload: buildPwaSelfServePayload(),
+      phone: '+27829876543',
+      name: 'PWA Self Serve Provider',
+    })
+    // Force the onConflict:'link' path: an active application already exists.
+    mockDb.providerApplication.findFirst.mockResolvedValue({ id: 'app-existing-ss', status: 'PENDING' })
+
+    const { completeApplicationForPassedVerification } = await import(
+      '@/lib/provider-onboarding/quality-gate-submission'
+    )
+    await completeApplicationForPassedVerification(mockDb as unknown as typeof import('@/lib/db').db, {
+      verificationId: 'ver-ss',
+    })
+
+    expect(mockDb.providerCategory.createMany).not.toHaveBeenCalled()
+    expect(mockDb.providerRate.createMany).not.toHaveBeenCalled()
   })
 })
 

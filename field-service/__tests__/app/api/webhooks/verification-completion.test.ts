@@ -174,14 +174,103 @@ describe('verification webhook — draft-anchored completion (Task 2.6)', () => 
       })
 
       expect(response.status).toBe(200)
+      // Fix 1: the actual verdict is forwarded so the created provider's kycStatus
+      // mapping (EXPIRED → EXPIRED; NEEDS_MANUAL_REVIEW/CANCELLED untouched) applies.
       expect(mockRecordManualReview).toHaveBeenCalledWith(mockDb, {
         verificationId: 'ver-1',
         reason: expectedReason,
+        verdict: status,
       })
       expect(mockCompleteApplication).not.toHaveBeenCalled()
       expect(mockRecordFailed).not.toHaveBeenCalled()
     },
   )
+
+  // Fix 2: manual-review redelivery idempotency. When the verification is already
+  // in NEEDS_MANUAL_REVIEW and the vendor redelivers a manual-review-producing
+  // verdict, applyVendorVerdict must be SKIPPED (a same-status transition would
+  // throw → 500 loop) and the draft-anchored completion must still run.
+  it('Fix 2: redelivery with verification already NEEDS_MANUAL_REVIEW skips applyVendorVerdict and completes (no 500 loop)', async () => {
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-redeliver',
+      vendorReference: 'job-1',
+      livenessSessionReference: null,
+      eventType: 'verification.completed',
+      payloadHash: 'hash-redeliver',
+      redactedPayload: { event: 'ok' },
+      result: { decision: 'INCONCLUSIVE', confidence: 0.4, livenessVerified: null },
+    })
+    // Verification already sitting in NEEDS_MANUAL_REVIEW from the first delivery.
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-1',
+      providerApplicationDraftId: 'draft-1',
+      providerId: null,
+      status: 'NEEDS_MANUAL_REVIEW',
+      sourceCheckProvider: 'smile_id',
+      vendorReference: 'job-1',
+      livenessSessionExpiresAt: null,
+    })
+
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-redeliver"}'), {
+      params: Promise.resolve({ vendor: 'smile_id' }),
+    })
+
+    expect(response.status).toBe(200)
+    // applyVendorVerdict must NOT be invoked on the redelivery.
+    expect(mockApplyVendorVerdict).not.toHaveBeenCalled()
+    // Completion still runs with the current (manual-review) status.
+    expect(mockRecordManualReview).toHaveBeenCalledWith(mockDb, {
+      verificationId: 'ver-1',
+      reason: 'KYC needs manual review',
+      verdict: 'NEEDS_MANUAL_REVIEW',
+    })
+    // processedAt IS set (no retryable 500).
+    const updateCalls = mockDb.providerVerificationWebhookEvent.update.mock.calls
+    const hasProcessedAt = updateCalls.some(
+      (call: unknown[]) =>
+        (call[0] as { data?: { processedAt?: unknown } }).data?.processedAt instanceof Date,
+    )
+    expect(hasProcessedAt).toBe(true)
+  })
+
+  it('Fix 2: FAILED redelivery (already terminal) is handled by applyVendorVerdict idempotently — not skipped by the route guard', async () => {
+    // A FAILED decision arriving while already NEEDS_MANUAL_REVIEW is NOT the
+    // skip case (FAIL can transition out of manual review), so applyVendorVerdict
+    // still runs and is idempotent there.
+    mockAdapter.parseWebhook.mockResolvedValue({
+      signatureValid: true,
+      vendorEventId: 'evt-fail-redeliver',
+      vendorReference: 'job-1',
+      livenessSessionReference: null,
+      eventType: 'verification.completed',
+      payloadHash: 'hash-fail-redeliver',
+      redactedPayload: { event: 'ok' },
+      result: { decision: 'FAIL', confidence: 0.1, livenessVerified: null },
+    })
+    mockDb.providerIdentityVerification.findUniqueOrThrow.mockResolvedValue({
+      id: 'ver-1',
+      providerApplicationDraftId: 'draft-1',
+      providerId: null,
+      status: 'NEEDS_MANUAL_REVIEW',
+      sourceCheckProvider: 'smile_id',
+      vendorReference: 'job-1',
+      livenessSessionExpiresAt: null,
+    })
+    mockApplyVendorVerdict.mockResolvedValue({ verificationId: 'ver-1', status: 'FAILED', vendorReference: 'job-1' })
+
+    const { POST } = await import('@/app/api/webhooks/verification/[vendor]/route')
+
+    const response = await POST(request('{"event_id":"evt-fail-redeliver"}'), {
+      params: Promise.resolve({ vendor: 'smile_id' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(mockApplyVendorVerdict).toHaveBeenCalledOnce()
+    expect(mockRecordFailed).toHaveBeenCalledWith(mockDb, { verificationId: 'ver-1' })
+  })
 
   it('PASSED verdict for non-draft verification (providerApplicationDraftId null): does NOT call completeApplicationForPassedVerification', async () => {
     // Non-draft verification (existing provider-centric flow)

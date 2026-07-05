@@ -2653,6 +2653,11 @@ function buildQgv2SubmitPayload(ctx: FlowContext) {
       hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
       rateNegotiable: ctx.data.rateNegotiable !== false,
       certificationProofAttachmentIds: uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []),
+      // Fix 3: carry the uploaded certification document attachment id so the
+      // create-on-PASS completion can link it to the application (handleCollectCertification
+      // stores it alongside certificationRef 'attachment:<id>'). Without this the
+      // uploaded cert doc was never linked on the gate-ON path.
+      certificationDocAttachmentId: ctx.data.certificationDocAttachmentId ?? null,
       evidenceAttachmentIds: submitData.evidenceAttachmentIds,
       profilePhotoAttachmentId: ctx.data.profilePhotoAttachmentId ?? null,
       providerBio: ctx.data.providerBio ?? null,

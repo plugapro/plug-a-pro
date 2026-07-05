@@ -218,6 +218,20 @@ describe('WhatsApp summary → Didit launch (quality gate v2 create-on-PASS)', (
     expect(mockSubmitProviderApplication).not.toHaveBeenCalled()
   })
 
+  // Fix 3: the uploaded certification document attachment id must be carried in
+  // the replay payload so the create-on-PASS completion can link it.
+  it('gate ON: replay payload carries replayInputs.certificationDocAttachmentId', async () => {
+    await handleRegistrationFlow(
+      buildCtx({ data: completeData({ certificationDocAttachmentId: 'cert_doc_att_1' }) }),
+    )
+
+    // The default beforeEach leaves findFirst → null, so the draft is created.
+    const createArgs = mockDraftCreate.mock.calls[0]?.[0] as {
+      data: { submitPayload: { replayInputs?: { certificationDocAttachmentId?: string | null } } }
+    }
+    expect(createArgs.data.submitPayload.replayInputs?.certificationDocAttachmentId).toBe('cert_doc_att_1')
+  })
+
   it('gate OFF: submitProviderApplication IS called (existing path), no draft-launch', async () => {
     gateEnabled.mockResolvedValue(false)
     // The submit transaction validates evidence attachments exist and are

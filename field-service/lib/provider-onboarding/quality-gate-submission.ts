@@ -11,7 +11,7 @@
  *           verification link so the applicant can retry.
  */
 
-import type { Prisma } from '@prisma/client'
+import type { Prisma, KycStatus } from '@prisma/client'
 import { db } from '@/lib/db'
 import { syncProviderRecord, upsertStructuredServiceAreas } from '@/lib/provider-record'
 import { syncProviderSkills } from '@/lib/provider-skills'
@@ -19,6 +19,8 @@ import { submitProviderApplication, type SubmitInput } from '@/lib/provider-appl
 import {
   finalizeWhatsappProviderSubmission,
   categorySlugForSkill,
+  yearsExperienceFromLabel,
+  skillLevelFromExperienceLabel,
   type FinalizeWhatsappInput,
   type FinalizeWhatsappOpts,
 } from '@/lib/provider-onboarding/finalize-whatsapp-submission'
@@ -195,6 +197,59 @@ function toPwaSelfServeSubmitInput(
 }
 
 /**
+ * Draft-anchored kycStatus mapping, mirroring the orchestrator's
+ * kycStatusForTransition (lib/identity-verification/orchestrator.ts). The
+ * orchestrator only writes kycStatus when the verification already has a
+ * providerId at transition time; for draft-anchored flows the Provider row does
+ * not exist yet, so the mapping is (re)applied here once the provider is created
+ * at completion.
+ *
+ *   PASSED (+ PASS)         → VERIFIED
+ *   FAILED                  → REJECTED
+ *   NEEDS_MANUAL_REVIEW     → (no mapping — kycStatus left untouched)
+ *   EXPIRED                 → EXPIRED
+ *
+ * Returns null when no mapping exists (kycStatus must not be touched).
+ */
+function draftKycStatusFor(
+  verdict: 'PASSED' | 'FAILED' | 'NEEDS_MANUAL_REVIEW' | 'EXPIRED' | 'CANCELLED',
+): KycStatus | null {
+  if (verdict === 'PASSED') return 'VERIFIED'
+  if (verdict === 'FAILED') return 'REJECTED'
+  if (verdict === 'EXPIRED') return 'EXPIRED'
+  return null
+}
+
+/**
+ * Links a newly created/obtained Provider to the verification and applies the
+ * draft-anchored kycStatus mapping, inside the caller's transaction.
+ *
+ * - Always sets verification.providerId = providerId (alongside the
+ *   providerApplicationId link written elsewhere).
+ * - Sets provider.kycStatus when draftKycStatusFor(verdict) yields a mapping.
+ */
+async function linkProviderAndKyc(
+  tx: Prisma.TransactionClient,
+  args: {
+    verificationId: string
+    providerId: string
+    verdict: 'PASSED' | 'FAILED' | 'NEEDS_MANUAL_REVIEW' | 'EXPIRED' | 'CANCELLED'
+  },
+): Promise<void> {
+  await tx.providerIdentityVerification.update({
+    where: { id: args.verificationId },
+    data: { providerId: args.providerId },
+  })
+  const kycStatus = draftKycStatusFor(args.verdict)
+  if (kycStatus) {
+    await tx.provider.update({
+      where: { id: args.providerId },
+      data: { kycStatus },
+    })
+  }
+}
+
+/**
  * Shared MORE_INFO_REQUIRED creator for the FAILED×2 / manual-review paths.
  *
  * Creates the application row via the canonical submitProviderApplication with
@@ -212,6 +267,13 @@ async function createMoreInfoApplicationAndLink(
     note: string
     draftId: string
     verificationId: string
+    /**
+     * When present, the created/obtained provider is linked to the verification
+     * (verification.providerId) and its kycStatus is set per the draft-anchored
+     * mapping for `verdict`. Omit for paths that create no provider.
+     */
+    providerId?: string
+    verdict?: 'FAILED' | 'NEEDS_MANUAL_REVIEW' | 'EXPIRED' | 'CANCELLED'
   },
 ): Promise<string> {
   const { application } = await submitProviderApplication(tx, args.submitInput, {
@@ -230,6 +292,15 @@ async function createMoreInfoApplicationAndLink(
     where: { id: args.verificationId },
     data: { providerApplicationId: applicationId },
   })
+  // Fix 1: link the newly created provider to the verification + apply kycStatus
+  // (verification.providerId is null at draft time, so the orchestrator never set it).
+  if (args.providerId && args.verdict) {
+    await linkProviderAndKyc(tx, {
+      verificationId: args.verificationId,
+      providerId: args.providerId,
+      verdict: args.verdict,
+    })
+  }
   return applicationId
 }
 
@@ -291,6 +362,10 @@ interface Qgv2WhatsappSubmitPayload {
     hourlyRate: number | null
     rateNegotiable: boolean
     certificationProofAttachmentIds: string[]
+    // Fix 3: the uploaded certification document attachment id (set by
+    // handleCollectCertification when a cert doc is uploaded). Linked to the
+    // application in the WHATSAPP completion attachment-linking step.
+    certificationDocAttachmentId: string | null
     evidenceAttachmentIds: string[]
     profilePhotoAttachmentId: string | null
     providerBio: string | null
@@ -583,7 +658,29 @@ async function completePwaSelfServeChannel(
         where: { id: verificationId },
         data: { providerApplicationId: applicationId },
       })
+      // Fix 1: link provider + set kycStatus VERIFIED (provider was synced above).
+      await linkProviderAndKyc(tx, { verificationId, providerId, verdict: 'PASSED' })
       return
+    }
+
+    // Fix 4: replay providerCategory rows, mirroring the gate-OFF self-serve path
+    // in pwa-flow.ts (which creates one category row per skill before rates). The
+    // completion previously replayed only rates, leaving the provider with no
+    // category rows. Skipped on the conflict-link path above (rows already exist),
+    // same as rates. categorySlugForSkill is used so the slug matches the rate rows.
+    if (payload.skills.length > 0) {
+      const categoryRows = payload.skills.map((skill) => ({
+        providerId,
+        categorySlug: categorySlugForSkill(skill),
+        yearsExperience: yearsExperienceFromLabel(payload.experience),
+        skillLevel: skillLevelFromExperienceLabel(payload.experience),
+        approvalStatus: 'PENDING_REVIEW',
+        certificationRequired: false,
+        certificationStatus: 'NOT_REQUIRED',
+      }))
+      // providerCategory may not exist in all env migrations; guard with optional chaining.
+      // TODO: drop the `as any` once providerCategory is guaranteed present in the Prisma tx client type (post-migration)
+      await (tx as any).providerCategory?.createMany?.({ data: categoryRows, skipDuplicates: true })
     }
 
     // Fix C: replay providerRate rows, mirroring the gate-OFF self-serve path in
@@ -612,6 +709,8 @@ async function completePwaSelfServeChannel(
       where: { id: verificationId },
       data: { providerApplicationId: applicationId },
     })
+    // Fix 1: link the synced provider to the verification + set kycStatus VERIFIED.
+    await linkProviderAndKyc(tx, { verificationId, providerId, verdict: 'PASSED' })
   })
 
   // Post-commit enrichment (non-blocking)
@@ -730,6 +829,9 @@ export async function completeApplicationForPassedVerification(
         where: { id: verificationId },
         data: { providerApplicationId: applicationId },
       })
+      // Fix 1: link provider + set kycStatus VERIFIED even on the conflict path
+      // (the provider exists; only the application row was pre-existing).
+      await linkProviderAndKyc(tx, { verificationId, providerId, verdict: 'PASSED' })
       return
     }
 
@@ -778,6 +880,15 @@ export async function completeApplicationForPassedVerification(
       'verification_selfie',
     )
 
+    // Fix 3: link the uploaded certification document (non-fatal). Older drafts
+    // predating this field carry undefined → linkAttachmentToApplication no-ops.
+    await linkAttachmentToApplication(
+      tx,
+      payload.replayInputs.certificationDocAttachmentId,
+      applicationId,
+      'certification_doc',
+    )
+
     // g. Set draft.submittedApplicationId and link verification to application
     await tx.providerApplicationDraft.update({
       where: { id: draft.id },
@@ -787,6 +898,8 @@ export async function completeApplicationForPassedVerification(
       where: { id: verificationId },
       data: { providerApplicationId: applicationId },
     })
+    // Fix 1: link the created provider to the verification + set kycStatus VERIFIED.
+    await linkProviderAndKyc(tx, { verificationId, providerId, verdict: 'PASSED' })
   })
 
   // 5. Post-commit enrichment (non-blocking)
@@ -898,6 +1011,9 @@ export async function recordFailedVerificationForApplication(
           note: qualityGateNote,
           draftId: draft.id,
           verificationId,
+          // Fix 1: FAILED verdict → kycStatus REJECTED + link provider.
+          providerId,
+          verdict: 'FAILED',
         })
       })
     } else if (channel === 'PWA_RESUME') {
@@ -945,6 +1061,9 @@ export async function recordFailedVerificationForApplication(
           note: qualityGateNote,
           draftId: draft.id,
           verificationId,
+          // Fix 1: FAILED verdict → kycStatus REJECTED + link provider.
+          providerId,
+          verdict: 'FAILED',
         })
       })
     } else {
@@ -1014,7 +1133,21 @@ export async function recordFailedVerificationForApplication(
 
 export async function recordManualReviewForApplication(
   client: typeof db,
-  { verificationId, reason = 'KYC needs manual review' }: { verificationId: string; reason?: string },
+  {
+    verificationId,
+    reason = 'KYC needs manual review',
+    verdict = 'NEEDS_MANUAL_REVIEW',
+  }: {
+    verificationId: string
+    reason?: string
+    /**
+     * The terminal-but-not-PASS verdict that routed here. Drives the
+     * draft-anchored kycStatus mapping (Fix 1): NEEDS_MANUAL_REVIEW/CANCELLED →
+     * untouched, EXPIRED → EXPIRED. Defaults to NEEDS_MANUAL_REVIEW for callers
+     * that predate this param.
+     */
+    verdict?: 'NEEDS_MANUAL_REVIEW' | 'EXPIRED' | 'CANCELLED'
+  },
 ): Promise<void> {
   // 1. Load verification
   const verification = await client.providerIdentityVerification.findUniqueOrThrow({
@@ -1062,6 +1195,9 @@ export async function recordManualReviewForApplication(
         note: qualityGateNote,
         draftId: draft.id,
         verificationId,
+        // Fix 1: link provider + apply the verdict's kycStatus mapping (if any).
+        providerId,
+        verdict,
       })
     })
   } else if (channel === 'PWA_RESUME') {
@@ -1101,6 +1237,9 @@ export async function recordManualReviewForApplication(
         note: qualityGateNote,
         draftId: draft.id,
         verificationId,
+        // Fix 1: link provider + apply the verdict's kycStatus mapping (if any).
+        providerId,
+        verdict,
       })
     })
   } else {
