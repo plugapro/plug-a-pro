@@ -42,10 +42,8 @@ import {
   resolveServiceCategoryTag,
 } from '../service-categories'
 import { canonicalizeServiceCategoryValues } from '../service-category-canonicalization'
-import { resolveInitialApprovalStatus } from '../provider-categories'
 import {
   getHighRiskServiceRequirements,
-  getServiceComplianceRequirement,
   hasHighRiskServiceSelection,
 } from '../service-category-policy'
 import {
@@ -63,6 +61,7 @@ import {
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
 import { submitProviderApplication, ProviderApplicationConflictError } from '../provider-applications-submit'
+import { finalizeWhatsappProviderSubmission } from '../provider-onboarding/finalize-whatsapp-submission'
 import { isEnabled } from '../flags'
 import { isQualityGateV2Enabled, evaluateEvidenceGate, evidenceShortfallMessage } from '../provider-onboarding/quality-gate'
 import { issueProviderApplicationVerificationLink } from '../identity-verification/application-link'
@@ -338,21 +337,9 @@ function formatAvailabilityLabel(availability: string[] | undefined) {
     : 'Weekdays only'
 }
 
-function yearsExperienceFromLabel(label: string | undefined) {
-  if (!label) return null
-  if (label.includes('Less')) return 0
-  if (label.includes('1–3')) return 2
-  if (label.includes('3–5')) return 4
-  if (label.includes('5+')) return 5
-  return null
-}
-
-function skillLevelFromExperienceLabel(label: string | undefined) {
-  if (!label) return null
-  if (label.includes('Less')) return 'BEGINNER'
-  if (label.includes('1–3')) return 'INTERMEDIATE'
-  return 'EXPERIENCED'
-}
+// yearsExperienceFromLabel / skillLevelFromExperienceLabel moved to
+// lib/provider-onboarding/finalize-whatsapp-submission.ts (the shared finalizer
+// now owns the providerCategory row construction they fed).
 
 async function sendEvidenceFileProgress(phone: string, count: number) {
   // Debounce across Vercel function instances. Each media event claims a seq
@@ -3109,108 +3096,78 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         }
       }
 
-      const providerId = await syncProviderRecord(tx as typeof db, {
-        phone: normalizedPhone,
-        name: submitData.name,
-        email: ctx.data.providerEmail ?? null,
-        skills: canonicalSkills,
-        serviceAreas: submitData.resolvedAreaLabels,
-        active: true,
-        availableNow: true,
-        verified: false,
-        isTestUser: cohort.isTestUser,
-        cohortName: cohort.cohortName,
-        locationNodeIds: submitData.locationNodeIds,
-        // Enrichment (syncProviderSkills, upsertStructuredServiceAreas) must not run
-        // inside the transaction - a caught DB error inside those helpers puts the
-        // PostgreSQL connection in ABORTED state even when swallowed at the JS level,
-        // causing all subsequent tx queries to fail. Run enrichment post-commit below.
-        skipEnrichment: true,
+      // Shared finalize core (syncProviderRecord → submitProviderApplication →
+      // providerCategory.createMany → providerRate.createMany). Extracted into
+      // finalizeWhatsappProviderSubmission so the KYC create-on-PASS completion
+      // flow delegates to the exact same logic instead of reimplementing it.
+      // Gate-OFF passes no opts → byte-identical to the original inline block.
+      const { application, providerId } = await finalizeWhatsappProviderSubmission(tx, {
+        syncProviderArgs: {
+          phone: normalizedPhone,
+          name: submitData.name,
+          email: ctx.data.providerEmail ?? null,
+          skills: canonicalSkills,
+          serviceAreas: submitData.resolvedAreaLabels,
+          active: true,
+          availableNow: true,
+          verified: false,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
+          locationNodeIds: submitData.locationNodeIds,
+        },
+        submitInput: {
+          // Required
+          phone: normalizedPhone,
+          name: submitData.name,
+          idNumber: submitData.idNumber,
+          // Use canonicalised skills so DB values are normalised.
+          skills: canonicalSkills,
+          serviceAreas: submitData.resolvedAreaLabels,
+          // Pre-formatted label string so the DB value matches the inline create
+          // exactly (formatAvailabilityLabel collapses arrays to "Any day" etc.).
+          availability: formatAvailabilityLabel(submitData.availability),
+          experience: ctx.data.experience ?? null,
+          evidenceNote: ctx.data.evidenceNote ?? null,
+
+          // Optional — preserve all columns the inline create wrote
+          email: ctx.data.providerEmail ?? null,
+          alternateMobileE164: submitData.alternateMobileE164,
+          preferredLanguage: submitData.preferredLanguage,
+          reference1Name: submitData.reference1Name,
+          reference1Mobile: submitData.reference1Mobile,
+          reference2Name: submitData.reference2Name,
+          reference2Mobile: submitData.reference2Mobile,
+          callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+          // Phase 4 follow-up Task 1: optional hourly rate.
+          hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+          rateNegotiable: ctx.data.rateNegotiable !== false,
+
+          // Explicit booleans — helper spreads conditionally so we must pass
+          // both to preserve the exact behaviour of the inline create.
+          weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
+          sameDayJobs: true,
+
+          evidenceFileUrls: submitData.evidenceAttachmentIds,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
+
+          // CTWA ad attribution captured on the first inbound message
+          ctwaReferral: ctx.data.ctwaReferral ?? null,
+        },
+        canonicalSkills,
+        experienceLabel: ctx.data.experience ?? null,
+        certificationProofCount: uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []).length,
+        // providerRate rows are written only when callOutFee is a number (the
+        // gate-OFF trigger); mirrors the original inline `typeof … === 'number'`.
+        rate:
+          typeof ctx.data.callOutFee === 'number'
+            ? {
+                callOutFee: ctx.data.callOutFee,
+                hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+                rateNegotiable: ctx.data.rateNegotiable !== false,
+              }
+            : null,
       })
-
-      const { application } = await submitProviderApplication(tx, {
-        // Required
-        phone: normalizedPhone,
-        name: submitData.name,
-        idNumber: submitData.idNumber,
-        // Use canonicalised skills so DB values are normalised (their PR adds
-        // canonicalizeServiceCategoryValues at the call site; preserve that).
-        skills: canonicalSkills,
-        serviceAreas: submitData.resolvedAreaLabels,
-        // Pass the pre-formatted label string so the DB value matches the
-        // inline create exactly (formatAvailabilityLabel collapses arrays to
-        // "Any day" / "Mon–Sat" / "Weekdays only").
-        availability: formatAvailabilityLabel(submitData.availability),
-        experience: ctx.data.experience ?? null,
-        evidenceNote: ctx.data.evidenceNote ?? null,
-
-        // Optional — preserve all columns the inline create wrote
-        providerId,
-        email: ctx.data.providerEmail ?? null,
-        alternateMobileE164: submitData.alternateMobileE164,
-        preferredLanguage: submitData.preferredLanguage,
-        reference1Name: submitData.reference1Name,
-        reference1Mobile: submitData.reference1Mobile,
-        reference2Name: submitData.reference2Name,
-        reference2Mobile: submitData.reference2Mobile,
-        callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
-        // Phase 4 follow-up Task 1: optional hourly rate.
-        hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
-        rateNegotiable: ctx.data.rateNegotiable !== false,
-
-        // Explicit booleans — helper spreads conditionally so we must pass
-        // both to preserve the exact behaviour of the inline create.
-        weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
-        sameDayJobs: true,
-
-        evidenceFileUrls: submitData.evidenceAttachmentIds,
-        isTestUser: cohort.isTestUser,
-        cohortName: cohort.cohortName,
-
-        // CTWA ad attribution captured on the first inbound message
-        ctwaReferral: ctx.data.ctwaReferral ?? null,
-      }, { source: 'whatsapp' })
-
-      const providerCategoryRows = await Promise.all(
-        canonicalSkills.map(async (skill) => {
-          const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
-          const approvalStatus = await resolveInitialApprovalStatus(providerId, categorySlug)
-          return {
-            certificationRequired: Boolean(getServiceComplianceRequirement(skill).certificationRequiredForApproval),
-            certificationStatus: getServiceComplianceRequirement(skill).certificationRecommended
-              ? (uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []).length > 0 ? 'SUBMITTED' : 'REQUESTED')
-              : 'NOT_REQUIRED',
-            providerId,
-            categorySlug,
-            yearsExperience: yearsExperienceFromLabel(ctx.data.experience),
-            skillLevel: skillLevelFromExperienceLabel(ctx.data.experience),
-            approvalStatus,
-          }
-        })
-      )
-
-      if (providerCategoryRows.length > 0) {
-        await (tx as any).providerCategory?.createMany?.({
-          data: providerCategoryRows,
-          skipDuplicates: true,
-        })
-      }
-
-      if (typeof ctx.data.callOutFee === 'number') {
-        await (tx as any).providerRate?.createMany?.({
-          data: providerCategoryRows.map((row) => ({
-            providerId,
-            categorySlug: row.categorySlug,
-            callOutFee: ctx.data.callOutFee,
-            // Phase 4 follow-up Task 1: hourly rate stored per-category if
-            // provided. ProviderRate.hourlyRate already exists in schema.
-            hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
-            rateNegotiable: ctx.data.rateNegotiable !== false,
-            quoteAfterInspection: false,
-          })),
-          skipDuplicates: true,
-        })
-      }
 
       // Phase 4 follow-up Task 2: optional bio onto Provider.bio. Non-fatal
       // failure mirrors the profile-photo pattern.
