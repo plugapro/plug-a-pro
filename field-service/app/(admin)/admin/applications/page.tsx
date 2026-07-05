@@ -639,7 +639,11 @@ async function rejectApplication(formData: FormData) {
     where: { id },
     select: providerApplicationSelect,
   })
-  if (!app || app.status !== 'PENDING') return
+  // Rejectable from PENDING or MORE_INFO_REQUIRED — mirrors approveApplication.
+  // A MORE_INFO_REQUIRED application (info requested, provider went cold) must be
+  // closable from the UI; previously only PENDING could be rejected, stranding
+  // those rows with no reject affordance.
+  if (!app || !['PENDING', 'MORE_INFO_REQUIRED'].includes(app.status)) return
 
   try {
     await crudAction({
@@ -656,24 +660,34 @@ async function rejectApplication(formData: FormData) {
         reviewedById: app.reviewedById,
       },
       run: async (_data, tx) => {
-        await tx.providerApplication.update({
-          where: { id },
+        // Atomic status guard: only transition if the application is still
+        // PENDING/MORE_INFO_REQUIRED, so a concurrent approve can't be clobbered.
+        const statusUpdate = await tx.providerApplication.updateMany({
+          where: { id, status: { in: ['PENDING', 'MORE_INFO_REQUIRED'] } },
           data: {
             status: 'REJECTED',
-            provider: app.providerId
-              ? {
-                  update: {
-                    active: false,
-                    availableNow: false,
-                    verified: false,
-                  },
-                }
-              : undefined,
             reviewedAt: new Date(),
             reviewedById: session.id,
             notes: reason,
           },
         })
+        if (statusUpdate.count === 0) {
+          // Lost the race (already approved/rejected elsewhere) — leave as-is.
+          return {
+            id: app.id,
+            status: app.status,
+            providerId: app.providerId,
+            reviewedById: app.reviewedById,
+            notes: app.notes ?? null,
+          }
+        }
+
+        if (app.providerId) {
+          await tx.provider.update({
+            where: { id: app.providerId },
+            data: { active: false, availableNow: false, verified: false },
+          })
+        }
 
         await releaseOpsQueueItem(tx as typeof db, {
           queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
@@ -1022,9 +1036,12 @@ export default async function ApplicationsPage({
     )
   }
 
-  const pending = applications.filter((a) => a.status === 'PENDING')
+  // Actionable = PENDING or MORE_INFO_REQUIRED (both approvable and now rejectable).
+  // MORE_INFO_REQUIRED previously fell into `reviewed` (read-only), leaving those
+  // rows with no reject/approve affordance.
+  const pending = applications.filter((a) => ['PENDING', 'MORE_INFO_REQUIRED'].includes(a.status))
   const approved = applications.filter((a) => a.status === 'APPROVED')
-  const reviewed = applications.filter((a) => !['PENDING', 'APPROVED'].includes(a.status))
+  const reviewed = applications.filter((a) => !['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'].includes(a.status))
 
   return (
     <div className="space-y-8">
@@ -1323,8 +1340,10 @@ export default async function ApplicationsPage({
                     <Input
                       type="text"
                       name="reason"
-                      placeholder="Reason (optional)"
-                      className="h-8 w-48 text-sm"
+                      required
+                      minLength={5}
+                      placeholder="Reason for rejection (min 5 chars)"
+                      className="h-8 w-64 text-sm"
                     />
                     <SubmitButton
                       size="sm"
@@ -1336,6 +1355,7 @@ export default async function ApplicationsPage({
                     </SubmitButton>
                   </form>
 
+                  {app.status === 'PENDING' && (
                   <form action={requestMoreInfo} className="flex gap-2">
                     <input type="hidden" name="id" value={app.id} />
                     <Input
@@ -1354,6 +1374,7 @@ export default async function ApplicationsPage({
                       More info
                     </SubmitButton>
                   </form>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -1055,6 +1055,9 @@ function DrawerActions({
 }) {
   const app = row.application
   const canApprove = app && (app.status === 'PENDING' || app.status === 'MORE_INFO_REQUIRED')
+  // Rejectable from the same statuses as approvable — a MORE_INFO_REQUIRED
+  // application (provider went cold) must be closable from the UI.
+  const canReject = app && (app.status === 'PENDING' || app.status === 'MORE_INFO_REQUIRED')
   const approveDisabled =
     !crudEnabled ||
     !canApprove ||
@@ -1113,7 +1116,7 @@ function DrawerActions({
         </form>
       ) : null}
 
-      {app && app.status === 'PENDING' ? (
+      {canReject ? (
         <form action={actions.reject} className="space-y-1.5">
           <input type="hidden" name="id" value={app.id} />
           <label
