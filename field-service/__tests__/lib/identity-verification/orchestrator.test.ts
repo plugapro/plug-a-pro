@@ -164,7 +164,7 @@ describe('provider identity verification orchestrator', () => {
     const client = makeClient()
     mocks.getAdapter.mockReturnValue(vendorAdapter({
       vendorReference: 'mock:job_1',
-      immediateResult: vendorResult({ livenessVerified: true, confidence: 0.98 }),
+      immediateResult: vendorResult({ livenessVerified: true, confidence: 0.98, assuranceLevelHint: 'HIGH' }),
       expectsWebhook: false,
     }))
 
@@ -357,6 +357,28 @@ describe('provider identity verification orchestrator', () => {
       decision: 'MANUAL_REVIEW',
       failureReasonCode: 'VENDOR_VERDICT_FROZEN',
     })
+  })
+
+  it('stamps MEDIUM (not HIGH) when a PASS verdict omits assuranceLevelHint', async () => {
+    // Audit finding: `result.assuranceLevelHint ?? 'HIGH'` silently upgraded
+    // any hint-less PASS to HIGH — the exact discriminator the credit gate
+    // trusts. The conservative default must be MEDIUM so a pass can only reach
+    // HIGH by explicitly attesting the authoritative workflow ran.
+    const client = makeClient({
+      status: 'PROCESSING',
+      sourceCheckProvider: 'mock',
+      vendorReference: 'mock:job_hint',
+    })
+    // vendorResult() intentionally omits assuranceLevelHint.
+    const result = await applyVendorVerdict(
+      'ver_1',
+      vendorResult({ livenessVerified: true, confidence: 0.99 }),
+      'webhook',
+      client,
+    )
+
+    expect(result.status).toBe('PASSED')
+    expect(client.state.verification.assuranceLevel).toBe('MEDIUM')
   })
 
   it('cancels the orphaned vendor job when optimistic stamp loses the race with liveness in flight', async () => {

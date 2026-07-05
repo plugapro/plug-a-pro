@@ -42,11 +42,17 @@ describe('checkCanStartNewVerification', () => {
     expect(mockCount).not.toHaveBeenCalled()
   })
 
-  it('blocks general identity starts when the provider already has a passed verification', async () => {
+  it('blocks general identity starts when the LATEST row is a current (unexpired) pass', async () => {
     const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
     mockFindFirst
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 'ver-passed' })
+      .mockResolvedValueOnce({
+        id: 'ver-passed',
+        status: 'PASSED',
+        decision: 'PASS',
+        assuranceLevel: 'MEDIUM',
+        expiresAt: null,
+      })
 
     await expect(
       checkCanStartNewVerification('provider-1', { purpose: 'GENERAL_IDENTITY' }),
@@ -54,16 +60,49 @@ describe('checkCanStartNewVerification', () => {
       ok: false,
       reason: 'PROVIDER_ALREADY_VERIFIED',
     })
-
-    expect(mockFindFirst).toHaveBeenNthCalledWith(2, {
-      where: {
-        providerId: 'provider-1',
-        status: 'PASSED',
-      },
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true },
-    })
     expect(mockCount).not.toHaveBeenCalled()
+  })
+
+  it('allows general re-verification when an old PASS is superseded by a newer adverse row (deadlock case)', async () => {
+    // Audit finding: the general path blocked on ANY historical PASSED row,
+    // so a provider whose latest row is FAILED/EXPIRED was told "already
+    // verified" and refused a fresh link — while the credit gate (latest-row)
+    // said NOT verified. Deadlock. The general path must also read the LATEST
+    // row and only block when THAT row is a current pass.
+    const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
+    mockFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'ver-latest-failed',
+        status: 'FAILED',
+        decision: 'FAIL',
+        assuranceLevel: null,
+        expiresAt: null,
+      })
+
+    await expect(
+      checkCanStartNewVerification('provider-1', { purpose: 'GENERAL_IDENTITY' }),
+    ).resolves.not.toMatchObject({ reason: 'PROVIDER_ALREADY_VERIFIED' })
+  })
+
+  it('allows general re-verification when the latest pass has expired', async () => {
+    const { checkCanStartNewVerification } = await import('../../../lib/identity-verification/gate')
+    mockFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'ver-expired',
+        status: 'PASSED',
+        decision: 'PASS',
+        assuranceLevel: 'HIGH',
+        expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      })
+
+    await expect(
+      checkCanStartNewVerification('provider-1', {
+        purpose: 'GENERAL_IDENTITY',
+        now: new Date('2026-07-05T00:00:00.000Z'),
+      }),
+    ).resolves.not.toMatchObject({ reason: 'PROVIDER_ALREADY_VERIFIED' })
   })
 
   it('allows credit top-up re-verification when an old pass is superseded by a newer failed row (deadlock case)', async () => {

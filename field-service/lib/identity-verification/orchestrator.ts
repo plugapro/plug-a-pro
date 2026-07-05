@@ -388,7 +388,10 @@ export async function applyVendorVerdict(
   }
 
   if (result.decision === 'PASS' && (result.confidence ?? 0) >= config.confidenceThreshold) {
-    const assuranceLevel: VerificationAssuranceLevel = result.assuranceLevelHint ?? 'HIGH'
+    // Conservative default: a PASS that does not explicitly attest HIGH
+    // (authoritative-workflow) assurance must NOT silently unlock the
+    // HIGH-gated credit purchase path. Only an explicit hint reaches HIGH.
+    const assuranceLevel: VerificationAssuranceLevel = result.assuranceLevelHint ?? 'MEDIUM'
     await transitionIdentityVerification({
       verificationId,
       toStatus: 'PASSED',

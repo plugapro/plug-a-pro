@@ -177,6 +177,48 @@ describe('normalizeDiditDecision', () => {
       expect(result?.confidence).toBeCloseTo(0.42, 5)
     })
 
+    it('does NOT auto-pass a percentage score of exactly 1 (1/100 = a hard fail)', () => {
+      // Audit finding: normalizeScale(score) = score>1 ? score/100 : score
+      // left a genuine 0-100 score of 1 (1% match) at 1.0 = perfect confidence.
+      // The sibling 96 proves this decision is on the 0-100 scale, so a
+      // liveness of 1 must become 0.01 and drag the min-aggregate below the
+      // threshold → routed to manual review, not auto-PASSED.
+      const payload = envelope('Approved', {
+        liveness_checks: [{ status: 'Approved', score: 1 }],
+        face_matches: [{ status: 'Approved', score: 96 }],
+        id_verifications: [{ status: 'Approved', confidence: 95 }],
+      })
+      const { result } = normalizeDiditDecision(payload, defaultCtx)
+      expect(result?.livenessScore).toBeCloseTo(0.01, 5)
+      expect(result?.confidence).toBeCloseTo(0.01, 5)
+    })
+
+    it('clamps an out-of-range score so it cannot exceed 1.0 and blow past the threshold', () => {
+      // Malformed 150 must not become 1.5 (which clears any 0-1 threshold);
+      // clamp to [0,1].
+      const payload = envelope('Approved', {
+        liveness_checks: [{ status: 'Approved', score: 150 }],
+        face_matches: [{ status: 'Approved', score: 96 }],
+        id_verifications: [{ status: 'Approved' }],
+      })
+      const { result } = normalizeDiditDecision(payload, defaultCtx)
+      expect(result?.livenessScore).toBeLessThanOrEqual(1)
+      expect(result?.confidence).toBeLessThanOrEqual(1)
+    })
+
+    it('leaves a genuine 0-1 fraction workflow untouched (score 1.0 stays perfect)', () => {
+      // When every score is <= 1 the decision is on the fraction scale; a
+      // 1.0 here is a real perfect score and must NOT be divided by 100.
+      const payload = envelope('Approved', {
+        liveness_checks: [{ status: 'Approved', score: 1.0 }],
+        face_matches: [{ status: 'Approved', score: 0.95 }],
+        id_verifications: [{ status: 'Approved', confidence: 0.93 }],
+      })
+      const { result } = normalizeDiditDecision(payload, defaultCtx)
+      expect(result?.livenessScore).toBeCloseTo(1.0, 5)
+      expect(result?.confidence).toBeCloseTo(0.93, 5)
+    })
+
     it('Approved feature with no numeric score falls back to 1.0 like Passed does', () => {
       const payload = envelope('Approved', {
         liveness_checks: [{ status: 'Approved' }],

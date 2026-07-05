@@ -103,13 +103,38 @@ export async function checkCanStartNewVerification(
       }
     }
   } else {
-    const existingVerified = await client.providerIdentityVerification.findFirst({
-      where: { providerId, status: 'PASSED' as const },
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true },
-    }) as { id: string } | null
+    // LATEST-row semantics, mirroring the CREDIT_TOP_UP branch above. Blocking
+    // on ANY historical PASSED row deadlocked a provider whose latest row is a
+    // newer adverse verdict (FAILED / CANCELLED / EXPIRED) or an expired pass:
+    // told "already verified" here, yet the credit gate (latest-row) treats
+    // them as unverified — with no route to re-verify. Block only when THAT
+    // latest row is a currently-valid pass; otherwise fall through to CREATE.
+    // Assurance level is intentionally NOT required here — general identity
+    // verification is satisfied by any current PASS; only the credit gate
+    // additionally demands HIGH.
+    const latestVerification = await client.providerIdentityVerification.findFirst({
+      where: { providerId },
+      orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }],
+      select: {
+        id: true,
+        status: true,
+        decision: true,
+        expiresAt: true,
+      },
+    }) as {
+      id: string
+      status: string | null
+      decision: string | null
+      expiresAt: Date | null
+    } | null
 
-    if (existingVerified) {
+    const now = options.now ?? new Date()
+    const isCurrentPass =
+      latestVerification?.status === 'PASSED' &&
+      latestVerification.decision === 'PASS' &&
+      (!latestVerification.expiresAt || latestVerification.expiresAt.getTime() > now.getTime())
+
+    if (isCurrentPass) {
       return {
         ok: false,
         reason: 'PROVIDER_ALREADY_VERIFIED',
