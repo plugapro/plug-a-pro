@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { validateProviderResumeToken } from '@/lib/provider-resume-tokens'
+import { isQualityGateV2Enabled } from '@/lib/provider-onboarding/quality-gate'
 import { CapturedPanel } from './captured-panel'
 import { RemainingFieldsForm } from './remaining-fields-form'
 
@@ -64,6 +65,7 @@ export default async function ProviderSignupPage({
   if (!conv) return <ErrorPanel reason="not_found" />
 
   const rawCaptured = (conv.data as Record<string, unknown>) ?? {}
+  const gateEnabled = await isQualityGateV2Enabled()
 
   // SECURITY (finding 4e38133b): the resume link is an anonymous bearer token, so
   // anything passed to client components is serialized into the browser/RSC
@@ -90,6 +92,7 @@ export default async function ProviderSignupPage({
         conversationId={conv.id}
         phone={conv.phone}
         capturedData={capturedData}
+        gateEnabled={gateEnabled}
       />
     </main>
   )

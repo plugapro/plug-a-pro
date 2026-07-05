@@ -459,11 +459,19 @@ model ProviderApplicationDraft {
   reference2Mobile       String?
   consentAt              DateTime?
   lastCompletedStep      Int       @default(0)
+  // Full replayable submit bundle captured at WhatsApp summary confirm when the
+  // quality gate v2 (create-on-PASS) flow is ON. The ProviderApplication /
+  // Provider rows are NOT created at confirm time; instead the exact inputs the
+  // submit transaction would consume are serialized here so the identity-
+  // verification completion webhook (Task 2.6) can replay the transaction once
+  // Didit returns PASS. See lib/whatsapp-flows/registration.ts handlePending.
+  submitPayload          Json?
   submittedApplicationId String?   @unique
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
   submittedApplication     ProviderApplication?      @relation(fields: [submittedApplicationId], references: [id], onDelete: SetNull)
+  identityVerifications    ProviderIdentityVerification[]
   registrationResumeTokens RegistrationResumeToken[]
 
   @@index([phone])
@@ -1079,6 +1087,7 @@ model ProviderIdentityVerification {
   id                           String                     @id @default(cuid())
   providerId                   String?
   providerApplicationId        String?
+  providerApplicationDraftId   String?
   channel                      VerificationChannel
   identityBasis                IdentityBasis
   issuingCountry               String?
@@ -1129,9 +1138,10 @@ model ProviderIdentityVerification {
   createdAt                    DateTime                   @default(now())
   updatedAt                    DateTime                   @updatedAt
 
-  provider            Provider?                          @relation(fields: [providerId], references: [id], onDelete: SetNull)
-  providerApplication ProviderApplication?               @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
-  documents           ProviderIdentityDocument[]
+  provider                 Provider?                          @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  providerApplication      ProviderApplication?               @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
+  providerApplicationDraft ProviderApplicationDraft?          @relation(fields: [providerApplicationDraftId], references: [id], onDelete: SetNull)
+  documents                ProviderIdentityDocument[]
   events              ProviderVerificationEvent[]
   webhookEvents       ProviderVerificationWebhookEvent[]
   consentEvents       ProviderIdentityConsentEvent[]
@@ -1145,6 +1155,7 @@ model ProviderIdentityVerification {
   @@index([providerId])
   @@index([providerId, status, countsTowardAttemptCap])
   @@index([providerApplicationId])
+  @@index([providerApplicationDraftId])
   @@index([assuranceLevel, status])
   @@index([sourceCheckProvider, vendorReference])
   @@index([sourceCheckProvider, vendorWorkflowId])

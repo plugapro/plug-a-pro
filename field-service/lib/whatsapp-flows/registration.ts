@@ -9,6 +9,7 @@
 // to skills capture. When the flag is OFF the legacy skip-allowed behavior
 // is preserved so the rollout can be flipped per environment.
 
+import { Prisma } from '@prisma/client'
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { isKycRequiredForActivation } from '../kyc-policy'
 import { WHATSAPP_COPY, ctaLabelFor } from '../whatsapp-copy'
@@ -41,10 +42,8 @@ import {
   resolveServiceCategoryTag,
 } from '../service-categories'
 import { canonicalizeServiceCategoryValues } from '../service-category-canonicalization'
-import { resolveInitialApprovalStatus } from '../provider-categories'
 import {
   getHighRiskServiceRequirements,
-  getServiceComplianceRequirement,
   hasHighRiskServiceSelection,
 } from '../service-category-policy'
 import {
@@ -62,7 +61,10 @@ import {
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
 import { submitProviderApplication, ProviderApplicationConflictError } from '../provider-applications-submit'
+import { finalizeWhatsappProviderSubmission } from '../provider-onboarding/finalize-whatsapp-submission'
 import { isEnabled } from '../flags'
+import { isQualityGateV2Enabled, evaluateEvidenceGate, evidenceShortfallMessage } from '../provider-onboarding/quality-gate'
+import { issueProviderApplicationVerificationLink } from '../identity-verification/application-link'
 import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -335,21 +337,9 @@ function formatAvailabilityLabel(availability: string[] | undefined) {
     : 'Weekdays only'
 }
 
-function yearsExperienceFromLabel(label: string | undefined) {
-  if (!label) return null
-  if (label.includes('Less')) return 0
-  if (label.includes('1–3')) return 2
-  if (label.includes('3–5')) return 4
-  if (label.includes('5+')) return 5
-  return null
-}
-
-function skillLevelFromExperienceLabel(label: string | undefined) {
-  if (!label) return null
-  if (label.includes('Less')) return 'BEGINNER'
-  if (label.includes('1–3')) return 'INTERMEDIATE'
-  return 'EXPERIENCED'
-}
+// yearsExperienceFromLabel / skillLevelFromExperienceLabel moved to
+// lib/provider-onboarding/finalize-whatsapp-submission.ts (the shared finalizer
+// now owns the providerCategory row construction they fed).
 
 async function sendEvidenceFileProgress(phone: string, count: number) {
   // Debounce across Vercel function instances. Each media event claims a seq
@@ -458,10 +448,14 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectRates(ctx)
     case 'reg_collect_evidence':
       return handleCollectEvidence(ctx)
+    case 'reg_collect_certification':
+      return handleCollectCertification(ctx)
     case 'reg_confirm':
       return handleConfirm(ctx)
     case 'reg_pending':
       return handlePending(ctx)
+    case 'reg_awaiting_kyc':
+      return handleAwaitingKyc(ctx)
     case 'reg_edit_field':
       return handleEditField(ctx)
     default:
@@ -626,6 +620,12 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
       await sendText(ctx.phone, buildSkillPromptText(`👤 Name updated to *${name}*.\n\n🔧 *What type of work do you do?*`))
       return { nextStep: 'reg_collect_skills_more', nextData: { name } }
     }
+    // Task 2.7: gate ON → skip manual KYC; identity is deferred to the Didit
+    // step at summary (handlePending). Gate OFF → unchanged.
+    if (await isQualityGateV2Enabled()) {
+      await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${name}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
+      return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
+    }
     await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
     return { nextStep: 'reg_collect_id', nextData: { name } }
   }
@@ -651,6 +651,13 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills_more', nextData: { name } }
   }
 
+  // Task 2.7: gate ON → skip manual KYC; identity is deferred to the Didit
+  // step at summary (handlePending). Gate OFF → unchanged.
+  if (await isQualityGateV2Enabled()) {
+    await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${name}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
+  }
+
   await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
   return { nextStep: 'reg_collect_id', nextData: { name } }
 }
@@ -662,6 +669,15 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 async function handleMigratedEmailStep(ctx: FlowContext): Promise<FlowResult> {
   const raw = ctx.reply.text?.trim() ?? ''
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)
+  // Task 2.7: gate ON → skip manual KYC; identity is deferred to the Didit
+  // step at summary (handlePending). Gate OFF → unchanged.
+  if (await isQualityGateV2Enabled()) {
+    await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${ctx.data.name ?? 'there'}*. 👋🏽\n\n🔧 *What type of work do you do?*`))
+    return {
+      nextStep: 'reg_collect_skills_more',
+      nextData: isValidEmail ? { providerEmail: raw.toLowerCase(), skills: [] } : { skills: [] },
+    }
+  }
   await sendVerificationChoicePrompt(ctx.phone, await isKycRequiredForActivation())
   return {
     nextStep: 'reg_collect_id',
@@ -1704,6 +1720,9 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
 }
 
 async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
+  // Resolve the quality gate ONCE per turn so all branches share the same value.
+  const qualityGate = await isQualityGateV2Enabled()
+
   const availMap: Record<string, { label: string; days: string[] }> = {
     avail_weekdays_only: { label: 'Weekdays only', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
     avail_incl_sat: { label: 'Mon–Sat', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] },
@@ -1744,13 +1763,27 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'evidence_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
+    if (qualityGate) {
+      const gate = evaluateEvidenceGate(ctx.data.evidenceFileUrls ?? [])
+      if (!gate.ok) {
+        await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
+        return { nextStep: 'reg_collect_evidence' }
+      }
+      if (hasHighRiskServiceSelection(ctx.data.skills ?? [])) {
+        await sendCertificationPrompt(ctx.phone)
+        return { nextStep: 'reg_collect_certification', nextData: { evidenceNote: '' } }
+      }
+    }
     return showRegistrationSummary(ctx, { evidenceNote: '' })
   }
 
   // ── Media upload (image or document) ──────────────────────────────────────
   if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
     if (!ctx.reply.mediaId) {
-      await sendText(ctx.phone, "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one.")
+      const hint = qualityGate
+        ? "⚠️ Couldn't process that file. Please try again."
+        : "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one."
+      await sendText(ctx.phone, hint)
       return { nextStep: 'reg_collect_evidence' }
     }
     const existing = uniqueStrings(ctx.data.evidenceFileUrls ?? [])
@@ -1839,12 +1872,26 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
         `[registration:handleCollectEvidence] media upload failed - mediaId=${ctx.reply.mediaId} mimeType=${ctx.reply.mimeType ?? 'unknown'}:`,
         err
       )
-      await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one.")
+      const hint = qualityGate
+        ? "⚠️ Couldn't upload that file. Please try again."
+        : "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one."
+      await sendText(ctx.phone, hint)
       return { nextStep: 'reg_collect_evidence' }
     }
   }
 
   if (ctx.reply.id === 'evidence_done') {
+    if (qualityGate) {
+      const gate = evaluateEvidenceGate(ctx.data.evidenceFileUrls ?? [])
+      if (!gate.ok) {
+        await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
+        return { nextStep: 'reg_collect_evidence' }
+      }
+      if (hasHighRiskServiceSelection(ctx.data.skills ?? [])) {
+        await sendCertificationPrompt(ctx.phone)
+        return { nextStep: 'reg_collect_certification' }
+      }
+    }
     return showRegistrationSummary(ctx, {})
   }
 
@@ -1859,6 +1906,21 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   if (!evidenceNote) {
     await sendText(ctx.phone, 'Reply with your proof note or send a file or type *skip* if you do not want to add one now.')
     return { nextStep: 'reg_collect_evidence' }
+  }
+
+  // ── Evidence-gate check before advancing to summary (text-note path) ───────
+  // A plain-text note must pass the same gate as evidence_done / evidence_skip.
+  // Gate OFF → unchanged behaviour (proceed directly to summary).
+  if (qualityGate) {
+    const gate = evaluateEvidenceGate(ctx.data.evidenceFileUrls ?? [])
+    if (!gate.ok) {
+      await sendText(ctx.phone, evidenceShortfallMessage(gate.have, gate.need))
+      return { nextStep: 'reg_collect_evidence' }
+    }
+    if (hasHighRiskServiceSelection(ctx.data.skills ?? [])) {
+      await sendCertificationPrompt(ctx.phone)
+      return { nextStep: 'reg_collect_certification', nextData: { evidenceNote } }
+    }
   }
 
   return showRegistrationSummary(ctx, { evidenceNote })
@@ -1914,6 +1976,53 @@ async function handleCollectRates(ctx: FlowContext): Promise<FlowResult> {
     }
     throw error
   }
+}
+
+// ─── Certification step (high-risk trades, quality gate ON) ───────────────────
+
+async function sendCertificationPrompt(phone: string): Promise<void> {
+  await sendText(
+    phone,
+    [
+      '📋 *Certification required for your trade*',
+      '',
+      'Your selected service requires a registration number or licence.',
+      '',
+      'Please upload your certification document or photo, OR type your registration/licence number below.',
+    ].join('\n'),
+  )
+}
+
+async function handleCollectCertification(ctx: FlowContext): Promise<FlowResult> {
+  // Media upload path (cert document or photo)
+  if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, "⚠️ Couldn't read that file. Please try uploading your certification document again.")
+      return { nextStep: 'reg_collect_certification' }
+    }
+    try {
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        label: PROVIDER_CERT_DOCUMENT_LABEL,
+      })
+      return showRegistrationSummary(ctx, {
+        certificationDocAttachmentId: attachmentId,
+        certificationRef: `attachment:${attachmentId}`,
+      })
+    } catch (err) {
+      console.error('[registration:handleCollectCertification] media upload failed:', err)
+      await sendText(ctx.phone, "⚠️ Upload failed. Please try again or type your registration/licence number instead.")
+      return { nextStep: 'reg_collect_certification' }
+    }
+  }
+
+  // Text reply path (typed registration/licence number)
+  const text = ctx.reply.text?.trim()
+  if (!text) {
+    await sendText(ctx.phone, 'Please upload your certification document or type your registration/licence number.')
+    return { nextStep: 'reg_collect_certification' }
+  }
+  return showRegistrationSummary(ctx, { certificationRef: text })
 }
 
 async function showRegistrationSummary(
@@ -2350,10 +2459,26 @@ async function handleCollectReference2(ctx: FlowContext): Promise<FlowResult> {
 async function promptEvidenceAfterBio(
   ctx: FlowContext,
   nextData: Partial<typeof ctx.data>,
+  // Pass the already-resolved gate value when calling from within the same turn
+  // (e.g. handleCollectEvidence). When undefined, the gate is resolved here so
+  // callers that do not yet have the value (e.g. handleCollectReference2) stay
+  // correct without an extra flag read per-turn in the common path.
+  qualityGateForPrompt?: boolean,
 ): Promise<FlowResult> {
+  const resolvedGate = qualityGateForPrompt ?? (await isQualityGateV2Enabled())
   const highRiskRequirements = selectedHighRiskServices(ctx.data.skills)
   if (highRiskRequirements.length > 0) {
     const labels = highRiskRequirements.map((requirement) => requirement.label)
+    const highRiskButtons = resolvedGate
+      ? [
+          { id: 'evidence_add', title: '✍🏽 Add proof note' },
+          { id: 'evidence_upload', title: '📎 Upload proof' },
+        ]
+      : [
+          { id: 'evidence_add', title: '✍🏽 Add proof note' },
+          { id: 'evidence_upload', title: '📎 Upload proof' },
+          { id: 'evidence_skip', title: '⏭️ Skip for now' },
+        ]
     await sendButtons(
       ctx.phone,
       [
@@ -2365,30 +2490,47 @@ async function promptEvidenceAfterBio(
         '',
         'Submitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.',
       ].join('\n'),
-      [
-        { id: 'evidence_add', title: '✍🏽 Add proof note' },
-        { id: 'evidence_upload', title: '📎 Upload proof' },
-        { id: 'evidence_skip', title: '⏭️ Skip for now' },
-      ],
+      highRiskButtons,
     )
     return { nextStep: 'reg_collect_evidence', nextData: { ...nextData, highRiskServiceLabels: labels } }
   }
 
-  await sendEvidencePrompt(ctx.phone, ctx.data, nextData)
+  await sendEvidencePrompt(ctx.phone, ctx.data, nextData, resolvedGate)
   return { nextStep: 'reg_collect_evidence', nextData }
 }
 
 /**
- * Sends the evidence-step prompt for non-high-risk skill sets. When the
- * whatsapp.registration.evidence_skip_primary flag is enabled, "Skip for now"
- * is the primary (first) button so providers don't get stuck at the file-upload
- * step. Falls back to the legacy ordering when the flag is off.
+ * Sends the evidence-step prompt for non-high-risk skill sets.
+ *
+ * When `qualityGateForPrompt` is true (gate ON), the skip button is suppressed
+ * entirely — only the "add work photo/note" button is rendered, and the
+ * evidence_skip_primary path is bypassed regardless of the flag.
+ *
+ * When the gate is OFF, the existing evidence_skip_primary flag logic is
+ * preserved unchanged: when the flag is on, "Skip for now" is the primary
+ * (first) button so providers don't get stuck at the file-upload step.
  */
 export async function sendEvidencePrompt(
   phone: string,
   _data: ConversationData,
   _nextData: Partial<ConversationData>,
+  qualityGateForPrompt = false,
 ): Promise<void> {
+  if (qualityGateForPrompt) {
+    await sendButtons(
+      phone,
+      [
+        '🧾 Add at least 3 work photos or proof documents to continue.',
+        '',
+        'Examples: completed jobs, references, certificates, or relevant past work. Photos help Plug A Pro verify your skills during review.',
+      ].join('\n'),
+      [
+        { id: 'evidence_add', title: '✍🏽 Add work photo/note' },
+      ],
+    )
+    return
+  }
+
   const skipPrimary = await isEnabled('whatsapp.registration.evidence_skip_primary')
 
   const buttons = skipPrimary
@@ -2418,6 +2560,298 @@ export async function sendEvidencePrompt(
 
 async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
   return showRegistrationSummary(ctx)
+}
+
+// ─── Quality gate v2 (create-on-PASS): draft persistence + Didit launch ───────
+//
+// When provider.onboarding.quality_gate_v2 is ON, the WhatsApp summary confirm
+// must NOT create the Provider / ProviderApplication yet. Instead we persist a
+// full replayable submit bundle on a ProviderApplicationDraft, issue a Didit
+// verification link anchored to that draft, send the hosted link, and park the
+// applicant on `reg_awaiting_kyc`. Task 2.6 (the verification-completion
+// webhook) replays the transaction from `submitPayload` once Didit returns PASS.
+type Qgv2SubmitPayload = ReturnType<typeof buildQgv2SubmitPayload>
+
+/**
+ * Assembles a JSON-serializable bundle carrying every input the deferred submit
+ * transaction will need to replay `syncProviderRecord` + `submitProviderApplication`
+ * + `providerCategory.createMany` exactly as the gate-OFF path would. Mirrors the
+ * transaction body in `handlePending` so the replay stays behaviourally identical.
+ */
+function buildQgv2SubmitPayload(ctx: FlowContext) {
+  const normalizedPhone = normalizePhone(ctx.phone)
+  const submitData = validateSubmitData(ctx)
+  const canonicalSkills = canonicalizeServiceCategoryValues(submitData.skills)
+  const cohort = createTestCohortContext(normalizedPhone)
+  const categorySlugs = canonicalSkills.map(
+    (skill) => resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
+  )
+
+  return {
+    version: 1 as const,
+    channel: 'WHATSAPP' as const,
+    submittedAt: new Date().toISOString(),
+    normalizedPhone,
+    isTestUser: cohort.isTestUser,
+    cohortName: cohort.cohortName,
+    canonicalSkills,
+    categorySlugs,
+    // Exact args for syncProviderRecord (skipEnrichment mirrors the tx path).
+    syncProviderArgs: {
+      phone: normalizedPhone,
+      name: submitData.name,
+      email: ctx.data.providerEmail ?? null,
+      skills: canonicalSkills,
+      serviceAreas: submitData.resolvedAreaLabels,
+      active: true,
+      availableNow: true,
+      verified: false,
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
+      locationNodeIds: submitData.locationNodeIds,
+    },
+    // Exact SubmitInput for submitProviderApplication.
+    submitApplicationArgs: {
+      phone: normalizedPhone,
+      name: submitData.name,
+      idNumber: submitData.idNumber ?? null,
+      skills: canonicalSkills,
+      serviceAreas: submitData.resolvedAreaLabels,
+      availability: formatAvailabilityLabel(submitData.availability),
+      experience: ctx.data.experience ?? null,
+      evidenceNote: ctx.data.evidenceNote ?? null,
+      evidenceFileUrls: submitData.evidenceAttachmentIds,
+      certificationRef: ctx.data.certificationRef ?? null,
+      // REPLAY CONTRACT (Task 2.6): the Provider row does not exist yet at
+      // draft time. The completion webhook MUST call syncProviderRecord(
+      // syncProviderArgs + { skipEnrichment: true }) first, then pass the
+      // resulting providerId into submitProviderApplication — do NOT rely on
+      // this null. Kept as an explicit placeholder so the field is present in
+      // the bundle contract rather than silently absent.
+      providerId: null as string | null,
+      email: ctx.data.providerEmail ?? null,
+      alternateMobileE164: submitData.alternateMobileE164 ?? null,
+      preferredLanguage: submitData.preferredLanguage ?? null,
+      reference1Name: submitData.reference1Name ?? null,
+      reference1Mobile: submitData.reference1Mobile ?? null,
+      reference2Name: submitData.reference2Name ?? null,
+      reference2Mobile: submitData.reference2Mobile ?? null,
+      callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+      hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+      rateNegotiable: ctx.data.rateNegotiable !== false,
+      weekendJobs:
+        (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
+      sameDayJobs: true,
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
+      ctwaReferral: ctx.data.ctwaReferral ?? null,
+    },
+    // Raw ctx.data replay inputs the tx reads directly (category rows, post-tx links).
+    replayInputs: {
+      experience: ctx.data.experience ?? null,
+      callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+      hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+      rateNegotiable: ctx.data.rateNegotiable !== false,
+      certificationProofAttachmentIds: uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []),
+      // Fix 3: carry the uploaded certification document attachment id so the
+      // create-on-PASS completion can link it to the application (handleCollectCertification
+      // stores it alongside certificationRef 'attachment:<id>'). Without this the
+      // uploaded cert doc was never linked on the gate-ON path.
+      certificationDocAttachmentId: ctx.data.certificationDocAttachmentId ?? null,
+      evidenceAttachmentIds: submitData.evidenceAttachmentIds,
+      profilePhotoAttachmentId: ctx.data.profilePhotoAttachmentId ?? null,
+      providerBio: ctx.data.providerBio ?? null,
+      verificationDocAttachmentId: ctx.data.verificationDocAttachmentId ?? null,
+      verificationSelfieAttachmentId: ctx.data.verificationSelfieAttachmentId ?? null,
+      locationNodeIds: submitData.locationNodeIds,
+      selectedRegionStatus: ctx.data.selectedRegionStatus ?? null,
+    },
+  }
+}
+
+/**
+ * Upserts a ProviderApplicationDraft for this phone carrying the replay bundle,
+ * then issues the draft-anchored Didit link and sends it via a CTA-URL button.
+ * Returns the FlowResult that parks the applicant on `reg_awaiting_kyc`.
+ */
+async function launchQgv2DraftAndVerification(ctx: FlowContext): Promise<FlowResult> {
+  const payload = buildQgv2SubmitPayload(ctx)
+  const traceId = createSubmitTraceId()
+
+  // Plain, queryable columns alongside the full submitPayload bundle. Keyed on
+  // phone so re-confirms reuse the same un-submitted draft rather than piling up
+  // duplicate rows (one applicant → one live draft).
+  const draftColumns = {
+    phone: payload.normalizedPhone,
+    email: payload.submitApplicationArgs.email,
+    name: payload.submitApplicationArgs.name,
+    skills: payload.canonicalSkills,
+    categorySlugs: payload.categorySlugs,
+    serviceAreas: payload.submitApplicationArgs.serviceAreas,
+    locationNodeIds: payload.replayInputs.locationNodeIds,
+    experience: payload.submitApplicationArgs.experience,
+    availability: payload.submitApplicationArgs.availability,
+    evidenceFileUrls: payload.replayInputs.evidenceAttachmentIds,
+    evidenceNote: payload.submitApplicationArgs.evidenceNote,
+    reference1Name: payload.submitApplicationArgs.reference1Name,
+    reference1Mobile: payload.submitApplicationArgs.reference1Mobile,
+    reference2Name: payload.submitApplicationArgs.reference2Name,
+    reference2Mobile: payload.submitApplicationArgs.reference2Mobile,
+    submitPayload: payload as unknown as Prisma.InputJsonValue,
+  }
+
+  // Reuse an existing un-submitted draft for this phone if one already exists,
+  // otherwise create. There is no unique constraint on phone, so we cannot use
+  // Prisma upsert directly; do a guarded find-then-write.
+  let draftId: string | undefined
+  try {
+    const existing = await db.providerApplicationDraft.findFirst({
+      where: { phone: payload.normalizedPhone, submittedApplicationId: null },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    })
+    if (existing?.id) {
+      await db.providerApplicationDraft.update({ where: { id: existing.id }, data: draftColumns })
+      draftId = existing.id
+    } else {
+      const created = await db.providerApplicationDraft.create({ data: draftColumns, select: { id: true } })
+      draftId = created.id
+    }
+  } catch (err) {
+    console.error('[registration-flow] qgv2 draft persist failed', {
+      trace_id: traceId,
+      normalized_phone: payload.normalizedPhone,
+      error: safeErrorMessage(err),
+    })
+    // Without a draft we cannot anchor the verification. Keep the applicant on
+    // the summary so they can retry; Task 2.8 hardens this further.
+    await sendText(
+      ctx.phone,
+      "⏳ We couldn't start your verification just now. Please tap *Submit* again in a moment.",
+    )
+    return { nextStep: 'reg_pending' }
+  }
+
+  if (!draftId) {
+    await sendText(
+      ctx.phone,
+      "⏳ We couldn't start your verification just now. Please tap *Submit* again in a moment.",
+    )
+    return { nextStep: 'reg_pending' }
+  }
+
+  let verificationUrl: string | null = null
+  let issuerFailed = false
+  try {
+    const link = await issueProviderApplicationVerificationLink({
+      providerApplicationDraftId: draftId,
+      channel: 'WHATSAPP',
+    })
+    verificationUrl = link.verificationUrl
+  } catch (err) {
+    issuerFailed = true
+    console.error('[registration-flow] qgv2 verification link issue failed', {
+      trace_id: traceId,
+      draft_id: draftId,
+      error: safeErrorMessage(err),
+    })
+  }
+
+  const awaitingBody = [
+    "✅ Almost there! One quick step left.",
+    '',
+    'Tap the button below to verify your identity securely. Once you pass, your application goes straight to our review team.',
+  ].join('\n')
+
+  if (verificationUrl) {
+    try {
+      await sendCtaUrl(
+        ctx.phone,
+        awaitingBody,
+        ctaLabelFor('identity_verification'),
+        verificationUrl,
+        undefined,
+        { templateName: 'interactive:provider_application_verify_cta', metadata: { traceId, draftId } },
+      )
+    } catch (err) {
+      console.warn('[registration-flow] qgv2 verification CTA send failed (non-fatal)', {
+        trace_id: traceId,
+        draft_id: draftId,
+        error: safeErrorMessage(err),
+      })
+      await sendText(
+        ctx.phone,
+        "⏳ Your verification is being prepared — we'll message you here with the link shortly.",
+      )
+    }
+  } else if (issuerFailed) {
+    // Didit threw (disabled or API error): tell the applicant to expect the link shortly.
+    // Draft stays persisted; the in-flight re-nudge cron will retry.
+    await sendText(
+      ctx.phone,
+      "⏳ Identity verification is temporarily unavailable — we'll send you the link here shortly.",
+    )
+  } else {
+    // Issuer returned null URL without throwing (e.g. gate disabled at link level).
+    await sendText(
+      ctx.phone,
+      "⏳ Your verification is being prepared — we'll message you here with the link shortly.",
+    )
+  }
+
+  console.info('[registration-flow] qgv2 draft launched, awaiting verification', {
+    trace_id: traceId,
+    draft_id: draftId,
+    has_verification_url: Boolean(verificationUrl),
+  })
+
+  return { nextStep: 'reg_awaiting_kyc' }
+}
+
+async function handleAwaitingKyc(ctx: FlowContext): Promise<FlowResult> {
+  // Re-issue the verification link idempotently (reuses the existing non-terminal
+  // verification) so an applicant who lost the message can request it again.
+  let verificationUrl: string | null = null
+  try {
+    const draft = await db.providerApplicationDraft.findFirst({
+      where: { phone: normalizePhone(ctx.phone), submittedApplicationId: null },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    })
+    if (draft?.id) {
+      const link = await issueProviderApplicationVerificationLink({
+        providerApplicationDraftId: draft.id,
+        channel: 'WHATSAPP',
+      })
+      verificationUrl = link.verificationUrl
+    }
+  } catch (err) {
+    console.warn('[registration-flow] qgv2 re-issue verification failed (non-fatal)', {
+      error: safeErrorMessage(err),
+    })
+  }
+
+  if (verificationUrl) {
+    try {
+      await sendCtaUrl(
+        ctx.phone,
+        "You're almost done — verify your identity to finish your application.",
+        ctaLabelFor('identity_verification'),
+        verificationUrl,
+        undefined,
+        { templateName: 'interactive:provider_application_verify_cta' },
+      )
+      return { nextStep: 'reg_awaiting_kyc' }
+    } catch {
+      // fall through to the text nudge below
+    }
+  }
+
+  await sendText(
+    ctx.phone,
+    "⏳ We're still waiting on your identity verification. Complete it from the link we sent to finish your application.",
+  )
+  return { nextStep: 'reg_awaiting_kyc' }
 }
 
 async function handlePending(ctx: FlowContext): Promise<FlowResult> {
@@ -2486,7 +2920,10 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_pending' }
   }
 
-  const traceId = createSubmitTraceId()
+  // P1 guard: run customer-phone and existing-application checks BEFORE forking
+  // on the quality gate. The gate-OFF path runs these inside the transaction, but
+  // the gate-ON path must see the same rejections — otherwise a customer-owned
+  // phone or a duplicate applicant can slip through to draft + KYC launch.
   const normalizedPhone = normalizePhone(ctx.phone)
   const digits = normalizedPhone.replace(/\D/g, '')
   const phoneVariants = Array.from(new Set([
@@ -2495,6 +2932,83 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     digits || null,
     digits.startsWith('27') ? `0${digits.slice(2)}` : null,
   ].filter(Boolean) as string[]))
+
+  const preCheckCustomer = await db.customer.findFirst({
+    where: { phone: { in: phoneVariants } },
+    select: { id: true },
+  })
+  if (preCheckCustomer) {
+    await sendText(
+      ctx.phone,
+      'This number is already registered as a customer on Plug A Pro. To apply as a provider, use a different phone number and restart with *join*.',
+    )
+    return { nextStep: 'done' }
+  }
+
+  const preCheckApp = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
+  if (preCheckApp?.status === 'APPROVED') {
+    const ref = preCheckApp.id.slice(-8).toUpperCase()
+    await sendButtons(
+      ctx.phone,
+      `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${ref}*\n\nYou can manage jobs from the provider menu.`,
+      [
+        { id: 'provider_my_jobs', title: 'My Jobs' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+      undefined,
+      { metadata: { applicationId: preCheckApp.id } },
+    )
+    return { nextStep: 'done' }
+  }
+  if (preCheckApp?.status === 'MORE_INFO_REQUIRED') {
+    const ref = preCheckApp.id.slice(-8).toUpperCase()
+    await sendText(
+      ctx.phone,
+      `⏳ Your application is under review and we've requested more information.\n\nRef: *${ref}*\n\nPlease reply with the requested information so we can complete the review.`,
+    )
+    return { nextStep: 'done' }
+  }
+  if (preCheckApp?.status === 'PENDING') {
+    const ref = preCheckApp.id.slice(-8).toUpperCase()
+    await sendButtons(
+      ctx.phone,
+      `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
+      [
+        { id: 'provider_application_status', title: 'Check Status' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+      undefined,
+      { metadata: { applicationId: preCheckApp.id } },
+    )
+    return { nextStep: 'done' }
+  }
+
+  // Quality gate v2 (create-on-PASS): when the gate is ON we do NOT create the
+  // Provider / ProviderApplication at summary time. Persist a replayable draft,
+  // launch Didit, and park on reg_awaiting_kyc. The submit transaction below is
+  // replayed by the verification-completion webhook (Task 2.6) once Didit PASSes.
+  // All conflict/customer-phone guards above have already run — gate-ON and
+  // gate-OFF paths are now equivalent for the rejection cases.
+  const qualityGateOn = await isQualityGateV2Enabled()
+  if (qualityGateOn) {
+    try {
+      return await launchQgv2DraftAndVerification(ctx)
+    } catch (err) {
+      // Validation failures (incomplete ctx.data) or unexpected errors: keep the
+      // applicant on the summary rather than silently dropping them.
+      console.error('[registration-flow] qgv2 launch failed at summary', {
+        normalized_phone: normalizedPhone,
+        error: safeErrorMessage(err),
+      })
+      await sendText(
+        ctx.phone,
+        "⏳ We couldn't submit that just now. Please tap *Submit* again in a moment.",
+      )
+      return { nextStep: 'reg_pending' }
+    }
+  }
+
+  const traceId = createSubmitTraceId()
 
   try {
     const submitData = validateSubmitData(ctx)
@@ -2587,108 +3101,78 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         }
       }
 
-      const providerId = await syncProviderRecord(tx as typeof db, {
-        phone: normalizedPhone,
-        name: submitData.name,
-        email: ctx.data.providerEmail ?? null,
-        skills: canonicalSkills,
-        serviceAreas: submitData.resolvedAreaLabels,
-        active: true,
-        availableNow: true,
-        verified: false,
-        isTestUser: cohort.isTestUser,
-        cohortName: cohort.cohortName,
-        locationNodeIds: submitData.locationNodeIds,
-        // Enrichment (syncProviderSkills, upsertStructuredServiceAreas) must not run
-        // inside the transaction - a caught DB error inside those helpers puts the
-        // PostgreSQL connection in ABORTED state even when swallowed at the JS level,
-        // causing all subsequent tx queries to fail. Run enrichment post-commit below.
-        skipEnrichment: true,
+      // Shared finalize core (syncProviderRecord → submitProviderApplication →
+      // providerCategory.createMany → providerRate.createMany). Extracted into
+      // finalizeWhatsappProviderSubmission so the KYC create-on-PASS completion
+      // flow delegates to the exact same logic instead of reimplementing it.
+      // Gate-OFF passes no opts → byte-identical to the original inline block.
+      const { application, providerId } = await finalizeWhatsappProviderSubmission(tx, {
+        syncProviderArgs: {
+          phone: normalizedPhone,
+          name: submitData.name,
+          email: ctx.data.providerEmail ?? null,
+          skills: canonicalSkills,
+          serviceAreas: submitData.resolvedAreaLabels,
+          active: true,
+          availableNow: true,
+          verified: false,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
+          locationNodeIds: submitData.locationNodeIds,
+        },
+        submitInput: {
+          // Required
+          phone: normalizedPhone,
+          name: submitData.name,
+          idNumber: submitData.idNumber,
+          // Use canonicalised skills so DB values are normalised.
+          skills: canonicalSkills,
+          serviceAreas: submitData.resolvedAreaLabels,
+          // Pre-formatted label string so the DB value matches the inline create
+          // exactly (formatAvailabilityLabel collapses arrays to "Any day" etc.).
+          availability: formatAvailabilityLabel(submitData.availability),
+          experience: ctx.data.experience ?? null,
+          evidenceNote: ctx.data.evidenceNote ?? null,
+
+          // Optional — preserve all columns the inline create wrote
+          email: ctx.data.providerEmail ?? null,
+          alternateMobileE164: submitData.alternateMobileE164,
+          preferredLanguage: submitData.preferredLanguage,
+          reference1Name: submitData.reference1Name,
+          reference1Mobile: submitData.reference1Mobile,
+          reference2Name: submitData.reference2Name,
+          reference2Mobile: submitData.reference2Mobile,
+          callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+          // Phase 4 follow-up Task 1: optional hourly rate.
+          hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+          rateNegotiable: ctx.data.rateNegotiable !== false,
+
+          // Explicit booleans — helper spreads conditionally so we must pass
+          // both to preserve the exact behaviour of the inline create.
+          weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
+          sameDayJobs: true,
+
+          evidenceFileUrls: submitData.evidenceAttachmentIds,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
+
+          // CTWA ad attribution captured on the first inbound message
+          ctwaReferral: ctx.data.ctwaReferral ?? null,
+        },
+        canonicalSkills,
+        experienceLabel: ctx.data.experience ?? null,
+        certificationProofCount: uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []).length,
+        // providerRate rows are written only when callOutFee is a number (the
+        // gate-OFF trigger); mirrors the original inline `typeof … === 'number'`.
+        rate:
+          typeof ctx.data.callOutFee === 'number'
+            ? {
+                callOutFee: ctx.data.callOutFee,
+                hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+                rateNegotiable: ctx.data.rateNegotiable !== false,
+              }
+            : null,
       })
-
-      const { application } = await submitProviderApplication(tx, {
-        // Required
-        phone: normalizedPhone,
-        name: submitData.name,
-        idNumber: submitData.idNumber,
-        // Use canonicalised skills so DB values are normalised (their PR adds
-        // canonicalizeServiceCategoryValues at the call site; preserve that).
-        skills: canonicalSkills,
-        serviceAreas: submitData.resolvedAreaLabels,
-        // Pass the pre-formatted label string so the DB value matches the
-        // inline create exactly (formatAvailabilityLabel collapses arrays to
-        // "Any day" / "Mon–Sat" / "Weekdays only").
-        availability: formatAvailabilityLabel(submitData.availability),
-        experience: ctx.data.experience ?? null,
-        evidenceNote: ctx.data.evidenceNote ?? null,
-
-        // Optional — preserve all columns the inline create wrote
-        providerId,
-        email: ctx.data.providerEmail ?? null,
-        alternateMobileE164: submitData.alternateMobileE164,
-        preferredLanguage: submitData.preferredLanguage,
-        reference1Name: submitData.reference1Name,
-        reference1Mobile: submitData.reference1Mobile,
-        reference2Name: submitData.reference2Name,
-        reference2Mobile: submitData.reference2Mobile,
-        callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
-        // Phase 4 follow-up Task 1: optional hourly rate.
-        hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
-        rateNegotiable: ctx.data.rateNegotiable !== false,
-
-        // Explicit booleans — helper spreads conditionally so we must pass
-        // both to preserve the exact behaviour of the inline create.
-        weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
-        sameDayJobs: true,
-
-        evidenceFileUrls: submitData.evidenceAttachmentIds,
-        isTestUser: cohort.isTestUser,
-        cohortName: cohort.cohortName,
-
-        // CTWA ad attribution captured on the first inbound message
-        ctwaReferral: ctx.data.ctwaReferral ?? null,
-      }, { source: 'whatsapp' })
-
-      const providerCategoryRows = await Promise.all(
-        canonicalSkills.map(async (skill) => {
-          const categorySlug = resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_')
-          const approvalStatus = await resolveInitialApprovalStatus(providerId, categorySlug)
-          return {
-            certificationRequired: Boolean(getServiceComplianceRequirement(skill).certificationRequiredForApproval),
-            certificationStatus: getServiceComplianceRequirement(skill).certificationRecommended
-              ? (uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []).length > 0 ? 'SUBMITTED' : 'REQUESTED')
-              : 'NOT_REQUIRED',
-            providerId,
-            categorySlug,
-            yearsExperience: yearsExperienceFromLabel(ctx.data.experience),
-            skillLevel: skillLevelFromExperienceLabel(ctx.data.experience),
-            approvalStatus,
-          }
-        })
-      )
-
-      if (providerCategoryRows.length > 0) {
-        await (tx as any).providerCategory?.createMany?.({
-          data: providerCategoryRows,
-          skipDuplicates: true,
-        })
-      }
-
-      if (typeof ctx.data.callOutFee === 'number') {
-        await (tx as any).providerRate?.createMany?.({
-          data: providerCategoryRows.map((row) => ({
-            providerId,
-            categorySlug: row.categorySlug,
-            callOutFee: ctx.data.callOutFee,
-            // Phase 4 follow-up Task 1: hourly rate stored per-category if
-            // provided. ProviderRate.hourlyRate already exists in schema.
-            hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
-            rateNegotiable: ctx.data.rateNegotiable !== false,
-            quoteAfterInspection: false,
-          })),
-          skipDuplicates: true,
-        })
-      }
 
       // Phase 4 follow-up Task 2: optional bio onto Provider.bio. Non-fatal
       // failure mirrors the profile-photo pattern.

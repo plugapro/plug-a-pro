@@ -528,6 +528,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.onboarding.quality_gate_v2': {
+    description:
+      'Master switch for submit-time onboarding quality gate v2 (Didit KYC + ≥3 work photos + high-risk certification). ' +
+      'When ON, all three application submit paths (WhatsApp registration, /provider/register, /provider/signup) enforce the bar. Default OFF.',
+    owner: 'eng',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY

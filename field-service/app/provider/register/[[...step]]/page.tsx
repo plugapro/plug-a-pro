@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { findLatestProviderRegistrationApplicationByPhone } from '@/lib/provider-applications'
 import { resolveProviderRegistrationDestination } from '@/lib/provider-registration/resolver'
+import { isQualityGateV2Enabled } from '@/lib/provider-onboarding/quality-gate'
 
 export const dynamic = 'force-dynamic'
 export const metadata = buildMetadata({ title: 'Provider registration', noIndex: true })
@@ -130,7 +131,10 @@ export default async function ProviderRegistrationPage({
     redirect('/provider/register')
   }
 
-  const destination = await resolveAuthenticatedEntryDestination()
+  const [destination, qualityGateEnabled] = await Promise.all([
+    resolveAuthenticatedEntryDestination(),
+    isQualityGateV2Enabled(),
+  ])
   if (requestedStep === 'submitted' && destination?.route !== '/provider/register/status') {
     redirect('/provider/register')
   }
@@ -145,6 +149,7 @@ export default async function ProviderRegistrationPage({
       initialApplicationRef={destination?.applicationRef ?? null}
       initialDraftResumeStep={destination?.draftResumeStep ?? 'profile'}
       skillOptions={getPilotServiceCategories()}
+      qualityGateEnabled={qualityGateEnabled}
     />
   )
 }

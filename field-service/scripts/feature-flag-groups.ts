@@ -41,6 +41,7 @@ export const WHATSAPP_REGISTRATION_FRICTION_FLAGS = [
   'whatsapp.registration.evidence_skip_primary',
   'whatsapp.flow_switch_data_clear',
   'whatsapp.session_prewarning',
+  'provider.onboarding.quality_gate_v2',
 ] as const satisfies readonly FeatureFlagKey[]
 
 export const FEATURE_FLAG_GROUPS = {

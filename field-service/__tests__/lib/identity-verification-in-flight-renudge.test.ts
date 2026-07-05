@@ -24,6 +24,9 @@ function verification(overrides: Record<string, unknown> = {}) {
   return {
     id: 'v1',
     providerId: 'p1',
+    // Fix D: default to null so existing tests represent provider-anchored rows
+    providerApplicationDraftId: null,
+    providerApplicationDraft: null,
     status: 'AWAITING_DOCUMENT',
     identityBasis: 'SA_ID',
     updatedAt: updatedAtAgo(24),
@@ -123,26 +126,65 @@ describe('listInFlightRenudgeCandidates', () => {
     expect(where.updatedAt.lte.getTime()).toBe(NOW.getTime() - 6 * HOUR_MS)
   })
 
-  it('filters the provider relation on active only - Provider.phone is non-nullable, so any phone filter with not: null makes Prisma throw "Argument `not` must not be null"', async () => {
+  it('query uses OR to include both provider-anchored and draft-anchored rows, with active filter in the provider OR arm (Fix D)', async () => {
+    // The query was restructured for Fix D. Provider.phone is non-nullable, so a
+    // top-level `phone: { not: null }` filter would crash Prisma (PR #151 fix retained).
+    // The provider-anchored arm still has `provider: { active: true }`.
     const findMany = vi.fn().mockResolvedValue([])
     const client = {
       providerIdentityVerification: { findMany },
       messageEvent: { findMany: vi.fn().mockResolvedValue([]) },
     }
     await listInFlightRenudgeCandidates(client, { now: NOW })
-    const where = (findMany.mock.calls[0][0] as { where: { provider: Record<string, unknown> } }).where
-    expect(where.provider).toEqual({ active: true })
+    const where = (findMany.mock.calls[0][0] as { where: { OR: Array<Record<string, unknown>> } }).where
+    // The query must use an OR with at least 2 arms (provider-anchored + draft-anchored)
+    expect(Array.isArray(where.OR)).toBe(true)
+    // The provider-anchored arm must still filter `provider: { active: true }`
+    const providerArm = where.OR.find((arm: Record<string, unknown>) => 'provider' in arm)
+    expect(providerArm?.provider).toEqual({ active: true })
+    // No top-level `phone: { not: null }` filter (would crash Prisma on non-nullable column)
+    expect((where as Record<string, unknown>).phone).toBeUndefined()
   })
 
-  it('drops rows with no linked provider, no phone, or null providerId', async () => {
+  it('drops rows with no linked provider, no phone, or null providerId (no draft either)', async () => {
     const client = clientWith([
       verification({ id: 'v-ok', providerId: 'p-ok', provider: { id: 'p-ok', firstName: 'Ok', name: null, phone: '+27820000001', active: true } }),
-      verification({ id: 'v-no-provider', provider: null, providerId: null }),
+      // No provider, no draft → invalid, must be excluded
+      verification({ id: 'v-no-provider', provider: null, providerId: null, providerApplicationDraftId: null }),
+      // Has provider but no phone → excluded (blank-phone post-query filter)
       verification({ id: 'v-no-phone', providerId: 'p-x', provider: { id: 'p-x', firstName: 'X', name: null, phone: null, active: true } }),
-      verification({ id: 'v-null-pid', providerId: null, provider: { id: 'p-y', firstName: 'Y', name: null, phone: '+27820000002', active: true } }),
+      // providerId null, has provider object but NO draft → neither provider-anchored nor draft-anchored, excluded
+      verification({ id: 'v-null-pid', providerId: null, providerApplicationDraftId: null, provider: { id: 'p-y', firstName: 'Y', name: null, phone: '+27820000002', active: true } }),
     ])
     const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
     expect(rows.map(r => r.verificationId)).toEqual(['v-ok'])
+  })
+
+  it('Fix D: includes draft-anchored verifications (no providerId, has draft) as candidates', async () => {
+    // Draft-anchored = PWA gate-ON applicant: verification issued against a draft,
+    // no Provider row exists yet. These rows should now be picked up by the cron.
+    const draftAnchored = verification({
+      id: 'v-draft',
+      providerId: null,
+      providerApplicationDraftId: 'draft-abc',
+      providerApplicationDraft: { id: 'draft-abc', phone: '+27820000099', name: 'Draft Applicant' },
+      provider: null,
+    })
+    const providerAnchored = verification({
+      id: 'v-prov',
+      providerId: 'p-ok',
+      provider: { id: 'p-ok', firstName: 'Ok', name: null, phone: '+27820000001', active: true },
+    })
+    const client = clientWith([draftAnchored, providerAnchored])
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    const ids = rows.map(r => r.verificationId)
+    expect(ids).toContain('v-draft')
+    expect(ids).toContain('v-prov')
+    // Draft-anchored candidate fields
+    const draftRow = rows.find(r => r.verificationId === 'v-draft')!
+    expect(draftRow.providerId).toBeNull()
+    expect(draftRow.draftId).toBe('draft-abc')
+    expect(draftRow.phone).toBe('+27820000099')
   })
 
   it('blocks eligibility when a recent in-flight-resume MessageEvent exists within IN_FLIGHT_DEDUP_HOURS', async () => {
@@ -456,13 +498,15 @@ describe('sendInFlightRenudges', () => {
     expect(result).toEqual({ rows: [], sent: 0, skipped: 0, errors: 0, aborted: false })
   })
 
-  it('passes the candidate verificationId to issueLink so the link targets the stalled row', async () => {
+  it('passes the candidate verificationId and providerId/draftId to issueLink so the link targets the stalled row', async () => {
     const client = clientWith([
       verification({ id: 'v-target', providerId: 'p1', provider: { id: 'p1', firstName: 'A', name: null, phone: '+27820000001', active: true } }),
     ])
     const d = deps()
     await sendInFlightRenudges(client, { batchCap: 1, deps: d, now: NOW })
-    expect(d.issueLink).toHaveBeenCalledWith({ providerId: 'p1', verificationId: 'v-target' })
+    // Fix D: issueLink now receives draftId alongside providerId so it can
+    // handle draft-anchored verifications in the same call signature.
+    expect(d.issueLink).toHaveBeenCalledWith({ providerId: 'p1', draftId: null, verificationId: 'v-target' })
   })
 
   it('marks the attempt event FAILED when the send throws', async () => {

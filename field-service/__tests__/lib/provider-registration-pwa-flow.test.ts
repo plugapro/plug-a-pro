@@ -1,4 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+
+const { gateEnabled } = vi.hoisted(() => ({ gateEnabled: vi.fn() }))
+vi.mock('@/lib/provider-onboarding/quality-gate', async (orig) => ({
+  ...(await orig<typeof import('@/lib/provider-onboarding/quality-gate')>()),
+  isQualityGateV2Enabled: gateEnabled,
+}))
+// When the gate is ON, pwa-flow now calls issueProviderApplicationVerificationLink
+// instead of validating evidence/certs. Mock it so tests don't hit the real DB.
+vi.mock('@/lib/identity-verification/application-link', () => ({
+  issueProviderApplicationVerificationLink: vi.fn(async () => ({
+    verificationId: 'ver-test',
+    verificationUrl: 'https://verify.example.com/test-token',
+    expiresAt: new Date(),
+    reused: false,
+  })),
+}))
 import {
   ProviderRegistrationValidationError,
   saveProviderRegistrationDraft,
@@ -455,5 +471,219 @@ describe('provider registration PWA flow', () => {
         avatarUrl: 'https://tracker.example.invalid/avatar.png',
       }),
     }))
+  })
+})
+
+// TODO: the `as any` casts below mirror the file's existing SubmitClient mock pattern —
+// remove once the Prisma tx mock is typed against SubmitClient centrally.
+describe('pwa-flow quality gate', () => {
+  beforeEach(() => {
+    gateEnabled.mockReset()
+    gateEnabled.mockResolvedValue(false)
+  })
+
+  it('throws QUALITY_GATE_EVIDENCE when gate ON and insufficient evidence (Fix B)', async () => {
+    // The gate-ON path now enforces evidence/cert BEFORE issuing the KYC link to
+    // avoid burning a paid Didit session for an under-qualified applicant.
+    gateEnabled.mockResolvedValue(true)
+    const { client } = createSubmitClient()
+    await expect(
+      submitProviderRegistrationApplication(client as any, {
+        draftId: 'draft-1',
+        resumeToken: 'resume-token',
+        phone: '0823035070',
+        name: 'Thabo Nkosi',
+        skills: ['painting'],
+        serviceAreas: ['Maboneng'],
+        locationNodeIds: ['sub_maboneng'],
+        provinceId: 'province-gauteng',
+        cityId: 'city-johannesburg',
+        regionId: 'region-jhb-central',
+        availabilityDays: ['Mon'],
+        callOutFee: 150,
+        consentAccepted: true,
+        evidenceFileUrls: ['x'], // only 1 of 3 required
+      }),
+    ).rejects.toMatchObject({ code: 'QUALITY_GATE_EVIDENCE' })
+  })
+
+  it('returns awaiting_verification for non-high-risk skill when gate ON', async () => {
+    gateEnabled.mockResolvedValue(true)
+    const { client } = createSubmitClient()
+    const result = await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['painting'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: ['x', 'y', 'z'],
+    })
+    expect(result.outcome).toBe('awaiting_verification')
+  })
+
+  it('throws QUALITY_GATE_CERTIFICATION when gate ON and high-risk skill without certificationRef (Fix B)', async () => {
+    // The gate-ON path now enforces cert BEFORE issuing the KYC link to
+    // avoid burning a paid Didit session for an under-qualified applicant.
+    gateEnabled.mockResolvedValue(true)
+    const { client } = createSubmitClient()
+    await expect(
+      submitProviderRegistrationApplication(client as any, {
+        draftId: 'draft-1',
+        resumeToken: 'resume-token',
+        phone: '0823035070',
+        name: 'Thabo Nkosi',
+        skills: ['electrical'], // high-risk
+        serviceAreas: ['Maboneng'],
+        locationNodeIds: ['sub_maboneng'],
+        provinceId: 'province-gauteng',
+        cityId: 'city-johannesburg',
+        regionId: 'region-jhb-central',
+        availabilityDays: ['Mon'],
+        callOutFee: 150,
+        consentAccepted: true,
+        evidenceFileUrls: ['x', 'y', 'z'],
+        certificationRef: null, // missing for high-risk skill
+      }),
+    ).rejects.toMatchObject({ code: 'QUALITY_GATE_CERTIFICATION' })
+  })
+
+  it('is a no-op when gate is OFF (flag returns false)', async () => {
+    gateEnabled.mockResolvedValue(false)
+    const { client } = createSubmitClient()
+    const result = await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['painting'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: [],
+    })
+    expect(result.outcome).toBe('created')
+  })
+
+  it('carries evidenceFileUrls into the created application (not hard-coded [])', async () => {
+    gateEnabled.mockResolvedValue(false)
+    const { client, tx } = createSubmitClient()
+    await submitProviderRegistrationApplication(client as any, {
+      draftId: 'draft-1',
+      resumeToken: 'resume-token',
+      phone: '0823035070',
+      name: 'Thabo Nkosi',
+      skills: ['painting'],
+      serviceAreas: ['Maboneng'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      availabilityDays: ['Mon'],
+      callOutFee: 150,
+      consentAccepted: true,
+      evidenceFileUrls: ['https://store.public.blob.vercel-storage.com/a.jpg', 'https://store.public.blob.vercel-storage.com/b.jpg'],
+    })
+    expect(tx.providerApplication.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        evidenceFileUrls: ['https://store.public.blob.vercel-storage.com/a.jpg', 'https://store.public.blob.vercel-storage.com/b.jpg'],
+      }),
+    }))
+  })
+})
+
+describe('P1: gate-ON conflict guards in PWA-A (submitProviderRegistrationApplication)', () => {
+  beforeEach(() => {
+    gateEnabled.mockReset()
+    gateEnabled.mockResolvedValue(true)
+  })
+
+  const baseGateOnInput = {
+    draftId: 'draft-1',
+    resumeToken: 'resume-token',
+    phone: '0823035070',
+    name: 'Thabo Nkosi',
+    skills: ['plumbing'],
+    serviceAreas: ['Maboneng'],
+    locationNodeIds: ['sub_maboneng'],
+    provinceId: 'province-gauteng',
+    cityId: 'city-johannesburg',
+    regionId: 'region-jhb-central',
+    availabilityDays: ['Mon'],
+    callOutFee: 150,
+    consentAccepted: true,
+    // Fix B: gate-ON now enforces evidence/cert before KYC.
+    // plumbing is high-risk so certificationRef is required.
+    evidenceFileUrls: ['https://e.com/1.jpg', 'https://e.com/2.jpg', 'https://e.com/3.jpg'],
+    certificationRef: 'CERT-PLUMBING-001',
+  }
+
+  it('gate ON + phone is a customer → throws PHONE_REGISTERED_AS_CUSTOMER, no draft, no KYC link', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.customer.findFirst = vi.fn().mockResolvedValue({ id: 'cust_existing' })
+
+    await expect(submitProviderRegistrationApplication(client as any, baseGateOnInput))
+      .rejects.toMatchObject({ code: 'PHONE_REGISTERED_AS_CUSTOMER' })
+
+    expect(tx.providerApplicationDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + PENDING application exists → returns existing_pending, no draft update, no KYC link', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.providerApplication.findFirst = vi.fn().mockResolvedValue({
+      id: 'app_existing_001',
+      phone: '+27823035070',
+      status: 'PENDING',
+      name: 'Thabo Nkosi',
+      providerId: null,
+      submittedAt: new Date(),
+    })
+
+    const result = await submitProviderRegistrationApplication(client as any, baseGateOnInput)
+
+    expect(result.outcome).toBe('existing_pending')
+    // No draft was updated with submitPayload
+    expect(tx.providerApplicationDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + APPROVED application exists → returns existing_approved, no draft update', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.providerApplication.findFirst = vi.fn().mockResolvedValue({
+      id: 'app_existing_002',
+      phone: '+27823035070',
+      status: 'APPROVED',
+      name: 'Thabo Nkosi',
+      providerId: 'prov_001',
+      submittedAt: new Date(),
+    })
+
+    const result = await submitProviderRegistrationApplication(client as any, baseGateOnInput)
+
+    expect(result.outcome).toBe('existing_approved')
+    expect(tx.providerApplicationDraft.update).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + clean applicant → awaiting_verification, draft updated', async () => {
+    const { client, tx } = createSubmitClient()
+    tx.providerApplication.findFirst = vi.fn().mockResolvedValue(null)
+    tx.customer.findFirst = vi.fn().mockResolvedValue(null)
+
+    const result = await submitProviderRegistrationApplication(client as any, baseGateOnInput)
+
+    expect(result.outcome).toBe('awaiting_verification')
+    // Draft was updated with submitPayload
+    expect(tx.providerApplicationDraft.update).toHaveBeenCalled()
   })
 })

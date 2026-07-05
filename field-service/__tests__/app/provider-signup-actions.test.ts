@@ -1,5 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const { mockGateEnabled, mockIssueLinkWebAction, mockEvaluateEvidenceGate, mockEvaluateCertificationGate } = vi.hoisted(() => ({
+  mockGateEnabled: vi.fn(async () => false),
+  mockIssueLinkWebAction: vi.fn(async () => ({
+    verificationId: 'ver-web-1',
+    verificationUrl: 'https://verify.example.com/token',
+    expiresAt: new Date(),
+    reused: false,
+  })),
+  mockEvaluateEvidenceGate: vi.fn((urls: string[]) => ({ ok: true, have: urls.length, need: 3 })),
+  mockEvaluateCertificationGate: vi.fn((skills: string[], hasCert: boolean) => ({ ok: true, required: false })),
+}))
+
+// Keep the quality gate OFF for all gate-OFF tests — Task 2.8 gate-ON tests use mockGateEnabled.mockResolvedValueOnce(true).
+vi.mock('@/lib/provider-onboarding/quality-gate', async (orig) => ({
+  ...(await orig<typeof import('@/lib/provider-onboarding/quality-gate')>()),
+  isQualityGateV2Enabled: mockGateEnabled,
+  evaluateEvidenceGate: mockEvaluateEvidenceGate,
+  evaluateCertificationGate: mockEvaluateCertificationGate,
+}))
+
+vi.mock('@/lib/identity-verification/application-link', () => ({
+  issueProviderApplicationVerificationLink: mockIssueLinkWebAction,
+}))
+
 // ─── In-memory stores (defined outside hoisted so tests can read them) ────────
 
 const tokenStore = new Map<string, any>()
@@ -74,6 +98,9 @@ const { mockDb, mockIsEnabled, mockRevalidatePath } = vi.hoisted(() => {
         return { count }
       }),
     },
+    customer: {
+      findFirst: vi.fn(async () => null),
+    },
     providerApplication: {
       findFirst: vi.fn(async ({ where }: any) => {
         for (const app of applicationStore) {
@@ -92,6 +119,11 @@ const { mockDb, mockIsEnabled, mockRevalidatePath } = vi.hoisted(() => {
     featureFlag: {
       findUnique: vi.fn(async () => null),
     },
+    providerApplicationDraft: {
+      findFirst: vi.fn(async () => null),
+      create: vi.fn(async () => ({ id: 'draft-web-1' })),
+      update: vi.fn(async () => ({ id: 'draft-web-1' })),
+    },
     $transaction: vi.fn(async (fn: any) => fn(mockDb)),
   }
 
@@ -109,6 +141,7 @@ const { mockDb, mockIsEnabled, mockRevalidatePath } = vi.hoisted(() => {
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('next/cache', () => ({ revalidatePath: mockRevalidatePath }))
 vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
+
 
 // ─── Convenience accessors for the hoisted stores ─────────────────────────────
 // We cannot share references directly between hoisted and non-hoisted scope,
@@ -208,6 +241,22 @@ beforeEach(() => {
     store.push(row)
     return row
   })
+
+  mockGateEnabled.mockResolvedValue(false)
+  mockIssueLinkWebAction.mockResolvedValue({
+    verificationId: 'ver-web-1',
+    verificationUrl: 'https://verify.example.com/token',
+    expiresAt: new Date(),
+    reused: false,
+  })
+  mockEvaluateEvidenceGate.mockImplementation((urls: string[]) => ({ ok: true, have: urls.length, need: 3 }))
+  mockEvaluateCertificationGate.mockImplementation((skills: string[], hasCert: boolean) => ({ ok: true, required: false }))
+
+  mockDb.providerApplicationDraft.findFirst.mockResolvedValue(null)
+  mockDb.providerApplicationDraft.create.mockResolvedValue({ id: 'draft-web-1' })
+  mockDb.providerApplicationDraft.update.mockResolvedValue({ id: 'draft-web-1' })
+
+  mockDb.customer.findFirst.mockResolvedValue(null)
 })
 
 // ─── Import helpers and actions after mocks ───────────────────────────────────
@@ -400,5 +449,301 @@ describe('updateCapturedFieldAction', () => {
     await expect(
       updateCapturedFieldAction({ rawToken, field: 'step', value: 'admin' }),
     ).rejects.toThrow(/field_not_allowed/i)
+  })
+})
+
+describe('Task 2.8: Didit unavailable at submitProviderApplicationFromWebAction (gate ON)', () => {
+  async function buildGateOnConvAndToken() {
+    // All sections captured so selectMissingSections returns [] and schema validation passes.
+    const conv = {
+      id: `conv-gateon-${Date.now()}`,
+      phone: '+27000000099',
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'Gate On User',
+        idNumber: '8001015009087',
+        skills: ['plumbing'],
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        hourlyRate: 350,
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+        bio: 'I am an experienced plumber with five years of work history.',
+        references: 'Available on request from past clients on demand.',
+        evidenceFileUrls: [
+          'https://blob.example.com/ev1.jpg',
+          'https://blob.example.com/ev2.jpg',
+          'https://blob.example.com/ev3.jpg',
+        ],
+        certificationRef: 'PIRB-12345',
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+      updatedAt: new Date(),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    return { rawToken, conv }
+  }
+
+  it('issueLink throws generic Error → action returns awaitingVerification with null URL, does not throw', async () => {
+    mockGateEnabled.mockResolvedValueOnce(true)
+    mockIssueLinkWebAction.mockRejectedValueOnce(new Error('didit down'))
+
+    const { rawToken } = await buildGateOnConvAndToken()
+    const result = await submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+
+    expect(result).toMatchObject({ ok: true, awaitingVerification: true, verificationUrl: null })
+    expect(getApplicationStore()).toHaveLength(0)
+    expect(mockIssueLinkWebAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('issueLink throws DiditDisabledError → same outcome, no application created', async () => {
+    const { DiditDisabledError } = await import('@/lib/identity-verification/vendors/didit/client')
+    mockGateEnabled.mockResolvedValueOnce(true)
+    mockIssueLinkWebAction.mockRejectedValueOnce(new DiditDisabledError('DIDIT_API_KEY not set'))
+
+    const { rawToken } = await buildGateOnConvAndToken()
+    const result = await submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+
+    expect(result).toMatchObject({ ok: true, awaitingVerification: true, verificationUrl: null })
+    expect(getApplicationStore()).toHaveLength(0)
+  })
+})
+
+describe('P1: gate-ON conflict guards in PWA-B (submitProviderApplicationFromWebAction)', () => {
+  async function buildGateOnConvAndTokenWithPhone(phone: string) {
+    const conv = {
+      id: `conv-p1-${Date.now()}-${Math.random()}`,
+      phone,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'P1 Test User',
+        idNumber: '8001015009087',
+        skills: ['plumbing'],
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        hourlyRate: 350,
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+        bio: 'I am an experienced plumber with five years of work history.',
+        references: 'Available on request from past clients on demand.',
+        evidenceFileUrls: [
+          'https://blob.example.com/ev1.jpg',
+          'https://blob.example.com/ev2.jpg',
+          'https://blob.example.com/ev3.jpg',
+        ],
+        certificationRef: 'PIRB-12345',
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+      updatedAt: new Date(),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    return { rawToken, conv }
+  }
+
+  beforeEach(() => {
+    mockGateEnabled.mockResolvedValue(true)
+    mockIssueLinkWebAction.mockResolvedValue({
+      verificationId: 'ver-web-2',
+      verificationUrl: 'https://verify.example.com/token2',
+      expiresAt: new Date(Date.now() + 3600_000),
+      reused: false,
+    })
+  })
+
+  it('gate ON + phone is a customer → throws PHONE_REGISTERED_AS_CUSTOMER, no draft, no KYC link', async () => {
+    const phone = '+27821111101'
+    mockDb.customer.findFirst.mockResolvedValueOnce({ id: 'cust-existing' })
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+
+    await expect(
+      submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+    ).rejects.toThrow(/PHONE_REGISTERED_AS_CUSTOMER/i)
+
+    expect(getApplicationStore()).toHaveLength(0)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + PENDING application exists → throws APPLICATION_CONFLICT:existing_pending, no new app, no KYC link', async () => {
+    const phone = '+27821111102'
+    // customer check returns null (default), seed PENDING application
+    getApplicationStore().push({
+      id: 'app-existing-pending',
+      phone,
+      status: 'PENDING',
+      name: 'Existing',
+    })
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+
+    await expect(
+      submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+    ).rejects.toThrow(/APPLICATION_CONFLICT.*existing_pending/i)
+
+    // No new application was created — only the seeded one
+    expect(getApplicationStore()).toHaveLength(1)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + APPROVED application exists → throws APPLICATION_CONFLICT:existing_approved, no new app, no KYC link', async () => {
+    const phone = '+27821111103'
+    getApplicationStore().push({
+      id: 'app-existing-approved',
+      phone,
+      status: 'APPROVED',
+      name: 'Existing',
+    })
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+
+    await expect(
+      submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+    ).rejects.toThrow(/APPLICATION_CONFLICT.*existing_approved/i)
+
+    expect(getApplicationStore()).toHaveLength(1)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + clean applicant → awaitingVerification, KYC link issued', async () => {
+    const phone = '+27821111104'
+    // customer.findFirst returns null (default), applicationStore is empty for this phone
+
+    const { rawToken } = await buildGateOnConvAndTokenWithPhone(phone)
+    const result = await submitProviderApplicationFromWebAction({ rawToken, payload: {} })
+
+    expect(result).toMatchObject({ ok: true, awaitingVerification: true })
+    expect(mockIssueLinkWebAction).toHaveBeenCalledTimes(1)
+    expect(getApplicationStore()).toHaveLength(0)
+  })
+
+  it('gate ON + evidenceFileUrls below minimum → throws Error("QUALITY_GATE_EVIDENCE"), no application', async () => {
+    const phone = '+27821111105'
+    const conv = {
+      id: `conv-gate-evidence-${Date.now()}`,
+      phone,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'Bad Evidence User',
+        idNumber: '8001015009087',
+        skills: ['plumbing'],
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        hourlyRate: 350,
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+        bio: 'I am an experienced plumber with five years of work history.',
+        references: 'Available on request from past clients on demand.',
+        // Good evidence in captured data
+        evidenceFileUrls: [
+          'https://blob.example.com/ev1.jpg',
+          'https://blob.example.com/ev2.jpg',
+          'https://blob.example.com/ev3.jpg',
+        ],
+        certificationRef: 'PIRB-12345',
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+      updatedAt: new Date(),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    mockGateEnabled.mockResolvedValueOnce(true)
+    // Mock the evaluator to return failure for insufficient evidence
+    mockEvaluateEvidenceGate.mockReturnValueOnce({ ok: false, have: 1, need: 3 })
+
+    // Override evidence with insufficient data in payload (below minimum of 3)
+    await expect(
+      submitProviderApplicationFromWebAction({
+        rawToken,
+        payload: {
+          evidenceFileUrls: ['https://blob.example.com/ev1.jpg'],
+        }
+      })
+    ).rejects.toThrow('QUALITY_GATE_EVIDENCE')
+
+    expect(getApplicationStore()).toHaveLength(0)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
+  })
+
+  it('gate ON + high-risk skill without certification → throws Error("QUALITY_GATE_CERTIFICATION"), no application', async () => {
+    const phone = '+27821111106'
+    const conv = {
+      id: `conv-gate-cert-${Date.now()}`,
+      phone,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'No Cert User',
+        idNumber: '8001015009087',
+        skills: ['electrical'], // high-risk skill requiring certification
+        regionLabel: 'Sandton',
+        cityLabel: 'Sandton',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        hourlyRate: 350,
+        profilePhotoUrl: 'https://blob.example.com/photo.jpg',
+        bio: 'I am an experienced electrician.',
+        references: 'Available on request from past clients on demand.',
+        evidenceFileUrls: [
+          'https://blob.example.com/ev1.jpg',
+          'https://blob.example.com/ev2.jpg',
+          'https://blob.example.com/ev3.jpg',
+        ],
+        certificationRef: 'VALID-CERT', // captured good certification
+      },
+      expiresAt: new Date(Date.now() + 3600_000),
+      updatedAt: new Date(),
+    }
+    getConversationStore().set(conv.id, conv)
+
+    const { rawToken } = await issueProviderResumeToken(mockDb as never, {
+      conversationId: conv.id,
+      phone: conv.phone,
+      issuedByAdminUserId: 'admin-1',
+      source: 'recovery_nudge',
+    })
+
+    mockGateEnabled.mockResolvedValueOnce(true)
+    // Mock the evaluator to return failure — high-risk skill without cert
+    mockEvaluateCertificationGate.mockReturnValueOnce({ ok: false, required: true })
+
+    // Override skills to select a high-risk one WITHOUT overriding certification —
+    // the explicit gate will re-evaluate and find the mismatch
+    await expect(
+      submitProviderApplicationFromWebAction({
+        rawToken,
+        payload: {
+          skills: ['electrical'], // high-risk skill still selected
+          certificationRef: null, // but now certification is null in payload override
+        }
+      })
+    ).rejects.toThrow('QUALITY_GATE_CERTIFICATION')
+
+    expect(getApplicationStore()).toHaveLength(0)
+    expect(mockIssueLinkWebAction).not.toHaveBeenCalled()
   })
 })

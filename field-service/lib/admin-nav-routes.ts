@@ -88,5 +88,6 @@ export const CLIENT_PUBLIC_SMOKE_ROUTES = [
   '/book/plumbing',
   '/for-providers', // renamed from /provider - kept separate from the authenticated /provider/* tree
   '/provider/signup?t=invalid', // provider web signup finish page with invalid token
+  '/provider/register', // provider PWA registration entry — quality gate OFF smoke (gate OFF by default)
   '/status', // public platform status dashboard - must stay reachable post-deploy
 ] as const

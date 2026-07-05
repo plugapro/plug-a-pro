@@ -11,7 +11,9 @@ import {
 } from '@/lib/service-categories'
 import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { isQualityGateV2Enabled, evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '@/lib/location-format'
+import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
 import { hashRegistrationResumeToken } from './tokens'
 
 const RESUME_TOKEN_PURPOSE = 'provider_registration_resume'
@@ -66,6 +68,8 @@ export type ProviderRegistrationSubmitInput = ProviderRegistrationDraftInput & {
   resumeToken: string
   name: string
   consentAccepted: boolean
+  evidenceFileUrls?: string[] | null
+  certificationRef?: string | null
 }
 
 type DraftClient = {
@@ -492,6 +496,7 @@ export async function submitProviderRegistrationApplication(
 ): Promise<
   | { outcome: 'created'; applicationId: string; ref: string }
   | { outcome: 'existing_pending' | 'existing_approved' | 'existing_more_info'; applicationId: string; ref: string }
+  | { outcome: 'awaiting_verification'; verificationUrl: string | null }
 > {
   const baseData = normalizeDraftInputBase({ ...input, lastCompletedStep: 8 })
   const name = cleanString(input.name)
@@ -512,6 +517,205 @@ export async function submitProviderRegistrationApplication(
   }
 
   const tokenHash = await hashRegistrationResumeToken(input.resumeToken)
+
+  // Check quality gate BEFORE entering the transaction so we can branch cleanly.
+  const gateEnabled = await isQualityGateV2Enabled()
+
+  if (gateEnabled) {
+    // Gate ON: validate token (without consuming it), run all pre-create guards
+    // (P1: customer-phone, existing-app, completeness, service-area canonicalization),
+    // persist submitPayload onto the draft, issue a verification link, and return
+    // awaiting_verification. Guards must mirror the gate-OFF transaction exactly so
+    // both paths reject customer-owned phones and duplicate applicants identically.
+    type GateOnTxResult =
+      | { kind: 'ok'; draftId: string }
+      | { kind: 'existing'; outcome: 'existing_approved' | 'existing_more_info' | 'existing_pending'; applicationId: string }
+
+    const txResult = await client.$transaction(async (tx): Promise<GateOnTxResult> => {
+      const genericTokenError = new ProviderRegistrationValidationError(
+        'Could not verify this registration. Please restart and try again.',
+        'INVALID_RESUME_TOKEN',
+        400,
+      )
+
+      const resumeToken = await tx.registrationResumeToken.findUnique({
+        where: { tokenHash },
+        select: {
+          draftId: true,
+          purpose: true,
+          expiresAt: true,
+          consumedAt: true,
+          draft: { select: { id: true, phone: true } },
+        },
+      })
+
+      if (
+        !resumeToken ||
+        resumeToken.purpose !== RESUME_TOKEN_PURPOSE ||
+        resumeToken.consumedAt ||
+        resumeToken.expiresAt.getTime() <= Date.now() ||
+        resumeToken.draftId !== input.draftId
+      ) {
+        throw genericTokenError
+      }
+
+      const tokenDraftPhone = resumeToken.draft?.phone
+      if (
+        !tokenDraftPhone ||
+        normalizeProviderApplicationPhone(tokenDraftPhone) !== normalizeProviderApplicationPhone(baseData.phone)
+      ) {
+        throw genericTokenError
+      }
+
+      // P1 guard: run the same validation the gate-OFF path runs before it
+      // creates rows — service-area canonicalization, completeness, customer-phone
+      // rejection, and existing-application short-circuit. Token validation above
+      // gates all of these so enumeration risk is unchanged.
+      const location = await resolveCanonicalServiceAreas(
+        tx,
+        input,
+        baseData.locationNodeIds,
+        baseData.serviceAreas,
+        true,
+      )
+      const canonicalData = {
+        ...baseData,
+        serviceAreas: location.serviceAreas,
+        locationNodeIds: location.locationNodeIds,
+      }
+
+      const completeness = evaluateProviderProfileCompleteness({
+        phone: canonicalData.phone,
+        name,
+        skills: canonicalData.skills,
+        serviceAreas: canonicalData.serviceAreas,
+        locationNodeIds: canonicalData.locationNodeIds,
+        availability: canonicalData.availability,
+        callOutFee: canonicalData.callOutFee,
+      })
+      if (!completeness.canSubmit) {
+        throw new ProviderRegistrationValidationError(
+          'Complete the required registration fields before submitting.',
+          'INCOMPLETE_APPLICATION',
+        )
+      }
+
+      const existingCustomer = await tx.customer.findFirst({
+        where: { phone: { in: phoneVariants(canonicalData.phone) } },
+        select: { id: true },
+      })
+      if (existingCustomer) {
+        throw new ProviderRegistrationValidationError(
+          'This number is already registered as a customer on Plug A Pro.',
+          'PHONE_REGISTERED_AS_CUSTOMER',
+          409,
+        )
+      }
+
+      // Existing active applications: return discriminated value (not throw) so
+      // the tx commits cleanly and the caller can surface the right outcome.
+      const existingApp = await findLatestActiveProviderApplicationByPhone(tx, canonicalData.phone)
+      if (existingApp?.status === 'APPROVED') {
+        return { kind: 'existing', outcome: 'existing_approved', applicationId: existingApp.id }
+      }
+      if (existingApp?.status === 'MORE_INFO_REQUIRED') {
+        return { kind: 'existing', outcome: 'existing_more_info', applicationId: existingApp.id }
+      }
+      if (existingApp?.status === 'PENDING') {
+        return { kind: 'existing', outcome: 'existing_pending', applicationId: existingApp.id }
+      }
+
+      // Fix B: enforce evidence/cert gates before issuing a paid KYC session.
+      // A caller POST-ing with evidenceFileUrls:[] or missing certificationRef must
+      // be rejected here — not after a Didit session is consumed.
+      const evidenceResult = evaluateEvidenceGate(input.evidenceFileUrls ?? [])
+      if (!evidenceResult.ok) {
+        throw new ProviderRegistrationValidationError(
+          `Upload at least ${evidenceResult.need} work photos before submitting.`,
+          'QUALITY_GATE_EVIDENCE',
+          422,
+        )
+      }
+      const certResult = evaluateCertificationGate(canonicalData.skills, Boolean(input.certificationRef))
+      if (!certResult.ok) {
+        throw new ProviderRegistrationValidationError(
+          'A certification document or registration number is required for your selected trade(s).',
+          'QUALITY_GATE_CERTIFICATION',
+          422,
+        )
+      }
+
+      const submitPayload = {
+        version: 1 as const,
+        channel: 'PWA_SELF_SERVE' as const,
+        submittedAt: new Date().toISOString(),
+        name,
+        phone: canonicalData.phone,
+        email: canonicalData.email,
+        skills: canonicalData.skills,
+        // In the PWA flow, skills serve as category slugs
+        categorySlugs: canonicalData.skills,
+        // Use canonical service areas and location node IDs (resolved above)
+        serviceAreas: canonicalData.serviceAreas,
+        locationNodeIds: canonicalData.locationNodeIds,
+        experience: canonicalData.experience,
+        availability: canonicalData.availability,
+        availabilityDays: canonicalData.availabilityDays,
+        emergencyAvailable: canonicalData.emergencyAvailable,
+        callOutFee: canonicalData.callOutFee,
+        hourlyRate: null,
+        travelRadiusKm: canonicalData.travelRadiusKm,
+        evidenceNote: canonicalData.evidenceNote,
+        evidenceFileUrls: input.evidenceFileUrls ?? [],
+        certificationRef: input.certificationRef ?? null,
+        reference1Name: canonicalData.reference1Name,
+        reference1Mobile: canonicalData.reference1Mobile,
+        reference2Name: canonicalData.reference2Name,
+        reference2Mobile: canonicalData.reference2Mobile,
+        bio: canonicalData.bio,
+        profilePhotoUrl: canonicalData.profilePhotoUrl,
+      }
+
+      await tx.providerApplicationDraft.update({
+        where: { id: input.draftId },
+        // TODO: Prisma types Json fields as `InputJsonValue` but the inferred
+        // object literal doesn't satisfy that structural type. Cast via
+        // `unknown` until Prisma generates a stricter helper or we upgrade.
+        data: { submitPayload: submitPayload as unknown as import('@prisma/client').Prisma.InputJsonValue, lastCompletedStep: 8 },
+      })
+
+      return { kind: 'ok', draftId: input.draftId }
+    })
+
+    // If an existing active application was found, surface the same outcome as
+    // the gate-OFF path so callers see identical behaviour regardless of gate state.
+    if (txResult.kind === 'existing') {
+      return {
+        outcome: txResult.outcome,
+        applicationId: txResult.applicationId,
+        ref: applicationRef(txResult.applicationId),
+      }
+    }
+
+    const draftId = txResult.draftId
+
+    // Issue verification link outside the transaction (idempotent, uses db internally).
+    let link: { verificationUrl: string | null }
+    try {
+      link = await issueProviderApplicationVerificationLink({
+        providerApplicationDraftId: draftId,
+        channel: 'PWA',
+      })
+    } catch (err) {
+      console.error('[pwa-flow] verification link issue failed (Didit unavailable, draft retained)', {
+        draft_id: draftId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return { outcome: 'awaiting_verification', verificationUrl: null }
+    }
+
+    return { outcome: 'awaiting_verification', verificationUrl: link.verificationUrl }
+  }
 
   return client.$transaction(async (tx) => {
     // SECURITY: validate the resume token FIRST, before any DB write or any
@@ -636,7 +840,7 @@ export async function submitProviderRegistrationApplication(
         sameDayJobs: true,
         weekendJobs: hasWeekendAvailability(data.availabilityDays),
         evidenceNote: data.evidenceNote,
-        evidenceFileUrls: [],
+        evidenceFileUrls: input.evidenceFileUrls ?? [],
         isTestUser: cohort.isTestUser,
         cohortName: cohort.cohortName,
         status: 'PENDING',

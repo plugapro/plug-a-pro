@@ -80,7 +80,11 @@ export function templateForStatus(status: VerificationStatus): InFlightTemplateN
 
 export type InFlightRenudgeCandidate = {
   verificationId: string
-  providerId: string
+  // Fix D: providerId is null for draft-anchored (PWA gate-ON) verifications.
+  // Callers must use draftId / draftPhone for link issuance in that case.
+  providerId: string | null
+  draftId: string | null
+  draftPhone: string | null
   status: VerificationStatus
   identityBasis: IdentityBasis | null
   firstName: string
@@ -95,6 +99,8 @@ export type InFlightRenudgeCandidate = {
 type VerificationRow = {
   id: string
   providerId: string | null
+  // Fix D: draft-anchored verifications (gate-ON PWA path) have no providerId
+  providerApplicationDraftId: string | null
   status: VerificationStatus
   identityBasis: IdentityBasis | null
   updatedAt: Date
@@ -105,6 +111,11 @@ type VerificationRow = {
     name: string | null
     phone: string | null
     active: boolean
+  } | null
+  providerApplicationDraft: {
+    id: string
+    phone: string | null
+    name: string | null
   } | null
 }
 
@@ -133,19 +144,29 @@ export async function listInFlightRenudgeCandidates(
   const updatedAtFrom = new Date(now.getTime() - windowEnd * HOUR_MS)
   const updatedAtTo = new Date(now.getTime() - windowStart * HOUR_MS)
 
+  // Fix D: include draft-anchored (PWA gate-ON) verifications that have no
+  // Provider row yet. These applicants also need re-nudging if they stall mid-flow.
+  // The OR allows rows where either providerId OR providerApplicationDraftId is set.
   const rows = (await client.providerIdentityVerification.findMany({
     where: {
       status: { in: IN_FLIGHT_STATUSES },
       updatedAt: { gte: updatedAtFrom, lte: updatedAtTo },
-      providerId: { not: null },
-      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      // Provider.phone is non-nullable, so `phone: { not: null }` is invalid
-      // Prisma and crashed every cron run (prod fix, PR #151). Blank-phone
-      // rows are filtered post-query in the candidate loop instead.
-      provider: { active: true },
+      OR: [
+        {
+          providerId: { not: null },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          provider: { active: true },
+        },
+        {
+          providerApplicationDraftId: { not: null },
+          providerId: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      ],
     },
     include: {
       provider: { select: { id: true, firstName: true, name: true, phone: true, active: true } },
+      providerApplicationDraft: { select: { id: true, phone: true, name: true } },
     },
     orderBy: { updatedAt: 'asc' },
   })) as VerificationRow[]
@@ -163,8 +184,9 @@ export async function listInFlightRenudgeCandidates(
   //     the window months later, past any scan cutoff), and
   //   - FAILED attempts must still enforce the 24h retry floor — excluding
   //     them at the query freed budget for an hourly re-send storm.
+  // Fix D: phone comes from provider for provider-anchored rows, from draft for draft-anchored rows
   const phones = rows
-    .map(r => r.provider?.phone?.trim())
+    .map(r => (r.provider?.phone ?? r.providerApplicationDraft?.phone)?.trim())
     .filter((p): p is string => Boolean(p))
   const dedupCutoff = new Date(now.getTime() - IN_FLIGHT_DEDUP_HOURS * HOUR_MS)
 
@@ -209,9 +231,16 @@ export async function listInFlightRenudgeCandidates(
 
   const candidates: InFlightRenudgeCandidate[] = []
   for (const row of rows) {
+    // Fix D: resolve phone and name from provider (provider-anchored) or draft (draft-anchored).
+    // A row with neither providerId nor providerApplicationDraftId is invalid — skip.
+    const isDraftAnchored = !row.providerId && Boolean(row.providerApplicationDraftId)
+    if (!row.providerId && !isDraftAnchored) continue
     // trim(): a whitespace-only phone must not become a zero-history candidate.
-    const phone = row.provider?.phone?.trim()
-    if (!row.provider || !phone || !row.providerId) continue
+    const phone = isDraftAnchored
+      ? row.providerApplicationDraft?.phone?.trim()
+      : row.provider?.phone?.trim()
+    if (!phone) continue
+    if (!isDraftAnchored && !row.provider) continue
     const templateName = templateForStatus(row.status)
     if (!templateName) continue
     const priorSendsForVerification = sendsByVerification.get(row.id) ?? 0
@@ -221,12 +250,17 @@ export async function listInFlightRenudgeCandidates(
       recentCount === 0 &&
       priorSendsForVerification < IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION &&
       totalSendsForPhone < IN_FLIGHT_NUDGE_MAX_PER_PHONE
+    const firstName = isDraftAnchored
+      ? firstNameFrom(null, row.providerApplicationDraft?.name ?? null)
+      : firstNameFrom(row.provider!.firstName, row.provider!.name)
     candidates.push({
       verificationId: row.id,
       providerId: row.providerId,
+      draftId: row.providerApplicationDraftId,
+      draftPhone: isDraftAnchored ? (row.providerApplicationDraft?.phone ?? null) : null,
       status: row.status,
       identityBasis: row.identityBasis,
-      firstName: firstNameFrom(row.provider.firstName, row.provider.name),
+      firstName,
       phone,
       updatedAt: row.updatedAt,
       templateName,
@@ -247,7 +281,9 @@ export function summarizeInFlightRenudgeRows(rows: InFlightRenudgeCandidate[]) {
 }
 
 export type SendInFlightRenudgesDeps = {
-  issueLink(input: { providerId: string; verificationId: string }): Promise<{ verificationUrl: string | null }>
+  // Fix D: accept providerId (provider-anchored) OR draftId (draft-anchored) — callers must
+  // implement both branches; for draft-anchored verifications providerId will be null.
+  issueLink(input: { providerId: string | null; draftId: string | null; verificationId: string }): Promise<{ verificationUrl: string | null }>
   // Writes the cadence MessageEvent BEFORE send so the spacing + cap can never
   // drift past a crash or post-send write failure. Mirrors kyc-drive politeness.
   // Returns the event id so a failed send can flip the event to FAILED.
@@ -314,12 +350,14 @@ export async function sendInFlightRenudges(
     try {
       const { verificationUrl } = await opts.deps.issueLink({
         providerId: candidate.providerId,
+        draftId: candidate.draftId,
         verificationId: candidate.verificationId,
       })
       if (!verificationUrl) {
         errors += 1
         console.error('[identity-verification-in-flight-renudge] no verification URL issued', {
           providerId: candidate.providerId,
+          draftId: candidate.draftId,
           verificationId: candidate.verificationId,
         })
         continue
@@ -328,6 +366,7 @@ export async function sendInFlightRenudges(
         identityInFlightRenudge: true,
         verificationId: candidate.verificationId,
         providerId: candidate.providerId,
+        draftId: candidate.draftId,
         status: candidate.status,
       }
       // Attempt-first: consume the cadence slot before any message can leave.

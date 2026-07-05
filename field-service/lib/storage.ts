@@ -171,6 +171,21 @@ export async function uploadProviderProfilePhoto(file: File): Promise<string> {
   return blob.url
 }
 
+export async function uploadProviderEvidencePhoto(file: File): Promise<string> {
+  await validateFile(file)
+
+  const ext = safeExtension(file)
+  const key = `provider-registration/evidence/${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`
+
+  const blob = await put(key, file, {
+    access: 'public',
+    addRandomSuffix: true,
+    contentType: file.type,
+  })
+
+  return blob.url
+}
+
 export async function getProviderPaymentProof(url: string) {
   return get(url, {
     access: 'private',

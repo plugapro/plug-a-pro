@@ -29,6 +29,7 @@ type ApplicationRow = {
   cohortName: string | null
   providerId: string | null
   status: string
+  notes: string | null
   submittedAt: Date
 }
 
@@ -63,7 +64,12 @@ function makeAppMethods() {
       }
       return null
     }),
-    create: vi.fn(async ({ data }: { data: Omit<ApplicationRow, 'id' | 'submittedAt'> }) => {
+    findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
+      const row = appStore.get(where.id)
+      if (!row) throw new Error(`ProviderApplication not found: ${where.id}`)
+      return row
+    }),
+    create: vi.fn(async ({ data }: { data: Omit<ApplicationRow, 'id' | 'submittedAt'> & { notes?: string | null } }) => {
       const id = nextAppId()
       const row: ApplicationRow = {
         id,
@@ -93,6 +99,7 @@ function makeAppMethods() {
         cohortName: data.cohortName ?? null,
         providerId: data.providerId ?? null,
         status: data.status ?? 'PENDING',
+        notes: data.notes ?? null,
       }
       appStore.set(id, row)
       return row
@@ -163,6 +170,7 @@ beforeEach(() => {
   const convMethods = makeConvMethods()
 
   mockDb.providerApplication.findFirst.mockImplementation(appMethods.findFirst.getMockImplementation()!)
+  mockDb.providerApplication.findUniqueOrThrow.mockImplementation(appMethods.findUniqueOrThrow.getMockImplementation()!)
   mockDb.providerApplication.create.mockImplementation(appMethods.create.getMockImplementation()!)
   mockDb.conversation.create.mockImplementation(convMethods.create.getMockImplementation()!)
   mockDb.conversation.findUnique.mockImplementation(convMethods.findUnique.getMockImplementation()!)
@@ -379,5 +387,113 @@ describe('submitProviderApplication', () => {
     expect(recordWorkflowEventMock).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: expect.objectContaining({ isTestUser: true }) }),
     )
+  })
+})
+
+// ─── Completion-safe SubmitOptions (statusOverride / onConflict / initialNotes) ─
+// These options default to today's exact behavior; the KYC create-on-PASS
+// completion flow uses them to delegate row creation instead of reimplementing it.
+
+describe('submitProviderApplication — completion-safe options', () => {
+  it('statusOverride: MORE_INFO_REQUIRED creates the row with that status', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    const result = await submitProviderApplication(
+      mockDb as never,
+      baseInput,
+      { source: 'web', statusOverride: 'MORE_INFO_REQUIRED' },
+    )
+
+    expect(result.application.status).toBe('MORE_INFO_REQUIRED')
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'MORE_INFO_REQUIRED' }) }),
+    )
+  })
+
+  it('statusOverride: MORE_INFO_REQUIRED skips the quality-gate throw even with zero evidence + high-risk skill', async () => {
+    // Force the gate ON so the PENDING path would throw; the override must skip it.
+    const gate = await import('@/lib/provider-onboarding/quality-gate')
+    const spy = vi.spyOn(gate, 'isQualityGateV2Enabled').mockResolvedValue(true)
+
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    const result = await submitProviderApplication(
+      mockDb as never,
+      { ...baseInput, skills: ['electrical'], evidenceFileUrls: [], certificationRef: null },
+      { source: 'web', statusOverride: 'MORE_INFO_REQUIRED' },
+    )
+
+    expect(result.application.status).toBe('MORE_INFO_REQUIRED')
+    // Gate was NOT consulted on the override path (short-circuited by status check)
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('default (no statusOverride) still enforces the quality gate when the flag is ON', async () => {
+    const gate = await import('@/lib/provider-onboarding/quality-gate')
+    const spy = vi.spyOn(gate, 'isQualityGateV2Enabled').mockResolvedValue(true)
+    const evidenceSpy = vi.spyOn(gate, 'evaluateEvidenceGate').mockReturnValue({ ok: false, have: 0, need: 3 })
+
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    await expect(
+      submitProviderApplication(mockDb as never, { ...baseInput, evidenceFileUrls: [] }, { source: 'web' }),
+    ).rejects.toThrow('QUALITY_GATE_EVIDENCE')
+
+    spy.mockRestore()
+    evidenceSpy.mockRestore()
+  })
+
+  it("onConflict: 'link' returns the existing application with conflicted:true and creates NO new row", async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    // Seed an existing active application for the phone.
+    const first = await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+    mockDb.providerApplication.create.mockClear()
+    recordWorkflowEventMock.mockClear()
+    emitServerConversionMock.mockClear()
+
+    const result = await submitProviderApplication(
+      mockDb as never,
+      baseInput,
+      { source: 'web', onConflict: 'link' },
+    )
+
+    expect(result.conflicted).toBe(true)
+    expect(result.application.id).toBe(first.application.id)
+    // No second row created
+    expect(mockDb.providerApplication.create).not.toHaveBeenCalled()
+    // Conflict-link path fires no funnel/CAPI telemetry
+    expect(recordWorkflowEventMock).not.toHaveBeenCalled()
+    expect(emitServerConversionMock).not.toHaveBeenCalled()
+  })
+
+  it("onConflict default ('throw') still throws ProviderApplicationConflictError", async () => {
+    const { submitProviderApplication, ProviderApplicationConflictError } = await import('@/lib/provider-applications-submit')
+    await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+
+    await expect(
+      submitProviderApplication(mockDb as never, baseInput, { source: 'web' }),
+    ).rejects.toThrow(ProviderApplicationConflictError)
+  })
+
+  it('initialNotes lands atomically in the create data', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    const result = await submitProviderApplication(
+      mockDb as never,
+      baseInput,
+      { source: 'web', statusOverride: 'MORE_INFO_REQUIRED', initialNotes: '[quality-gate] KYC failed at application' },
+    )
+
+    expect(mockDb.providerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ notes: '[quality-gate] KYC failed at application' }),
+      }),
+    )
+    expect(result.application.notes).toBe('[quality-gate] KYC failed at application')
+  })
+
+  it('no initialNotes → notes key omitted from create data (byte-identical default)', async () => {
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+
+    const createData = mockDb.providerApplication.create.mock.calls[0][0].data
+    expect('notes' in createData).toBe(false)
   })
 })

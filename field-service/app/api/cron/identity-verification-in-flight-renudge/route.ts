@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
+import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
 import {
   listInFlightRenudgeCandidates,
   resolveBatchCap,
@@ -75,8 +76,14 @@ export async function GET(request: Request) {
       now,
       batchCap,
       deps: {
-        issueLink: ({ providerId, verificationId }) =>
-          issueProviderIdentityVerificationLink({ providerId, verificationId, channel: 'WHATSAPP' }),
+        // Fix D: route link issuance based on whether the candidate is provider-
+        // anchored or draft-anchored (PWA gate-ON applicants have no Provider row yet).
+        issueLink: ({ providerId, draftId, verificationId }) =>
+          providerId
+            ? issueProviderIdentityVerificationLink({ providerId, verificationId, channel: 'WHATSAPP' })
+            : draftId
+              ? issueProviderApplicationVerificationLink({ providerApplicationDraftId: draftId, channel: 'PWA' })
+              : Promise.resolve({ verificationUrl: null }),
         recordAttempt: ({ to, templateName, metadata }) =>
           logOutboundMessage({ to, templateName, metadata }),
         markAttemptFailed: ({ eventId, failureReason }) =>
