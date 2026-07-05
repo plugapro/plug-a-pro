@@ -46,6 +46,7 @@ describe('upsertStructuredServiceAreas matchability contract', () => {
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ active: true }),
+        update: expect.objectContaining({ active: true }),
       }),
     )
   })
