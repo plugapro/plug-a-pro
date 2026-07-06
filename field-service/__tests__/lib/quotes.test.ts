@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { processQuoteDecision } from '../../lib/quotes'
+import { isStubQuote, processQuoteDecision } from '../../lib/quotes'
 
-const { mockDb } = vi.hoisted(() => ({
+const { mockDb, mockInitializeCheckoutAndDeliverPaymentLink } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
     quote: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
@@ -11,10 +11,18 @@ const { mockDb } = vi.hoisted(() => ({
     technicianScheduleItem: { create: vi.fn(), updateMany: vi.fn() },
     auditLog: { create: vi.fn().mockResolvedValue({}) },
   },
+  mockInitializeCheckoutAndDeliverPaymentLink: vi.fn().mockResolvedValue({
+    sent: false,
+    outcome: 'bypass_mode',
+  }),
 }))
 
 vi.mock('../../lib/db', () => ({
   db: mockDb,
+}))
+
+vi.mock('../../lib/payment-link-delivery', () => ({
+  initializeCheckoutAndDeliverPaymentLink: mockInitializeCheckoutAndDeliverPaymentLink,
 }))
 
 describe('processQuoteDecision', () => {
@@ -130,6 +138,7 @@ describe('processQuoteDecision', () => {
       jobRequestId: 'job-request-1',
       bookingId: 'booking-1',
       scheduledDate: preferredDate,
+      amount: 850,
       provider: { id: 'provider-1', phone: '+27123456789', name: 'Provider Pro' },
       customer: { id: 'customer-1', phone: '+27999999999', name: 'Customer' },
       category: 'plumbing',
@@ -144,5 +153,73 @@ describe('processQuoteDecision', () => {
         cohortName: null,
       },
     })
+    // CJ-01: post-commit payment-link hook fires (the helper itself is a no-op
+    // in bypass mode; its gating is covered in payment-link-delivery.test.ts).
+    expect(mockInitializeCheckoutAndDeliverPaymentLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingId: 'booking-1',
+        amountRand: 850,
+        customerPhone: '+27999999999',
+        category: 'plumbing',
+      }),
+    )
+  })
+
+  // ── CJ-07: stub quotes (amount=0, minted by post-lock fulfilment) ──────────
+
+  const STUB_QUOTE = {
+    id: 'stub-quote-1',
+    status: 'PENDING',
+    amount: 0,
+    validUntil: null,
+    preferredDate: null,
+    matchId: 'match-1',
+    match: {
+      provider: { id: 'provider-1', phone: '+27123456789', name: 'Provider Pro' },
+      jobRequest: {
+        id: 'job-request-1',
+        category: 'plumbing',
+        customer: { id: 'customer-1', phone: '+27999999999', name: 'Customer' },
+        address: { suburb: 'Sandton', city: 'Johannesburg', lat: null, lng: null },
+      },
+    },
+  }
+
+  it('rejects approval of a stub quote with AWAITING_PROVIDER_QUOTE', async () => {
+    mockDb.quote.findUnique.mockResolvedValue(STUB_QUOTE)
+
+    const result = await processQuoteDecision('stub-quote-1', 'approve')
+
+    expect(result).toEqual({ error: 'AWAITING_PROVIDER_QUOTE' })
+    expect(mockDb.quote.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.match.update).not.toHaveBeenCalled()
+    expect(mockDb.booking.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects decline of a stub quote with AWAITING_PROVIDER_QUOTE', async () => {
+    mockDb.quote.findUnique.mockResolvedValue(STUB_QUOTE)
+
+    const result = await processQuoteDecision('stub-quote-1', 'decline', {
+      customerFeedback: 'anything',
+    })
+
+    expect(result).toEqual({ error: 'AWAITING_PROVIDER_QUOTE' })
+    expect(mockDb.quote.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.match.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('isStubQuote (quote page render guard)', () => {
+  it('flags the post-lock stub shape (amount=0, validUntil null)', () => {
+    expect(isStubQuote({ amount: 0, validUntil: null })).toBe(true)
+  })
+
+  it('flags negative/zero amounts regardless of validUntil', () => {
+    expect(isStubQuote({ amount: 0, validUntil: new Date() })).toBe(true)
+  })
+
+  it('does not flag a real quote', () => {
+    expect(isStubQuote({ amount: 850, validUntil: null })).toBe(false)
+    expect(isStubQuote({ amount: 0.5, validUntil: new Date() })).toBe(false)
   })
 })

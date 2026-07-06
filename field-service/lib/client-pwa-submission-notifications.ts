@@ -104,6 +104,12 @@ export async function notifyCustomerPaymentFailed(params: {
   customerPhone: string | null
   category: string
   bookingRef: string
+  /**
+   * CJ-13: fresh checkout URL for the retry CTA. Callers must only pass this
+   * in checkout mode (PAYMENT_COLLECTION_MODE === 'checkout'); in bypass mode
+   * the message stays link-free, exactly as before.
+   */
+  checkoutUrl?: string | null
 }): Promise<{ sent: boolean; reason?: string }> {
   if (!params.customerPhone) return { sent: false, reason: 'no_customer_phone' }
 
@@ -117,6 +123,16 @@ export async function notifyCustomerPaymentFailed(params: {
       templateName: 'interactive:client_payment_failed',
       metadata: { bookingRef: params.bookingRef },
     })
+    if (params.checkoutUrl) {
+      await sendCtaUrl(
+        params.customerPhone,
+        'You can retry your payment securely below.',
+        ctaLabelFor('payment'),
+        params.checkoutUrl,
+        undefined,
+        { templateName: 'interactive:client_payment_retry_cta', metadata: { bookingRef: params.bookingRef } },
+      )
+    }
     return { sent: true }
   } catch (err) {
     console.error('[client-pwa-submission-notifications] notifyCustomerPaymentFailed failed (non-fatal)', {
