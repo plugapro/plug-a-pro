@@ -27,6 +27,8 @@ export interface TriageInput {
   skills: string[]
   serviceAreas: string[]
   idNumber: string | null
+  /** SEC-01: survives plaintext idNumber retirement — presence checks use both. */
+  idNumberLast4?: string | null
   status: 'PENDING' | 'MORE_INFO_REQUIRED'
   notes: string | null
   hasVerificationRow: boolean
@@ -59,7 +61,11 @@ function isHighRisk(skillSlug: string): boolean {
 }
 
 function hasIdCaptured(input: TriageInput): boolean {
-  return Boolean(input.idNumber && input.idNumber.trim() !== '') || input.hasVerificationRow
+  return (
+    Boolean(input.idNumber && input.idNumber.trim() !== '') ||
+    Boolean(input.idNumberLast4 && input.idNumberLast4.trim() !== '') ||
+    input.hasVerificationRow
+  )
 }
 
 function inPilot(input: TriageInput): boolean {
@@ -205,6 +211,7 @@ export async function runSweep(opts: SweepOptions): Promise<SweepReport> {
       skills: true,
       serviceAreas: true,
       idNumber: true,
+      idNumberLast4: true,
       status: true,
       notes: true,
       providerId: true,
@@ -240,6 +247,7 @@ export async function runSweep(opts: SweepOptions): Promise<SweepReport> {
       skills: (app.skills as string[]) ?? [],
       serviceAreas: (app.serviceAreas as string[]) ?? [],
       idNumber: app.idNumber ?? null,
+      idNumberLast4: app.idNumberLast4 ?? null,
       status: app.status as 'PENDING' | 'MORE_INFO_REQUIRED',
       notes: app.notes ?? null,
       hasVerificationRow: verifiedAppIdSet.has(app.id),

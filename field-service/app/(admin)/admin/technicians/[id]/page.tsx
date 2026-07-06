@@ -12,6 +12,7 @@ import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
 import { getProviderMatchabilityReadiness } from '@/lib/matching/readiness'
+import { hasApplicationIdNumber } from '@/lib/pii-id-number'
 import { getHighRiskServiceRequirements } from '@/lib/service-category-policy'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -204,6 +205,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
       experience: true,
       availability: true,
       idNumber: true,
+      idNumberLast4: true,
       attachments: {
         where: { label: { in: ['evidence', 'provider_certification', 'provider_id_document', 'provider_id_selfie'] } },
         select: { id: true, label: true, mimeType: true, createdAt: true },
@@ -249,6 +251,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     evidenceFileCount: latestApplication?.evidenceFileUrls?.length ?? 0,
     evidenceNote: latestApplication?.evidenceNote ?? null,
     idNumber: latestApplication?.idNumber ?? null,
+    idNumberLast4: latestApplication?.idNumberLast4 ?? null,
     avatarUrl: provider.avatarUrl,
   })
 
@@ -631,7 +634,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             )}
 
             {canViewIdentityDocuments &&
-              (idDocAttachments.length > 0 || latestApplication?.idNumber || latestIdentityVerification) && (
+              (idDocAttachments.length > 0 || (latestApplication && hasApplicationIdNumber(latestApplication)) || latestIdentityVerification) && (
               <>
                 <Separator />
                 <div>
@@ -642,9 +645,12 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                         ID/passport ending:{' '}
                         <span className="font-mono">****{latestIdentityVerification.identifierLast4}</span>
                       </p>
-                    ) : latestApplication?.idNumber ? (
+                    ) : latestApplication && hasApplicationIdNumber(latestApplication) ? (
                       <p className="text-sm">
-                        ID/passport: <span className="font-mono">provided</span>
+                        ID/passport:{' '}
+                        <span className="font-mono">
+                          {latestApplication.idNumberLast4 ? `****${latestApplication.idNumberLast4}` : 'provided'}
+                        </span>
                       </p>
                     ) : null}
                     {latestIdentityVerification && (

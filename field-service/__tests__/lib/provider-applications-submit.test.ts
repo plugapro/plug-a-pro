@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // ─── In-memory DB state ───────────────────────────────────────────────────────
 
@@ -19,6 +19,8 @@ type ApplicationRow = {
   evidenceNote: string | null
   evidenceFileUrls: string[]
   idNumber: string | null
+  idNumberCiphertext: string | null
+  idNumberLast4: string | null
   alternateMobileE164: string | null
   preferredLanguage: string | null
   reference1Name: string | null
@@ -89,6 +91,8 @@ function makeAppMethods() {
         evidenceNote: data.evidenceNote ?? null,
         evidenceFileUrls: data.evidenceFileUrls ?? [],
         idNumber: data.idNumber ?? null,
+        idNumberCiphertext: data.idNumberCiphertext ?? null,
+        idNumberLast4: data.idNumberLast4 ?? null,
         alternateMobileE164: data.alternateMobileE164 ?? null,
         preferredLanguage: data.preferredLanguage ?? null,
         reference1Name: data.reference1Name ?? null,
@@ -495,5 +499,61 @@ describe('submitProviderApplication — completion-safe options', () => {
 
     const createData = mockDb.providerApplication.create.mock.calls[0][0].data
     expect('notes' in createData).toBe(false)
+  })
+})
+
+// ─── SEC-01: idNumber dual-write (POPIA §26) ─────────────────────────────────
+
+describe('submitProviderApplication — idNumber dual-write', () => {
+  const TEST_KEY = Buffer.alloc(32, 7).toString('base64')
+  const ORIGINAL_KEY = process.env.PII_ENC_KEY
+
+  afterEach(async () => {
+    if (ORIGINAL_KEY === undefined) delete process.env.PII_ENC_KEY
+    else process.env.PII_ENC_KEY = ORIGINAL_KEY
+    const { __resetPiiCryptoWarningForTests } = await import('@/lib/pii-crypto')
+    __resetPiiCryptoWarningForTests()
+  })
+
+  it('with PII_ENC_KEY set: writes plaintext AND decryptable ciphertext AND last4', async () => {
+    process.env.PII_ENC_KEY = TEST_KEY
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+    const { decryptIdNumber } = await import('@/lib/pii-crypto')
+
+    await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+
+    const createData = mockDb.providerApplication.create.mock.calls.at(-1)![0].data
+    expect(createData.idNumber).toBe(baseInput.idNumber) // plaintext untouched (no-data-loss bridge)
+    expect(createData.idNumberCiphertext).toMatch(/^v1:/)
+    expect(decryptIdNumber(String(createData.idNumberCiphertext))).toBe(baseInput.idNumber)
+    expect(createData.idNumberLast4).toBe(baseInput.idNumber.slice(-4))
+  })
+
+  it('without PII_ENC_KEY: plaintext write path unchanged, ciphertext null, last4 still derived', async () => {
+    delete process.env.PII_ENC_KEY
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+
+    await submitProviderApplication(mockDb as never, baseInput, { source: 'whatsapp' })
+
+    const createData = mockDb.providerApplication.create.mock.calls.at(-1)![0].data
+    expect(createData.idNumber).toBe(baseInput.idNumber)
+    expect(createData.idNumberCiphertext).toBeNull()
+    expect(createData.idNumberLast4).toBe(baseInput.idNumber.slice(-4))
+  })
+
+  it('no idNumber provided: all three columns null', async () => {
+    process.env.PII_ENC_KEY = TEST_KEY
+    const { submitProviderApplication } = await import('@/lib/provider-applications-submit')
+
+    await submitProviderApplication(
+      mockDb as never,
+      { ...baseInput, idNumber: null },
+      { source: 'web' },
+    )
+
+    const createData = mockDb.providerApplication.create.mock.calls.at(-1)![0].data
+    expect(createData.idNumber).toBeNull()
+    expect(createData.idNumberCiphertext).toBeNull()
+    expect(createData.idNumberLast4).toBeNull()
   })
 })
