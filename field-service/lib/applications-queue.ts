@@ -12,6 +12,7 @@ import {
   type ProfileCompleteness,
 } from '@/lib/provider-onboarding-completeness'
 import { PROVIDER_PROFILE_PHOTO_LABEL } from '@/lib/provider-attachment-labels'
+import { hasApplicationIdNumber } from '@/lib/pii-id-number'
 import {
   providerOnboardingStageLabel,
   safeRefForPhone,
@@ -31,6 +32,8 @@ export type ApplicationInput = {
   availability: string | null
   callOutFee: { toString(): string } | number | string | null
   idNumber: string | null
+  /** SEC-01: last4 survives plaintext retirement; presence checks use both. */
+  idNumberLast4?: string | null
   status: ApplicationStatus
   submittedAt: Date
   reviewedAt: Date | null
@@ -169,6 +172,7 @@ function evaluateApplicationCompleteness(app: ApplicationInput): ProfileComplete
     availability: app.availability,
     callOutFee,
     idNumber: app.idNumber,
+    idNumberLast4: app.idNumberLast4 ?? null,
     avatarUrl: app.provider?.avatarUrl ?? null,
     profilePhotoAttachmentId,
   })
@@ -376,7 +380,7 @@ export function buildUnifiedRows(input: BuildUnifiedRowsInput): UnifiedApplicati
         hasConflict,
       }),
       flags: {
-        hasIdNumber: Boolean(app.idNumber),
+        hasIdNumber: hasApplicationIdNumber(app),
         hasProfilePhoto: Boolean(profilePhotoId || app.provider?.avatarUrl),
         attachmentCount: app._count.attachments,
         kycStatus: app.provider?.kycStatus ?? null,

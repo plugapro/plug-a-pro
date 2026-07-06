@@ -30,6 +30,8 @@ export type ProviderProfileLike = {
   evidenceFileCount?: number | null
   evidenceNote?: string | null
   idNumber?: string | null
+  /** SEC-01: survives plaintext idNumber retirement — presence checks use both. */
+  idNumberLast4?: string | null
   avatarUrl?: string | null
   profilePhotoAttachmentId?: string | null
 }
@@ -77,7 +79,7 @@ const FIELD_REQUIREMENTS: ReadonlyArray<{
     group: 'core_identity',
     severity: 'recommended',
     reason: 'ID/passport verification is optional at onboarding and required before paid credit purchase.',
-    satisfiedBy: (p) => Boolean(p.idNumber?.trim()),
+    satisfiedBy: (p) => Boolean(p.idNumber?.trim() || p.idNumberLast4?.trim()),
   },
   // ── Service offering ─────────────────────────────────────────────────────
   {
