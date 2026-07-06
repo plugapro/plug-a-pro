@@ -21,10 +21,10 @@ export default function AboutPage() {
         <div className="prose prose-zinc dark:prose-invert max-w-none">
           <h2>What we do</h2>
           <p>
-            When something breaks at home, finding a trustworthy person to fix it is harder than it should be. You either know someone or you don&apos;t. Plug A Pro solves that.
+            When something breaks at home, finding the right person to fix it is harder than it should be. You either know someone or you don&apos;t. Plug A Pro closes that gap.
           </p>
           <p>
-            We match customers with skilled local service providers in their area: plumbers, painters, gardeners, handymen, appliance repairers and more. Customers describe the job on WhatsApp. We find nearby available local pros. Both sides connect, confirm and get the job done.
+            We connect customers with independent local service providers in their area: plumbers, painters, gardeners, handymen, appliance repairers and more. Customers describe the job on WhatsApp. We help match them to nearby available local pros. Customers review the provider&apos;s details and quote, then decide who to appoint. Both sides connect, confirm and get the job done.
           </p>
 
           <h2>For service providers</h2>

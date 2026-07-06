@@ -39,6 +39,9 @@ export function localBusinessLd() {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
     name: siteConfig.name,
+    // Clarifies in structured data that the business is a marketplace connecting
+    // customers to independent providers, not the performer of the services.
+    description: siteConfig.description,
     url: siteConfig.url,
     image: `${siteConfig.url}${siteConfig.ogImage}`,
     telephone: siteConfig.whatsappNumber,
@@ -62,7 +65,10 @@ export function serviceLd(params: {
     "@type": "Service",
     name: params.name,
     description: params.description,
-    provider: {
+    // `broker`, not `provider`: Plug A Pro is a marketplace that arranges the
+    // exchange between customers and independent service providers - it does
+    // not perform the service itself (positioning audit 2026-07-06).
+    broker: {
       "@type": "Organization",
       name: siteConfig.name,
       url: siteConfig.url,

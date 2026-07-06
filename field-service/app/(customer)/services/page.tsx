@@ -37,7 +37,7 @@ export default async function ServicesPage() {
           Request a service
         </h1>
         <p className="mt-2 text-[14.5px] text-[var(--ink-mute)] leading-relaxed">
-          Pick a category and describe your job. We&apos;ll match you with skilled providers.
+          Pick a category and describe your job. We&apos;ll match you with independent local providers.
         </p>
       </div>
 

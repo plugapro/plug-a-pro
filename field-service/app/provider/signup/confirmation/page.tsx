@@ -10,7 +10,7 @@ export default function Confirmation() {
     <main className="mx-auto max-w-md p-6 text-center">
       <h1 className="text-2xl font-semibold">Application submitted</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        {"We'll WhatsApp you within 30 minutes once an admin reviews it."}
+        {"We'll WhatsApp you once your application has been reviewed - most reviews happen within one business day. Approval is not automatic."}
       </p>
     </main>
   )
