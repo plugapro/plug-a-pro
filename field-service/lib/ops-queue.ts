@@ -34,7 +34,50 @@ export const OPS_QUEUE_TYPES = {
   PAYMENT_FOLLOW_UP: 'PAYMENT_FOLLOW_UP',
   PROVIDER_ONBOARDING: 'PROVIDER_ONBOARDING',
   IDENTITY_VERIFICATION: 'IDENTITY_VERIFICATION',
+  // CJ-06: durable record of a booking reschedule request (entityId = bookingId)
+  RESCHEDULE_REQUEST: 'RESCHEDULE_REQUEST',
+  // CJ-03 backstop: post-match customer notification failed (entityId = jobRequestId)
+  CUSTOMER_NOTIFY_FAILED: 'CUSTOMER_NOTIFY_FAILED',
 } as const satisfies Record<string, OpsQueueType>
+
+/**
+ * Ensure a durable, unclaimed ops-queue item exists for (queueType, entityId).
+ *
+ * Idempotent: if the item already exists (claimed or not), it is left
+ * untouched so an existing claim is never clobbered. Use this from system
+ * paths (webhooks, bots, lifecycle functions) that need a durable "ops must
+ * look at this" record rather than a best-effort notification.
+ */
+export async function ensureOpsQueueItem(
+  client: OpsQueueClient,
+  params: {
+    queueType: OpsQueueType
+    entityId: string
+  },
+) {
+  return client.opsQueueAssignment.upsert({
+    where: {
+      queueType_entityId: {
+        queueType: params.queueType,
+        entityId: params.entityId,
+      },
+    },
+    create: {
+      queueType: params.queueType,
+      entityId: params.entityId,
+    },
+    update: {},
+    select: {
+      id: true,
+      queueType: true,
+      entityId: true,
+      claimedById: true,
+      claimedByRole: true,
+      claimedByLabel: true,
+      claimedAt: true,
+    },
+  })
+}
 
 export async function listOpsQueueAssignments(
   client: OpsQueueClient,
