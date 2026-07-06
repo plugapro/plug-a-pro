@@ -5,6 +5,7 @@ import {
   isActiveRegion,
   getRegionServiceStatus,
   describeRegionServiceStatus,
+  serviceStatusForRegionKey,
   ONBOARDING_ACTIVE_REGION_KEYS,
   MATCHING_ACTIVE_REGION_KEYS,
 } from '@/lib/service-area-guard'
@@ -55,5 +56,34 @@ describe('service-area-guard gate split', () => {
 
   it('isOnboardingActiveRegion returns false for out-of-scope regions', () => {
     expect(isOnboardingActiveRegion('western_cape')).toBe(false)
+  })
+})
+
+describe('serviceStatusForRegionKey', () => {
+  it('returns live for jhb_west (matching-active region)', () => {
+    expect(serviceStatusForRegionKey('jhb_west')).toBe('live')
+  })
+
+  it('returns onboarding for each non-matching CoJ region', () => {
+    for (const key of ['jhb_north', 'jhb_east', 'jhb_south', 'jhb_cbd']) {
+      expect(serviceStatusForRegionKey(key)).toBe('onboarding')
+    }
+  })
+
+  it('returns coming_soon for regions outside the active sets', () => {
+    expect(serviceStatusForRegionKey('durban_central')).toBe('coming_soon')
+  })
+
+  it('returns coming_soon for empty string', () => {
+    expect(serviceStatusForRegionKey('')).toBe('coming_soon')
+  })
+
+  it('returns coming_soon for null', () => {
+    expect(serviceStatusForRegionKey(null)).toBe('coming_soon')
+  })
+
+  it('normalises case (uppercase input)', () => {
+    expect(serviceStatusForRegionKey('JHB_WEST')).toBe('live')
+    expect(serviceStatusForRegionKey('JHB_NORTH')).toBe('onboarding')
   })
 })

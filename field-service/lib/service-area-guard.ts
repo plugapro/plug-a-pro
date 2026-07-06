@@ -45,6 +45,24 @@ export const ACTIVE_PILOT_CITY_LABEL = 'Johannesburg'
 
 export type ServiceAreaStatus = 'active' | 'coming_soon'
 
+export type RegionServiceLiveStatus = 'live' | 'onboarding' | 'coming_soon'
+
+/**
+ * Returns the three-way live status for a region key used by the PWA provider
+ * journey. Unlike the two-state ServiceAreaStatus, this distinguishes between
+ * matching-active regions ('live'), onboarding-only regions ('onboarding'), and
+ * everything else ('coming_soon').
+ */
+export function serviceStatusForRegionKey(
+  regionKey: string | null | undefined,
+): RegionServiceLiveStatus {
+  const key = normalizeLocationKey(regionKey)
+  if (!key) return 'coming_soon'
+  if (isMatchingActiveRegion(key)) return 'live'
+  if (isOnboardingActiveRegion(key)) return 'onboarding'
+  return 'coming_soon'
+}
+
 export function normalizeLocationKey(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
