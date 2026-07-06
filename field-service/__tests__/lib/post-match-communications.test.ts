@@ -7,6 +7,7 @@ vi.mock('@/lib/db', () => ({
     customer: { findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
     inboundWhatsAppMessage: { findFirst: vi.fn() },
+    opsQueueAssignment: { upsert: vi.fn() },
   },
 }))
 
@@ -103,6 +104,7 @@ describe('post-match communications', () => {
     ;(db.customer.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'cust-1' })
     ;(db.auditLog.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
     ;(db.inboundWhatsAppMessage.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+    ;(db.opsQueueAssignment.upsert as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'q_1' })
     ;(sendText as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.customer')
     ;(sendCtaUrl as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.provider')
     ;(sendButtons as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.provider-actions')
@@ -405,6 +407,46 @@ describe('post-match communications', () => {
           templateName: 'post_match_customer_provider_accepted',
         }),
       }))
+      // CJ-03 backstop: the matched-not-told case must reach ops same-day via
+      // a durable CUSTOMER_NOTIFY_FAILED ops-queue item.
+      expect(db.opsQueueAssignment.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          queueType_entityId: { queueType: 'CUSTOMER_NOTIFY_FAILED', entityId: 'jr-12345678' },
+        },
+        create: { queueType: 'CUSTOMER_NOTIFY_FAILED', entityId: 'jr-12345678' },
+      }))
+    })
+
+    it('does NOT enqueue a CUSTOMER_NOTIFY_FAILED ops item when the customer notification succeeds', async () => {
+      await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+      expect(db.opsQueueAssignment.upsert).not.toHaveBeenCalled()
+    })
+
+    it('does NOT enqueue a CUSTOMER_NOTIFY_FAILED ops item for test leads', async () => {
+      ;(db.lead.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ ...mockLead, isTestLead: true })
+      ;(sendTemplate as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(templateNotApprovedError('post_match_customer_provider_accepted'))
+        .mockRejectedValueOnce(templateNotApprovedError('customer_match_found'))
+      ;(db.inboundWhatsAppMessage.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+      const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+      expect(result.customerNotified).toBe(false)
+      expect(db.opsQueueAssignment.upsert).not.toHaveBeenCalled()
+    })
+
+    it('never lets an ops-queue write failure break the post-match flow', async () => {
+      ;(db.opsQueueAssignment.upsert as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('db down'))
+      ;(sendTemplate as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(templateNotApprovedError('post_match_customer_provider_accepted'))
+        .mockRejectedValueOnce(templateNotApprovedError('customer_match_found'))
+      ;(db.inboundWhatsAppMessage.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+      const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+      expect(result.customerNotified).toBe(false)
+      expect(result.providerNotified).toBe(true)
     })
 
     it('falls back to plain sendText when inside the 24h window and the rich handover URL is unavailable', async () => {

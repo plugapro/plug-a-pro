@@ -1925,17 +1925,20 @@ model MessageEvent {
 }
 
 model InboundWhatsAppMessage {
-  id             String    @id @default(cuid())
-  externalId     String    @unique
-  phone          String
-  messageType    String
-  body           String?
-  payload        Json      @default("{}")
-  duplicateCount Int       @default(0)
-  firstSeenAt    DateTime  @default(now())
-  lastSeenAt     DateTime  @default(now())
-  processedAt    DateTime?
-  failureReason  String?
+  id                String    @id @default(cuid())
+  externalId        String    @unique
+  phone             String
+  messageType       String
+  body              String?
+  payload           Json      @default("{}")
+  duplicateCount    Int       @default(0)
+  firstSeenAt       DateTime  @default(now())
+  lastSeenAt        DateTime  @default(now())
+  processedAt       DateTime?
+  failureReason     String?
+  // SRE-03 dead-letter re-drive: number of cron reprocess attempts.
+  // Capped by /api/cron/inbound-whatsapp-redrive (max 3).
+  reprocessAttempts Int       @default(0)
 
   @@index([phone, firstSeenAt])
   @@map("inbound_whatsapp_messages")
@@ -2384,6 +2387,10 @@ enum OpsQueueType {
   PAYMENT_FOLLOW_UP
   PROVIDER_ONBOARDING
   IDENTITY_VERIFICATION
+  // CJ-06: durable record of a booking reschedule request (entityId = bookingId)
+  RESCHEDULE_REQUEST
+  // CJ-03 backstop: post-match customer notification failed (entityId = jobRequestId)
+  CUSTOMER_NOTIFY_FAILED
 }
 
 enum InspectionStatus {

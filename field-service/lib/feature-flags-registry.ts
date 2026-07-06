@@ -491,6 +491,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'whatsapp.inbound.redrive': {
+    description:
+      'SRE-03 dead-letter re-drive: allow /api/cron/inbound-whatsapp-redrive to reprocess failed inbound WhatsApp messages (processedAt IS NULL, failureReason set) received within the last 60 minutes, max 3 attempts per message. The 60-minute window is a UX guard: replaying stale customer messages hours later would confuse them. When OFF the cron no-ops with a log line.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',

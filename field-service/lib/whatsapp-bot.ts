@@ -3103,58 +3103,119 @@ async function handleCancelFlow(
   ctx: Parameters<typeof handleJobRequestFlow>[0]
 ): Promise<{ nextStep: FlowStep; nextData?: Partial<ConversationData> }> {
   const { sendButtons, sendText } = await import('./whatsapp-interactive')
+  const { resolveCustomerCancelTarget } = await import('./whatsapp-flows/cancel-routing')
 
-  const customer = await db.customer.findUnique({
-    where: { phone: ctx.phone },
-  })
-  if (!customer) {
+  // Confirmation replies are handled BEFORE re-prompting: both the prompt and
+  // the reply arrive with step === 'cancel_confirm', so a step-first check
+  // would loop the confirm buttons forever and cancel_yes would never run.
+  if (ctx.reply.id === 'cancel_no') {
+    await sendText(ctx.phone, "Great! Your request has been kept. Send 'Hi' to return to the menu. 👍🏽")
+    return { nextStep: 'done' }
+  }
+
+  if (ctx.reply.id === 'cancel_yes') {
+    // Re-resolve the target and cross-check it against what the customer was
+    // shown, so a record that changed between prompt and confirm is never
+    // cancelled blind.
+    const target = await resolveCustomerCancelTarget(ctx.phone)
+    const storedKind = ctx.data.cancelTargetKind
+    const storedId = ctx.data.cancelTargetId
+    const matchesStored = (kind: 'booking' | 'job_request', id: string) =>
+      !storedId || (storedKind === kind && storedId === id)
+
+    // CJ-05: a confirmed booking must be cancelled through the booking
+    // lifecycle — it issues the refund and notifies BOTH parties. The raw
+    // jobRequest path did neither.
+    if (target.kind === 'booking' && matchesStored('booking', target.bookingId)) {
+      const { cancelBookingLifecycle } = await import('./bookings')
+      try {
+        await cancelBookingLifecycle({
+          bookingId: target.bookingId,
+          actorId: target.customerId,
+          actorRole: 'customer',
+          reason: 'Customer cancelled via WhatsApp',
+        })
+      } catch (error) {
+        console.error('[whatsapp-bot] cancelBookingLifecycle failed from cancel flow', {
+          bookingId: target.bookingId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        await sendText(
+          ctx.phone,
+          "⚠️ We couldn't cancel your booking automatically. Please reply *help* and our team will sort it out for you."
+        )
+        return { nextStep: 'done' }
+      }
+      await sendText(
+        ctx.phone,
+        `✅ Your ${truncateField(target.category, 50)} booking has been cancelled and your provider has been notified.\n\nIf you paid online, your refund is being processed.\n\nSend 'Hi' to submit a new request anytime. 👋🏽`
+      )
+      return { nextStep: 'done' }
+    }
+
+    if (target.kind === 'job_request' && matchesStored('job_request', target.jobRequestId)) {
+      await db.jobRequest.update({
+        where: { id: target.jobRequestId },
+        data: { status: 'CANCELLED' },
+      })
+      await sendText(
+        ctx.phone,
+        `✅ Your ${truncateField(target.category, 50)} job request has been cancelled.\n\nSend 'Hi' to submit a new request anytime. 👋🏽`
+      )
+      return { nextStep: 'done' }
+    }
+
+    await sendText(
+      ctx.phone,
+      "That request is no longer active, so there's nothing to cancel. Send 'Hi' for the main menu."
+    )
+    return { nextStep: 'done' }
+  }
+
+  // First entry (or any non-button reply): resolve what "cancel" targets and
+  // ask for confirmation.
+  const target = await resolveCustomerCancelTarget(ctx.phone)
+
+  if (target.kind === 'no_customer') {
     await sendText(ctx.phone, "No job requests found. Send 'Hi' to submit a new request.")
     return { nextStep: 'done' }
   }
 
-  const jobRequest = await db.jobRequest.findFirst({
-    where: {
-      customerId: customer.id,
-      status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING', 'MATCHED'] },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
-
-  if (!jobRequest) {
-    await sendText(ctx.phone, "You don't have any active job requests to cancel. Send 'Hi' for the main menu.")
+  if (target.kind === 'none') {
+    await sendText(ctx.phone, "You don't have any active bookings or job requests to cancel. Send 'Hi' for the main menu.")
     return { nextStep: 'done' }
   }
 
-  if (ctx.step === 'cancel_confirm') {
+  if (target.kind === 'booking') {
+    const dateLine = target.scheduledDate
+      ? `\n📅 ${target.scheduledDate.toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' })}`
+      : ''
     await sendButtons(
       ctx.phone,
-      `❌ *Cancel Job Request*\n\n🔧 ${truncateField(jobRequest.category, 50)}\n\nAre you sure you want to cancel this request?`,
+      `❌ *Cancel Booking*\n\n🔧 ${truncateField(target.category, 50)}${dateLine}\n\nAre you sure you want to cancel this booking? Your provider will be notified and any online payment will be refunded.`,
       [
         { id: 'cancel_yes', title: '❌ Yes, Cancel' },
-        { id: 'cancel_no', title: '← Keep Request' },
+        { id: 'cancel_no', title: '← Keep Booking' },
       ]
     )
-    return { nextStep: 'cancel_confirm', nextData: { rescheduleBookingId: jobRequest.id } }
+    return {
+      nextStep: 'cancel_confirm',
+      nextData: { cancelTargetKind: 'booking', cancelTargetId: target.bookingId },
+    }
   }
 
-  if (ctx.reply.id === 'cancel_yes') {
-    await db.jobRequest.update({
-      where: { id: jobRequest.id },
-      data: { status: 'CANCELLED' },
-    })
-    await sendText(
-      ctx.phone,
-      `✅ Your ${truncateField(jobRequest.category, 50)} job request has been cancelled.\n\nSend 'Hi' to submit a new request anytime. 👋🏽`
-    )
-    return { nextStep: 'done' }
+  await sendButtons(
+    ctx.phone,
+    `❌ *Cancel Job Request*\n\n🔧 ${truncateField(target.category, 50)}\n\nAre you sure you want to cancel this request?`,
+    [
+      { id: 'cancel_yes', title: '❌ Yes, Cancel' },
+      { id: 'cancel_no', title: '← Keep Request' },
+    ]
+  )
+  return {
+    nextStep: 'cancel_confirm',
+    nextData: { cancelTargetKind: 'job_request', cancelTargetId: target.jobRequestId },
   }
-
-  if (ctx.reply.id === 'cancel_no') {
-    await sendText(ctx.phone, "Great! Your job request has been kept. Send 'Hi' to return to the menu. 👍🏽")
-    return { nextStep: 'done' }
-  }
-
-  return { nextStep: 'cancel_confirm' }
 }
 
 // ─── Match-level lead response handler ───────────────────────────────────────
