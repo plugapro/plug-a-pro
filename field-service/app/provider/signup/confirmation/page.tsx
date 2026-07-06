@@ -13,7 +13,7 @@ export default function Confirmation() {
         {"We'll WhatsApp you within 30 minutes once an admin reviews it."}
       </p>
       <p className="mt-3 text-xs text-muted-foreground">
-        {"We're live in the West Rand first — if your area isn't live yet, we'll notify you the moment leads open there."}
+        {"We're live in the West Rand first — your profile is saved and will be activated the moment we go live in your area."}
       </p>
     </main>
   )

@@ -1307,7 +1307,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 if (!hasKnownNonLive) return null
                 return (
                   <p className="text-[12px] text-[var(--ink-mute)] leading-relaxed">
-                    Leads go live in the West Rand first. Other areas can register now — we'll notify you the moment your area opens.
+                    Leads go live in the West Rand first. Other areas can register now — your profile will be activated the moment we go live in your area.
                   </p>
                 )
               })()}
@@ -1525,7 +1525,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 <InfoRow title="Reference" body={form.submittedRef || 'Reference will show after review sync.'} />
               </div>
               <p className="text-[12px] text-[var(--ink-mute)] leading-relaxed">
-                We're live in the West Rand first — if your area isn't live yet, we'll notify you the moment leads open there.
+                We're live in the West Rand first — your profile is saved and will be activated the moment we go live in your area.
               </p>
               <FooterActions>
                 <Button fullWidth asChild>

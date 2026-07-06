@@ -1448,7 +1448,7 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   if (onboardingStatus !== 'active') {
     await sendText(
       ctx.phone,
-      `🔜 *Coming soon area*\n\nThanks. *${regionLabel}* is not live for leads yet, but your profile will still be saved. We'll notify you when Plug A Pro opens leads in this region.`
+      `🔜 *Coming soon area*\n\nThanks. *${regionLabel}* is not live for leads yet, but your profile is saved and will be activated the moment we go live there. We'll notify you here.`
     )
   }
 

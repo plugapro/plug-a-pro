@@ -285,7 +285,7 @@ export function buildProviderApplicationSubmittedMessage(params: {
   void params.termsUrl // retained for callers; URL travels via the CTA follow-up, not the body
   const name = params.providerName?.trim().split(/\s+/)[0] || 'there'
   const regionLine = params.isComingSoonRegion
-    ? '\n\nThis area is not live yet. We will update you here when Plug A Pro opens leads in this region.'
+    ? '\n\nThis area is not live yet. Your profile is saved and will be activated the moment Plug A Pro goes live in your region — we will update you here.'
     : ''
 
   return [
