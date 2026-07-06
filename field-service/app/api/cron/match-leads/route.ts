@@ -21,6 +21,7 @@ import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-applicatio
 import { routeProviderApplicationsForOpsReview } from '@/lib/provider-application-review-support'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { expireOpenJobRequest } from '@/lib/job-requests/expire-job-request'
+import { sweepStrandedJobRequests } from '@/lib/job-requests/sweep-stranded-requests'
 import { sendCtaUrl } from '@/lib/whatsapp-interactive'
 import { recordAuditLog } from '@/lib/audit'
 import {
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, progressUpdates: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0, rfpExpired: 0 }
+  const results = { dispatched: 0, expired: 0, expiredRequests: 0, expiredStranded: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, progressUpdates: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0, rfpExpired: 0 }
 
   // 0. Reconcile stale capacity counters (safety net - corrects counter drift)
   try {
@@ -75,6 +76,20 @@ export async function GET(request: Request) {
     }
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error sweeping stale provider confirmations:`, err)
+    results.errors++
+  }
+
+  // 1a-ii. CJ-08: expire requests stranded in PENDING_VALIDATION /
+  // SHORTLIST_READY / PROVIDER_CONFIRMATION_PENDING past their natural
+  // deadlines. Runs AFTER the stale-confirmation reset (1a) so a request whose
+  // overall deadline has not passed is returned to the shortlist instead of
+  // expired; sends the existing expiry notification to the customer.
+  try {
+    const strandedSweep = await sweepStrandedJobRequests()
+    results.expiredStranded = strandedSweep.expired
+    results.errors += strandedSweep.errors
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error sweeping stranded job requests:`, err)
     results.errors++
   }
 

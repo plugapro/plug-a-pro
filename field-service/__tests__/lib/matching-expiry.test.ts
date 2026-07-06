@@ -44,6 +44,7 @@ const { mockDb, mockEmitMatchEvent, mockSendText, mockSendProviderLeadExpired } 
       findUniqueOrThrow: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     providerShortlist: {
       findFirst: vi.fn(),
@@ -194,6 +195,8 @@ function setupBaseTransaction() {
   mockDb.inboundWhatsAppMessage.findFirst.mockResolvedValue(null)
   mockDb.dispatchDecision.update.mockResolvedValue({})
   mockDb.jobRequest.update.mockResolvedValue({})
+  // expireOpenJobRequest CAS write (CJ-08): status-guarded updateMany.
+  mockDb.jobRequest.updateMany.mockResolvedValue({ count: 1 })
   // loadMatchingJobRequest inside createOfferForAttempt
   mockDb.jobRequest.findUnique.mockResolvedValue(makeMatchingJobRequest())
   // I5: notifyCustomerNoMatch's PUBLISHED-shortlist check. Default no
@@ -420,7 +423,7 @@ describe('expireAssignmentOffer', () => {
 
     expect(result.expired).toBe(true)
     expect(result.nextOfferedProviderId).toBeNull()
-    expect(mockDb.jobRequest.update).toHaveBeenCalledWith(
+    expect(mockDb.jobRequest.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'EXPIRED' }) })
     )
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(

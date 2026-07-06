@@ -1,4 +1,4 @@
-// ─── Shared helper: expire an OPEN/MATCHING (or, opt-in, SHORTLIST_READY) job ──
+// ─── Shared helper: expire a stale job request ────────────────────────────────
 // Called from multiple places so expiry behaviour stays consistent:
 //   1. cron/match-leads step 1h - sweeps jobs past their expiresAt (deadline-gated
 //      query: `expiresAt: { not: null, lte: now }`). This is the ONLY caller that
@@ -9,31 +9,46 @@
 //      queue is exhausted (OPEN/MATCHING only)
 //   4. matching/service rejectAssignmentOffer / expireAssignmentOffer, via the
 //      same offerNextRankedCandidate queue-exhaustion path (OPEN/MATCHING only)
+//   5. cron/match-leads via sweepStrandedJobRequests - CJ-08 mid-funnel statuses
+//      (PENDING_VALIDATION / SHORTLIST_READY / PROVIDER_CONFIRMATION_PENDING),
+//      passed explicitly via `allowedStatuses` once their own deadline has passed.
 //
-// Transitions status OPEN, MATCHING, and — ONLY when the caller opts in via
-// `options.includeShortlistReady` — SHORTLIST_READY, to EXPIRED, in a single
-// transaction.
+// Default transition remains status OPEN or MATCHING → EXPIRED in a single
+// transaction (legacy behaviour). MATCHING must always be included because
+// AUTO_ASSIGN jobs advance to MATCHING when the first offer is sent; if the
+// entire ranked queue is exhausted while the job is still in MATCHING,
+// failing to expire it here leaves it permanently stuck.
 //
-// MATCHING must always be included because AUTO_ASSIGN jobs advance to
-// MATCHING when the first offer is sent; if the entire ranked queue is
-// exhausted while the job is still in MATCHING, failing to expire it here
-// leaves it permanently stuck.
+// Two independent, orthogonal opt-ins widen the default OPEN|MATCHING guard:
 //
-// SHORTLIST_READY is guarded behind an explicit opt-in (C2, re-review fix).
-// It is NOT true that callers 2-4 only ever reach jobs that are OPEN/MATCHING
-// "by construction": offerNextRankedCandidate's queue-exhaustion terminator
-// (caller 3, and transitively caller 4 via rejectAssignmentOffer /
-// expireAssignmentOffer calling offerNextRankedCandidate) can run against a
-// job that has already reached SHORTLIST_READY - true cap-3 (I1) keeps a job
-// board-visible through SHORTLIST_READY while push-origin offers are still
-// rotating in parallel. Unconditionally widening the guard to SHORTLIST_READY
-// for every caller would let a queue-exhaustion tick expire a job while the
-// customer is actively looking at a live, PUBLISHED shortlist - dead link,
-// contradictory "could not match" copy, and lost board leads that were never
-// actually exhausted. Only the cron's step-1h sweep is deadline-gated
-// (expiresAt has genuinely passed) and is therefore safe to widen; it passes
-// `{ includeShortlistReady: true }` explicitly. Every other caller keeps the
-// old OPEN/MATCHING-only behaviour by default.
+//   - `includeShortlistReady` (C2, re-review fix): widens the guard to also
+//     accept SHORTLIST_READY. It is NOT true that callers 2-4 only ever reach
+//     jobs that are OPEN/MATCHING "by construction": offerNextRankedCandidate's
+//     queue-exhaustion terminator (caller 3, and transitively caller 4 via
+//     rejectAssignmentOffer / expireAssignmentOffer calling
+//     offerNextRankedCandidate) can run against a job that has already reached
+//     SHORTLIST_READY - true cap-3 (I1) keeps a job board-visible through
+//     SHORTLIST_READY while push-origin offers are still rotating in parallel.
+//     Unconditionally widening the guard to SHORTLIST_READY for every caller
+//     would let a queue-exhaustion tick expire a job while the customer is
+//     actively looking at a live, PUBLISHED shortlist - dead link,
+//     contradictory "could not match" copy, and lost board leads that were
+//     never actually exhausted. Only the cron's step-1h sweep is
+//     deadline-gated (expiresAt has genuinely passed) and is therefore safe to
+//     widen; it passes `{ includeShortlistReady: true }` explicitly. Every
+//     other caller keeps the old OPEN/MATCHING-only behaviour by default.
+//
+//   - `allowedStatuses` (CJ-08, platform audit 2026-07-06): lets a caller
+//     replace the accepted-status set outright to expire the previously-
+//     stranding statuses PENDING_VALIDATION, SHORTLIST_READY and
+//     PROVIDER_CONFIRMATION_PENDING once THEIR OWN natural deadlines have
+//     passed. Used exclusively by sweepStrandedJobRequests, which always
+//     passes a single-status array scoped to the row it is currently
+//     processing - it never widens the OPEN/MATCHING default for the
+//     ordinary dispatch-time callers. When both options are supplied,
+//     `allowedStatuses` takes precedence (it is the more specific,
+//     caller-scoped override); `includeShortlistReady` only widens the
+//     *default* OPEN|MATCHING set.
 //
 // Notification (notifyExpiredJobParties) is intentionally NOT called here
 // because the cron handles the customer message after the sweep and the
@@ -42,19 +57,36 @@
 import { db } from '../db'
 import { sendText } from '../whatsapp-interactive'
 
-export interface ExpireJobRequestResult {
-  /** true if the job was transitioned; false if it was already EXPIRED/CANCELLED */
-  transitioned: boolean
-}
+export type ExpirableJobRequestStatus =
+  | 'OPEN'
+  | 'MATCHING'
+  | 'PENDING_VALIDATION'
+  | 'SHORTLIST_READY'
+  | 'PROVIDER_CONFIRMATION_PENDING'
+
+const DEFAULT_ALLOWED_STATUSES: readonly ExpirableJobRequestStatus[] = ['OPEN', 'MATCHING']
 
 export interface ExpireJobRequestOptions {
   /**
-   * Widen the status guard to also accept SHORTLIST_READY. Default false.
-   * ONLY the cron/match-leads step-1h deadline-gated sweep should pass
-   * `true` - see the file-header comment above for why every other caller
-   * must NOT opt in.
+   * Widen the *default* OPEN|MATCHING status guard to also accept
+   * SHORTLIST_READY. Default false. ONLY the cron/match-leads step-1h
+   * deadline-gated sweep should pass `true` - see the file-header comment
+   * above for why every other caller must NOT opt in. Ignored when
+   * `allowedStatuses` is also supplied.
    */
   includeShortlistReady?: boolean
+  /**
+   * Statuses eligible for the → EXPIRED transition, replacing the default
+   * OPEN | MATCHING (+ optional SHORTLIST_READY) set outright. Used by the
+   * stranded-request sweep (CJ-08) to scope a single call to the exact
+   * mid-funnel status it already confirmed the row is in.
+   */
+  allowedStatuses?: readonly ExpirableJobRequestStatus[]
+}
+
+export interface ExpireJobRequestResult {
+  /** true if the job was transitioned; false if it was already EXPIRED/CANCELLED */
+  transitioned: boolean
 }
 
 // Board leads that are still "open" from the provider's perspective when the
@@ -68,7 +100,14 @@ export async function expireOpenJobRequest(
   reason = 'max_age_exceeded',
   options: ExpireJobRequestOptions = {},
 ): Promise<ExpireJobRequestResult> {
-  const includeShortlistReady = options.includeShortlistReady === true
+  // `allowedStatuses` is the more specific, caller-scoped override (CJ-08);
+  // when absent, fall back to the default OPEN|MATCHING set optionally
+  // widened by `includeShortlistReady` (C2).
+  const acceptedStatuses: readonly ExpirableJobRequestStatus[] =
+    options.allowedStatuses ??
+    (options.includeShortlistReady === true
+      ? ([...DEFAULT_ALLOWED_STATUSES, 'SHORTLIST_READY'] as const)
+      : DEFAULT_ALLOWED_STATUSES)
   let transitioned = false
   let notifyTargets: { phone: string | null; suburb: string | null }[] = []
 
@@ -79,30 +118,27 @@ export async function expireOpenJobRequest(
         select: { id: true, status: true, address: { select: { suburb: true } } },
       })
 
-      // Only expire if OPEN or MATCHING - guard against concurrent cron
-      // ticks. MATCHING must always be included: AUTO_ASSIGN jobs advance to
-      // MATCHING on first offer; if the full ranked queue is exhausted, the
-      // job can be stuck in MATCHING indefinitely without this guard.
-      // SHORTLIST_READY is only accepted when the caller explicitly opts in
-      // via `includeShortlistReady` (C2, re-review fix) - see the
-      // file-header comment above for why this must not be unconditional.
-      const acceptedStatuses: string[] = includeShortlistReady
-        ? ['OPEN', 'MATCHING', 'SHORTLIST_READY']
-        : ['OPEN', 'MATCHING']
-      if (!jr || !acceptedStatuses.includes(jr.status)) {
+      // Only expire if the status is in the accepted set - guards against
+      // concurrent cron ticks and racing state transitions. See the
+      // file-header comment for why SHORTLIST_READY is never accepted by
+      // default and why `allowedStatuses` must stay caller-scoped.
+      if (!jr || !acceptedStatuses.includes(jr.status as ExpirableJobRequestStatus)) {
         return
       }
 
-      await tx.jobRequest.update({
-        where: { id: jobRequestId },
+      // CAS on status so a concurrent transition between the read and the
+      // write cannot expire a request that just moved forward.
+      const update = await tx.jobRequest.updateMany({
+        where: { id: jobRequestId, status: { in: [...acceptedStatuses] } },
         data: { status: 'EXPIRED' },
       })
+      if (update.count === 0) return
 
       transitioned = true
       // TODO: write a DispatchDecision audit record for EXPIRED-by-max-age
       // once a suitable audit model for job-request-level events is established.
       // JobStatusEvent is for Job (not JobRequest) so is not used here.
-      console.info('[expire-job-request] expired', { jobRequestId, reason })
+      console.info('[expire-job-request] expired', { jobRequestId, reason, fromStatus: jr.status })
 
       // ── Additive close-out: open BOARD-origin leads ──────────────────────
       // Provider self-serve board leads (origin: 'BOARD') don't have their own
