@@ -60,11 +60,14 @@ export default async function RatePage({
 
   const category = booking.match.jobRequest.category
 
+  const bookingMatchId = booking.matchId
+
   async function submitRating(formData: FormData) {
     'use server'
     const { getSession: getServerSession } = await import('@/lib/auth')
     const { db: dbServer } = await import('@/lib/db')
     const { resolveCustomerForSession: resolveCustomer } = await import('@/lib/customer-session')
+    const { recomputeProviderAverageRating } = await import('@/lib/review-rating')
 
     const activeSession = await getServerSession()
     if (!activeSession) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}/rate`)}`)
@@ -83,14 +86,21 @@ export default async function RatePage({
     })
     if (existingReview) redirect(`/bookings/${id}`)
 
-    await dbServer.review.create({
-      data: {
-        jobId,
-        reviewerType: 'CUSTOMER',
-        customerId:   activeCustomer.id,
-        score,
-        comment,
-      },
+    // CJ-02: write BOTH keys (matchId via the booking) so matchId-based
+    // readers see this review too, and recompute the provider's
+    // averageRating in the same transaction.
+    await dbServer.$transaction(async (tx) => {
+      await tx.review.create({
+        data: {
+          jobId,
+          matchId: bookingMatchId,
+          reviewerType: 'CUSTOMER',
+          customerId:   activeCustomer.id,
+          score,
+          comment,
+        },
+      })
+      await recomputeProviderAverageRating(tx, jobProviderId)
     })
 
     redirect(`/bookings/${id}`)
