@@ -43,15 +43,27 @@ export async function GET(request: Request) {
     },
   })
 
-  // Filter out bookings that already have a review
+  // Filter out bookings that already have a review. CJ-02: legacy
+  // /review/[token] rows carry matchId only, so dedup must tolerate either
+  // key or customers get asked to review a job they already reviewed.
   const jobIds = bookings.map((b) => b.job?.id).filter(Boolean) as string[]
+  const matchIds = bookings.map((b) => b.matchId).filter(Boolean)
   const existingReviews = await db.review.findMany({
-    where:  { jobId: { in: jobIds }, reviewerType: 'CUSTOMER' },
-    select: { jobId: true },
+    where: {
+      reviewerType: 'CUSTOMER',
+      OR: [
+        { jobId: { in: jobIds } },
+        { matchId: { in: matchIds } },
+      ],
+    },
+    select: { jobId: true, matchId: true },
   })
-  const reviewedJobIds = new Set(existingReviews.map((r) => r.jobId))
+  const reviewedJobIds = new Set(existingReviews.map((r) => r.jobId).filter(Boolean))
+  const reviewedMatchIds = new Set(existingReviews.map((r) => r.matchId).filter(Boolean))
 
-  const toNotify = bookings.filter((b) => b.job && !reviewedJobIds.has(b.job.id))
+  const toNotify = bookings.filter(
+    (b) => b.job && !reviewedJobIds.has(b.job.id) && !reviewedMatchIds.has(b.matchId),
+  )
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   let sent = 0
