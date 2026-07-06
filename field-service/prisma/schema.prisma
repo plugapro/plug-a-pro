@@ -388,8 +388,13 @@ model ProviderApplication {
   weekendJobs                   Boolean           @default(false)
   evidenceNote                  String?
   evidenceFileUrls              String[]          @default([])
-  idNumber                      String? // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
-  // TODO(POPIA): idNumber stored plaintext — encrypt before GA (§26 special personal info)
+  idNumber                      String? // POPIA §26 special personal info — do NOT log, export raw, or include in API responses.
+  // TODO(POPIA SEC-01): plaintext idNumber is retained ONLY as the dual-write bridge while
+  // encrypted rows are backfilled + verified. It is retired manually via
+  // scripts/retire-plaintext-id-numbers.ts (see docs/security/id-number-encryption.md).
+  // NEVER drop, rename, or null this column in a migration.
+  idNumberCiphertext            String? // AES-256-GCM `v1:<iv>:<tag>:<ct>` written by lib/pii-crypto.ts when PII_ENC_KEY is set
+  idNumberLast4                 String?           @db.VarChar(4) // last 4 chars for admin display/search without decryption
   alternateMobileE164           String?           @db.VarChar(32)
   preferredLanguage             String? // Optional preferred language for customer communication
   reference1Name                String?
