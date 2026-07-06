@@ -34,3 +34,9 @@ All claims surfaced by the two exhaustive sweeps (`marketing/` + `field-service/
 | RC-28 | "funds arrive in {{4}}" with example "1–2 business days" (`technician_payment_released`) | `register-whatsapp-templates.mjs:201` | Low | Payout-timing promise depends on PSP; parameterised so operationally controllable | Keep parameterised; never hardcode | ❌ (accepted) | Y (payout terms wording, with terms review) |
 
 **Not found anywhere in live user-facing copy** (confirming the banned-copy guardrail works): "fully vetted", "100% verified", "background-checked", "guaranteed workmanship", "certified experts", "all providers are insured", "we guarantee the quality of work", "safe and risk-free", "we take responsibility for the job".
+
+## Addendum — 2026-07-06 (verified against live WABA)
+
+- **RC-01 corrected:** "your Plug A Pro technician" was a stale in-repo mirror; the approved Meta body already said "your provider". Downgraded Critical → Low (documentation drift, no customer exposure). Repo example now mirrors the live body.
+- **RC-NEW (functional, found during execution):** `extra_work_approval` approved shape (4 body params, no button) never matched the code send (3 params + button) — 100% of sends failed Meta 132000. Fixed: template edited at Meta + `lib/whatsapp.ts` `extraWorkApprovalButtonComponent` passes token suffix. Severity: High (customers silently never received extra-work approval requests).
+- `technician_assigned` and `customer_match_found` body edits submitted to Meta 2026-07-06 (PENDING review).

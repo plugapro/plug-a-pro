@@ -234,6 +234,22 @@ function urlButtonComponent(index: number, url: string): WhatsAppComponent {
   }
 }
 
+function extraWorkApprovalButtonComponent(index: number, approvalUrl: string): WhatsAppComponent {
+  // The approved template's button URL is https://app.plugapro.co.za/approve/{{1}},
+  // so the parameter must be the token suffix only - never the full URL.
+  // (Fixed 2026-07-06: the full URL was previously passed, which fails Meta 132000
+  // against the approved template shape.)
+  try {
+    const url = new URL(approvalUrl)
+    const match = url.pathname.match(/\/approve\/([^/?#]+)/)
+    if (match?.[1]) return urlButtonComponent(index, match[1])
+  } catch {
+    // Fall through to the raw-url guard below. A malformed URL must never be
+    // sent as visible text, but surfacing the context helps find bad callers.
+  }
+  throw new Error('Invalid extra-work approval URL for WhatsApp template button')
+}
+
 function providerLeadAccessButtonComponent(index: number, jobUrl: string): WhatsAppComponent {
   try {
     const url = new URL(jobUrl)
@@ -382,7 +398,7 @@ export async function sendExtraWorkApproval(params: {
           { type: 'text', text: params.amount },
         ],
       },
-      urlButtonComponent(0, params.approvalUrl),
+      extraWorkApprovalButtonComponent(0, params.approvalUrl),
     ],
   })
 

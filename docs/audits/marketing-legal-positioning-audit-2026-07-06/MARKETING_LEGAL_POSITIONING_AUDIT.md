@@ -142,3 +142,20 @@ Canonical paragraph (use everywhere; long/short variants in `PLATFORM_POSITIONIN
 ## Final Recommendation
 
 The messaging model is sound and now consistent in-repo. **Two things gate paid-acquisition scaling:** (1) re-submit the four reworded WhatsApp bodies to Meta so live customer sends stop saying "your Plug A Pro technician"; (2) attorney sign-off on the terms/privacy items above. The marketing site itself is safe to run traffic to today — its copy, guardrails and legal pages are aligned; the residual exposure is in the message channel, not the website.
+
+---
+
+## Addendum — 2026-07-06 execution (post-audit correction of record)
+
+Direct inspection of the WABA (`GET /message_templates?fields=components`) after this audit was written revealed the approved bodies at Meta **differ from the repo's documented mirrors**:
+
+| Template | Approved body at Meta (before this session's edits) | Correction to the findings above |
+|---|---|---|
+| `technician_on_the_way` | "Hi {{1}}, **your provider** {{2}} is heading your way now…" | **RC-01 downgrades from Critical**: "your Plug A Pro technician" existed only as a stale in-repo mirror and was **never sent to customers**. Live body was already positioning-safe. No Meta edit needed; repo example now mirrors the true live body. |
+| `extra_work_approval` | "Hi {{1}}, **your provider** has found additional work needed: {{2}} ({{3}}). Approve or decline here: {{4}}…" (4 body params, no button) | Wording already safe, BUT a **latent functional bug** was found: code sends 3 body params + URL button → every live send failed Meta 132000. Fixed by editing the template to 3 params + URL button (`/approve/{{1}}`) and correcting `sendExtraWorkApproval` to pass the token suffix (`lib/whatsapp.ts`). |
+| `technician_assigned` | "…{{2}} has been **assigned** to your {{3}}…" | Finding stands. Body edit submitted to Meta 2026-07-06 (id 1247377794223650). |
+| `customer_match_found` | "They're **highly rated** and ready to assist you." | Finding stands. Body edit submitted to Meta 2026-07-06 (id 1508767677372957), URL button preserved. |
+
+**P0-1 status: executed 2026-07-06.** Three template edits accepted by Meta (all `PENDING` review at time of writing; UTILITY edits typically auto-approve quickly). During the PENDING window sends of the three edited templates fail — accepted risk at pilot volume, and `extra_work_approval` was already failing 100% of sends due to the param mismatch. `customer_match_found` has a documented fallback chain in the post-match sender.
+
+**Lesson recorded:** repo `example` strings are documentation, not source of truth — always verify approved bodies via the API before asserting what customers receive.

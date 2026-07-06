@@ -118,7 +118,7 @@ export const TEMPLATES = {
     description: 'Sent when a specific technician is assigned/confirmed for a booking',
     // {{1}} customer name, {{2}} technician first name, {{3}} service, {{4}} date/window
     // Body reworded 2026-07-06 (positioning audit): avoid "assigned" employer framing.
-    // Pending re-submission at Meta - live sends use the previously approved body until then.
+    // Edit submitted to Meta 2026-07-06 (id 1247377794223650) - mirrors the submitted body.
     example:
       'Hi {{1}}, great news! Independent provider {{2}} is confirmed for your {{3}} on {{4}}. They will contact you through this app only.',
   },
@@ -130,11 +130,12 @@ export const TEMPLATES = {
     description: 'Sent when technician status changes to EN_ROUTE',
     // {{1}} customer name, {{2}} technician name, {{3}} ETA
     // Body registered with Meta 2026-04-08 (original body was rejected - leading param).
-    // Body reworded 2026-07-06 (positioning audit): "your Plug A Pro technician" implied
-    // an employment relationship. Pending re-submission at Meta - live sends use the
-    // previously approved body ("your Plug A Pro technician {{2}}...") until then.
+    // NOTE (positioning audit 2026-07-06): the previous example here ("your Plug A Pro
+    // technician {{2}}...") was a STALE mirror - the body actually approved at Meta
+    // (id 2140299656761970) already says "your provider {{2}}", which is positioning-safe.
+    // Example below mirrors the live approved body exactly. No Meta edit needed.
     example:
-      'Hi {{1}}, your service provider {{2}} is heading your way now. Expected arrival in {{3}} - see you soon!',
+      'Hi {{1}}, your provider {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!',
   },
 
   technician_arrived: {
@@ -152,8 +153,10 @@ export const TEMPLATES = {
     category: 'UTILITY',
     description: 'Sent when technician raises an extra work request',
     // {{1}} customer name, {{2}} description, {{3}} amount; approval URL is a button
-    // Body reworded 2026-07-06 (positioning audit): "your technician" -> "your service
-    // provider". Pending re-submission at Meta - live sends use the approved body until then.
+    // (url https://app.plugapro.co.za/approve/{{1}} - param is the token suffix only).
+    // Edit submitted to Meta 2026-07-06 (id 951911690666931). This edit ALSO fixed a
+    // latent param mismatch: the previously approved body had 4 body params and no
+    // button while the code sent 3 params + button, so every send failed Meta 132000.
     example:
       'Hi {{1}}, your service provider has identified additional work needed: {{2}} ({{3}}). Approve or decline using the button below.',
   },
@@ -588,12 +591,11 @@ export const TEMPLATES = {
     description: 'Sent to a customer when a provider has been matched to their job request',
     // body: {{1}} customer first name, {{2}} service label, {{3}} provider first name
     // button (url, index 0): {{1}} job request ID (appended to https://app.plugapro.co.za/requests/)
-    // NOTE: the version APPROVED at Meta (template id 1508767677372957) says
-    // "They're highly rated and ready to assist you." - reworded 2026-07-06
-    // (positioning audit): generic "highly rated" puffery asserted regardless of
-    // actual rating data. Param count unchanged; live sends use the approved body
-    // until the new body is re-submitted. Sending a different param count fails
-    // Meta 132000 at send time.
+    // NOTE: reworded 2026-07-06 (positioning audit) - the old approved body said
+    // "They're highly rated and ready to assist you.", generic puffery asserted
+    // regardless of actual rating data. Edit submitted to Meta 2026-07-06
+    // (template id 1508767677372957); param count and URL button unchanged.
+    // Sending a different param count fails Meta 132000 at send time.
     example:
       "Hi {{1}} 👋\n\nGreat news! We've matched your {{2}} request with {{3}}.\n\nYou can review their details and quote before approving anything.\n\nTrack your request and approve quotes here 👇",
   },

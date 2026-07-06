@@ -6,7 +6,9 @@ Priorities: **P0** must fix before scaling paid acquisition · **P1** before pro
 
 ## P0
 
-### P0-1 — Re-submit 4 reworded WhatsApp template bodies to Meta
+### P0-1 — Re-submit reworded WhatsApp template bodies to Meta — ✅ EXECUTED 2026-07-06
+
+> Status: 3 edits (technician_assigned, customer_match_found, extra_work_approval) accepted by Meta, PENDING review. technician_on_the_way needed no edit — live body was already safe (stale repo mirror). See audit addendum. Remaining: confirm all 3 reach APPROVED.
 - **Task:** Submit new bodies for `technician_assigned`, `technician_on_the_way`, `extra_work_approval`, `customer_match_found` (bodies now in `lib/messaging-templates.ts`; placeholder count/order unchanged). Meta does not allow in-place edits of approved templates without re-review — expect either an edit-review cycle or new template versions.
 - **Why:** live customer sends still say "your Plug A Pro technician…" — the strongest employer-impression claim found — regardless of the repo fix.
 - **Good output:** Meta shows the new bodies APPROVED; a live send renders the new wording.
