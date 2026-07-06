@@ -25,7 +25,7 @@ function statusHint(status: RegionServiceLiveStatus, nodeType: 'SUBURB' | 'REGIO
 }
 
 const NOT_LIVE_NOTICE =
-  'Leads go live in the West Rand first. Other areas can register now — we’ll notify you the moment your area opens.'
+  'Leads go live in the West Rand first. Other areas can register now — we'll notify you the moment your area opens.'
 
 export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabels }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(selectedNodeIds))
