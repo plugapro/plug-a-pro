@@ -1332,6 +1332,12 @@ model Payment {
   metadata       Json                  @default("{}")
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
+  // SRE-02: booking-confirmation delivery sentinel. Set only when the
+  // post-payment WhatsApp booking confirmation actually sent; a PAID payment
+  // with a null sentinel is re-driven by the webhook duplicate-delivery path
+  // and the payment-confirmation-redrive cron (attempts capped).
+  bookingConfirmationSentAt   DateTime?
+  bookingConfirmationAttempts Int       @default(0)
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 

@@ -7,6 +7,7 @@ import { addMinutes, format } from 'date-fns'
 import { MATCHING_CONFIG } from './matching/config'
 import type { Prisma } from '@prisma/client'
 import { emitServerConversion } from './marketing/server-events'
+import { initializeCheckoutAndDeliverPaymentLink } from './payment-link-delivery'
 
 export type QuoteDecisionResult =
   | {
@@ -16,6 +17,7 @@ export type QuoteDecisionResult =
       jobRequestId: string
       bookingId: string
       scheduledDate: Date
+      amount: number
       provider: { id: string; phone: string; name: string }
       customer: { id: string; phone: string; name: string }
       category: string
@@ -37,6 +39,22 @@ export type QuoteDecisionError =
   | 'EXPIRED'
   | 'FORBIDDEN'
   | 'MISSING_PREFERRED_DATE'
+  | 'AWAITING_PROVIDER_QUOTE'
+
+/**
+ * CJ-07: stub quotes are minted by post-lock fulfilment (amount=0,
+ * validUntil=null, "Awaiting provider quote") purely so the provider portal
+ * can show a locked lead. They are placeholders, not offers - the customer
+ * must never be able to view them as an actionable quote or accept/decline
+ * them. Used by the approval page (render guard) and processQuoteDecision
+ * (decision guard).
+ */
+export function isStubQuote(quote: {
+  amount: Prisma.Decimal | number
+  validUntil?: Date | null
+}): boolean {
+  return Number(quote.amount) <= 0
+}
 
 /**
  * Mark PENDING quotes whose validUntil has passed as EXPIRED.
@@ -175,6 +193,12 @@ export async function processQuoteDecision(
         throw new Error('FORBIDDEN')
       }
       if (quote.validUntil && new Date() > quote.validUntil) throw new Error('EXPIRED')
+      // CJ-07: a stub quote (amount=0, minted by post-lock fulfilment) is not
+      // an offer - it cannot be accepted or declined until the provider
+      // submits the real quote (which replaces the stub amount).
+      if (quote.status === 'PENDING' && isStubQuote(quote)) {
+        throw new Error('AWAITING_PROVIDER_QUOTE')
+      }
 
       const provider = quote.match.provider
       const customer = quote.match.jobRequest.customer
@@ -266,6 +290,7 @@ export async function processQuoteDecision(
         jobRequestId: quote.match.jobRequest.id,
         bookingId: booking.bookingId,
         scheduledDate: booking.scheduledDate,
+        amount: Number(quote.amount),
         provider,
         customer,
         category,
@@ -281,6 +306,26 @@ export async function processQuoteDecision(
     if (result.action === 'approved') {
       void emitServerConversion({ name: 'quote_approved', entityId: result.quoteId })
       void emitServerConversion({ name: 'booking_confirmed', entityId: result.bookingId })
+
+      // CJ-01: in checkout mode the new booking needs a payable checkout and
+      // the customer needs the link. Hard-gated inside the helper to checkout
+      // mode - in bypass mode (current production) this is a no-op that
+      // creates nothing and sends nothing. Fire-and-forget post-commit: a
+      // payment-link failure must never surface as a quote-approval error.
+      if (result.amount > 0) {
+        void initializeCheckoutAndDeliverPaymentLink({
+          bookingId: result.bookingId,
+          amountRand: result.amount,
+          customerPhone: result.customer.phone,
+          category: result.category,
+          description: `${result.category} booking`,
+        }).catch((err: unknown) => {
+          console.error('[quotes] post-approval payment link delivery failed (non-fatal)', {
+            bookingId: result.bookingId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+      }
     }
 
     return result
@@ -291,7 +336,8 @@ export async function processQuoteDecision(
       msg === 'ALREADY_ACTIONED' ||
       msg === 'EXPIRED' ||
       msg === 'FORBIDDEN' ||
-      msg === 'MISSING_PREFERRED_DATE'
+      msg === 'MISSING_PREFERRED_DATE' ||
+      msg === 'AWAITING_PROVIDER_QUOTE'
     ) {
       return { error: msg as QuoteDecisionError }
     }

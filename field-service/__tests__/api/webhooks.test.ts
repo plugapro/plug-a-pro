@@ -2,7 +2,7 @@
 // Tests the WhatsApp webhook verification and payment webhook parsing.
 // No DB connections - all external dependencies are mocked.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ─── Mock dependencies ────────────────────────────────────────────────────────
 
@@ -161,9 +161,22 @@ describe('processWebhookEvent', () => {
 
 import { verifyWebhookSignature } from '@/lib/payments'
 
+import { createHmac } from 'crypto'
+
 describe('verifyWebhookSignature', () => {
   beforeEach(() => {
     process.env.PEACH_WEBHOOK_SECRET = 'test-webhook-secret'
+    // Valid Peach credentials so the provider constructs successfully and the
+    // empty-secret tests exercise the verifyWebhook fail-closed guard itself,
+    // not a constructor failure.
+    process.env.PEACH_ENTITY_ID = 'entity-test'
+    process.env.PEACH_ACCESS_TOKEN = 'token-test'
+  })
+
+  afterEach(() => {
+    delete process.env.PEACH_WEBHOOK_SECRET
+    delete process.env.PEACH_ENTITY_ID
+    delete process.env.PEACH_ACCESS_TOKEN
   })
 
   it('returns false when secret is not configured', () => {
@@ -172,10 +185,33 @@ describe('verifyWebhookSignature', () => {
     expect(result).toBe(false)
   })
 
+  it('fails closed on empty secret even for an empty-key HMAC signature (SEC-02/SRE-07)', () => {
+    // Without the guard, an attacker who knows the secret is unset could forge
+    // a "valid" signature by computing HMAC-SHA256 with an empty key.
+    delete process.env.PEACH_WEBHOOK_SECRET
+    const body = '{"merchantTransactionId":"booking-1","result":{"code":"000.000.000"}}'
+    const forgedSig = createHmac('sha256', '').update(body).digest('hex')
+    expect(verifyWebhookSignature(body, forgedSig)).toBe(false)
+  })
+
+  it('treats a whitespace-only secret as unset (fail closed)', () => {
+    process.env.PEACH_WEBHOOK_SECRET = '   '
+    const body = 'raw body'
+    const forgedSig = createHmac('sha256', '   ').update(body).digest('hex')
+    expect(verifyWebhookSignature(body, forgedSig)).toBe(false)
+  })
+
   it('returns false for mismatched signature', () => {
     process.env.PEACH_WEBHOOK_SECRET = 'test-secret'
     const result = verifyWebhookSignature('raw body', 'invalid-sig')
     expect(result).toBe(false)
+  })
+
+  it('still accepts a valid signature when the secret is configured', () => {
+    process.env.PEACH_WEBHOOK_SECRET = 'test-secret'
+    const body = '{"merchantTransactionId":"booking-1"}'
+    const sig = createHmac('sha256', 'test-secret').update(body).digest('hex')
+    expect(verifyWebhookSignature(body, sig)).toBe(true)
   })
 })
 

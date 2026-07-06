@@ -170,7 +170,10 @@ describe('POST /api/webhooks/whatsapp - signature required', () => {
     delete process.env.WHATSAPP_APP_SECRET
   })
 
-  it('rejects request with missing X-Hub-Signature-256 header (403)', async () => {
+  // 15s timeout: this is the first test to import the WhatsApp route, whose
+  // module graph (review-first → matching) takes >5s to transform under a
+  // cold Vite cache when many test files run in parallel.
+  it('rejects request with missing X-Hub-Signature-256 header (403)', { timeout: 15_000 }, async () => {
     const { POST } = await import('../../app/api/webhooks/whatsapp/route')
     const body = '{"object":"whatsapp_business_account","entry":[]}'
     const req = new NextRequest('http://localhost/api/webhooks/whatsapp', {
@@ -275,26 +278,38 @@ describe('POST /api/webhooks/whatsapp - signature required', () => {
 // ─── Payments webhook - idempotency guard ────────────────────────────────────
 
 describe('POST /api/webhooks/payments - idempotency', () => {
+  const CONFIRMABLE_BOOKING = {
+    id: 'booking-001',
+    status: 'SCHEDULED',
+    scheduledDate: new Date('2026-05-01'),
+    scheduledWindow: '09:00–12:00',
+    match: {
+      jobRequest: {
+        id: 'jr-001',
+        category: 'Plumbing',
+        customer: { name: 'Alice', phone: '+27821234567' },
+      },
+    },
+  }
+
   beforeEach(() => vi.clearAllMocks())
 
   it('sends WhatsApp confirmation on first delivery (booking not yet SCHEDULED)', async () => {
     const { db } = await import('@/lib/db')
     // Idempotency check - payment not yet PAID (first delivery)
-    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
-    // Full booking for WhatsApp message
-    ;(db.booking.findUnique as any).mockResolvedValueOnce({
-      id: 'booking-001',
-      status: 'SCHEDULED',
-      scheduledDate: new Date('2026-05-01'),
-      scheduledWindow: '09:00–12:00',
-      match: {
-        jobRequest: {
-          id: 'jr-001',
-          category: 'Plumbing',
-          customer: { name: 'Alice', phone: '+27821234567' },
-        },
-      },
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PENDING',
+      bookingConfirmationSentAt: null,
     })
+    // sendPaidBookingConfirmation re-reads the (now PAID) payment (SRE-02)
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PAID',
+      bookingConfirmationSentAt: null,
+      bookingConfirmationAttempts: 0,
+    })
+    ;(db.payment.update as any).mockResolvedValue({})
+    // Full booking for WhatsApp message
+    ;(db.booking.findUnique as any).mockResolvedValueOnce(CONFIRMABLE_BOOKING)
 
     const { POST } = await import('../../app/api/webhooks/payments/route')
     const req = new NextRequest('http://localhost/api/webhooks/payments', {
@@ -313,12 +328,21 @@ describe('POST /api/webhooks/payments - idempotency', () => {
         bookingUrl: expect.stringContaining('/requests/access/'),
       }),
     )
+    // SRE-02: sentinel recorded after the successful send.
+    expect(db.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { bookingConfirmationSentAt: expect.any(Date) },
+      }),
+    )
   })
 
-  it('skips WhatsApp confirmation on duplicate delivery (booking already SCHEDULED)', async () => {
+  it('skips WhatsApp confirmation on duplicate delivery when the confirmation already went out', async () => {
     const { db } = await import('@/lib/db')
-    // Idempotency check - payment already PAID from a prior webhook delivery
-    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PAID' })
+    // Idempotency check - payment already PAID and confirmation sentinel set
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PAID',
+      bookingConfirmationSentAt: new Date('2026-05-01T08:00:00Z'),
+    })
 
     const { POST } = await import('../../app/api/webhooks/payments/route')
     const req = new NextRequest('http://localhost/api/webhooks/payments', {
@@ -332,6 +356,74 @@ describe('POST /api/webhooks/payments - idempotency', () => {
 
     const { sendBookingConfirmation } = await import('@/lib/whatsapp')
     expect(sendBookingConfirmation).not.toHaveBeenCalled()
+  })
+
+  it('re-drives the missed confirmation on duplicate delivery when the sentinel is null (SRE-02)', async () => {
+    const { db } = await import('@/lib/db')
+    // Duplicate delivery: PAID but the confirmation never went out.
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PAID',
+      bookingConfirmationSentAt: null,
+    })
+    // sendPaidBookingConfirmation re-reads the payment
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PAID',
+      bookingConfirmationSentAt: null,
+      bookingConfirmationAttempts: 1,
+    })
+    ;(db.payment.update as any).mockResolvedValue({})
+    ;(db.booking.findUnique as any).mockResolvedValueOnce(CONFIRMABLE_BOOKING)
+
+    const { POST } = await import('../../app/api/webhooks/payments/route')
+    const req = new NextRequest('http://localhost/api/webhooks/payments', {
+      method: 'POST',
+      body: '{"type":"payment.success"}',
+      headers: { 'Content-Type': 'application/json', 'x-signature': 'valid' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    const { sendBookingConfirmation } = await import('@/lib/whatsapp')
+    expect(sendBookingConfirmation).toHaveBeenCalledOnce()
+    // handlePaymentSuccess must NOT run again on a duplicate.
+    const { handlePaymentSuccess } = await import('@/lib/payments')
+    expect(handlePaymentSuccess).not.toHaveBeenCalled()
+  })
+
+  it('returns 200 (re-drivable, no PSP retry storm) when the confirmation send fails post-PAID', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PENDING',
+      bookingConfirmationSentAt: null,
+    })
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PAID',
+      bookingConfirmationSentAt: null,
+      bookingConfirmationAttempts: 0,
+    })
+    ;(db.payment.update as any).mockResolvedValue({})
+    ;(db.booking.findUnique as any).mockResolvedValueOnce(CONFIRMABLE_BOOKING)
+
+    const { sendBookingConfirmation } = await import('@/lib/whatsapp')
+    ;(sendBookingConfirmation as any).mockRejectedValueOnce(new Error('Meta 500'))
+
+    const { POST } = await import('../../app/api/webhooks/payments/route')
+    const req = new NextRequest('http://localhost/api/webhooks/payments', {
+      method: 'POST',
+      body: '{"type":"payment.success"}',
+      headers: { 'Content-Type': 'application/json', 'x-signature': 'valid' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    // Sentinel NOT set - the cron sweep / next duplicate delivery re-drives it.
+    expect(db.payment.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { bookingConfirmationSentAt: expect.any(Date) },
+      }),
+    )
   })
 
   it('does not leak raw handler errors in the webhook response body', async () => {

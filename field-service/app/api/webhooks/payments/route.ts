@@ -9,8 +9,7 @@ import {
   handlePaymentSuccess,
   handlePaymentFailed,
 } from '@/lib/payments'
-import { sendBookingConfirmation } from '@/lib/whatsapp'
-import { getJobRequestAccessUrl } from '@/lib/job-request-access'
+import { sendPaidBookingConfirmation } from '@/lib/payment-confirmation'
 import { db } from '@/lib/db'
 import { getCorrelationId } from '@/lib/correlation'
 
@@ -49,7 +48,7 @@ export async function POST(request: NextRequest) {
       //   c) payment is not already PAID (idempotency)
       const existingPayment = await db.payment.findUnique({
         where: { bookingId: event.bookingId },
-        select: { status: true, amount: true },
+        select: { status: true, amount: true, bookingConfirmationSentAt: true },
       })
 
       if (!existingPayment) {
@@ -74,36 +73,30 @@ export async function POST(request: NextRequest) {
         console.info(
           `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
         )
+        // SRE-02: a duplicate delivery is a free re-drive opportunity. If the
+        // booking confirmation never went out (sentinel null), attempt it now.
+        // sendPaidBookingConfirmation is idempotent (sentinel + attempt cap)
+        // and non-throwing.
+        if (!existingPayment.bookingConfirmationSentAt) {
+          const redrive = await sendPaidBookingConfirmation(event.bookingId)
+          console.info(
+            `[webhook/payments:${reqId}] Confirmation re-drive for ${event.bookingId}: ${redrive.outcome}`,
+          )
+        }
         return NextResponse.json({ status: 'ok' })
       }
 
       await handlePaymentSuccess(event)
 
-      const booking = await db.booking.findUnique({
-        where: { id: event.bookingId },
-        include: {
-          match: { include: { jobRequest: { include: { customer: true } } } },
-        },
-      })
-
-      const customer = booking?.match?.jobRequest?.customer
-      if (customer && booking?.scheduledDate) {
-        const window = booking.scheduledWindow ?? 'TBC'
-        const dateLabel = booking.scheduledDate.toLocaleDateString('en-ZA', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-        })
-
-        const ticketUrl = await getJobRequestAccessUrl(booking.match.jobRequest.id).catch(() => null)
-        await sendBookingConfirmation({
-          bookingId: booking.id,
-          customerName: customer.name,
-          customerPhone: customer.phone,
-          serviceName: booking.match.jobRequest.category,
-          scheduledWindow: `${dateLabel}, ${window}`,
-          bookingUrl: ticketUrl ?? (process.env.NEXT_PUBLIC_APP_URL ?? ''),
-        })
+      // SRE-02: the confirmation send is tracked by a sentinel on Payment and
+      // never throws. A failed send no longer 500s the webhook (which used to
+      // strand the confirmation behind the PAID early-return); the duplicate-
+      // delivery path above and the payment-confirmation-redrive cron re-drive it.
+      const confirmation = await sendPaidBookingConfirmation(event.bookingId)
+      if (!confirmation.sent) {
+        console.warn(
+          `[webhook/payments:${reqId}] Booking confirmation not sent for ${event.bookingId}: ${confirmation.outcome}`,
+        )
       }
     } else if (event.type === 'payment.failed') {
       await handlePaymentFailed(event)

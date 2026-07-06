@@ -51,6 +51,53 @@ describe('client PWA submission notifications', () => {
   })
 })
 
+describe('notifyCustomerPaymentFailed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('sends the failure message without a retry CTA when no checkout link is provided (bypass mode)', async () => {
+    mockSendText.mockResolvedValue('wamid-fail')
+
+    const { notifyCustomerPaymentFailed } = await import('../../lib/client-pwa-submission-notifications')
+    const result = await notifyCustomerPaymentFailed({
+      customerPhone: '+27821234567',
+      category: 'plumbing',
+      bookingRef: 'OOKING-1',
+    })
+
+    expect(result).toEqual({ sent: true })
+    expect(mockSendText).toHaveBeenCalledOnce()
+    expect(mockSendText.mock.calls[0][0].text).not.toContain('https://')
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+  })
+
+  it('attaches a retry payment CTA when a checkout link is provided (CJ-13, checkout mode)', async () => {
+    mockSendText.mockResolvedValue('wamid-fail')
+    mockSendCtaUrl.mockResolvedValue('wamid-retry')
+
+    const { notifyCustomerPaymentFailed } = await import('../../lib/client-pwa-submission-notifications')
+    const result = await notifyCustomerPaymentFailed({
+      customerPhone: '+27821234567',
+      category: 'plumbing',
+      bookingRef: 'OOKING-1',
+      checkoutUrl: 'https://pay.example/checkout/retry',
+    })
+
+    expect(result).toEqual({ sent: true })
+    // Body stays URL-free; the link travels via the CTA button.
+    expect(mockSendText.mock.calls[0][0].text).not.toContain('https://')
+    expect(mockSendCtaUrl).toHaveBeenCalledWith(
+      '+27821234567',
+      'You can retry your payment securely below.',
+      'Make payment',
+      'https://pay.example/checkout/retry',
+      undefined,
+      expect.objectContaining({ templateName: 'interactive:client_payment_retry_cta' }),
+    )
+  })
+})
+
 describe('notifyCustomerMatchingInProgress', () => {
   beforeEach(() => {
     vi.clearAllMocks()
