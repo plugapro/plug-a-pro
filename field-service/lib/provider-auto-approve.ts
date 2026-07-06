@@ -22,6 +22,8 @@ import { recordAuditLog } from './audit'
 import { isKycRequiredForActivation } from './kyc-policy'
 import { KYC_GRACE_FLAG } from './matching/kyc-grace'
 import { checkCanBeApproved } from './provider-lead-eligibility'
+import { resolveApplicationLocationNodeIds } from './provider-application-service-areas'
+import { getProviderMatchabilityReadiness } from './matching/readiness'
 
 // Kind-level side-effects that can be retried after the core approval commit.
 type SideEffectKind = 'PROMO_AWARD' | 'NOTIFICATION' | 'MATCH_RECHECK'
@@ -95,6 +97,15 @@ type AutoApproveDb = {
     createMany: (args: any) => Promise<{ count: number }>
     updateMany: (args: any) => Promise<{ count: number }>
   }
+  // Optional — PJ-01 approval-time service-area resolution. Test doubles may
+  // omit these; resolution then returns no node ids and enrichment behaves as
+  // before (legacy string areas only).
+  providerApplicationDraft?: {
+    findFirst: (args: any) => Promise<{ locationNodeIds: string[] } | null>
+  }
+  locationNode?: {
+    findMany: (args: any) => Promise<Array<{ id: string; label: string; nodeType: string; slug: string }>>
+  }
   $transaction: (callbackOrOps: any, options?: any) => Promise<unknown>
 }
 
@@ -142,6 +153,13 @@ export type AutoApproveResult = {
     enrichmentQueued: number
   }
   skippedReasons: string[]
+  /**
+   * PJ-01b: providers that were approved in this run but fail one or more
+   * matchability readiness gates (see lib/matching/readiness.ts). Surfaced so
+   * cron logs / ops can act immediately instead of discovering silent
+   * unmatchability weeks later.
+   */
+  matchabilityWarnings: Array<{ applicationId: string; providerId: string; reasons: string[] }>
 }
 
 type AutoApproveParams = {
@@ -693,6 +711,7 @@ function emptyAutoApproveResult(skippedReason: string): AutoApproveResult {
       enrichmentQueued: 0,
     },
     skippedReasons: [skippedReason],
+    matchabilityWarnings: [],
   }
 }
 
@@ -766,6 +785,7 @@ export async function autoApproveProviderApplications(
       enrichmentQueued: 0,
     },
     skippedReasons: [...promoPreflight.reasons, ...markerPreflight.reasons, ...paymentIntentPreflight.reasons],
+    matchabilityWarnings: [],
   }
   const markerSchemaCompatible = markerPreflight.isCompatible
 
@@ -930,8 +950,28 @@ export async function autoApproveProviderApplications(
       continue
     }
 
-    // Phase B: non-branching side effects are fire-and-forget + retryable.
-    syncProviderRecord(client as unknown as any, {
+    // Phase B: non-branching side effects — error-tolerant + retryable.
+    // PJ-01: resolve the application's structured service areas so enrichment
+    // creates the TechnicianServiceArea rows matching depends on. The region
+    // gate inside upsertStructuredServiceAreas keeps non-matching-region rows
+    // inactive, so this never widens the matching fence. Enrichment is now
+    // awaited (was fire-and-forget) so the readiness check below observes the
+    // rows it creates; errors are still swallowed so approval never fails here.
+    const areaResolution = await resolveApplicationLocationNodeIds(client, {
+      applicationId: app.id,
+      serviceAreas: app.serviceAreas,
+    }).catch((error: unknown) => {
+      console.error('[auto-approve] service-area resolution failed', { applicationId: app.id, error })
+      return { locationNodeIds: [] as string[], source: 'none' as const, unresolvedLabels: [] as string[] }
+    })
+    if (areaResolution.unresolvedLabels.length > 0) {
+      console.warn('[auto-approve] unresolved service-area labels', {
+        applicationId: app.id,
+        unresolvedLabels: areaResolution.unresolvedLabels,
+      })
+    }
+
+    await syncProviderRecord(client as unknown as any, {
       phone: app.phone,
       name: app.name,
       skills: app.skills,
@@ -941,6 +981,7 @@ export async function autoApproveProviderApplications(
       verified: true,
       isTestUser: app.isTestUser,
       cohortName: app.cohortName,
+      locationNodeIds: areaResolution.locationNodeIds,
     }).catch((error: unknown) => {
       console.error('[auto-approve] enrichment sync failed', {
         applicationId: app.id,
@@ -950,6 +991,32 @@ export async function autoApproveProviderApplications(
     result.sideEffectSummary.enrichmentQueued += 1
 
     if (!providerId) continue
+
+    // PJ-01b: post-approval matchability readiness. Read-only; a failure here
+    // must never affect the (already committed) approval.
+    let matchabilityReasonCodes: string[] = []
+    try {
+      const readiness = await getProviderMatchabilityReadiness(providerId, client as never)
+      if (readiness.providerFound && !readiness.matchable) {
+        matchabilityReasonCodes = readiness.failReasonCodes
+        result.matchabilityWarnings.push({
+          applicationId: app.id,
+          providerId,
+          reasons: matchabilityReasonCodes,
+        })
+        console.warn('[auto-approve] provider approved but NOT matchable', {
+          applicationId: app.id,
+          providerId,
+          failReasonCodes: matchabilityReasonCodes,
+        })
+      }
+    } catch (error) {
+      console.warn('[auto-approve] matchability readiness check failed (non-fatal)', {
+        applicationId: app.id,
+        providerId,
+        error: toErrorText(error),
+      })
+    }
 
     const sourceRefId = app.id
 
@@ -1016,6 +1083,9 @@ export async function autoApproveProviderApplications(
         providerId,
         recommendation: assessment.recommendation,
         reasonCodes: assessment.reasonCodes,
+        ...(matchabilityReasonCodes.length > 0
+          ? { matchabilityReasonCodes }
+          : {}),
       } as PrismaTypes.InputJsonValue,
     }).catch(() => undefined)
   }
