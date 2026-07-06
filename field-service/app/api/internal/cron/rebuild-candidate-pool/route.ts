@@ -9,12 +9,18 @@
 import { NextResponse } from 'next/server'
 import { CATEGORY_POLICIES } from '@/lib/service-category-policy'
 import { rebuildCandidatePoolForCategory } from '@/lib/matching/candidate-pool'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 export async function POST(request: Request) {
   const auth = request.headers.get('authorization')
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('rebuild-candidate-pool', () => runCron())
+}
+
+async function runCron() {
 
   const start = Date.now()
   const categorySlugs = Object.keys(CATEGORY_POLICIES)

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import { getOpsDashboardSnapshot, getMatchingHealthMetrics } from '@/lib/ops-dashboard/service'
 import { getQueueSlaConfig } from '@/lib/ops-dashboard/sla'
+import { getCronHeartbeatSummary } from '@/lib/cron-heartbeat'
 import type { AssignmentRecord, OpsDashboardQueueCard, OpsDashboardRangePreset } from '@/lib/ops-dashboard/types'
 import { IncidentBar } from '@/components/admin/dashboard/IncidentBar'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
@@ -59,6 +60,12 @@ export default async function AdminDashboardPage({
   const showBreachBanner = await isEnabled('ops.v2.breachBanner')
   const breachedCases = showBreachBanner ? await getBreachedCases().catch(() => null) : null
   const breachCount = breachedCases?.total ?? 0
+
+  // Audit OBS-09: cron heartbeat staleness (read-only; behind a flag per house rules)
+  const showCronHealth = await isEnabled('admin.observability.cron_health')
+  const cronHeartbeats = showCronHealth
+    ? await getCronHeartbeatSummary(now).catch(() => null)
+    : null
 
   const heroMetrics = snapshot.hero.data?.metrics ?? []
   const queueData = snapshot.queues.data
@@ -268,6 +275,47 @@ export default async function AdminDashboardPage({
                   sub="jobs / holds now"
                 />
               </div>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {cronHeartbeats && (
+        <section>
+          <Card>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-base">Cron heartbeats</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Scheduled jobs whose last success is older than ~2x their schedule interval. A
+                stale match-leads cron stalls the marketplace.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {cronHeartbeats.stale.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  All {cronHeartbeats.total} tracked crons reported a recent success.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {cronHeartbeats.stale.map((cron) => (
+                    <li
+                      key={cron.cronKey}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium">{cron.cronKey}</span>
+                      <span className="text-muted-foreground">
+                        {cron.minutesSinceSuccess === null
+                          ? 'never succeeded'
+                          : `last success ${cron.minutesSinceSuccess} min ago`}
+                        {` · allowed ${cron.thresholdMinutes} min`}
+                        {cron.consecutiveFailures > 0
+                          ? ` · ${cron.consecutiveFailures} consecutive failures`
+                          : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </section>

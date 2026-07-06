@@ -16,6 +16,12 @@ vi.mock('@/lib/otp-security', () => ({
   pruneClearedAccountSecurityStates: mockPruneClearedAccountSecurityStates,
 }))
 
+// Pass-through: heartbeat recording is unit-tested in __tests__/lib/cron-heartbeat.test.ts.
+// Without this the recorder's Prisma calls would consume the Date.now mocks below.
+vi.mock('@/lib/cron-heartbeat', () => ({
+  withCronHeartbeat: (_cronKey: string, handler: () => Promise<unknown>) => handler(),
+}))
+
 describe('GET /api/cron/otp-security-prune', () => {
   const ORIGINAL_ENV = { ...process.env }
   const CRON_SECRET = 'cron-secret'

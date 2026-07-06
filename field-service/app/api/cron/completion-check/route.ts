@@ -2,10 +2,16 @@
 // Runs daily at 09:00 UTC (11:00 SAST) via Vercel Cron.
 import { NextResponse } from 'next/server'
 import { sendPendingCompletionChecks, retryPendingCompletionChecks } from '@/lib/completion-check'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`)
     return new NextResponse('Unauthorized', { status: 401 })
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('completion-check', () => runCron())
+}
+
+async function runCron() {
   const cronStart = Date.now(); const cronName = 'completion-check'
   console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
   try {

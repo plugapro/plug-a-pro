@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { isEnabled } from '@/lib/flags'
 import { runAgent } from '@/lib/ops-agents'
 import { PHASE_1_AGENTS } from '@/lib/ops-agents/agents'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -18,6 +19,11 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('ops-agents', () => runCron())
+}
+
+async function runCron() {
 
   const enabled = await isEnabled('admin.ops_intelligence')
   if (!enabled) {

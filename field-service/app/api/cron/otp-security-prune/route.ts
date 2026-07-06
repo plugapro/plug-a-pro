@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 import {
   pruneClearedAccountSecurityStates,
   pruneStaleSecurityEvents,
@@ -10,6 +11,11 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('otp-security-prune', () => runCron())
+}
+
+async function runCron() {
 
   const startedAt = Date.now()
 

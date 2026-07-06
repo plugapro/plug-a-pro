@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gateway-itn'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 const PAYAT_ITN_RECOVERY_BATCH = 25
 
@@ -20,6 +21,11 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('expire-payment-intents', () => runCron())
+}
+
+async function runCron() {
 
   const cronStart = Date.now()
   const cronName = 'expire-payment-intents'

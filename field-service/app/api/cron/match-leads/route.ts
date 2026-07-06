@@ -30,6 +30,7 @@ import {
   getQueueHref,
 } from '@/lib/ops-dashboard/alerts'
 import { getPublicAppUrl } from '@/lib/provider-credit-copy'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
 const ALERT_COOLDOWN_MINUTES = 90
@@ -39,6 +40,11 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('match-leads', () => runCron())
+}
+
+async function runCron() {
 
   const reqId = crypto.randomUUID().slice(0, 8)
   const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, progressUpdates: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0, rfpExpired: 0 }

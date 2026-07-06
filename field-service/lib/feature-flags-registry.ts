@@ -33,6 +33,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  // ─── Admin observability ─────────────────────────────────────────────────────
+  'admin.observability.cron_health': {
+    description:
+      'Show the cron heartbeat card on the admin operations dashboard (crons whose lastSucceededAt exceeds ~2x their schedule interval). Read-only surface over the CronHeartbeat table; the heartbeat-watchdog WhatsApp alert runs regardless of this flag. Audit OBS-09.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   // ─── Admin CRUD surfaces ─────────────────────────────────────────────────────
   'admin.crud.locations': {
     description: 'Enable create/update/delete mutations on the Location Taxonomy admin page.',
