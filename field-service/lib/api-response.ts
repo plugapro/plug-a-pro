@@ -9,6 +9,8 @@
  * route action error adapters across field-service and marketing".
  */
 
+import * as Sentry from '@sentry/nextjs'
+
 export interface ApiError {
   code: string
   category: string
@@ -26,6 +28,12 @@ type ApiErrorOptions = {
   retryable?: boolean
   suggestedActions?: string[]
   context?: Record<string, unknown>
+  /**
+   * The underlying thrown error, if the caller has one. Attached to the
+   * Sentry capture on 5xx responses so the real stack trace is reported
+   * instead of a synthetic one. Never serialised into the response body.
+   */
+  cause?: unknown
 }
 
 export function createApiReferenceId(prefix = 'PAP') {
@@ -63,6 +71,27 @@ export function apiError(
   options: ApiErrorOptions = {},
 ): Response {
   const resolvedReferenceId = referenceId ?? createApiReferenceId()
+
+  // Audit ARC-03/ARC-04 (partial): 5xx envelopes are server faults - report
+  // them to Sentry tagged with the support reference id so the id a customer
+  // quotes is searchable. captureException is a no-op when no DSN is set, and
+  // telemetry must never block or break the response itself.
+  if (status >= 500) {
+    try {
+      Sentry.withScope((scope) => {
+        scope.setTag('reference_id', resolvedReferenceId)
+        scope.setTag('api_error_code', code)
+        scope.setContext('api_error', { code, message, status })
+        const cause = options.cause
+        scope.captureException(
+          cause instanceof Error ? cause : new Error(`[${code}] ${message}`, cause !== undefined ? { cause } : undefined),
+        )
+      })
+    } catch (telemetryError) {
+      console.error('[api-response] failed to report 5xx to Sentry', telemetryError)
+    }
+  }
+
   const body: { error: ApiError } = {
     error: {
       code,

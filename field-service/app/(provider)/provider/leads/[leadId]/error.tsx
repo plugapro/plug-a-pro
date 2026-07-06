@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+import * as Sentry from '@sentry/nextjs'
 import { Button } from '@/components/ui/button'
 
 export default function LeadDetailError({
@@ -9,6 +11,11 @@ export default function LeadDetailError({
   error: Error
   reset: () => void
 }) {
+  useEffect(() => {
+    console.error('[provider:lead-detail]', error)
+    Sentry.captureException(error)
+  }, [error])
+
   return (
     <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col justify-center px-4 py-8">
       <div className="rounded-xl border bg-card p-5">

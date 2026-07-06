@@ -11,6 +11,18 @@ if (!process.env.TZ) {
   process.env.TZ = 'Africa/Johannesburg'
 }
 
+// Resolved before nextConfig so the CSP below can include the Sentry ingest
+// origins only when a DSN is configured (audit OBS-01). Also gates the
+// withSentryConfig wrapper at the bottom of this file.
+const sentryDsn = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN
+
+// Sentry browser SDK posts envelopes to o<org>.ingest[.region].sentry.io.
+// Follow the Sentry CSP docs pattern with wildcard ingest hosts rather than
+// hardcoding an org-specific origin. Empty (inert) when no DSN is set.
+const sentryConnectSrc = sentryDsn
+  ? ' https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io https://*.sentry.io'
+  : ''
+
 const nextConfig: NextConfig = {
   turbopack: {},
   images: {
@@ -45,7 +57,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https://*.public.blob.vercel-storage.com https://www.facebook.com https://www.google-analytics.com https://www.googletagmanager.com",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://graph.facebook.com https://www.facebook.com https://www.google-analytics.com https://region1.google-analytics.com",
+              `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://graph.facebook.com https://www.facebook.com https://www.google-analytics.com https://region1.google-analytics.com${sentryConnectSrc}`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
@@ -61,8 +73,6 @@ const nextConfig: NextConfig = {
 // Without a DSN the plugin has nothing to instrument, and its config
 // modifications can cause Vercel's modifyConfig hook to throw when
 // org/project/authToken are absent (seen with @sentry/nextjs@10.x).
-const sentryDsn = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN
-
 export default sentryDsn
   ? withSentryConfig(nextConfig, {
       org: process.env.SENTRY_ORG,
