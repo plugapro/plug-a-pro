@@ -44,7 +44,18 @@ describe("serviceLd", () => {
     });
     expect(ld["@type"]).toBe("Service");
     expect(ld.url).toBe(`${siteConfig.url}/services/regulated-electrical`);
-    expect(ld.provider.name).toBe(siteConfig.name);
+    // Plug A Pro is the marketplace arranging the service, not its performer:
+    // Service must carry `broker`, never `provider` (positioning audit 2026-07-06).
+    expect(ld.broker.name).toBe(siteConfig.name);
+    expect("provider" in ld).toBe(false);
+  });
+});
+
+describe("localBusinessLd description", () => {
+  it("carries the marketplace description so structured data cannot read as a direct service business", () => {
+    const ld = localBusinessLd();
+    expect(ld.description).toBe(siteConfig.description);
+    expect(ld.description).toContain("independent local service providers");
   });
 });
 
