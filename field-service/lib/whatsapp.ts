@@ -1718,6 +1718,44 @@ export async function sendAdminEscalation(params: {
   })
 }
 
+/**
+ * Audit OBS-09: stale-cron heartbeat alert, sent by the heartbeat-watchdog
+ * cron when a wrapped cron has not succeeded within ~2x its schedule interval.
+ * Best-effort like the other admin alerts - silently skipped when
+ * ADMIN_WHATSAPP_NUMBER is unset. Returns true only when a send was attempted
+ * and did not throw, so the caller can arm the per-cron alert throttle.
+ */
+export async function sendAdminCronStaleAlert(params: {
+  cronKey: string
+  minutesSinceSuccess: number | null
+  thresholdMinutes: number
+  consecutiveFailures: number
+  lastError?: string | null
+}): Promise<boolean> {
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
+  if (!adminPhone) return false
+
+  const sinceText = params.minutesSinceSuccess === null
+    ? 'never succeeded since heartbeats began'
+    : `last success ${formatMinutesAgo(params.minutesSinceSuccess)} ago`
+  const failureText = params.consecutiveFailures > 0
+    ? `\nConsecutive failures: ${params.consecutiveFailures}${params.lastError ? `\nLast error: ${params.lastError.slice(0, 200)}` : ''}`
+    : ''
+
+  await sendText({
+    to: adminPhone,
+    text: `🫀 *Cron Heartbeat Stale*\n\nCron: ${params.cronKey}\nStatus: ${sinceText} (allowed ${formatMinutesAgo(params.thresholdMinutes)})${failureText}\n\nThe schedule may be dead - check Vercel cron logs.`,
+    templateName: 'admin:cron_heartbeat_stale',
+  })
+  return true
+}
+
+function formatMinutesAgo(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.round((minutes / 60) * 10) / 10
+  return `${hours} h`
+}
+
 // ─── M5-T3: Running-late customer notification (PW3) ─────────────────────────
 
 /**

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import Link from 'next/link'
+import * as Sentry from '@sentry/nextjs'
 import { Button } from '@/components/ui/button'
 
 export default function ProviderGroupError({
@@ -13,6 +14,7 @@ export default function ProviderGroupError({
 }) {
   useEffect(() => {
     console.error('[provider]', error)
+    Sentry.captureException(error)
   }, [error])
 
   return (

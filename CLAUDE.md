@@ -11,6 +11,7 @@ This file is the Session 0 audit for the current workspace.
   - `outputs/PlugAPro-CRUD-Capability-Audit.md`
   - `outputs/plugapro-admin-scaffold/`
 - If later sessions assume `reference/plugapro-admin-scaffold/`, either move/copy the scaffold there first or adjust those prompts to use `outputs/plugapro-admin-scaffold/`.
+- Current platform-state reference (findings register, backlog, SRE scorecard): `docs/audits/platform-audit-2026-07-06/`
 
 ## Conventions
 
@@ -25,30 +26,52 @@ This file is the Session 0 audit for the current workspace.
 ### `/admin` route inventory
 - `/admin` → `field-service/app/(admin)/admin/page.tsx`
 - `/admin/applications` → `field-service/app/(admin)/admin/applications/page.tsx`
+- `/admin/audit-log` → `field-service/app/(admin)/admin/audit-log/page.tsx`
 - `/admin/bookings` → `field-service/app/(admin)/admin/bookings/page.tsx`
 - `/admin/bookings/[id]` → `field-service/app/(admin)/admin/bookings/[id]/page.tsx`
+- `/admin/breached` → `field-service/app/(admin)/admin/breached/page.tsx`
 - `/admin/categories` → `field-service/app/(admin)/admin/categories/page.tsx`
+- `/admin/commercial/provider-economics` → `field-service/app/(admin)/admin/commercial/provider-economics/page.tsx`
 - `/admin/customers` → `field-service/app/(admin)/admin/customers/page.tsx`
 - `/admin/customers/[id]` → `field-service/app/(admin)/admin/customers/[id]/page.tsx`
+- `/admin/customers/new` → `field-service/app/(admin)/admin/customers/new/page.tsx`
 - `/admin/dispatch` → `field-service/app/(admin)/admin/dispatch/page.tsx`
 - `/admin/disputes` → `field-service/app/(admin)/admin/disputes/page.tsx`
-- `/admin/field-exceptions` → `field-service/app/(admin)/admin/field-exceptions/page.tsx`
-- `/admin/flows` → `field-service/app/(admin)/admin/flows/page.tsx`
+- `/admin/invoices` → `field-service/app/(admin)/admin/invoices/page.tsx`
+- `/admin/launch-readiness` → `field-service/app/(admin)/admin/launch-readiness/page.tsx`
+- `/admin/lead-unlock-disputes` → `field-service/app/(admin)/admin/lead-unlock-disputes/page.tsx`
 - `/admin/locations` → `field-service/app/(admin)/admin/locations/page.tsx`
-- `/admin/matches` → `field-service/app/(admin)/admin/matches/page.tsx`
 - `/admin/messages` → `field-service/app/(admin)/admin/messages/page.tsx`
+- `/admin/nudges` → `field-service/app/(admin)/admin/nudges/page.tsx`
+- `/admin/ops-intelligence` → `field-service/app/(admin)/admin/ops-intelligence/page.tsx`
+- `/admin/otp-delivery` → `field-service/app/(admin)/admin/otp-delivery/page.tsx`
+- `/admin/otp-security` → `field-service/app/(admin)/admin/otp-security/page.tsx`
 - `/admin/payments` → `field-service/app/(admin)/admin/payments/page.tsx`
+- `/admin/provider-credit-payments` → `field-service/app/(admin)/admin/provider-credit-payments/page.tsx`
+- `/admin/provider-credit-payments/[id]` → `field-service/app/(admin)/admin/provider-credit-payments/[id]/page.tsx`
+- `/admin/provider-wallets` → `field-service/app/(admin)/admin/provider-wallets/page.tsx`
+- `/admin/provider-wallets/[providerId]` → `field-service/app/(admin)/admin/provider-wallets/[providerId]/page.tsx`
 - `/admin/providers` → `field-service/app/(admin)/admin/providers/page.tsx`
 - `/admin/providers/[id]` → `field-service/app/(admin)/admin/providers/[id]/page.tsx`
+- `/admin/providers/new` → `field-service/app/(admin)/admin/providers/new/page.tsx`
+- `/admin/quality` → `field-service/app/(admin)/admin/quality/page.tsx`
 - `/admin/quotes` → `field-service/app/(admin)/admin/quotes/page.tsx`
 - `/admin/reports` → `field-service/app/(admin)/admin/reports/page.tsx`
+- `/admin/reports/acquisition` → `field-service/app/(admin)/admin/reports/acquisition/page.tsx`
+- `/admin/reports/funnel` → `field-service/app/(admin)/admin/reports/funnel/page.tsx`
+- `/admin/reports/kyc-funnel` → `field-service/app/(admin)/admin/reports/kyc-funnel/page.tsx`
 - `/admin/services` → `field-service/app/(admin)/admin/services/page.tsx`
 - `/admin/settings` → `field-service/app/(admin)/admin/settings/page.tsx`
 - `/admin/team` → `field-service/app/(admin)/admin/team/page.tsx`
+- `/admin/team/permissions` → `field-service/app/(admin)/admin/team/permissions/page.tsx`
 - `/admin/technicians` → `field-service/app/(admin)/admin/technicians/page.tsx`
 - `/admin/technicians/[id]` → `field-service/app/(admin)/admin/technicians/[id]/page.tsx`
 - `/admin/validation` → `field-service/app/(admin)/admin/validation/page.tsx`
+- `/admin/verifications` → `field-service/app/(admin)/admin/verifications/page.tsx`
+- `/admin/verifications/[id]` → `field-service/app/(admin)/admin/verifications/[id]/page.tsx`
+- `/admin/verifications/vendors` → `field-service/app/(admin)/admin/verifications/vendors/page.tsx`
 - `/admin/vouchers` → `field-service/app/(admin)/admin/vouchers/page.tsx`
+- Removed routes (do not reference): `/admin/field-exceptions`, `/admin/flows`, `/admin/matches` no longer exist
 
 ### Provider routes
 - `/provider/signup` → `field-service/app/provider/signup/page.tsx` (anonymous, token-gated by ProviderResumeToken)
@@ -66,7 +89,8 @@ This file is the Session 0 audit for the current workspace.
   - `field-service/app/(admin)/admin/providers/[id]/error.tsx`
   - `field-service/app/(admin)/admin/bookings/[id]/error.tsx`
   - `field-service/app/(admin)/admin/customers/[id]/error.tsx`
-- Observability in these boundaries is currently `console.error(...)`; no Sentry integration was found
+- Boundaries also exist for customer (`app/(customer)/*/error.tsx`), provider (`app/(provider)/**/error.tsx`, `app/provider/signup/error.tsx`) and the app root (`app/error.tsx`, `app/global-error.tsx`)
+- Observability: Sentry is wired — every `error.tsx` calls `Sentry.captureException(error)`; client init loads via `field-service/instrumentation-client.ts` (Turbopack-compatible; `sentry.client.config.ts` holds the shared init with SA-phone redaction), server errors flow through `onRequestError` in `field-service/instrumentation.ts`, and `apiError()` 5xx envelopes are captured tagged with their `reference_id`. Everything is DSN-gated: no `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN` means inert
 
 ### Server actions
 - Mixed conventions are in use.
@@ -88,8 +112,8 @@ This file is the Session 0 audit for the current workspace.
 ### Current Prisma model map vs plan wording
 - Plan says `Application`; actual Prisma model is `ProviderApplication`
 - Plan says `Location`; actual Prisma model is `LocationNode`
-- Plan says `Category`; there is no Prisma `Category` model right now
-- Category data is currently represented as string slugs on domain models such as `JobRequest.category` and `Provider.skills`
+- A real Prisma `Category` model now exists, plus requirement tables `CategoryRequiredCertification`, `CategoryRequiredEquipment` and `CategoryRequiredVehicleType`
+- String slugs still ride along on domain models (`JobRequest.category: String`, `Provider.skills: String[]`)
 
 ### Requested model inventory
 - `Customer`
@@ -126,8 +150,8 @@ This file is the Session 0 audit for the current workspace.
   - Fields: `id`, `nodeType`, `slug`, `label`, `parentId`, `lat`, `lng`, `radiusKm`, `postalCode`, `provinceKey`, `cityKey`, `regionKey`, `active`, `createdAt`, `updatedAt`
   - Relations: `parent`, `children`, `technicianServiceAreas`, `addresses`
 - `Category`
-  - No Prisma model currently exists
-  - Current category storage is string-based
+  - Prisma model exists (see `prisma/schema.prisma`), with requirement tables `CategoryRequiredCertification`, `CategoryRequiredEquipment`, `CategoryRequiredVehicleType`
+  - String-based category fields still exist alongside it
     - `JobRequest.category: String`
     - `Provider.skills: String[]`
     - `ServiceAreaWaitlist.category: String?`
@@ -159,14 +183,9 @@ This file is the Session 0 audit for the current workspace.
   - `requireProvider()`
   - `getCustomerSession()`
 - Request-time protection for `/admin` and `/provider` routes is enforced in `field-service/proxy.ts`
-- Proxy currently authorizes admin access from Supabase `user_metadata.role` only (`admin` or `owner`)
-- `crudAction()` adds a second layer:
-  - resolves `AdminUser.role` from DB if present
-  - falls back to legacy Supabase `user_metadata.role`
-- Current admin provisioning is transitional:
-  - legacy source of truth: Supabase user metadata role (`admin` / `owner`)
-  - new DB-backed model: `AdminUser`
-  - backfill script: `field-service/scripts/backfill-admin-users.ts`
+- Proxy resolves the admin role from the `AdminUser` DB table (`proxy.ts` admin-path block): an inactive or missing `AdminUser` row blocks access even if Supabase metadata still says admin/owner
+- `crudAction()` adds a second layer (`field-service/lib/crud-action.ts`): it resolves `AdminUser.role` from the DB and requires an active row — there is NO fallback to Supabase `user_metadata.role`
+- Admin provisioning is DB-backed via `AdminUser`; backfill script: `field-service/scripts/backfill-admin-users.ts`
 
 ### UI primitives
 - Tailwind: Tailwind CSS v4 via `field-service/postcss.config.mjs`
@@ -258,18 +277,17 @@ This file is the Session 0 audit for the current workspace.
 - Matching tests for certifications/equipment already exist:
   - `field-service/__tests__/lib/matching-cert-equipment.test.ts`
 
+## Since-resolved items (previously listed as missing — do NOT re-introduce)
+- Prisma `Category` model + `CategoryRequiredCertification` / `CategoryRequiredEquipment` / `CategoryRequiredVehicleType` requirement tables exist
+- `/admin/team/permissions` page exists
+- OWNER safety invariants exist in `field-service/app/(admin)/admin/team/actions.ts`: last-OWNER guard and self-role-change / self-deactivate guards
+- Sentry observability is wired (see “Error boundaries already present” above); cron heartbeats live in `field-service/lib/cron-heartbeat.ts` + `/api/cron/heartbeat-watchdog`
+
 ## What’s missing that we’ll introduce
 - A repo-wide understanding that this is not a blank slate; later prompts must adapt to the current implementation instead of blindly copying the scaffold
 - `reference/plugapro-admin-scaffold/` path in-repo, if you want prompts to work unmodified
-- A real Prisma `Category` model if categories are meant to become managed data instead of string slugs
-- Category requirement tables such as `CategoryRequiredCertification` and `CategoryRequiredEquipment`; they do not exist yet
-- Dedicated `/admin/team/permissions` page; not present in the current route tree
 - Multi-role admin users; current schema supports one `role`, not `roles[]`
-- OWNER safety invariants in team actions:
-  - no “last OWNER” guard found in current action code
-  - no self-deactivate / self-revoke guard found in current action code
 - Consistent server-action convention across admin routes; legacy pages still use inline `'use server'`
-- Observability integration beyond `console.error`
 - CI smoke alignment with real route inventory
 
 ## House rules

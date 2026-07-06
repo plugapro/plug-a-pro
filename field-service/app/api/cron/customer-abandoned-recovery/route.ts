@@ -15,6 +15,7 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { hasSuccessfulMessageForRecipient } from '@/lib/message-events'
 import { sendCustomerAbandonedRecovery } from '@/lib/whatsapp'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 const FLAG = 'customer.abandoned_recovery.cron'
 
@@ -70,6 +71,11 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('customer-abandoned-recovery', () => runCron())
+}
+
+async function runCron() {
 
   const cronStart = Date.now()
   const cronName = 'customer-abandoned-recovery'

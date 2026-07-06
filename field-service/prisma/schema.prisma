@@ -3406,3 +3406,23 @@ model WorkflowEvent {
   @@index([occurredAt])
   @@map("workflow_events")
 }
+
+// ─── Cron heartbeats (audit OBS-09) ───────────────────────────────────────────
+// One row per wrapped cron route, recorded by lib/cron-heartbeat.ts
+// withCronHeartbeat(). A silently-dead cron becomes detectable as a stale
+// lastSucceededAt; /api/cron/heartbeat-watchdog alerts ops via WhatsApp.
+// lastAlertAt throttles those alerts to one per cron per 6 hours.
+model CronHeartbeat {
+  id                  String    @id @default(cuid())
+  cronKey             String    @unique
+  lastStartedAt       DateTime?
+  lastSucceededAt     DateTime?
+  lastFailedAt        DateTime?
+  lastError           String?
+  consecutiveFailures Int       @default(0)
+  lastAlertAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("cron_heartbeats")
+}

@@ -7,12 +7,18 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('slots', () => runCron())
+}
+
+async function runCron() {
 
   const cronStart = Date.now()
   const cronName = 'slots'

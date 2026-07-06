@@ -23,17 +23,23 @@ import { db } from '@/lib/db'
 import { sendTemplate } from '@/lib/whatsapp'
 import { isEnabled } from '@/lib/flags'
 import { maskPhone } from '@/lib/support-diagnostics'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 const WARN_WINDOW_LOWER_MS = 5 * 60 * 1000
 const WARN_WINDOW_UPPER_MS = 10 * 60 * 1000
 
 const FLOWS_TO_WARN = ['registration'] as const
 
-export async function GET(request: Request): Promise<Response> {
+export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('session-warning', () => runCron())
+}
+
+async function runCron() {
 
   if (!(await isEnabled('whatsapp.session_prewarning'))) {
     return NextResponse.json({ skipped: 'flag_disabled' })

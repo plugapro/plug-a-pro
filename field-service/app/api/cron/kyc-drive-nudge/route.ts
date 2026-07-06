@@ -16,6 +16,7 @@ import {
 import { resolveBatchCap } from '@/lib/identity-verification/nudge-shared'
 import { logOutboundMessage, markOutboundMessageFailed } from '@/lib/message-events'
 import { sendProviderKycNudge } from '@/lib/whatsapp'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 const DEFAULT_BATCH_CAP = 25
 
@@ -24,6 +25,11 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('kyc-drive-nudge', () => runCron())
+}
+
+async function runCron() {
 
   const cronStart = Date.now()
   const cronName = 'kyc-drive-nudge'

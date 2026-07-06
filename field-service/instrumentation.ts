@@ -27,3 +27,8 @@ export async function register() {
     process.env.TZ = 'Africa/Johannesburg'
   }
 }
+
+// Audit OBS-02: forward nested RSC/route-handler request errors to Sentry.
+// captureRequestError is a safe no-op when no Sentry client was initialised
+// (i.e. when the DSN is unset), so no extra guard is needed.
+export const onRequestError = Sentry.captureRequestError

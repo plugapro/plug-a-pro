@@ -13,6 +13,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendText } from '@/lib/whatsapp-interactive'
 import { maskPhone } from '@/lib/support-diagnostics'
+import { withCronHeartbeat } from '@/lib/cron-heartbeat'
 
 // Flows that indicate an active mid-session state worth notifying about
 const NOTIFIABLE_FLOWS = ['job_request', 'registration', 'status', 'help', 'reschedule', 'cancel']
@@ -22,6 +23,11 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
+  // Audit OBS-09: record heartbeats so a silently-dead cron is detectable.
+  return withCronHeartbeat('session-timeout', () => runCron())
+}
+
+async function runCron() {
 
   const cronStart = Date.now()
   const cronName = 'session-timeout'
