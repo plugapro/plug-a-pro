@@ -299,6 +299,71 @@ export async function requestBookingReschedule(params: {
     },
   })
 
+  // CJ-06: durable ops-queue item. The customer is told "our team will confirm
+  // shortly" — that promise must survive a missing ADMIN_WHATSAPP_NUMBER, so
+  // the request is recorded in the ops queue, not only pinged best-effort.
+  try {
+    const { ensureOpsQueueItem, OPS_QUEUE_TYPES } = await import('./ops-queue')
+    await ensureOpsQueueItem(db, {
+      queueType: OPS_QUEUE_TYPES.RESCHEDULE_REQUEST,
+      entityId: booking.id,
+    })
+  } catch (error) {
+    console.error('[bookings] Failed to enqueue reschedule ops-queue item (audit row still recorded):', error)
+  }
+
+  // CJ-06: tell the provider a reschedule was requested. Window-safe: the
+  // freeform send only happens inside the provider's 24h session window;
+  // outside it we record an explicit FAILED MessageEvent
+  // (NO_ACTIVE_WHATSAPP_SERVICE_WINDOW) instead of firing a doomed send —
+  // the durable ops-queue item above carries the follow-up either way.
+  const providerPhone = booking.match.provider?.phone
+  if (providerPhone) {
+    const providerBody =
+      `🔄 *Reschedule requested*\n\n` +
+      `Booking: ${booking.id.slice(-8).toUpperCase()}\n` +
+      `Service: ${booking.match.jobRequest.category}\n` +
+      `Requested by: ${params.actorRole}\n` +
+      `Requested availability: ${params.requestedAvailability}\n\n` +
+      `Our team will confirm the new time with you shortly.`
+    try {
+      const { hasRecentInboundWhatsappSession } = await import('./whatsapp-policy')
+      const windowOpen = await hasRecentInboundWhatsappSession(providerPhone).catch(() => false)
+      if (windowOpen) {
+        const { sendText: sendInteractiveText } = await import('./whatsapp-interactive')
+        await sendInteractiveText(providerPhone, providerBody, {
+          bookingId: booking.id,
+          templateName: 'interactive:booking_reschedule_request_provider',
+          metadata: {
+            actorRole: params.actorRole,
+            source: 'booking_reschedule_request',
+          },
+        })
+      } else {
+        await db.messageEvent.create({
+          data: {
+            channel: 'WHATSAPP',
+            direction: 'OUTBOUND',
+            to: providerPhone,
+            templateName: 'interactive:booking_reschedule_request_provider',
+            body: providerBody,
+            bookingId: booking.id,
+            providerId: booking.match.provider?.id,
+            status: 'FAILED',
+            sentAt: new Date(),
+            failureReason: 'NO_ACTIVE_WHATSAPP_SERVICE_WINDOW',
+            metadata: {
+              actorRole: params.actorRole,
+              source: 'booking_reschedule_request',
+            } as Prisma.InputJsonValue,
+          },
+        })
+      }
+    } catch (error) {
+      console.error('[bookings] Failed to notify provider of reschedule request:', error)
+    }
+  }
+
   const { sendText } = await import('./whatsapp')
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (adminPhone) {

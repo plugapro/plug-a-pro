@@ -114,6 +114,27 @@ async function hasSentPostMatchMessage(params: {
   }
 }
 
+/**
+ * CJ-03 backstop: when the customer "provider accepted" notification cannot be
+ * delivered (e.g. NO_ACTIVE_WHATSAPP_SERVICE_WINDOW), enqueue a durable
+ * ops-queue item so ops sees the matched-not-told case same-day instead of
+ * relying on the 6-72h flag-gated nudge cron. No customer send happens here.
+ */
+async function enqueueCustomerNotifyFailedOpsItem(jobRequestId: string) {
+  try {
+    const { ensureOpsQueueItem, OPS_QUEUE_TYPES } = await import('./ops-queue')
+    await ensureOpsQueueItem(db, {
+      queueType: OPS_QUEUE_TYPES.CUSTOMER_NOTIFY_FAILED,
+      entityId: jobRequestId,
+    })
+  } catch (err) {
+    console.warn('[post-match] failed to enqueue CUSTOMER_NOTIFY_FAILED ops item (non-fatal)', {
+      jobRequestId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 async function recordPostMatchSendFailure(params: {
   to: string
   templateName: string
@@ -463,6 +484,11 @@ export async function notifyPostMatchAcceptance(params: {
         metadata: { ...customerContext.metadata, outcome: customerDelivery.outcome },
         isTestEvent: isTestLead,
       })
+      // CJ-03 backstop: matched-not-told must reach ops same-day, not via the
+      // 6-72h flag-gated cron. Skipped for test leads to keep the queue real.
+      if (!isTestLead) {
+        await enqueueCustomerNotifyFailedOpsItem(lead.jobRequestId)
+      }
     }
   }
 
