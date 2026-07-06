@@ -268,13 +268,26 @@ export async function orchestrateMatch(
         if (altSlotResult) return altSlotResult
       }
 
-      if (
-        !hadPriorDispatchDecision &&
-        (diagnosis.failureClass === 'EMPTY_POOL' || diagnosis.failureClass === 'STRUCTURAL')
-      ) {
-        const expiry = await expireOpenJobRequest(jobRequestId, diagnosis.primaryReason)
-        if (expiry?.transitioned) {
-          await notifyExpiredJobParties({ jobRequestId })
+      if (diagnosis.failureClass === 'EMPTY_POOL' || diagnosis.failureClass === 'STRUCTURAL') {
+        if (!hadPriorDispatchDecision) {
+          const expiry = await expireOpenJobRequest(jobRequestId, diagnosis.primaryReason)
+          if (expiry?.transitioned) {
+            await notifyExpiredJobParties({ jobRequestId })
+          }
+        } else {
+          // CJ-09 (platform audit 2026-07-06): with a prior dispatch decision the
+          // request is deliberately kept alive for cron retries, but the customer
+          // previously heard NOTHING until expiresAt. Send an immediate honest
+          // "no providers available right now" notice with a waitlist capture.
+          // Flag-gated (customer.no_supply.immediate_notice, default OFF) and
+          // idempotent per request; failures never affect the NO_MATCH result.
+          const { sendNoSupplyImmediateNotice } = await import('./no-supply-notice')
+          await sendNoSupplyImmediateNotice({
+            jobRequestId,
+            failureClass: diagnosis.failureClass,
+          }).catch((err) => {
+            console.error('[orchestrator] no-supply immediate notice failed', { jobRequestId, err })
+          })
         }
       }
 
