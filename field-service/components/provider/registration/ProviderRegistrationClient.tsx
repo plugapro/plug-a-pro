@@ -1347,17 +1347,14 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
           )}
 
           {step === 'verify' && (
-            <ScreenPanel icon={meta.icon} title="Verify now or later" description="Identity verification is required before paid credit purchases, but you can submit the application first.">
+            <ScreenPanel icon={meta.icon} title="Identity verification" description="Nothing to do on this screen yet — you'll complete a quick, secure ID check after you submit your application.">
               <div className="grid gap-3">
-                <InfoRow title="Verify now" body="Open the identity check and return to finish your provider application." />
-                <InfoRow title="Verify later" body="Submit now and complete verification before buying lead credits." />
+                <InfoRow title="Happens after you submit" body="Once your application is in, we guide you through a secure identity check. Your ID number is never shared in chat." />
+                <InfoRow title="Needed before paid credits" body="You can be reviewed and approved first. Verification is only required before you buy lead credits." />
               </div>
               <FooterActions>
-                <Button fullWidth asChild>
-                  <Link href="/provider/verification">Verify now</Link>
-                </Button>
-                <Button fullWidth variant="secondary" onClick={() => goTo('evidence')} loading={saving}>
-                  Verify later
+                <Button fullWidth onClick={() => goTo('evidence')} loading={saving}>
+                  Continue
                   <ArrowRight size={18} />
                 </Button>
               </FooterActions>
