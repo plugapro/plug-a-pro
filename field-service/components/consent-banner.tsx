@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { isSensitiveTokenRoute } from '@/lib/sensitive-token-routes'
 import { applyConsentToGtag, readConsent, writeConsent } from '@/lib/consent'
+import { consentBannerBottomClass } from '@/lib/consent-banner-layout'
 
 // POPIA-aware Google Consent Mode v2 banner for the app. GA loads with consent
 // defaulted to "denied" (see components/google-analytics.tsx), so no analytics/ad
@@ -42,7 +43,7 @@ export function ConsentBanner() {
     <div
       role="dialog"
       aria-label="Cookie consent"
-      className="fixed inset-x-0 z-[60] px-3 bottom-[calc(76px+env(safe-area-inset-bottom,0px))]"
+      className={`fixed inset-x-0 z-[60] px-3 ${consentBannerBottomClass(pathname)}`}
     >
       <div className="mx-auto flex max-w-md flex-col gap-3 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur">
         <p className="text-[13px] leading-relaxed text-muted-foreground">
