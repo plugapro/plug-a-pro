@@ -11,6 +11,11 @@ describe('redactPii', () => {
     expect(redactPii('id 9001015800086 ok')).toBe('id [REDACTED] ok')
   })
 
+  it('redacts email addresses (case-insensitive)', () => {
+    expect(redactPii('from Lovemore.Sibanda@Gmail.com now')).toBe('from [REDACTED] now')
+    expect(redactPii('a@b.co')).toBe('[REDACTED]')
+  })
+
   it('does not redact ordinary short numbers or amounts', () => {
     expect(redactPii('amount R150 for 3 photos')).toBe('amount R150 for 3 photos')
     expect(redactPii('order 12345')).toBe('order 12345')
