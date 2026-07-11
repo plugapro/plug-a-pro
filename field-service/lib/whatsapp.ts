@@ -93,6 +93,29 @@ function getConfig() {
   return { accessToken, phoneNumberId }
 }
 
+// Meta's Graph API has no client-side timeout by default, so a hung connection
+// holds the request open for the platform's max duration. Crons that send
+// WhatsApp messages sequentially (lead reminders, catch-up sweeps) would then
+// burn their whole execution budget on one stuck call and silently skip the
+// rest of the batch. Bound every send with a timeout + a single retry on
+// connection/timeout failures (NOT on a real Meta HTTP error — a 4xx is a
+// deterministic answer and must not be retried). Mirrors the Didit client.
+const META_FETCH_TIMEOUT_MS = 8000
+
+export async function metaFetch(url: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(META_FETCH_TIMEOUT_MS) })
+    } catch (error) {
+      // Only network/abort/timeout failures reach here (fetch does not throw on
+      // non-2xx). Retry once, then surface the failure to the caller.
+      lastError = error
+    }
+  }
+  throw lastError
+}
+
 // ─── Core send functions ──────────────────────────────────────────────────────
 
 /** Send a template message. All platform-initiated messages must use approved templates. */
@@ -125,7 +148,7 @@ export async function sendTemplate(params: {
     },
   }
 
-  const response = await fetch(
+  const response = await metaFetch(
     `${BASE_URL}/${phoneNumberId}/messages`,
     {
       method: 'POST',
@@ -175,7 +198,7 @@ export async function sendText(params: {
   })
   assertNoRawUrlsInWhatsAppBody(params.text, params.templateName ?? 'freeform:text')
 
-  const response = await fetch(
+  const response = await metaFetch(
     `${BASE_URL}/${phoneNumberId}/messages`,
     {
       method: 'POST',
