@@ -542,6 +542,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  // ─── Provider matchability ───────────────────────────────────────────────────
+  'provider.matchability.autosync': {
+    description:
+      'When ON, syncProviderRecord resolves legacy serviceAreas[] labels to LocationNodes and provisions active TSA rows on approval/activation when no locationNodeIds were supplied. Closes PJ-01 (approved-but-unmatchable). Keep OFF until the one-off backfill has been reviewed and committed. Spec: docs/superpowers/specs/2026-07-11-pj01-provider-matchability-design.md',
+    owner: 'eng',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY
