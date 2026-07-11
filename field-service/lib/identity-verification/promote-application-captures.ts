@@ -25,6 +25,7 @@ import type { IdentityDocumentKind } from '@prisma/client'
 
 import { db } from '../db'
 import { isEnabled } from '../flags'
+import { getApplicationIdNumber } from '../pii-crypto'
 import {
   PROVIDER_ID_DOCUMENT_LABEL,
   PROVIDER_ID_SELFIE_LABEL,
@@ -54,6 +55,7 @@ type ApplicationCapture = {
   id: string
   providerId: string | null
   idNumber: string | null
+  idNumberCiphertext: string | null
   attachments: Array<{
     id: string
     label: string | null
@@ -84,6 +86,7 @@ export async function promoteApplicationCapturesToVerification(
         id: true,
         providerId: true,
         idNumber: true,
+        idNumberCiphertext: true,
         attachments: {
           select: {
             id: true,
@@ -100,7 +103,10 @@ export async function promoteApplicationCapturesToVerification(
       return { outcome: 'no_application' }
     }
 
-    const idNumber = application.idNumber?.trim() ?? ''
+    // SEC-01: resolve the full ID number via the accessor — prefers the
+    // encrypted column, falls back to plaintext — so this keeps working
+    // through the backfill → retire sequence.
+    const idNumber = getApplicationIdNumber(application)?.trim() ?? ''
     const docAttachment = application.attachments.find(
       (a) => a.label === PROVIDER_ID_DOCUMENT_LABEL,
     )

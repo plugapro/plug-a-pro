@@ -41,6 +41,7 @@ import {
   type WorklistFilters,
 } from '@/lib/applications-queue'
 import type { ProviderOnboardingRecoveryRow } from '@/lib/provider-onboarding-recovery'
+import { hasApplicationIdNumber } from '@/lib/pii-id-number'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
 
 // ─── Server actions contract ─────────────────────────────────────────────────
@@ -897,7 +898,7 @@ function DrawerApplicationDetails({ app }: { app: ApplicationInput }) {
           })}
         </dd>
         <dt className="text-muted-foreground">ID supplied</dt>
-        <dd>{app.idNumber ? 'Yes' : 'No'}</dd>
+        <dd>{hasApplicationIdNumber(app) ? 'Yes' : 'No'}</dd>
       </dl>
       {app.notes ? (
         <p className="rounded-md border border-border bg-muted/20 px-2 py-1.5 text-xs">
@@ -1071,7 +1072,7 @@ function DrawerActions({
   const canRequestId =
     app &&
     submittedStageTemplatesEnabled &&
-    !app.idNumber &&
+    !hasApplicationIdNumber(app) &&
     (app.status === 'PENDING' || app.status === 'MORE_INFO_REQUIRED')
   const approveDisabled =
     !crudEnabled ||

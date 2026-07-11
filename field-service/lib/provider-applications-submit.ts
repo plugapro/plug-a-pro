@@ -5,6 +5,8 @@ import { emitServerConversion } from './marketing/server-events'
 import { recordWorkflowEvent } from './workflow-events'
 import type { CtwaReferralAttribution } from './whatsapp-referral'
 import { isQualityGateV2Enabled, evaluateEvidenceGate, evaluateCertificationGate } from '@/lib/provider-onboarding/quality-gate'
+import { encryptIdNumberIfConfigured } from './pii-crypto'
+import { idNumberLast4 as toIdNumberLast4 } from './pii-id-number'
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -188,12 +190,24 @@ export async function submitProviderApplication(
       ? input.availability.join(', ')
       : input.availability ?? null
 
+    // SEC-01 (POPIA §26): dual-write the SA ID number. Ciphertext + last4 are
+    // written whenever PII_ENC_KEY is configured; when the key is absent the
+    // helper degrades to null (single warning) and only plaintext is written,
+    // so deploy order can never corrupt data. last4 is always derived — it is
+    // what admin surfaces display and it must survive plaintext retirement.
+    const encryptedIdNumber = encryptIdNumberIfConfigured(input.idNumber ?? null)
+
     const application = await tx.providerApplication.create({
       data: {
         phone: input.phone,
         name: input.name,
         email: input.email ?? null,
+        // TODO(POPIA SEC-01): plaintext retained as the no-data-loss bridge until
+        // scripts/retire-plaintext-id-numbers.ts is run manually post-backfill
+        // (docs/security/id-number-encryption.md). Do not remove automatically.
         idNumber: input.idNumber ?? null,
+        idNumberCiphertext: encryptedIdNumber?.ciphertext ?? null,
+        idNumberLast4: input.idNumber?.trim() ? toIdNumberLast4(input.idNumber) : null,
         skills: input.skills,
         serviceAreas: input.serviceAreas,
         experience: input.experience ?? null,

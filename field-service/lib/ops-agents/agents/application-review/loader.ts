@@ -5,6 +5,7 @@
 // evaluator stays pure.
 
 import { db } from '@/lib/db'
+import { hasApplicationIdNumber } from '@/lib/pii-id-number'
 import { computeInPilotArea } from '../../pilot-area'
 import type { ApplicationCandidate } from './evaluator'
 
@@ -42,6 +43,7 @@ export async function loadApplicationCandidates(args: LoadArgs): Promise<Applica
       evidenceNote: true,
       evidenceFileUrls: true,
       idNumber: true,
+      idNumberLast4: true,
       callOutFee: true,
       hourlyRate: true,
     },
@@ -99,7 +101,7 @@ export async function loadApplicationCandidates(args: LoadArgs): Promise<Applica
       portfolioCount: a.evidenceFileUrls.length,
       hasAvailability: Boolean(a.availability),
       hasExperience: Boolean(a.experience),
-      hasIdNumber: Boolean(a.idNumber),
+      hasIdNumber: hasApplicationIdNumber(a),
       hasRateInfo: a.callOutFee != null || a.hourlyRate != null,
       inPilotArea: computeInPilotArea(a.serviceAreas),
       duplicateSignal,
