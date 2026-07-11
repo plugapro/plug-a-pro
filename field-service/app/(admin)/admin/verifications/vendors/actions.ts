@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { crudAction } from '@/lib/crud-action'
+import { requireRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 
 const FLAG = 'admin.crud.verifications'
@@ -89,6 +90,13 @@ export async function activateVendorConfigFormAction(formData: FormData) {
 }
 
 export async function seedDefaultVendorConfigs() {
+  // SECURITY: this is an exported server action, so Next.js registers it as a
+  // network-reachable endpoint even though it has no in-app caller. Without this
+  // guard, any authenticated session could reset the KYC vendor configuration.
+  // Documented exception to the crudAction house rule: this is a bulk seed of 7
+  // rows (crudAction is single-entity), gated to the same role as its siblings.
+  await requireRole(['TRUST', 'OWNER'])
+
   const vendors = ['manual', 'mock', 'smile_id', 'didit', 'thisisme', 'datanamix', 'omnicheck'] as const
   await db.$transaction(vendors.map((vendorKey) => db.verificationVendorConfig.upsert({
     where: { vendorKey },

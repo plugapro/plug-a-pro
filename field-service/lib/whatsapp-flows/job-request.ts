@@ -43,7 +43,7 @@ import {
   resolveWhatsAppUserContext,
   type WhatsAppSavedAddress,
 } from '../whatsapp-identity'
-import { createTraceId } from '../support-diagnostics'
+import { createTraceId, maskPhone } from '../support-diagnostics'
 import { JOURNEY_RECOVERY_COPY, sendWhatsAppJourneyRecovery } from '../journey-recovery'
 import {
   mapAvailabilityToUrgency,
@@ -1978,7 +1978,7 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
     })
     if (providerForPhone) {
       console.log('[notify_me] provider phone - skipping customer auto-create', {
-        phone: ctx.phone,
+        phone: maskPhone(ctx.phone),
         providerId: providerForPhone.id,
       })
       await sendText(
