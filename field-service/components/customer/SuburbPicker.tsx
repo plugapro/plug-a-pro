@@ -42,6 +42,7 @@ function optionFromSelection(selection: Selection): SuburbOption {
     regionKey: '',
     lat: null,
     lng: null,
+    serviceStatus: 'coming_soon' as const,
   }
 }
 

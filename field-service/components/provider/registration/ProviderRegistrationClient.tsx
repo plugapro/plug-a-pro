@@ -188,7 +188,8 @@ const HOURS_OPTIONS = ['Standard 7am-5pm', 'Extended 6am-8pm', '24/7']
 type StatusActionHref = string | ((reference: string) => string)
 type ProvinceOption = { id: string; slug: string; label: string }
 type CityOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string }
-type RegionOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string; regionKey: string; suburbCount?: number }
+type ServiceStatus = 'live' | 'onboarding' | 'coming_soon'
+type RegionOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string; regionKey: string; suburbCount?: number; serviceStatus?: ServiceStatus }
 type SuburbOption = {
   id: string
   slug: string
@@ -200,6 +201,7 @@ type SuburbOption = {
   provinceKey: string
   cityKey: string
   regionKey: string
+  serviceStatus?: ServiceStatus
 }
 
 function supportHref(message: string) {
@@ -1203,11 +1205,22 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                           : 'Select region'
                     }
                   >
-                    {regions.map((region) => (
-                      <option key={region.id} value={region.id}>
-                        {region.suburbCount ? `${region.label} (${region.suburbCount})` : region.label}
-                      </option>
-                    ))}
+                    {regions.map((region) => {
+                      const baseLabel = region.suburbCount ? `${region.label} (${region.suburbCount})` : region.label
+                      const statusSuffix =
+                        region.serviceStatus === 'live'
+                          ? ' — live for leads'
+                          : region.serviceStatus === 'onboarding'
+                            ? ' — open to register'
+                            : region.serviceStatus === 'coming_soon'
+                              ? ' — not live yet'
+                              : ''
+                      return (
+                        <option key={region.id} value={region.id}>
+                          {baseLabel}{statusSuffix}
+                        </option>
+                      )
+                    })}
                   </LocationSelect>
                   {!form.selectedCityId && (
                     <p className="mt-1 text-[12px] text-[var(--ink-mute)]">Select a city first</p>
@@ -1285,6 +1298,19 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                   </div>
                 </div>
               )}
+              {(() => {
+                const selectedRegion = regions.find((r) => r.id === form.selectedRegionId)
+                const selectedSuburbs = suburbs.filter((s) => form.locationNodeIds.includes(s.id))
+                const hasKnownNonLive =
+                  (selectedRegion?.serviceStatus != null && selectedRegion.serviceStatus !== 'live') ||
+                  selectedSuburbs.some((s) => s.serviceStatus != null && s.serviceStatus !== 'live')
+                if (!hasKnownNonLive) return null
+                return (
+                  <p className="text-[12px] text-[var(--ink-mute)] leading-relaxed">
+                    Leads go live in the West Rand first. Other areas can register now — your profile will be activated the moment we go live in your area.
+                  </p>
+                )
+              })()}
               <Field label={`Travel radius: ${form.travelRadiusKm} km`}>
                 <input
                   type="range"
@@ -1495,6 +1521,9 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 <InfoRow title="WhatsApp updates" body={`We will send updates to ${form.phone || 'your mobile number'}.`} />
                 <InfoRow title="Reference" body={form.submittedRef || 'Reference will show after review sync.'} />
               </div>
+              <p className="text-[12px] text-[var(--ink-mute)] leading-relaxed">
+                {"We're live in the West Rand first — your profile is saved and will be activated the moment we go live in your area."}
+              </p>
               <FooterActions>
                 <Button fullWidth asChild>
                   <Link href="/provider/register/status">View status</Link>

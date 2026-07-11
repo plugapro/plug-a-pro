@@ -125,7 +125,11 @@ export async function upsertStructuredServiceAreas(
     const areaType = isSuburb ? 'SUBURB' : 'REGION'
     const suburbKey = isSuburb ? (node.slug.split('__').at(-1) ?? node.slug) : null
     const regionKey = node.regionKey ?? (node.nodeType === 'REGION' ? getRegionKeyFromSlug(node.slug) : null)
-    const isActivePilotArea = getRegionServiceStatus({ regionKey, slug: node.slug }) === 'active'
+    // Matchability follows the MATCHING gate only: a provider in an onboarding-open
+    // but not-yet-matching region (e.g. jhb_north) is registered + vetted now, but
+    // their service area stays inactive until that region enters the matching set.
+    const isActivePilotArea =
+      getRegionServiceStatus({ regionKey, slug: node.slug }, 'matching') === 'active'
     const label = normaliseLocationDisplayName(node.label)
 
     await client.technicianServiceArea.upsert({
