@@ -8,6 +8,9 @@ import { isKycRequiredForActivation } from './kyc-policy'
 import { isEnabled } from './flags'
 import { KYC_GRACE_FLAG } from './matching/kyc-grace'
 import { checkCanBeApproved } from './provider-lead-eligibility'
+import { resolveServiceAreaLabels } from './provider-record/resolve-service-area-labels'
+
+const MATCHABILITY_AUTOSYNC_FLAG = 'provider.matchability.autosync' as const
 
 type ProviderKycSnapshot = {
   id: string
@@ -159,6 +162,37 @@ export async function upsertStructuredServiceAreas(
   }
 }
 
+// Resolves TSA rows for a provider from either structured locationNodeIds
+// (preferred, unconditional) or — when no node ids were supplied — a
+// flag-gated fallback that resolves free-text serviceAreas labels to
+// location nodes. This closes the matchability gap for approval paths that
+// only ever collected free-text service area labels (PJ-01).
+async function enrichServiceAreas(
+  client: ProviderRecordSyncClient,
+  providerId: string,
+  input: SyncProviderRecordInput,
+) {
+  if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+    await upsertStructuredServiceAreas(client, providerId, input.locationNodeIds)
+    return
+  }
+  if (!input.serviceAreas || input.serviceAreas.length === 0) return
+  if (!client.locationNode) return
+  const autosync = await isEnabled(MATCHABILITY_AUTOSYNC_FLAG)
+  if (!autosync) return
+  const { resolvedNodeIds, unresolved, ambiguous } = await resolveServiceAreaLabels(
+    client as { locationNode: { findMany: (...a: any[]) => Promise<any[]> } },
+    input.serviceAreas,
+    { preferMajorityRegion: true },
+  )
+  if (unresolved.length || ambiguous.length) {
+    console.warn(`[matchability] provider ${providerId}: unresolved=${JSON.stringify(unresolved)} ambiguous=${JSON.stringify(ambiguous)}`)
+  }
+  if (resolvedNodeIds.length > 0) {
+    await upsertStructuredServiceAreas(client, providerId, resolvedNodeIds)
+  }
+}
+
 async function ensureDefaultProviderAvailability(
   client: ProviderRecordSyncClient,
   providerId: string,
@@ -294,12 +328,10 @@ export async function syncProviderRecord(
         throwOnEnrichmentFailure('syncProviderSkills', err, existing.id)
       }
 
-      if (input.locationNodeIds && input.locationNodeIds.length > 0) {
-        try {
-          await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
-        } catch (err) {
-          throwOnEnrichmentFailure('upsertStructuredServiceAreas', err, existing.id)
-        }
+      try {
+        await enrichServiceAreas(client, existing.id, input)
+      } catch (err) {
+        throwOnEnrichmentFailure('upsertStructuredServiceAreas', err, existing.id)
       }
     }
 
@@ -337,12 +369,10 @@ export async function syncProviderRecord(
       throwOnEnrichmentFailure('syncProviderSkills', err, id)
     }
 
-    if (input.locationNodeIds && input.locationNodeIds.length > 0) {
-      try {
-        await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
-      } catch (err) {
-        throwOnEnrichmentFailure('upsertStructuredServiceAreas', err, id)
-      }
+    try {
+      await enrichServiceAreas(client, id, input)
+    } catch (err) {
+      throwOnEnrichmentFailure('upsertStructuredServiceAreas', err, id)
     }
   }
 
