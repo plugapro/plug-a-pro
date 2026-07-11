@@ -377,6 +377,7 @@ model ProviderApplication {
   name                          String
   skills                        String[]          @default([])
   serviceAreas                  String[]          @default([])
+  locationNodeIds               String[]          @default([])
   experience                    String? // e.g. "3–5 years" — set on application submit
   availability                  String? // e.g. "Any day" or "Mon–Sat" — set on application submit
   callOutFee                    Decimal?          @db.Decimal(10, 2)
