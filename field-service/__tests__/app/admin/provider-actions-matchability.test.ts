@@ -187,6 +187,34 @@ describe('provider admin actions — matchability sync (PJ-01)', () => {
       expect(mockResolveServiceAreaLabels).not.toHaveBeenCalled()
       expect(tx.technicianServiceArea.upsert).not.toHaveBeenCalled()
     })
+
+    it('setProviderStatusAction rolls back and does not report success when TSA sync fails (fail-closed)', async () => {
+      // Fail-closed design (PJ-01 review finding): ensureProviderMatchable
+      // runs inside crudAction's db.$transaction with no try/catch, so a
+      // TSA-sync failure must abort the whole admin action rather than
+      // leaving the provider ACTIVE-but-unmatchable. crudAction itself has
+      // no try/catch around opts.run either (lib/crud-action.ts), so the
+      // rejection should propagate all the way to the caller.
+      const tx = makeTx()
+      tx.technicianServiceArea.upsert.mockRejectedValueOnce(new Error('TSA sync failed'))
+      wireCrudAction(tx)
+      const { setProviderStatusAction } = await import('@/app/(admin)/admin/providers/actions')
+
+      await expect(
+        setProviderStatusAction({
+          providerId: PROVIDER_ID,
+          status: 'ACTIVE',
+          reason: 'Approved after review',
+        })
+      ).rejects.toThrow('TSA sync failed')
+
+      // The provider status write happens before the matchability sync in
+      // the same `run` closure; asserting it was called (not "committed",
+      // since this mock doesn't model transactional rollback) still proves
+      // the failure was not silently swallowed into a success result — the
+      // real Prisma transaction is what discards this write on throw.
+      expect(tx.provider.update).toHaveBeenCalled()
+    })
   })
 
   describe('flag OFF', () => {
