@@ -189,10 +189,10 @@ export default function ForCustomersPage() {
       <section className="py-16 px-4 border-t border-border/40">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-4">
-            How we protect you
+            How Plug A Pro reduces your risk
           </h2>
           <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-            Letting a stranger into your home takes trust. Here&apos;s how Plug A Pro builds it.
+            Letting someone new into your home takes trust. Here&apos;s how Plug A Pro helps you make an informed choice.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {PROTECTIONS.map((p) => {

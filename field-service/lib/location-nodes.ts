@@ -3,6 +3,11 @@ import { normaliseLocationDisplayName, normaliseLocationKey } from '@/lib/locati
 import { locationSearchTerms } from '@/lib/location-aliases'
 import { haversineKm } from '@/lib/matching/geography'
 import { LocationNodeType, LocationNode } from '@prisma/client'
+import {
+  serviceStatusForRegionKey,
+  getRegionKeyFromSlug,
+  type RegionServiceLiveStatus,
+} from '@/lib/service-area-guard'
 
 // ─── Exported Types ────────────────────────────────────────────────────────────
 
@@ -31,6 +36,7 @@ export type RegionOption = {
   lng: number | null
   radiusKm: number | null
   suburbCount?: number
+  serviceStatus: RegionServiceLiveStatus
 }
 
 export type SuburbOption = {
@@ -46,6 +52,7 @@ export type SuburbOption = {
   regionKey: string
   lat: number | null
   lng: number | null
+  serviceStatus: RegionServiceLiveStatus
 }
 
 export type StructuredAddressSelection = {
@@ -65,6 +72,7 @@ export type NodeSearchResult = {
   provinceKey: string | null
   cityKey: string | null
   regionKey: string | null
+  serviceStatus: RegionServiceLiveStatus
 }
 
 export class LocationNodeInUseError extends Error {
@@ -170,18 +178,23 @@ export async function getRegions(cityId: string): Promise<RegionOption[]> {
     },
   })
 
-  return nodes.map((n) => ({
-    id: n.id,
-    slug: n.slug,
-    label: formatNodeLabel(n.label),
-    provinceKey: n.provinceKey ?? '',
-    cityKey: n.cityKey ?? '',
-    regionKey: n.regionKey ?? '',
-    lat: n.lat,
-    lng: n.lng,
-    radiusKm: n.radiusKm,
-    suburbCount: n._count.children,
-  }))
+  return nodes.map((n) => {
+    const regionKey = n.regionKey ?? ''
+    const effectiveKey = regionKey || getRegionKeyFromSlug(n.slug)
+    return {
+      id: n.id,
+      slug: n.slug,
+      label: formatNodeLabel(n.label),
+      provinceKey: n.provinceKey ?? '',
+      cityKey: n.cityKey ?? '',
+      regionKey,
+      lat: n.lat,
+      lng: n.lng,
+      radiusKm: n.radiusKm,
+      suburbCount: n._count.children,
+      serviceStatus: serviceStatusForRegionKey(effectiveKey),
+    }
+  })
 }
 
 /**
@@ -236,6 +249,7 @@ export async function getSuburbs(regionId: string): Promise<SuburbOption[]> {
     regionKey: n.regionKey ?? '',
     lat: n.lat,
     lng: n.lng,
+    serviceStatus: serviceStatusForRegionKey(n.regionKey),
   }))
 }
 
@@ -273,10 +287,15 @@ export async function searchNodes(
     },
   })
 
-  return nodes.map((node) => ({
-    ...node,
-    label: formatNodeLabel(node.label),
-  }))
+  return nodes.map((node) => {
+    const effectiveKey =
+      node.regionKey ?? (node.nodeType === 'REGION' ? getRegionKeyFromSlug(node.slug) : null)
+    return {
+      ...node,
+      label: formatNodeLabel(node.label),
+      serviceStatus: serviceStatusForRegionKey(effectiveKey),
+    }
+  })
 }
 
 /**
@@ -342,6 +361,7 @@ export async function searchSuburbNodes(
     regionKey: n.regionKey ?? '',
     lat: n.lat,
     lng: n.lng,
+    serviceStatus: serviceStatusForRegionKey(n.regionKey),
   }))
 }
 

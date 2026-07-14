@@ -45,7 +45,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https://*.public.blob.vercel-storage.com https://www.facebook.com https://www.google-analytics.com https://www.googletagmanager.com",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://graph.facebook.com https://www.facebook.com https://www.google-analytics.com https://region1.google-analytics.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://graph.facebook.com https://www.facebook.com https://www.google-analytics.com https://region1.google-analytics.com https://*.sentry.io",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

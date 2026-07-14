@@ -196,6 +196,7 @@ describe('getSuburbs', () => {
         provinceKey: 'gauteng',
         cityKey: 'johannesburg',
         regionKey: 'jhb_north',
+        serviceStatus: 'onboarding',
         lat: -26.1,
         lng: 28.0,
       },

@@ -342,6 +342,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
+  'whatsapp.inbound.redrive': {
+    description: 'Enable the inbound-whatsapp-redrive cron to actually reprocess inbound WhatsApp messages that failed (processedAt NULL, failureReason set) within the last 3h. OFF = the cron is report-only (counts candidates, sends nothing).',
+    owner: 'eng',
+    defaultValue: false,
+  },
+
   // ─── Identity verification ───────────────────────────────────────────────────
   'kyc_drive.auto_nudge': {
     description: 'Enable automated provider_kyc_nudge WhatsApp sends from the kyc-drive-nudge cron (legacy pre-cutoff providers only). OFF = the cron is report-only.',

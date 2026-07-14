@@ -84,7 +84,8 @@ const TEMPLATES = [
     name: 'technician_assigned',
     category: 'UTILITY',
     // {{1}} name, {{2}} technician name, {{3}} service, {{4}} date/window
-    body: 'Hi {{1}}, great news! {{2}} has been assigned to your {{3}} on {{4}}. They will contact you through this app only.',
+    // Reworded 2026-07-06 (positioning audit): avoid "assigned" employer framing.
+    body: 'Hi {{1}}, great news! Independent provider {{2}} is confirmed for your {{3}} on {{4}}. They will contact you through this app only.',
     examples: ['Thabo', 'Sipho M.', 'Electrical Installation', 'Mon 14 Apr, 8–10am'],
   },
   {
@@ -204,7 +205,9 @@ const TEMPLATES = [
     name: 'technician_application_received',
     category: 'UTILITY',
     // {{1}} applicant name, {{2}} application ref
-    body: 'Hi {{1}}, we received your application to join Plug a Pro. Ref: {{2}}. We review all applications within 24 hours and will update you here.',
+    // Aligned 2026-07-06 (positioning audit) with lib/messaging-templates.ts: the old
+    // body promised review "within 24 hours"; no SLA promise + approval-not-automatic.
+    body: 'Hi {{1}}, we received your Plug A Pro provider application. Ref: {{2}}. We will review your details and update you here. Approval is not automatic.',
     examples: ['Sipho Mokoena', 'APP-7F3A2B'],
   },
   {
