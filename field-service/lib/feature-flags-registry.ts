@@ -270,12 +270,7 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
   'provider.onboarding.auto_approve': {
-    description: 'Enable cron-based auto-approval of standard (non-high-risk) provider applications.',
-    owner: 'ops',
-    defaultValue: false,
-  },
-  'provider.auto_approve.enabled': {
-    description: 'Kill switch enforced inside autoApproveProviderApplications(): when disabled (default), the function returns early and never sets provider active/verified/ACTIVE. Field-completeness checks alone must never promote a provider without this flag — manual admin review is unaffected.',
+    description: 'Enable cron-based auto-approval of standard (non-high-risk) provider applications. Enforced at the cron route AND inside autoApproveProviderApplications() itself, so no caller can promote a provider to active/verified/ACTIVE while this is off. Manual admin review is unaffected.',
     owner: 'ops',
     defaultValue: false,
   },
