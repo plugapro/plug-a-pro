@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NormalizedVerificationResult, VerificationVendorAdapter } from '../../../lib/identity-verification/vendors/types'
 
+// Heavy dynamic imports under full-suite parallel load can exceed the
+// default 5s testTimeout. Bump per-file (validated 2026-06-08).
+vi.setConfig({ testTimeout: 15_000 })
+
 const mocks = vi.hoisted(() => ({
   isEnabled: vi.fn(),
   getAdapter: vi.fn(),
@@ -651,6 +655,7 @@ function makeClient(options: {
       }),
     },
     provider: {
+      findUnique: vi.fn(async () => ({ kycStatus: 'NOT_STARTED' as const })),
       update: vi.fn(async () => ({ id: 'prov_1' })),
     },
     providerSensitiveDataAccessLog: {
