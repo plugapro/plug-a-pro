@@ -263,6 +263,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'customer.no_supply.immediate_notice': {
+    description:
+      'CJ-09 (platform audit 2026-07-06): on an EMPTY_POOL / STRUCTURAL NO_MATCH where the request is NOT expired immediately (a prior dispatch decision exists), send the customer an immediate honest "no providers available right now" WhatsApp message with a service-area waitlist capture instead of hours of silence until expiresAt. Idempotent per job request via AuditLog sentinel. Default OFF; flag-off behaviour is exactly the pre-audit silence.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   // ─── Provider features ───────────────────────────────────────────────────────
   'feature.provider.pwa_inbox': {
     description: 'Enable provider PWA lead inbox, profile editor, availability toggle and earnings dashboard (M4).',

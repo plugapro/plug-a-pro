@@ -16,6 +16,8 @@ import { isEnabled } from '@/lib/flags'
 import { sendTemplate } from '@/lib/whatsapp'
 import { crudAction } from '@/lib/crud-action'
 import { syncProviderRecord } from '@/lib/provider-record'
+import { resolveApplicationLocationNodeIds } from '@/lib/provider-application-service-areas'
+import { getProviderMatchabilityReadiness, formatMatchabilityWarning } from '@/lib/matching/readiness'
 import { isKycRequiredForActivation } from '@/lib/kyc-policy'
 import { KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
 import { checkCanBeApproved } from '@/lib/provider-lead-eligibility'
@@ -274,6 +276,30 @@ async function approveApplication(formData: FormData) {
     }
   }
 
+  // PJ-01: resolve the application's structured service areas BEFORE the
+  // approval transaction so syncProviderRecord can create the
+  // TechnicianServiceArea rows the matching filter depends on. Without this,
+  // approval flips verified/active but the provider silently never matches
+  // (zero active TSA rows → OUTSIDE_SERVICE_AREA on every structured request).
+  // Region gating is preserved inside upsertStructuredServiceAreas: nodes
+  // outside the active matching regions produce INACTIVE rows.
+  const areaResolution = await resolveApplicationLocationNodeIds(db, {
+    applicationId: app.id,
+    serviceAreas: app.serviceAreas,
+  }).catch((error) => {
+    console.error('[applications] service-area resolution failed (approval continues without TSA sync)', {
+      applicationId: app.id,
+      error,
+    })
+    return { locationNodeIds: [] as string[], source: 'none' as const, unresolvedLabels: [] as string[] }
+  })
+  if (areaResolution.unresolvedLabels.length > 0) {
+    console.warn('[applications] some service-area labels could not be resolved to LocationNodes', {
+      applicationId: app.id,
+      unresolvedLabels: areaResolution.unresolvedLabels,
+    })
+  }
+
   let approvedNow = false
   let approvedProviderId: string | null = null
   try {
@@ -363,6 +389,9 @@ async function approveApplication(formData: FormData) {
         verified: true,
         isTestUser: app.isTestUser,
         cohortName: app.cohortName,
+        // PJ-01: provision matchability at approval time. The region gate in
+        // upsertStructuredServiceAreas keeps non-matching-region rows inactive.
+        locationNodeIds: areaResolution.locationNodeIds,
       })
 
       // Backfill the application's providerId now that the provider record
@@ -494,6 +523,31 @@ async function approveApplication(formData: FormData) {
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
   if (approvedNow) {
+    // PJ-01b: readiness check after approval so ops immediately sees
+    // "approved BUT not matchable: <reasons>" instead of discovering weeks
+    // later that the provider never received a lead. Read-only; failures
+    // never break the (already committed) approval.
+    if (approvedProviderId) {
+      const readiness = await getProviderMatchabilityReadiness(approvedProviderId).catch((error) => {
+        console.error('[applications] matchability readiness check failed post-approval', {
+          applicationId: app.id,
+          providerId: approvedProviderId,
+          error,
+        })
+        return null
+      })
+      const warning = readiness ? formatMatchabilityWarning(readiness) : null
+      if (warning) {
+        console.warn('[applications] provider approved but NOT matchable', {
+          applicationId: app.id,
+          providerId: approvedProviderId,
+          failReasonCodes: readiness?.failReasonCodes,
+        })
+        redirect(
+          `/admin/applications?message=application_approved_not_matchable&reasons=${encodeURIComponent(warning)}`,
+        )
+      }
+    }
     redirect('/admin/applications?message=application_approved')
   }
 }
@@ -1095,7 +1149,8 @@ export default async function ApplicationsPage({
   const v2Enabled = await isEnabled('admin.applications.redesign_v2', { userId: admin.id })
   const resolvedSearchParams = await searchParams
   const message = typeof resolvedSearchParams.message === 'string' ? resolvedSearchParams.message : undefined
-  const banner = getApplicationsAdminMessage(message)
+  const messageReasons = typeof resolvedSearchParams.reasons === 'string' ? resolvedSearchParams.reasons : undefined
+  const banner = getApplicationsAdminMessage(message, messageReasons)
   const now = new Date()
 
   // Status-scoped pagination instead of a flat LIMIT 100 across all statuses.

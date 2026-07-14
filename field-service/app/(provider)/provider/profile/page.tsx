@@ -117,10 +117,20 @@ export default async function ProviderProfilePage() {
     take: 20,
   })
 
+  // CJ-02: tolerate reviews written with either key. Legacy /review/[token]
+  // rows carry matchId only; legacy /bookings/[id]/rate rows carry jobId only.
+  const matchIdToJobId = new Map(
+    completedJobs
+      .map((job) => [job.booking?.match?.id, job.id] as const)
+      .filter((entry): entry is [string, string] => Boolean(entry[0])),
+  )
   const reviews = await db.review.findMany({
     where: {
       reviewerType: 'CUSTOMER',
-      jobId: { in: completedJobs.map((job) => job.id) },
+      OR: [
+        { jobId: { in: completedJobs.map((job) => job.id) } },
+        { matchId: { in: [...matchIdToJobId.keys()] } },
+      ],
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -128,7 +138,12 @@ export default async function ProviderProfilePage() {
   const averageRating = reviews.length > 0
     ? reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length
     : null
-  const reviewByJobId = new Map(reviews.map((review) => [review.jobId, review]))
+  const reviewByJobId = new Map(
+    reviews.map((review) => [
+      review.jobId ?? (review.matchId ? matchIdToJobId.get(review.matchId) ?? null : null),
+      review,
+    ]),
+  )
   const applicationStatus = providerApplicationApprovalStatus(provider.verified)
   const identityStatus = providerIdentityVerificationStatus(provider.kycStatus)
 

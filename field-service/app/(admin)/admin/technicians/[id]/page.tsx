@@ -11,6 +11,7 @@ import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { getProviderMatchabilityReadiness } from '@/lib/matching/readiness'
 import { getHighRiskServiceRequirements } from '@/lib/service-category-policy'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -251,6 +252,13 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     avatarUrl: provider.avatarUrl,
   })
 
+  // PJ-01b: reproduce the provider-level matching gates so ops can see at a
+  // glance WHY an approved provider is (not) receiving leads. Read-only.
+  const matchability = await getProviderMatchabilityReadiness(provider.id).catch((error) => {
+    console.error('[admin/technicians] matchability readiness failed', { providerId: provider.id, error })
+    return null
+  })
+
   const totalJobs = provider._count.jobs
   const completedTotal = await db.job.count({
     where: { providerId: id, status: 'COMPLETED' },
@@ -330,6 +338,43 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             {' '}or rebuild coverage manually from the Service Areas admin form.
           </p>
         </div>
+      )}
+
+      {/* ── Matchability readiness panel (PJ-01b) ───────────────────────────── */}
+      {matchability && matchability.providerFound && (
+        <Card className={matchability.matchable ? '' : 'border-rose-200 bg-rose-50/40'}>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">
+              {matchability.matchable ? (
+                <span className="text-emerald-700">✅ Matchability — this provider can receive leads</span>
+              ) : (
+                <span className="text-rose-800">⛔ Matchability — this provider will NOT receive leads</span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className="space-y-1.5 text-sm">
+              {matchability.checks.map((check) => (
+                <li key={check.code} className="flex items-start gap-2">
+                  <Badge
+                    variant="outline"
+                    className={check.ok ? 'tone-success' : 'border-rose-300 bg-rose-100 text-rose-800'}
+                  >
+                    {check.ok ? 'PASS' : 'FAIL'}
+                  </Badge>
+                  <div className="flex-1">
+                    <span className="font-medium text-slate-900">{check.code.replace(/_/g, ' ').toLowerCase()}</span>
+                    <span className="text-slate-600"> - {check.detail}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-slate-500">
+              Provider-level gates only — job-specific gates (schedule, distance, cooldowns) are evaluated per
+              request. Source of truth: lib/matching/readiness.ts
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* ── Profile completeness panel ──────────────────────────────────────── */}
