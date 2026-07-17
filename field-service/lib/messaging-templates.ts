@@ -318,9 +318,10 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description:
-      'Draft-abandonment recovery: provider started the registration wizard, left a phone, never submitted. Sent max twice (2h, 24h). Body {{1}} first name, {{2}} resume URL.',
+      'Draft-abandonment recovery: provider started the registration wizard, left a phone, never submitted. Sent max twice (2h, 24h). CTA URL button back to the wizard.',
+    // {{1}} provider first name; button (url, index 0): {{1}} resume token suffix appended to /provider/register?resume=
     example:
-      'Hi {{1}}, your Plug A Pro provider application is saved but not finished. Pick up where you left off — it takes just a few minutes: {{2}}',
+      'Hi {{1}}, your Plug A Pro provider application is saved but not finished. Tap below to pick up where you left off — it takes just a few minutes.',
   },
 
   // ─── Provider Quality Uplift nudges ──────────────────────────────────────

@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendTemplate } from '@/lib/whatsapp'
 import { isEnabled } from '@/lib/flags'
-import { getPublicAppUrl } from '@/lib/provider-credit-copy'
 import { findLatestActiveProviderApplicationByPhone } from '@/lib/provider-applications'
 import { mintResumeTokenForDraft } from '@/lib/provider-registration/pwa-flow'
 import { runDraftAbandonmentNudge } from '@/lib/provider-registration/abandonment-nudge'
@@ -19,7 +18,6 @@ export async function GET(request: Request) {
     mintResumeToken: mintResumeTokenForDraft,
     sendTemplate,
     flagEnabled: (key: string) => isEnabled(key as Parameters<typeof isEnabled>[0]),
-    publicUrl: getPublicAppUrl,
   })
   console.log(JSON.stringify({ event: 'cron_complete', cron: 'draft-abandonment-nudge', ...result }))
   return NextResponse.json(result)
