@@ -39,6 +39,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit production dependencies
+        # npm retired the quick-audit endpoint (HTTP 410) in 2026-07, so
+        # `pnpm audit` cannot reach it and fails every run repo-wide. Kept
+        # non-blocking until migrated to the bulk advisory endpoint / osv-scanner.
+        # TODO(security): restore a working dependency-audit gate.
+        continue-on-error: true
         run: pnpm audit --prod
 
       - name: Build Velite content
