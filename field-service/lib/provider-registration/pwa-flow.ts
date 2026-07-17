@@ -85,8 +85,20 @@ type DraftClient = {
     create: (...args: any[]) => Promise<unknown>
     findUnique: (...args: any[]) => Promise<{
       draftId: string
+      purpose?: string
       expiresAt: Date
       consumedAt: Date | null
+    } | null>
+  }
+}
+
+type ResumeTokenDraftClient = Pick<DraftClient, 'registrationResumeToken'> & {
+  providerApplicationDraft: {
+    findUnique: (...args: any[]) => Promise<{
+      id: string
+      phone: string
+      lastCompletedStep: number
+      submittedApplicationId: string | null
     } | null>
   }
 }
@@ -416,6 +428,36 @@ async function resolveTokenDraftId(client: DraftClient, resumeToken?: string | n
 
   if (!token || token.consumedAt || token.expiresAt.getTime() <= Date.now()) return null
   return token.draftId
+}
+
+// Resolves a raw `?resume=` token to its draft's resume position, WITHOUT
+// consuming the token. Used to let an anonymous/cross-device visitor VIEW
+// their saved draft at the right step; the token is not burned here, and
+// saving further progress still goes through the existing session-validated
+// draft-save path. Returns null (no error surfaced) for any invalid state so
+// callers can silently fall back to normal entry-resolution behaviour.
+export async function resolveResumeTokenDraft(
+  client: ResumeTokenDraftClient,
+  token: string,
+): Promise<{ draftId: string; phone: string; lastCompletedStep: number } | null> {
+  if (!token) return null
+
+  const tokenHash = await hashRegistrationResumeToken(token)
+  const row = await client.registrationResumeToken.findUnique({
+    where: { tokenHash },
+    select: { draftId: true, purpose: true, expiresAt: true, consumedAt: true },
+  })
+  if (!row || row.consumedAt || row.purpose !== RESUME_TOKEN_PURPOSE || row.expiresAt.getTime() <= Date.now()) {
+    return null
+  }
+
+  const draft = await client.providerApplicationDraft.findUnique({
+    where: { id: row.draftId },
+    select: { id: true, phone: true, lastCompletedStep: true, submittedApplicationId: true },
+  })
+  if (!draft || draft.submittedApplicationId) return null
+
+  return { draftId: draft.id, phone: draft.phone, lastCompletedStep: draft.lastCompletedStep }
 }
 
 export async function mintResumeTokenForDraft(client: DraftClient, draftId: string): Promise<string> {
