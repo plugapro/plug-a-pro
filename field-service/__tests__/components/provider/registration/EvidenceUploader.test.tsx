@@ -1,13 +1,18 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { EvidenceUploader } from '@/components/provider/registration/EvidenceUploader'
 
 /**
- * Vitest runs in the `node` environment (no jsdom), so @testing-library/react
- * is not used. We render to a static HTML string and assert on structure.
+ * Vitest's global environment is `node` (no jsdom), so most tests in this
+ * file render to a static HTML string and assert on structure.
  *
- * Interactive behavior (file picker onChange, upload call, remove button click)
- * is covered by Playwright e2e per repo convention.
+ * This file opts into a jsdom environment (via the pragma above) so the
+ * per-file upload/retry interaction tests below can use
+ * @testing-library/react + user-event. renderToStaticMarkup-based tests
+ * are unaffected by the environment and continue to work as before.
  */
 describe('EvidenceUploader', () => {
   it('shows "2 of 3" counter and an add-photos control when two items are present', () => {
@@ -89,5 +94,41 @@ describe('EvidenceUploader', () => {
     expect(html).toContain('0 of 3')
     // Disabled button should carry disabled attribute
     expect(html).toMatch(/<button[^>]*\sdisabled[^>]*>/)
+  })
+
+  it('shows the why-we-ask helper copy and example chips', () => {
+    render(<EvidenceUploader value={[]} onChange={() => {}} min={3} uploadFile={vi.fn()} />)
+    // No @testing-library/jest-dom in this repo; getByText already throws
+    // (failing the test) if no match is found, so a truthy check suffices.
+    expect(screen.getByText(/customers pick providers with real work photos/i)).toBeTruthy()
+    expect(screen.getByText(/finished job/i)).toBeTruthy()
+    expect(screen.getByText(/before & after/i)).toBeTruthy()
+    expect(screen.getByText(/you at work/i)).toBeTruthy()
+  })
+
+  it('offers per-file retry when one file in a batch fails', async () => {
+    const user = userEvent.setup()
+    const uploadFile = vi
+      .fn<(file: File) => Promise<string>>()
+      .mockResolvedValueOnce('https://x.public.blob.vercel-storage.com/a.jpg')
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce('https://x.public.blob.vercel-storage.com/b.jpg')
+    const onChange = vi.fn()
+    render(<EvidenceUploader value={[]} onChange={onChange} min={3} uploadFile={uploadFile} />)
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    const fileA = new File(['a'], 'a.jpg', { type: 'image/jpeg' })
+    const fileB = new File(['b'], 'b.jpg', { type: 'image/jpeg' })
+    await user.upload(input, [fileA, fileB])
+
+    // fileA succeeded, fileB failed and shows a retry button
+    expect(onChange).toHaveBeenCalledWith(['https://x.public.blob.vercel-storage.com/a.jpg'])
+    const retry = await screen.findByRole('button', { name: /retry b\.jpg/i })
+    await user.click(retry)
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.arrayContaining(['https://x.public.blob.vercel-storage.com/b.jpg']),
+      ),
+    )
   })
 })
