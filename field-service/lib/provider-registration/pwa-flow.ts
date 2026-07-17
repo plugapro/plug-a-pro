@@ -77,6 +77,7 @@ type DraftClient = {
     findMany: (...args: any[]) => Promise<ProviderRegistrationLocationNode[]>
   }
   providerApplicationDraft: {
+    findFirst: (...args: any[]) => Promise<{ id: string } | null>
     create: (...args: any[]) => Promise<{ id: string }>
     update: (...args: any[]) => Promise<{ id: string }>
   }
@@ -417,6 +418,29 @@ async function resolveTokenDraftId(client: DraftClient, resumeToken?: string | n
   return token.draftId
 }
 
+export async function mintResumeTokenForDraft(client: DraftClient, draftId: string): Promise<string> {
+  const resumeToken = newResumeToken()
+  const tokenHash = await hashRegistrationResumeToken(resumeToken)
+  await client.registrationResumeToken.create({
+    data: {
+      draftId,
+      tokenHash,
+      purpose: RESUME_TOKEN_PURPOSE,
+      expiresAt: new Date(Date.now() + RESUME_TOKEN_TTL_MS),
+    },
+  })
+  return resumeToken
+}
+
+async function findActiveDraftIdByPhone(client: DraftClient, phone: string): Promise<string | null> {
+  const existing = await client.providerApplicationDraft.findFirst({
+    where: { phone, submittedApplicationId: null },
+    orderBy: { updatedAt: 'desc' },
+    select: { id: true },
+  })
+  return existing?.id ?? null
+}
+
 export async function saveProviderRegistrationDraft(
   client: DraftClient,
   input: ProviderRegistrationDraftInput,
@@ -425,27 +449,40 @@ export async function saveProviderRegistrationDraft(
   const tokenDraftId = await resolveTokenDraftId(client, input.resumeToken)
 
   if (tokenDraftId) {
-    await client.providerApplicationDraft.update({
-      where: { id: tokenDraftId },
-      data,
-    })
+    await client.providerApplicationDraft.update({ where: { id: tokenDraftId }, data })
     return { draftId: tokenDraftId, resumeToken: input.resumeToken ?? '' }
   }
 
-  const draft = await client.providerApplicationDraft.create({ data })
-  const resumeToken = newResumeToken()
-  const tokenHash = await hashRegistrationResumeToken(resumeToken)
+  // Token missing or invalid (e.g. lost localStorage): reuse the newest
+  // un-submitted draft for this session-validated phone instead of forking a
+  // duplicate draft (and, downstream, a duplicate paid KYC session). Mirrors
+  // the WhatsApp flow's phone-keyed draft semantics. `input.phone` always
+  // comes from the session-validated caller (see
+  // app/api/provider/registration/draft/route.ts) — never accept a
+  // client-supplied phone here.
+  const phoneDraftId = await findActiveDraftIdByPhone(client, input.phone)
+  if (phoneDraftId) {
+    await client.providerApplicationDraft.update({ where: { id: phoneDraftId }, data })
+    return { draftId: phoneDraftId, resumeToken: await mintResumeTokenForDraft(client, phoneDraftId) }
+  }
 
-  await client.registrationResumeToken.create({
-    data: {
-      draftId: draft.id,
-      tokenHash,
-      purpose: RESUME_TOKEN_PURPOSE,
-      expiresAt: new Date(Date.now() + RESUME_TOKEN_TTL_MS),
-    },
-  })
+  let draftId: string
+  try {
+    const draft = await client.providerApplicationDraft.create({ data })
+    draftId = draft.id
+  } catch (err) {
+    // Defensive race recovery: if two saves for the same phone land
+    // concurrently and a DB-level uniqueness guard rejects this create with
+    // P2002, fall back to updating whichever draft won the race instead of
+    // surfacing an error to the client.
+    if ((err as { code?: string })?.code !== 'P2002') throw err
+    const raceWinnerId = await findActiveDraftIdByPhone(client, input.phone)
+    if (!raceWinnerId) throw err
+    await client.providerApplicationDraft.update({ where: { id: raceWinnerId }, data })
+    draftId = raceWinnerId
+  }
 
-  return { draftId: draft.id, resumeToken }
+  return { draftId, resumeToken: await mintResumeTokenForDraft(client, draftId) }
 }
 
 function phoneVariants(phone: string): string[] {
