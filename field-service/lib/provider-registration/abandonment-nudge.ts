@@ -29,7 +29,10 @@ export type NudgeDeps = {
   mintResumeToken: (client: any, draftId: string) => Promise<string>
   sendTemplate: (params: any) => Promise<string>
   flagEnabled: (key: string) => Promise<boolean>
-  publicUrl: (path: string) => string
+  // Deliberately no publicUrl dep: the resume token travels as a URL button
+  // dynamic suffix (never the body), and Meta appends it to the static
+  // prefix baked into the registered template — the send never needs a
+  // fully-qualified resume URL, only the raw token.
 }
 
 export async function runDraftAbandonmentNudge(deps: NudgeDeps) {
@@ -57,25 +60,64 @@ export async function runDraftAbandonmentNudge(deps: NudgeDeps) {
       if (await deps.db.customer.findFirst({ where: { phone: draft.phone }, select: { id: true } })) { skipped++; continue }
       if (await deps.db.provider.findFirst({ where: { phone: draft.phone }, select: { id: true } })) { skipped++; continue }
 
-      // Atomic claim: only proceeds if nudgeCount is unchanged since selection.
+      // Atomic claim: a true compare-and-set. Guarding on nudgeCount alone is
+      // not sufficient — two overlapping cron instances can both read the same
+      // candidate and both pass a nudgeCount-only check before either writes.
+      // Guarding on lastNudgeAt too (Prisma matches `lastNudgeAt: null`
+      // correctly for first touches) means only the FIRST writer's updateMany
+      // can match; the second's precondition no longer holds and it gets
+      // count: 0, closing the double-send race.
+      //
+      // Self-heal invariant: if the process crashes between this claim and
+      // the restore/finalize below, the row is left with lastNudgeAt stamped
+      // but nudgeCount unchanged — it would look claimable again by count
+      // alone. It does NOT get re-selected immediately only because the
+      // explicit `updatedAt: now` below (Prisma also auto-bumps @updatedAt on
+      // any write) pushes `updatedAt` out of the touch-1/touch-2 idle
+      // windows in selectionWhere(); the row becomes re-eligible again once
+      // it has been idle for a full window from this claim timestamp, not
+      // sooner. This is intentional belt-and-braces, not a fix for the crash
+      // itself — a crash here still costs the draft one full idle window
+      // before it's retried.
       const claimed = await deps.db.providerApplicationDraft.updateMany({
-        where: { id: draft.id, nudgeCount: draft.nudgeCount, submittedApplicationId: null },
-        data: { lastNudgeAt: now },
+        where: {
+          id: draft.id,
+          nudgeCount: draft.nudgeCount,
+          lastNudgeAt: draft.lastNudgeAt,
+          submittedApplicationId: null,
+        },
+        data: { lastNudgeAt: now, updatedAt: now },
       })
       if (claimed.count === 0) { skipped++; continue }
 
+      const touch = draft.nudgeCount + 1
+      // Attempt-first auditability (mirrors lib/identity-verification/in-flight-renudge.ts):
+      // write the "attempted" row BEFORE calling sendTemplate so a crash
+      // between a confirmed Meta send and the finalize write below can never
+      // leave a delivered message with zero audit trail.
+      await deps.db.auditLog.create({
+        data: {
+          actorId: 'system', actorRole: 'system', action: 'draft.abandonment_nudge_attempted',
+          entityType: 'ProviderApplicationDraft', entityId: draft.id,
+          after: { touch, to: draft.phone },
+        },
+      }).catch(() => {})
+
       try {
         const token = await deps.mintResumeToken(deps.db, draft.id)
-        const resumeUrl = deps.publicUrl(`/provider/register?resume=${encodeURIComponent(token)}`)
         const firstName = draft.name?.split(' ')[0] || 'there'
         await deps.sendTemplate({
           to: draft.phone,
           template: 'provider_registration_resume_nudge',
-          components: [{ type: 'body', parameters: [
-            { type: 'text', text: firstName },
-            { type: 'text', text: resumeUrl },
-          ] }],
-          metadata: { draftId: draft.id, touch: draft.nudgeCount + 1 },
+          components: [
+            { type: 'body', parameters: [{ type: 'text', text: firstName }] },
+            // URL button: static prefix is baked into the Meta-registered
+            // template; only the dynamic resume-token suffix travels here.
+            // Never put the token/URL in body/header text — sendTemplate's
+            // raw-url guard rejects that unconditionally.
+            { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: token }] },
+          ],
+          metadata: { draftId: draft.id, touch },
         })
       } catch (err) {
         // Release the claim: restore prior lastNudgeAt so the row is re-eligible.
@@ -95,7 +137,7 @@ export async function runDraftAbandonmentNudge(deps: NudgeDeps) {
         data: {
           actorId: 'system', actorRole: 'system', action: 'draft.abandonment_nudge_sent',
           entityType: 'ProviderApplicationDraft', entityId: draft.id,
-          after: { touch: draft.nudgeCount + 1 },
+          after: { touch },
         },
       }).catch(() => {})
       sent++
