@@ -72,6 +72,12 @@ export function getPublicQuoteDecisionError(params: {
         status: 409,
         message: 'This quote is missing a preferred job date. Ask the provider to resend it with a date.',
       }
+    case 'AWAITING_PROVIDER_QUOTE':
+      return {
+        status: 409,
+        message:
+          "The provider hasn't sent their detailed quote yet. We'll notify you on WhatsApp as soon as it's ready.",
+      }
     default:
       return {
         status: 422,

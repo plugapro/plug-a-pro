@@ -3598,6 +3598,9 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
         : "This quote has already been declined. Reply *Hi* if you'd like to submit a new service request.")
     } else if (result.error === 'EXPIRED') {
       await sendText(phone, "⏰ This quote has expired. Reply *Hi* to submit a new request and we'll get a fresh quote to you.")
+    } else if (result.error === 'AWAITING_PROVIDER_QUOTE') {
+      // CJ-07: stub quote - the provider hasn't submitted the real quote yet.
+      await sendText(phone, "⏳ Your provider hasn't sent their detailed quote yet. We'll send it to you here as soon as it's ready — no action is needed from you right now.")
     } else {
       await sendText(phone, "😔 Something went wrong on our end. Please use the link in the original quote message or reply *Hi* to start again.")
     }

@@ -8,6 +8,7 @@ import {
   mapPayAtGoErrorToUserMessage,
   type InternalPayAtGoStatus,
 } from '@/lib/payat-go'
+import { deliverBookingPaymentLink } from '@/lib/payment-link-delivery'
 
 function toStatusMessage(status: InternalPayAtGoStatus): string {
   if (status === 'PENDING' || status === 'SENT') return 'Payment is still pending.'
@@ -143,6 +144,28 @@ export async function POST(
       customerEmail: customerEmail ?? customer.email,
       description,
     })
+
+    // CJ-01: actually deliver the Pay@Go payment link to the customer instead
+    // of only returning it in the JSON body. deliverBookingPaymentLink is
+    // hard-gated to checkout mode (no-op in bypass, where ops keep relaying
+    // the whatsappMessage manually) and window-safe. Fire-and-forget: a send
+    // failure must not fail the payment-request creation.
+    if (result.paymentLink && (result.status === 'PENDING' || result.status === 'SENT')) {
+      void deliverBookingPaymentLink({
+        bookingId,
+        checkoutUrl: result.paymentLink,
+        customerPhone: customerMobile ?? customer.phone,
+        amountRand: result.amountCents / 100,
+        referenceLine: result.payAtReference ? `Pay@ reference: ${result.payAtReference}` : null,
+      }).catch((err: unknown) => {
+        console.error(JSON.stringify({
+          event: 'payat_go.payment_link_delivery_failed',
+          route: '/api/payat-go/booking/[bookingId]',
+          bookingId,
+          errorName: err instanceof Error ? err.name : 'UnknownError',
+        }))
+      })
+    }
 
     return NextResponse.json(
       {

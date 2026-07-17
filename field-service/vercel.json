@@ -85,6 +85,14 @@
     {
       "path": "/api/cron/ops-agents",
       "schedule": "0 6-20/2 * * *"
+    },
+    {
+      "path": "/api/cron/payment-confirmation-redrive",
+      "schedule": "20 * * * *"
+    },
+    {
+      "path": "/api/cron/inbound-whatsapp-redrive",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

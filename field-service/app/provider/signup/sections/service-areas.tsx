@@ -20,6 +20,9 @@ export function ServiceAreasSection() {
         <Input id="cityLabel" {...register('cityLabel')} placeholder="e.g. Johannesburg" />
         {errors.cityLabel && <p className="mt-1 text-xs text-destructive">{String(errors.cityLabel.message)}</p>}
       </div>
+      <p className="text-xs text-muted-foreground">
+        {"We're live in the West Rand first — your profile is saved and will be activated the moment we go live in your area."}
+      </p>
     </fieldset>
   )
 }

@@ -188,7 +188,8 @@ const HOURS_OPTIONS = ['Standard 7am-5pm', 'Extended 6am-8pm', '24/7']
 type StatusActionHref = string | ((reference: string) => string)
 type ProvinceOption = { id: string; slug: string; label: string }
 type CityOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string }
-type RegionOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string; regionKey: string; suburbCount?: number }
+type ServiceStatus = 'live' | 'onboarding' | 'coming_soon'
+type RegionOption = { id: string; slug: string; label: string; provinceKey: string; cityKey: string; regionKey: string; suburbCount?: number; serviceStatus?: ServiceStatus }
 type SuburbOption = {
   id: string
   slug: string
@@ -200,6 +201,7 @@ type SuburbOption = {
   provinceKey: string
   cityKey: string
   regionKey: string
+  serviceStatus?: ServiceStatus
 }
 
 function supportHref(message: string) {
@@ -1203,11 +1205,22 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                           : 'Select region'
                     }
                   >
-                    {regions.map((region) => (
-                      <option key={region.id} value={region.id}>
-                        {region.suburbCount ? `${region.label} (${region.suburbCount})` : region.label}
-                      </option>
-                    ))}
+                    {regions.map((region) => {
+                      const baseLabel = region.suburbCount ? `${region.label} (${region.suburbCount})` : region.label
+                      const statusSuffix =
+                        region.serviceStatus === 'live'
+                          ? ' — live for leads'
+                          : region.serviceStatus === 'onboarding'
+                            ? ' — open to register'
+                            : region.serviceStatus === 'coming_soon'
+                              ? ' — not live yet'
+                              : ''
+                      return (
+                        <option key={region.id} value={region.id}>
+                          {baseLabel}{statusSuffix}
+                        </option>
+                      )
+                    })}
                   </LocationSelect>
                   {!form.selectedCityId && (
                     <p className="mt-1 text-[12px] text-[var(--ink-mute)]">Select a city first</p>
@@ -1285,6 +1298,19 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                   </div>
                 </div>
               )}
+              {(() => {
+                const selectedRegion = regions.find((r) => r.id === form.selectedRegionId)
+                const selectedSuburbs = suburbs.filter((s) => form.locationNodeIds.includes(s.id))
+                const hasKnownNonLive =
+                  (selectedRegion?.serviceStatus != null && selectedRegion.serviceStatus !== 'live') ||
+                  selectedSuburbs.some((s) => s.serviceStatus != null && s.serviceStatus !== 'live')
+                if (!hasKnownNonLive) return null
+                return (
+                  <p className="text-[12px] text-[var(--ink-mute)] leading-relaxed">
+                    Leads go live in the West Rand first. Other areas can register now — your profile will be activated the moment we go live in your area.
+                  </p>
+                )
+              })()}
               <Field label={`Travel radius: ${form.travelRadiusKm} km`}>
                 <input
                   type="range"
@@ -1347,17 +1373,14 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
           )}
 
           {step === 'verify' && (
-            <ScreenPanel icon={meta.icon} title="Verify now or later" description="Identity verification is required before paid credit purchases, but you can submit the application first.">
+            <ScreenPanel icon={meta.icon} title="Identity verification" description="Nothing to do on this screen yet — you'll complete a quick, secure ID check after you submit your application.">
               <div className="grid gap-3">
-                <InfoRow title="Verify now" body="Open the identity check and return to finish your provider application." />
-                <InfoRow title="Verify later" body="Submit now and complete verification before buying lead credits." />
+                <InfoRow title="Happens after you submit" body="Once your application is in, we guide you through a secure identity check. Your ID number is never shared in chat." />
+                <InfoRow title="Needed before paid credits" body="You can be reviewed and approved first. Verification is only required before you buy lead credits." />
               </div>
               <FooterActions>
-                <Button fullWidth asChild>
-                  <Link href="/provider/verification">Verify now</Link>
-                </Button>
-                <Button fullWidth variant="secondary" onClick={() => goTo('evidence')} loading={saving}>
-                  Verify later
+                <Button fullWidth onClick={() => goTo('evidence')} loading={saving}>
+                  Continue
                   <ArrowRight size={18} />
                 </Button>
               </FooterActions>
@@ -1498,6 +1521,9 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 <InfoRow title="WhatsApp updates" body={`We will send updates to ${form.phone || 'your mobile number'}.`} />
                 <InfoRow title="Reference" body={form.submittedRef || 'Reference will show after review sync.'} />
               </div>
+              <p className="text-[12px] text-[var(--ink-mute)] leading-relaxed">
+                {"We're live in the West Rand first — your profile is saved and will be activated the moment we go live in your area."}
+              </p>
               <FooterActions>
                 <Button fullWidth asChild>
                   <Link href="/provider/register/status">View status</Link>

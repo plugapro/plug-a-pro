@@ -842,7 +842,9 @@ function formatShortlistBody(
     const arrival = item.estimatedArrivalAt
       ? `arrival by ${item.estimatedArrivalAt.toLocaleTimeString('en-ZA', { hour: 'numeric', minute: '2-digit' })}`
       : 'arrival time pending'
-    const verifiedLabel = item.verified ? ' ✓ verified' : ''
+    // "ID verified" not bare "verified": provider.verified is KYC/identity only,
+    // not a skill, licensing or workmanship check (positioning audit 2026-07-06).
+    const verifiedLabel = item.verified ? ' ✓ ID verified' : ''
     const note = item.note ? `\n   ${item.note}` : ''
     return `${index + 1}. ${item.name}${verifiedLabel} · ${feeLine} · ${arrival}${note}`
   })

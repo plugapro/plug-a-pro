@@ -1149,10 +1149,10 @@ describe('registration flow - numbered bulk skill selection', () => {
     const body: string = (wa.sendList as any).mock.calls[0][1]
     const rows = (wa.sendList as any).mock.calls[0][2][0].rows
 
-    expect(body).toContain('Only *JHB West / Roodepoort* is live')
+    expect(body).toContain('Leads go live in *JHB West / Roodepoort* first')
     expect(rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ title: 'JHB West / Roodepoort', description: expect.stringContaining('Active pilot') }),
-      expect.objectContaining({ title: 'Johannesburg North', description: expect.stringContaining('Coming soon') }),
+      expect.objectContaining({ title: 'JHB West / Roodepoort', description: expect.stringContaining('Open for registration') }),
+      expect.objectContaining({ title: 'Johannesburg North', description: expect.stringContaining('Open for registration') }),
     ]))
     expect(result.nextStep).toBe('reg_collect_region')
   })

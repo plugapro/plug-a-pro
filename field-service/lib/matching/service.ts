@@ -17,6 +17,7 @@ import { resolveCategoryRequirements } from '../category-config'
 import { isLocationStale, pointFallsWithinRadius } from './geography'
 import { createBookingArtifactsForApprovedQuote } from '../quotes'
 import { initializeBookingPayment } from '../payments'
+import { deliverBookingPaymentLink } from '../payment-link-delivery'
 import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
 import { expireOpenJobRequest } from '../job-requests/expire-job-request'
@@ -3079,15 +3080,37 @@ export async function acceptAssignmentOffer(params: {
     // Fire-and-forget: payment init runs after the transaction commits.
     // A failure here must not surface as a WhatsApp/PWA error - the accept
     // already succeeded and the credit was charged. Ops can reconcile via logs.
+    //
+    // CJ-01: in checkout mode the checkout URL must actually reach the
+    // customer, not just the Payment row. deliverBookingPaymentLink is
+    // hard-gated to checkout mode (no-op in bypass) and window-safe.
+    const bookingIdForPayment = transactionResult.bookingId
+    const paymentAmountRand = transactionResult.paymentAmount
     initializeBookingPayment({
-      bookingId: transactionResult.bookingId,
-      amountRand: transactionResult.paymentAmount,
+      bookingId: bookingIdForPayment,
+      amountRand: paymentAmountRand,
       customerEmail: null,
       customerPhone: transactionResult.customerPhone,
       description: `${transactionResult.category} booking`,
+    }).then(async (setup) => {
+      if (setup.mode !== 'checkout' || !setup.checkoutUrl) return
+      const delivery = await deliverBookingPaymentLink({
+        bookingId: bookingIdForPayment,
+        checkoutUrl: setup.checkoutUrl,
+        customerPhone: transactionResult.customerPhone,
+        amountRand: paymentAmountRand,
+        category: transactionResult.category,
+      })
+      if (!delivery.sent) {
+        console.error('[matching] post-commit payment link delivery not sent', {
+          booking_id: bookingIdForPayment,
+          trace_id: traceId,
+          outcome: delivery.outcome,
+        })
+      }
     }).catch((err: unknown) => {
       console.error('[matching] post-commit payment init failed', {
-        booking_id: transactionResult.bookingId,
+        booking_id: bookingIdForPayment,
         trace_id: traceId,
         error: err instanceof Error ? err.message : String(err),
       })

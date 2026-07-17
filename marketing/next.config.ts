@@ -59,6 +59,14 @@ const nextConfig: NextConfig = {
     return [
       { source: "/refund-policy", destination: "/terms#refunds", permanent: true },
       { source: "/provider-terms", destination: "/terms#provider-terms", permanent: true },
+      // Provider-acquisition ad vanity URL (printed on Meta creatives). Query
+      // strings (utm_*) pass through to the registration wizard automatically.
+      // Temporary redirect so the destination can be repointed per campaign.
+      {
+        source: "/join",
+        destination: "https://app.plugapro.co.za/provider/register",
+        permanent: false,
+      },
     ];
   },
   // turbopack: {} silences the "webpack config present but no turbopack config"

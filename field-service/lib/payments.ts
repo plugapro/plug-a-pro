@@ -108,7 +108,8 @@ class PeachPaymentsProvider implements PspProvider {
       ? (process.env.PEACH_TEST_ENTITY_ID ?? process.env.PEACH_ENTITY_ID ?? '')
       : (process.env.PEACH_ENTITY_ID ?? '')
     this.accessToken = process.env.PEACH_ACCESS_TOKEN ?? ''
-    this.webhookSecret = process.env.PEACH_WEBHOOK_SECRET ?? ''
+    // Trimmed so a whitespace-only env value counts as unset (fail closed in verifyWebhook).
+    this.webhookSecret = process.env.PEACH_WEBHOOK_SECRET?.trim() ?? ''
 
     if (!this.entityId || !this.accessToken) {
       throw new Error('Missing Peach Payments credentials')
@@ -154,6 +155,16 @@ class PeachPaymentsProvider implements PspProvider {
   }
 
   verifyWebhook(rawBody: string, signature: string): boolean {
+    // SEC-02/SRE-07: fail closed when the webhook secret is not configured.
+    // An empty-string HMAC key would make signatures forgeable by anyone who
+    // can compute HMAC-SHA256 with an empty key. Mirrors the semantics of
+    // verifyMetaSignature in lib/webhook-auth.ts. Deliberately NOT enforced in
+    // the constructor: bypass-mode production must keep constructing this
+    // provider without payment webhook env vars.
+    if (!this.webhookSecret) {
+      console.error('[payments] PEACH_WEBHOOK_SECRET not configured - rejecting webhook')
+      return false
+    }
     // Peach uses HMAC-SHA256 signature verification
     // Implementation: compare computed HMAC of rawBody against signature header
     // Reference: https://developer.peachpayments.com/docs/webhooks
@@ -297,9 +308,11 @@ function getProvider(): PspProvider {
 
 export async function createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
   const providerName = resolvePspProviderName()
-  const session = await getProvider().createCheckout(params)
 
-  // Persist checkout session to DB
+  // SRE-04: the Payment row must exist BEFORE the PSP session is created.
+  // If the session were created first and this upsert failed, a customer could
+  // pay against a checkout with no Payment record - the success webhook would
+  // then 400 ("Not found") until the PSP gives up retrying.
   await db.payment.upsert({
     where: { bookingId: params.bookingId },
     create: {
@@ -309,15 +322,42 @@ export async function createCheckout(params: CheckoutParams): Promise<CheckoutSe
       amount: params.amount / 100,
       currency: params.currency,
       pspProvider: providerName,
-      pspCheckoutId: session.id,
-      checkoutUrl: session.url,
     },
     update: {
       collectionMode: 'PLATFORM_CHECKOUT',
       pspProvider: providerName,
+      status: 'PENDING',
+    },
+  })
+
+  let session: CheckoutSession
+  try {
+    session = await getProvider().createCheckout(params)
+  } catch (err) {
+    // Keep the row PENDING (no checkout exists, so nothing is payable) and
+    // record why session creation failed for ops visibility, then rethrow so
+    // callers see the original PSP error.
+    const reason = err instanceof Error ? err.message : String(err)
+    await db.payment
+      .update({
+        where: { bookingId: params.bookingId },
+        data: { failureReason: `PSP checkout creation failed: ${reason}`.slice(0, 500) },
+      })
+      .catch((updateErr: unknown) => {
+        console.error('[payments] failed to record PSP checkout failure on payment row', {
+          bookingId: params.bookingId,
+          error: updateErr,
+        })
+      })
+    throw err
+  }
+
+  // Attach the live checkout session to the pre-created row.
+  await db.payment.update({
+    where: { bookingId: params.bookingId },
+    data: {
       pspCheckoutId: session.id,
       checkoutUrl: session.url,
-      status: 'PENDING',
     },
   })
 
@@ -536,15 +576,36 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
   })
 }
 
+// Payment statuses that a late/duplicate `payment.failed` event must never
+// overwrite (SRE-01). Money has moved (or been returned) in all of them.
+const TERMINAL_PAYMENT_STATUSES = ['PAID', 'REFUNDED', 'PARTIALLY_REFUNDED'] as const
+
 export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
-  await db.payment.update({
-    where: { bookingId: event.bookingId },
+  // SRE-01: guarded updateMany instead of update.
+  //   - Unknown bookingId → count 0 (no P2025 throw → no 500 → no PSP retry loop)
+  //   - Payment already PAID/REFUNDED/PARTIALLY_REFUNDED → count 0 (a late or
+  //     duplicate `payment.failed` never clobbers a settled payment, never
+  //     fires a bogus "payment failed" customer message, never opens an ops item)
+  const { count } = await db.payment.updateMany({
+    where: {
+      bookingId: event.bookingId,
+      status: { notIn: [...TERMINAL_PAYMENT_STATUSES] },
+    },
     data: {
       status: 'FAILED',
       pspReference: event.pspReference,
       failureReason: 'Payment declined',
     },
   })
+
+  if (count === 0) {
+    console.warn('[payments] payment.failed ignored - no non-terminal payment row for booking', {
+      bookingId: event.bookingId,
+      pspReference: event.pspReference,
+    })
+    return
+  }
+
   console.error('[payments] payment failed - ops follow-up required', {
     bookingId: event.bookingId,
     pspReference: event.pspReference,
@@ -576,10 +637,20 @@ export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
 
   if (booking?.match.jobRequest) {
     const { category, customer } = booking.match.jobRequest
+    // CJ-13: in checkout mode, give the customer a way to actually retry -
+    // re-initialize the checkout (fresh PSP session; Peach checkouts expire in
+    // ~30 min) and attach the link to the failure message. Falls back to the
+    // stored checkoutUrl if re-initialization fails, and is null (message-only,
+    // pre-existing behaviour) in bypass mode.
+    let retryCheckoutUrl: string | null = null
+    if (getPaymentCollectionMode() === 'checkout') {
+      retryCheckoutUrl = await refreshCheckoutUrlForFailedPayment(event.bookingId, customer.phone)
+    }
     notifyCustomerPaymentFailed({
       customerPhone: customer.phone,
       category: category.replaceAll('_', ' '),
       bookingRef: event.bookingId.slice(-8).toUpperCase(),
+      checkoutUrl: retryCheckoutUrl,
     }).catch(() => {})
   }
 
@@ -595,6 +666,39 @@ export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
       error: err,
     })
   })
+}
+
+// CJ-13 helper: mint a fresh checkout for a failed payment so the customer's
+// retry link is actually payable. Only called in checkout mode. Non-throwing:
+// on any failure it falls back to the stored checkoutUrl (may be stale) or null.
+async function refreshCheckoutUrlForFailedPayment(
+  bookingId: string,
+  customerPhone: string | null,
+): Promise<string | null> {
+  const payment = await db.payment
+    .findUnique({
+      where: { bookingId },
+      select: { amount: true, checkoutUrl: true },
+    })
+    .catch(() => null)
+  if (!payment) return null
+
+  try {
+    const setup = await initializeBookingPayment({
+      bookingId,
+      amountRand: Number(payment.amount),
+      customerEmail: null,
+      customerPhone,
+      description: `Booking ${bookingId.slice(-8).toUpperCase()} payment retry`,
+    })
+    return setup.checkoutUrl ?? payment.checkoutUrl
+  } catch (err) {
+    console.error('[payments] failed to mint fresh checkout for payment retry - falling back to stored URL', {
+      bookingId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return payment.checkoutUrl
+  }
 }
 
 export async function issueRefund(params: {
