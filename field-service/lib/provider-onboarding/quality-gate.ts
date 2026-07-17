@@ -1,10 +1,24 @@
-import { isEnabled } from '@/lib/flags'
 import { hasHighRiskServiceSelection } from '@/lib/service-category-policy'
 
 export const QUALITY_GATE_V2_FLAG = 'provider.onboarding.quality_gate_v2' as const
 export const MIN_EVIDENCE_PHOTOS = 3
 
-export function isQualityGateV2Enabled(ctx: { userId?: string } = {}): Promise<boolean> {
+/**
+ * `@/lib/flags` is imported DYNAMICALLY, never at module scope.
+ *
+ * This module also exports pure helpers (`evidenceStepComplete`,
+ * `MIN_EVIDENCE_PHOTOS`, ...) that are imported by the `'use client'`
+ * ProviderRegistrationClient. A static `import ... from '@/lib/flags'` pulls in
+ * the Prisma singleton (`@/lib/db`), whose module-scope `Prisma.defineExtension`
+ * throws in the browser ("unable to run in this browser environment") and takes
+ * the whole registration wizard down to the error boundary. A dynamic import is
+ * code-split and only evaluated when a server caller actually invokes this
+ * function, so the module stays client-bundle-safe.
+ *
+ * Guarded by __tests__/lib/provider-onboarding/quality-gate-client-safety.test.ts
+ */
+export async function isQualityGateV2Enabled(ctx: { userId?: string } = {}): Promise<boolean> {
+  const { isEnabled } = await import('@/lib/flags')
   return isEnabled(QUALITY_GATE_V2_FLAG, ctx)
 }
 
