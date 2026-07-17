@@ -117,6 +117,7 @@ type Props = {
   initialDraftResumeStep?: StepKey
   skillOptions: ServiceCategoryOption[]
   qualityGateEnabled?: boolean
+  incomingResumeToken?: string
 }
 
 const DEFAULT_STATE: RegistrationFormState = {
@@ -338,7 +339,7 @@ function logProviderRegistrationEvent(event: 'provider_registration_start' | 'pr
   }
 }
 
-export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions, qualityGateEnabled = false }: Props) {
+export function ProviderRegistrationClient({ initialStep, initialApplicationState, initialApplicationRef, initialDraftResumeStep = 'profile', skillOptions, qualityGateEnabled = false, incomingResumeToken }: Props) {
   const router = useRouter()
   const profilePhotoInputRef = useRef<HTMLInputElement>(null)
   const otpSubmitRef = useRef(false)
@@ -365,18 +366,24 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   const [locationLoadError, setLocationLoadError] = useState('')
 
   useEffect(() => {
+    if (incomingResumeToken) {
+      window.localStorage.setItem(TOKEN_KEY, incomingResumeToken)
+      logProviderRegistrationEvent('provider_registration_resume', { source: 'deep_link' })
+    }
+
     setForm(parseStoredState())
     const storedDraftId = window.localStorage.getItem(DRAFT_ID_KEY) ?? ''
     const storedResumeToken = window.localStorage.getItem(TOKEN_KEY) ?? ''
     setDraftId(storedDraftId)
     setResumeToken(storedResumeToken)
-    if (storedDraftId || storedResumeToken) {
+    if (!incomingResumeToken && (storedDraftId || storedResumeToken)) {
       logProviderRegistrationEvent('provider_registration_resume', {
         source: 'local_storage',
         hasDraftId: Boolean(storedDraftId),
         hasResumeToken: Boolean(storedResumeToken),
       })
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

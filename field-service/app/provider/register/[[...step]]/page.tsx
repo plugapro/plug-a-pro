@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { findLatestProviderRegistrationApplicationByPhone } from '@/lib/provider-applications'
 import { resolveProviderRegistrationDestination } from '@/lib/provider-registration/resolver'
+import { resolveResumeTokenDraft } from '@/lib/provider-registration/pwa-flow'
 import { isQualityGateV2Enabled } from '@/lib/provider-onboarding/quality-gate'
 
 export const dynamic = 'force-dynamic'
@@ -121,8 +122,10 @@ function shouldRedirectForRegistrationEntry(requestedStep: StepKey, destinationR
 
 export default async function ProviderRegistrationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ step?: string[] }>
+  searchParams: Promise<{ resume?: string }>
 }) {
   const resolvedParams = await params
   const requestedStep = resolvedParams.step?.[0] ?? 'welcome'
@@ -131,9 +134,13 @@ export default async function ProviderRegistrationPage({
     redirect('/provider/register')
   }
 
-  const [destination, qualityGateEnabled] = await Promise.all([
+  const resolvedSearchParams = await searchParams
+  const resumeParam = typeof resolvedSearchParams?.resume === 'string' ? resolvedSearchParams.resume : ''
+
+  const [destination, qualityGateEnabled, resumeDraft] = await Promise.all([
     resolveAuthenticatedEntryDestination(),
     isQualityGateV2Enabled(),
+    resumeParam ? resolveResumeTokenDraft(db, resumeParam).catch(() => null) : Promise.resolve(null),
   ])
   if (requestedStep === 'submitted' && destination?.route !== '/provider/register/status') {
     redirect('/provider/register')
@@ -142,14 +149,25 @@ export default async function ProviderRegistrationPage({
     redirect(destination.route)
   }
 
+  // A valid `?resume=` token is bearer authorization to VIEW/resume the
+  // draft it points at — including for an anonymous cross-device visitor
+  // (e.g. clicking a WhatsApp nudge link on a different device than the
+  // session lives on). It overrides the phone-session-based entry step, but
+  // it does NOT grant write access: saving further progress still goes
+  // through the normal session-validated draft-save path. An invalid or
+  // expired token falls back to exactly the pre-existing behaviour with no
+  // error surfaced (spec: Error handling).
+  const effectiveStep = resumeDraft ? draftResumeStep(resumeDraft.lastCompletedStep) : (requestedStep as StepKey)
+
   return (
     <ProviderRegistrationClient
-      initialStep={requestedStep as StepKey}
+      initialStep={effectiveStep}
       initialApplicationState={destination?.state ?? null}
       initialApplicationRef={destination?.applicationRef ?? null}
       initialDraftResumeStep={destination?.draftResumeStep ?? 'profile'}
       skillOptions={getPilotServiceCategories()}
       qualityGateEnabled={qualityGateEnabled}
+      incomingResumeToken={resumeParam || undefined}
     />
   )
 }
