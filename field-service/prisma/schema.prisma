@@ -459,6 +459,8 @@ model ProviderApplicationDraft {
   reference2Mobile       String?
   consentAt              DateTime?
   lastCompletedStep      Int       @default(0)
+  nudgeCount             Int       @default(0)
+  lastNudgeAt            DateTime?
   // Full replayable submit bundle captured at WhatsApp summary confirm when the
   // quality gate v2 (create-on-PASS) flow is ON. The ProviderApplication /
   // Provider rows are NOT created at confirm time; instead the exact inputs the

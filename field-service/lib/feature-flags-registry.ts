@@ -508,6 +508,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'provider.registration.abandonment_nudge': {
+    description:
+      'Draft-abandonment WhatsApp nudge cron for PWA wizard abandoners (2h + 24h, cap 2). OFF until the Meta template is approved.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   // ─── Operational digests ─────────────────────────────────────────────────────
   'ops.daily_snapshot_whatsapp_digest': {
     description: 'Send the daily provider snapshot as a WhatsApp digest to ADMIN_WHATSAPP_NUMBER after the cron persists the snapshot row. Default off until Meta approves the admin_daily_provider_snapshot Utility template. Send failures are caught and logged — they do not affect snapshot persistence.',
