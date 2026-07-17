@@ -54,9 +54,65 @@ describe('saveProviderRegistrationDraft phone fallback', () => {
       draftId: 'token-draft',
       expiresAt: new Date(Date.now() + 60_000),
       consumedAt: null,
+      draft: { phone: '+27821110000' },
     })
     const result = await saveProviderRegistrationDraft(client, { ...baseInput, resumeToken: 'tok' })
     expect(result.draftId).toBe('token-draft')
+    expect(client.providerApplicationDraft.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('ignores the token when its draft phone differs from the session-validated input phone, falling back to phone lookup', async () => {
+    const client = fakeClient()
+    // Token resolves to a draft belonging to a DIFFERENT phone number (e.g. a
+    // resume link forwarded to someone else who then completes their own OTP).
+    client.registrationResumeToken.findUnique.mockResolvedValue({
+      draftId: 'token-draft-belongs-to-someone-else',
+      expiresAt: new Date(Date.now() + 60_000),
+      consumedAt: null,
+      draft: { phone: '+27829999999' },
+    })
+    client.providerApplicationDraft.findFirst.mockResolvedValue({ id: 'my-own-draft' })
+
+    const result = await saveProviderRegistrationDraft(client, { ...baseInput, resumeToken: 'tok' })
+
+    // Must NOT touch the mismatched token draft.
+    expect(client.providerApplicationDraft.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'token-draft-belongs-to-someone-else' } }),
+    )
+    // Falls through to the phone-fallback lookup/update for the session-validated phone.
+    expect(client.providerApplicationDraft.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ phone: '+27821110000', submittedApplicationId: null }),
+      }),
+    )
+    expect(client.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'my-own-draft' } }),
+    )
+    expect(result.draftId).toBe('my-own-draft')
+    // A fresh token must be minted for the correct draft — the caller cannot
+    // keep using the forwarded (mismatched) token.
+    expect(result.resumeToken).not.toBe('')
+    expect(result.resumeToken).not.toBe('tok')
+    expect(client.registrationResumeToken.create).toHaveBeenCalled()
+  })
+
+  it('honours the token when its draft phone matches a variant of the session-validated input phone', async () => {
+    const client = fakeClient()
+    // Draft was saved with a local-format number; input phone is the E.164
+    // normalized variant of the SAME underlying number.
+    client.registrationResumeToken.findUnique.mockResolvedValue({
+      draftId: 'token-draft',
+      expiresAt: new Date(Date.now() + 60_000),
+      consumedAt: null,
+      draft: { phone: '0821110000' },
+    })
+
+    const result = await saveProviderRegistrationDraft(client, { ...baseInput, phone: '+27821110000', resumeToken: 'tok' })
+
+    expect(result.draftId).toBe('token-draft')
+    expect(client.providerApplicationDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'token-draft' } }),
+    )
     expect(client.providerApplicationDraft.findFirst).not.toHaveBeenCalled()
   })
 

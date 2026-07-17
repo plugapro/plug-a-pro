@@ -88,6 +88,7 @@ type DraftClient = {
       purpose?: string
       expiresAt: Date
       consumedAt: Date | null
+      draft?: { phone: string } | null
     } | null>
   }
 }
@@ -417,17 +418,20 @@ function newResumeToken(): string {
   return randomBytes(32).toString('base64url')
 }
 
-async function resolveTokenDraftId(client: DraftClient, resumeToken?: string | null): Promise<string | null> {
+async function resolveTokenDraft(
+  client: DraftClient,
+  resumeToken?: string | null,
+): Promise<{ draftId: string; phone: string | null } | null> {
   if (!resumeToken) return null
 
   const tokenHash = await hashRegistrationResumeToken(resumeToken)
   const token = await client.registrationResumeToken.findUnique({
     where: { tokenHash },
-    select: { draftId: true, expiresAt: true, consumedAt: true },
+    select: { draftId: true, expiresAt: true, consumedAt: true, draft: { select: { phone: true } } },
   })
 
   if (!token || token.consumedAt || token.expiresAt.getTime() <= Date.now()) return null
-  return token.draftId
+  return { draftId: token.draftId, phone: token.draft?.phone ?? null }
 }
 
 // Resolves a raw `?resume=` token to its draft's resume position, WITHOUT
@@ -488,11 +492,22 @@ export async function saveProviderRegistrationDraft(
   input: ProviderRegistrationDraftInput,
 ): Promise<{ draftId: string; resumeToken: string }> {
   const data = await normalizeDraftInput(client, input)
-  const tokenDraftId = await resolveTokenDraftId(client, input.resumeToken)
+  const tokenDraft = await resolveTokenDraft(client, input.resumeToken)
 
-  if (tokenDraftId) {
-    await client.providerApplicationDraft.update({ where: { id: tokenDraftId }, data })
-    return { draftId: tokenDraftId, resumeToken: input.resumeToken ?? '' }
+  // SECURITY: only honour the token if its draft's phone matches the
+  // session-validated input.phone (any known variant counts as a match). A
+  // resume link forwarded to a different person who completes their own OTP
+  // session must NOT be able to overwrite the original owner's draft. On
+  // mismatch, silently ignore the token (no throw — a forwarded link should
+  // not error the new user) and fall through to the phone-fallback lookup
+  // below, which finds/creates the correct draft for THEIR phone.
+  const tokenPhoneMatches = Boolean(
+    tokenDraft?.phone && phoneVariants(data.phone).includes(tokenDraft.phone),
+  )
+
+  if (tokenDraft && tokenPhoneMatches) {
+    await client.providerApplicationDraft.update({ where: { id: tokenDraft.draftId }, data })
+    return { draftId: tokenDraft.draftId, resumeToken: input.resumeToken ?? '' }
   }
 
   // Token missing or invalid (e.g. lost localStorage): reuse the newest
