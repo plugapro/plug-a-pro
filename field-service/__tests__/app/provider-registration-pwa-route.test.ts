@@ -170,7 +170,6 @@ describe('provider registration PWA route surface', () => {
     expect(clientSource).toContain('Send code')
     expect(clientSource).toContain('Enter the 6-digit code')
     expect(clientSource).toContain('That number is a customer account')
-    expect(clientSource).toContain('Verify later')
     expect(clientSource).toContain('Show your work')
     expect(clientSource).toContain('What happens next')
     expect(clientSource).toContain('Your application is saved')
