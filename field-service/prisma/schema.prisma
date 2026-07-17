@@ -432,6 +432,9 @@ model ProviderApplication {
 
 model ProviderApplicationDraft {
   id                     String    @id @default(cuid())
+  // Partial unique index provider_application_drafts_phone_active_key
+  // (phone WHERE submittedApplicationId IS NULL) lives in raw SQL migration
+  // draft_phone_active_unique — Prisma schema cannot express partial indexes.
   phone                  String
   email                  String?
   name                   String?
