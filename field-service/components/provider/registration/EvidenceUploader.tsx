@@ -50,24 +50,36 @@ export function EvidenceUploader({
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
 
-    // Reset the input so the same file can be re-selected after removal
+    // Reset the input so the same file set can be re-selected after removal.
     if (inputRef.current) inputRef.current.value = ''
 
     setUploading(true)
     setError(null)
 
+    const uploadedUrls: string[] = []
     try {
-      const url = await uploadFile(file)
-      if (!isValidBlobUrl(url)) {
-        setError('Upload failed: unexpected URL returned. Please try again.')
-        return
+      for (const file of files) {
+        const url = await uploadFile(file)
+        if (!isValidBlobUrl(url)) {
+          setError('Upload failed: unexpected URL returned. Please try again.')
+          break
+        }
+        uploadedUrls.push(url)
       }
-      onChange([...value, url])
+
+      if (uploadedUrls.length > 0) {
+        onChange([...value, ...uploadedUrls])
+      }
     } catch {
-      setError('Upload failed. Please try again.')
+      if (uploadedUrls.length > 0) {
+        onChange([...value, ...uploadedUrls])
+      }
+      setError(uploadedUrls.length > 0
+        ? 'Some photos uploaded, but one failed. Please add the remaining photo again.'
+        : 'Upload failed. Please try again.')
     } finally {
       setUploading(false)
     }
@@ -122,12 +134,13 @@ export function EvidenceUploader({
         </p>
       )}
 
-      {/* Add photo */}
+      {/* Add photos */}
       <div>
         <input
           ref={inputRef}
           type="file"
           accept="image/*"
+          multiple
           className="sr-only"
           disabled={addDisabled}
           onChange={handleFileChange}
@@ -138,10 +151,10 @@ export function EvidenceUploader({
           variant="outline"
           disabled={addDisabled}
           onClick={() => inputRef.current?.click()}
-          aria-label="Add photo"
+          aria-label="Add work photos"
         >
           <Camera className="mr-2 h-4 w-4" />
-          {uploading ? 'Uploading…' : 'Add photo'}
+          {uploading ? 'Uploading photos…' : 'Add photos'}
         </Button>
       </div>
     </div>
