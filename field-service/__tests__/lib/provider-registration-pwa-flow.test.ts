@@ -55,6 +55,7 @@ function createDraftClient() {
       findMany: vi.fn().mockResolvedValue(structuredSuburbRows()),
     },
     providerApplicationDraft: {
+      findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({ id: 'draft-1' }),
       update: vi.fn().mockResolvedValue({ id: 'draft-1' }),
     },
