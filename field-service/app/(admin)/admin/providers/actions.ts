@@ -12,6 +12,8 @@ import { isKycRequiredForActivation } from '@/lib/kyc-policy'
 import { isEnabled } from '@/lib/flags'
 import { KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
 import { checkCanBeApproved } from '@/lib/provider-lead-eligibility'
+import { upsertStructuredServiceAreas } from '@/lib/provider-record'
+import { resolveServiceAreaLabels } from '@/lib/provider-record/resolve-service-area-labels'
 
 const FLAG = 'admin.crud.providers'
 const OPS_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
@@ -179,6 +181,57 @@ async function preflightProviderActivationKycGate(provider: {
   }
 }
 
+// ─── ensureProviderMatchable — PJ-01 matchability sync ─────────────────────
+//
+// Admin activation paths (setProviderStatus→ACTIVE, verify, and a
+// serviceAreas edit on the profile form) historically wrote provider.active/
+// verified with a raw tx.provider.update and never provisioned
+// technician_service_areas (TSA) rows, so the provider was flipped ACTIVE
+// but stayed unmatchable. This mirrors the same free-text-label resolution
+// step syncProviderRecord's enrichServiceAreas() runs (lib/provider-record.ts),
+// gated behind the same provider.matchability.autosync flag, so admin-driven
+// activation gets the same matchability guarantee as the WhatsApp/PWA
+// approval path.
+//
+// `tx` is typed structurally (not crud-action's TxClient, which isn't
+// exported) to the minimal shape the helper needs. `provider.updateMany` /
+// `provider.createMany` are declared but unused here — they're required so
+// this type stays assignable to lib/provider-record.ts's
+// ProviderRecordSyncClient, which upsertStructuredServiceAreas expects. The
+// real tx (Prisma transaction client) always has them.
+type MatchabilitySyncClient = {
+  provider: {
+    findUnique: (args: {
+      where: { id: string }
+      select: { id: true; serviceAreas: true }
+    }) => Promise<{ id: string; serviceAreas: string[] } | null>
+    updateMany: (...args: any[]) => Promise<unknown>
+    createMany: (...args: any[]) => Promise<unknown>
+  }
+  technicianServiceArea: {
+    upsert: (...args: any[]) => Promise<unknown>
+    updateMany: (...args: any[]) => Promise<unknown>
+  }
+  locationNode: {
+    findMany: (...args: any[]) => Promise<any[]>
+  }
+}
+
+async function ensureProviderMatchable(tx: MatchabilitySyncClient, providerId: string) {
+  if (!(await isEnabled('provider.matchability.autosync'))) return
+  const provider = await tx.provider.findUnique({
+    where: { id: providerId },
+    select: { id: true, serviceAreas: true },
+  })
+  if (!provider || provider.serviceAreas.length === 0) return
+  const { resolvedNodeIds } = await resolveServiceAreaLabels(tx, provider.serviceAreas, {
+    preferMajorityRegion: true,
+  })
+  if (resolvedNodeIds.length > 0) {
+    await upsertStructuredServiceAreas(tx, providerId, resolvedNodeIds)
+  }
+}
+
 // ─── createProvider ───────────────────────────────────────────────────────────
 
 export async function createProviderAction(input: CreateProviderInput) {
@@ -254,7 +307,7 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
     run: async (data, tx) => {
       const provider = await tx.provider.findUnique({
         where: { id: data.providerId },
-        select: { id: true },
+        select: { id: true, serviceAreas: true },
       })
       if (!provider) throw new CrudActionError('NOT_FOUND', `Provider ${data.providerId} not found.`)
 
@@ -266,6 +319,8 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
         throw new CrudActionError('CONFLICT', `Provider phone ${data.phone} already exists.`)
       }
 
+      const nextServiceAreas = parseServiceAreas(data.serviceAreas)
+
       await tx.provider.update({
         where: { id: data.providerId },
         data: {
@@ -276,9 +331,17 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
           skills: data.skills
             ? data.skills.split(',').map((skill) => skill.trim()).filter(Boolean)
             : [],
-          serviceAreas: parseServiceAreas(data.serviceAreas),
+          serviceAreas: nextServiceAreas,
         },
       })
+
+      // PJ-01: only sync matchability when serviceAreas actually changed —
+      // avoid an unnecessary resolve/upsert pass on every profile edit.
+      const serviceAreasChanged =
+        JSON.stringify([...provider.serviceAreas].sort()) !== JSON.stringify([...nextServiceAreas].sort())
+      if (serviceAreasChanged) {
+        await ensureProviderMatchable(tx, data.providerId)
+      }
 
       return { id: data.providerId }
     },
@@ -345,6 +408,11 @@ export async function setProviderStatusAction(input: SetStatusInput) {
           archivedAt: data.status === 'ARCHIVED' || data.status === 'BANNED' ? now : undefined,
         },
       })
+      // PJ-01: only sync matchability when transitioning TO active — suspend/
+      // archive/ban must not provision or touch TSA rows.
+      if (data.status === 'ACTIVE') {
+        await ensureProviderMatchable(tx, data.providerId)
+      }
       return { id: data.providerId }
     },
   })
@@ -396,6 +464,8 @@ export async function verifyProviderAction(providerId: string) {
         where: { id: providerId },
         data: { verified: true, status: 'ACTIVE', active: true },
       })
+      // PJ-01: verify always activates, so always sync matchability.
+      await ensureProviderMatchable(tx, providerId)
       return { id: providerId }
     },
   })

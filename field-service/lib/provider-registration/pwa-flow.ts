@@ -832,6 +832,7 @@ export async function submitProviderRegistrationApplication(
         name,
         skills: data.skills,
         serviceAreas: data.serviceAreas,
+        locationNodeIds: data.locationNodeIds ?? [],
         experience: data.experience,
         availability: data.availability,
         callOutFee: data.callOutFee,

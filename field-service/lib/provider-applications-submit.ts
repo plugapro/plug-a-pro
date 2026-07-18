@@ -37,6 +37,14 @@ export interface SubmitInput {
   skills: string[]
   serviceAreas: string[]
   /**
+   * Resolved LocationNode ids backing serviceAreas (Task 4, PJ-01). Persisted
+   * verbatim so approval-time paths can provision matchability (TSA rows)
+   * without re-resolving free-text serviceAreas labels. Defaults to [] when
+   * a call site has no resolved ids in scope (e.g. PWA_RESUME's replay
+   * payload predates this field).
+   */
+  locationNodeIds?: string[]
+  /**
    * Formatted label, e.g. "Mon, Tue" or "Any day". The caller must format before
    * passing. Accepts null (stored as null) for completion replays where the draft
    * carried no availability.
@@ -196,6 +204,7 @@ export async function submitProviderApplication(
         idNumber: input.idNumber ?? null,
         skills: input.skills,
         serviceAreas: input.serviceAreas,
+        locationNodeIds: input.locationNodeIds ?? [],
         experience: input.experience ?? null,
         availability: availabilityStr,
         callOutFee: input.callOutFee ?? null,

@@ -158,6 +158,15 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
 
   if (!provider) notFound()
 
+  // ── Matchability readiness (PJ-01) ──────────────────────────────────────
+  // A provider is matchable iff they have at least one active TechnicianServiceArea
+  // row. Active is gated by region pilot rollout (currently jhb_west only).
+  const activeTsaCount = provider.technicianServiceAreas.filter((a) => a.active).length
+  const isMatchable = activeTsaCount > 0
+  const hasUnprovisionedAreas =
+    !isMatchable &&
+    (provider.serviceAreas.length > 0 || provider.technicianServiceAreas.length > 0)
+
   const auditEvents = await db.adminAuditEvent.findMany({
     where: {
       OR: [
@@ -331,6 +340,18 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
           </p>
         </div>
       )}
+
+      {/* ── Matchability readiness indicator (PJ-01) ────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant={isMatchable ? 'success' : 'danger'} className="rounded-full text-xs">
+          Matchable: {isMatchable ? 'Yes' : 'No'} — {activeTsaCount} active service area{activeTsaCount === 1 ? '' : 's'}
+        </Badge>
+        {hasUnprovisionedAreas && (
+          <span className="text-xs text-muted-foreground">
+            Areas not live for matching yet / not provisioned
+          </span>
+        )}
+      </div>
 
       {/* ── Profile completeness panel ──────────────────────────────────────── */}
       {!completeness.ok && (

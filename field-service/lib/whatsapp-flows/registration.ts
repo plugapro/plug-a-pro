@@ -3145,6 +3145,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           // Use canonicalised skills so DB values are normalised.
           skills: canonicalSkills,
           serviceAreas: submitData.resolvedAreaLabels,
+          // Resolved LocationNode ids (Task 4, PJ-01) — same array used for
+          // syncProviderArgs.locationNodeIds above.
+          locationNodeIds: submitData.locationNodeIds ?? [],
           // Pre-formatted label string so the DB value matches the inline create
           // exactly (formatAvailabilityLabel collapses arrays to "Any day" etc.).
           availability: formatAvailabilityLabel(submitData.availability),

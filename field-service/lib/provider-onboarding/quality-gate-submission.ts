@@ -94,6 +94,7 @@ function joinAvailability(availability: string | string[] | null | undefined): s
 function toWhatsappSubmitInput(
   a: Qgv2WhatsappSubmitPayload['submitApplicationArgs'],
   providerId: string,
+  locationNodeIds: string[] = [],
 ): SubmitInput {
   return {
     phone: a.phone,
@@ -101,6 +102,7 @@ function toWhatsappSubmitInput(
     idNumber: a.idNumber ?? null,
     skills: a.skills,
     serviceAreas: a.serviceAreas,
+    locationNodeIds,
     availability: joinAvailability(a.availability),
     experience: a.experience ?? null,
     evidenceNote: a.evidenceNote ?? null,
@@ -126,7 +128,7 @@ function toWhatsappSubmitInput(
 }
 
 function toWhatsappFinalizeInput(payload: Qgv2WhatsappSubmitPayload): FinalizeWhatsappInput {
-  const submitInput = toWhatsappSubmitInput(payload.submitApplicationArgs, '')
+  const submitInput = toWhatsappSubmitInput(payload.submitApplicationArgs, '', payload.replayInputs.locationNodeIds ?? [])
   return {
     syncProviderArgs: payload.syncProviderArgs,
     submitInput,
@@ -147,7 +149,15 @@ function toWhatsappFinalizeInput(payload: Qgv2WhatsappSubmitPayload): FinalizeWh
 
 type TestCohort = { isTestUser: boolean; cohortName: string | null }
 
-/** Maps a stored PWA_RESUME submit bundle to a canonical SubmitInput. */
+/**
+ * Maps a stored PWA_RESUME submit bundle to a canonical SubmitInput.
+ *
+ * KNOWN GAP (Task 4, PJ-01): Qgv2PwaResumeSubmitPayload carries no
+ * locationNodeIds field, so this path cannot populate it — submitInput omits
+ * the key and submitProviderApplication defaults it to [] (same as today's
+ * pre-Task-4 behavior; no regression). Backfilling PWA_RESUME's payload shape
+ * with resolved location ids is a separate, follow-up change.
+ */
 function toPwaResumeSubmitInput(payload: Qgv2PwaResumeSubmitPayload, cohort: TestCohort): SubmitInput {
   return {
     phone: payload.phone,
@@ -179,6 +189,7 @@ function toPwaSelfServeSubmitInput(
     email: payload.email ?? null,
     skills: payload.skills,
     serviceAreas: payload.serviceAreas,
+    locationNodeIds: payload.locationNodeIds ?? [],
     availability: joinAvailability(payload.availability),
     experience: payload.experience ?? null,
     evidenceNote: payload.evidenceNote ?? null,
@@ -613,6 +624,7 @@ async function completePwaSelfServeChannel(
         email: payload.email ?? null,
         skills: payload.skills,
         serviceAreas: payload.serviceAreas,
+        locationNodeIds: payload.locationNodeIds ?? [],
         availability: joinAvailability(payload.availability),
         experience: payload.experience ?? null,
         evidenceNote: payload.evidenceNote ?? null,
@@ -1025,7 +1037,7 @@ export async function recordFailedVerificationForApplication(
         // which only wrote the application row + note). onConflict:'link' avoids the
         // retry-forever throw on a KYC-window race.
         applicationId = await createMoreInfoApplicationAndLink(tx, {
-          submitInput: toWhatsappSubmitInput(payload.submitApplicationArgs, providerId),
+          submitInput: toWhatsappSubmitInput(payload.submitApplicationArgs, providerId, payload.replayInputs.locationNodeIds ?? []),
           note: qualityGateNote,
           draftId: draft.id,
           verificationId,
@@ -1209,7 +1221,7 @@ export async function recordManualReviewForApplication(
 
       // WHATSAPP: isTestUser/cohortName already carried in payload.submitApplicationArgs.
       applicationId = await createMoreInfoApplicationAndLink(tx, {
-        submitInput: toWhatsappSubmitInput(payload.submitApplicationArgs, providerId),
+        submitInput: toWhatsappSubmitInput(payload.submitApplicationArgs, providerId, payload.replayInputs.locationNodeIds ?? []),
         note: qualityGateNote,
         draftId: draft.id,
         verificationId,
