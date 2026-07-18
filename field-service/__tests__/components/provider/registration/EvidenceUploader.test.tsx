@@ -10,7 +10,7 @@ import { EvidenceUploader } from '@/components/provider/registration/EvidenceUpl
  * is covered by Playwright e2e per repo convention.
  */
 describe('EvidenceUploader', () => {
-  it('shows "2 of 3" counter and an add-photo control when two items are present', () => {
+  it('shows "2 of 3" counter and an add-photos control when two items are present', () => {
     const html = renderToStaticMarkup(
       <EvidenceUploader
         value={['u1', 'u2']}
@@ -20,11 +20,23 @@ describe('EvidenceUploader', () => {
       />,
     )
     expect(html).toContain('2 of 3')
-    // The add-photo control must be present (button text or input type=file)
-    expect(html.toLowerCase()).toContain('add photo')
+    // The add-photos control must be present (button text or input type=file)
+    expect(html.toLowerCase()).toContain('add photos')
     // Add button must not be disabled when min is not reached
-    expect(html).toMatch(/<button[^>]*aria-label="Add photo"[^>]*>/)
-    expect(html).not.toMatch(/<button[^>]*aria-label="Add photo"[^>]*\bdisabled\b[^>]*>/)
+    expect(html).toMatch(/<button[^>]*aria-label="Add work photos"[^>]*>/)
+    expect(html).not.toMatch(/<button[^>]*aria-label="Add work photos"[^>]*\bdisabled\b[^>]*>/)
+  })
+
+  it('allows a provider to select multiple evidence photos at once', () => {
+    const html = renderToStaticMarkup(
+      <EvidenceUploader
+        value={[]}
+        onChange={() => {}}
+        min={3}
+        uploadFile={async () => ''}
+      />,
+    )
+    expect(html).toMatch(/<input[^>]*type="file"[^>]*\bmultiple(?:=""|="true")?[^>]*>/)
   })
 
   it('renders one <img per url and shows "3 of 3" when all three are present', () => {
