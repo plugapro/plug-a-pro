@@ -24,15 +24,16 @@ function deps(overrides: Record<string, any> = {}) {
       findUnique: vi.fn().mockResolvedValue(null), // no prior lead for (jr1, p1)
       create: vi.fn().mockResolvedValue({ id: 'lead-new' }),
       update: vi.fn().mockResolvedValue({ id: 'lead-revived' }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     auditLog: { create: vi.fn().mockResolvedValue({}) },
   }
   return {
     now: () => NOW,
     // db.lead is the SAME object as tx.lead so that a compensating update run
-    // via db.lead.update(...) (outside the row transaction, after the
+    // via db.lead.updateMany(...) (outside the row transaction, after the
     // transaction has already committed) is visible to assertions against
-    // db._tx.lead.update as well as to the revive-after-failure retry test.
+    // db._tx.lead.updateMany as well as to the revive-after-failure retry test.
     db: { $transaction: vi.fn(async (fn: any) => fn(tx)), lead: tx.lead, _tx: tx },
     callLog,
     flagEnabled: vi.fn().mockResolvedValue(true),
@@ -121,13 +122,13 @@ describe('expressBoardInterest', () => {
     expect(d.validateInput).toHaveBeenCalledWith(badInput)
   })
 
-  it('recordInterest throws → INTEREST_RECORD_FAILED, lead compensated to EXPIRED, no unhandled rejection', async () => {
+  it('recordInterest throws → INTEREST_RECORD_FAILED, lead compensated to EXPIRED via status-guarded updateMany, no unhandled rejection', async () => {
     const d = deps({ recordInterest: vi.fn().mockRejectedValue(new Error('rate validation failed')) })
     const result = await expressBoardInterest(d, input)
     expect(result).toEqual({ ok: false, reason: 'INTEREST_RECORD_FAILED' })
-    expect(d.db._tx.lead.update).toHaveBeenCalledWith(
+    expect(d.db._tx.lead.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'lead-new' },
+        where: { id: 'lead-new', status: 'VIEWED' },
         data: expect.objectContaining({ status: 'EXPIRED', expiredAt: NOW }),
       }),
     )
@@ -149,6 +150,27 @@ describe('expressBoardInterest', () => {
         where: { id: 'lead-new' },
         data: expect.objectContaining({ status: 'VIEWED' }),
       }),
+    )
+  })
+
+  it('compensating flip itself rejects → still returns INTEREST_RECORD_FAILED, no unhandled rejection', async () => {
+    const d = deps({ recordInterest: vi.fn().mockRejectedValue(new Error('rate validation failed')) })
+    d.db.lead.updateMany = vi.fn().mockRejectedValue(new Error('db unavailable'))
+    const result = await expressBoardInterest(d, input)
+    expect(result).toEqual({ ok: false, reason: 'INTEREST_RECORD_FAILED' })
+    expect(d.triggerShortlist).not.toHaveBeenCalled()
+  })
+
+  it('compensating flip never clobbers a lead that already became INTERESTED (status-guarded where)', async () => {
+    // recordInterest partially succeeded server-side (flipped the lead to
+    // INTERESTED) before throwing on a later step; the compensating flip must
+    // not blindly overwrite that with EXPIRED.
+    const d = deps({ recordInterest: vi.fn().mockRejectedValue(new Error('post-flip failure')) })
+    d.db.lead.updateMany = vi.fn().mockResolvedValue({ count: 0 }) // WHERE status:'VIEWED' matched nothing
+    const result = await expressBoardInterest(d, input)
+    expect(result).toEqual({ ok: false, reason: 'INTEREST_RECORD_FAILED' })
+    expect(d.db.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'lead-new', status: 'VIEWED' } }),
     )
   })
 

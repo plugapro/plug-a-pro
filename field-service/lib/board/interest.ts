@@ -166,10 +166,18 @@ export async function expressBoardInterest(
       note: input.note,
     })
   } catch {
-    await deps.db.lead.update({
-      where: { id: outcome.leadId },
-      data: { status: 'EXPIRED', expiredAt: deps.now() },
-    })
+    // Status-guarded: only flips a lead that is still VIEWED. If recordInterest
+    // partially succeeded before throwing (e.g. it already flipped the lead to
+    // INTERESTED) this WHERE matches zero rows and the flip is a no-op instead
+    // of clobbering an INTERESTED lead back to EXPIRED. Also wrapped in its own
+    // .catch: a failure here (e.g. DB unavailable) must not throw and mask the
+    // real INTEREST_RECORD_FAILED result with an unhandled rejection.
+    await deps.db.lead
+      .updateMany({
+        where: { id: outcome.leadId, status: 'VIEWED' },
+        data: { status: 'EXPIRED', expiredAt: deps.now() },
+      })
+      .catch(() => undefined)
     return { ok: false, reason: 'INTEREST_RECORD_FAILED' }
   }
   await deps.triggerShortlist(input.jobRequestId)
