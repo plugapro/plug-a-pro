@@ -4,10 +4,23 @@ import { expressBoardInterest } from '@/lib/board/interest'
 const NOW = new Date('2026-07-21T12:00:00Z')
 
 function deps(overrides: Record<string, any> = {}) {
+  const callLog: string[] = []
   const tx = {
-    jobRequest: { findFirst: vi.fn().mockResolvedValue({ id: 'jr1', category: 'plumbing' }) },
+    $queryRaw: vi.fn(async (..._args: any[]) => {
+      callLog.push('$queryRaw')
+      return [{ id: 'jr1' }]
+    }),
+    jobRequest: {
+      findFirst: vi.fn(async (..._args: any[]) => {
+        callLog.push('jobRequest.findFirst')
+        return { id: 'jr1', category: 'plumbing' }
+      }),
+    },
     lead: {
-      count: vi.fn().mockResolvedValue(1),
+      count: vi.fn(async (..._args: any[]) => {
+        callLog.push('lead.count')
+        return 1
+      }),
       findUnique: vi.fn().mockResolvedValue(null), // no prior lead for (jr1, p1)
       create: vi.fn().mockResolvedValue({ id: 'lead-new' }),
       update: vi.fn().mockResolvedValue({ id: 'lead-revived' }),
@@ -16,9 +29,15 @@ function deps(overrides: Record<string, any> = {}) {
   }
   return {
     now: () => NOW,
-    db: { $transaction: vi.fn(async (fn: any) => fn(tx)), _tx: tx },
+    // db.lead is the SAME object as tx.lead so that a compensating update run
+    // via db.lead.update(...) (outside the row transaction, after the
+    // transaction has already committed) is visible to assertions against
+    // db._tx.lead.update as well as to the revive-after-failure retry test.
+    db: { $transaction: vi.fn(async (fn: any) => fn(tx)), lead: tx.lead, _tx: tx },
+    callLog,
     flagEnabled: vi.fn().mockResolvedValue(true),
     isProviderBoardEligible: vi.fn().mockResolvedValue(true), // active+verified+in-area+skill (Task 2 logic)
+    validateInput: vi.fn().mockReturnValue(true),               // fee/arrival pre-write validation
     recordInterest: vi.fn().mockResolvedValue({ ok: true }),   // respondToProviderOpportunity wrapper
     triggerShortlist: vi.fn().mockResolvedValue(undefined),    // generate + notify customer
     ...overrides,
@@ -92,5 +111,53 @@ describe('expressBoardInterest', () => {
     const d = deps({ isProviderBoardEligible: vi.fn().mockResolvedValue(false) })
     expect(await expressBoardInterest(d, input)).toEqual({ ok: false, reason: 'NOT_ELIGIBLE_PROVIDER' })
     expect(d.db.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('validateInput rejects the input → INVALID_INPUT before any transaction', async () => {
+    const d = deps({ validateInput: vi.fn().mockReturnValue(false) })
+    const badInput = { ...input, callOutFee: -50 }
+    expect(await expressBoardInterest(d, badInput)).toEqual({ ok: false, reason: 'INVALID_INPUT' })
+    expect(d.db.$transaction).not.toHaveBeenCalled()
+    expect(d.validateInput).toHaveBeenCalledWith(badInput)
+  })
+
+  it('recordInterest throws → INTEREST_RECORD_FAILED, lead compensated to EXPIRED, no unhandled rejection', async () => {
+    const d = deps({ recordInterest: vi.fn().mockRejectedValue(new Error('rate validation failed')) })
+    const result = await expressBoardInterest(d, input)
+    expect(result).toEqual({ ok: false, reason: 'INTEREST_RECORD_FAILED' })
+    expect(d.db._tx.lead.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'lead-new' },
+        data: expect.objectContaining({ status: 'EXPIRED', expiredAt: NOW }),
+      }),
+    )
+    expect(d.triggerShortlist).not.toHaveBeenCalled()
+  })
+
+  it('retry after INTEREST_RECORD_FAILED revives the compensated EXPIRED lead instead of staying stuck', async () => {
+    const d = deps({ recordInterest: vi.fn().mockRejectedValue(new Error('transient')) })
+    const first = await expressBoardInterest(d, input)
+    expect(first).toEqual({ ok: false, reason: 'INTEREST_RECORD_FAILED' })
+
+    // Simulate the second attempt: prior lead now EXPIRED (compensated), recordInterest now succeeds.
+    d.db._tx.lead.findUnique.mockResolvedValue({ id: 'lead-new', status: 'EXPIRED' })
+    d.recordInterest = vi.fn().mockResolvedValue({ ok: true })
+    const second = await expressBoardInterest(d, input)
+    expect(second).toEqual({ ok: true, leadId: 'lead-new' })
+    expect(d.db._tx.lead.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { id: 'lead-new' },
+        data: expect.objectContaining({ status: 'VIEWED' }),
+      }),
+    )
+  })
+
+  it('locks the job row (FOR UPDATE) before counting open interests, inside the transaction', async () => {
+    const d = deps()
+    await expressBoardInterest(d, input)
+    const lockIndex = d.callLog.indexOf('$queryRaw')
+    const countIndex = d.callLog.indexOf('lead.count')
+    expect(lockIndex).toBeGreaterThanOrEqual(0)
+    expect(countIndex).toBeGreaterThan(lockIndex)
   })
 })

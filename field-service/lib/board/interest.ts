@@ -35,6 +35,8 @@ export type BoardInterestResult =
         | 'JOB_GONE'
         | 'SHORTLIST_FULL'
         | 'ALREADY_INTERESTED'
+        | 'INVALID_INPUT'
+        | 'INTEREST_RECORD_FAILED'
     }
 
 export type BoardInterestDeps = {
@@ -43,6 +45,13 @@ export type BoardInterestDeps = {
   flagEnabled: (key: string) => Promise<boolean>
   /** active + verified + job in provider's area + category in skills (reuses Task 2 logic) */
   isProviderBoardEligible: (providerId: string, jobRequestId: string) => Promise<boolean>
+  /**
+   * Validates fee/arrival BEFORE any write, using the same rules
+   * respondToProviderOpportunity enforces (validateProviderOnboardingRates +
+   * arrival-date sanity). Returns false on invalid input. Prevents a write
+   * that recordInterest would only reject after the lead row already exists.
+   */
+  validateInput: (input: BoardInterestInput) => boolean
   /** wraps respondToProviderOpportunity: records ProviderLeadResponse + flips lead → INTERESTED */
   recordInterest: (args: {
     leadId: string
@@ -65,9 +74,19 @@ export async function expressBoardInterest(
   if (!(await deps.isProviderBoardEligible(input.providerId, input.jobRequestId))) {
     return { ok: false, reason: 'NOT_ELIGIBLE_PROVIDER' }
   }
+  if (!deps.validateInput(input)) {
+    return { ok: false, reason: 'INVALID_INPUT' }
+  }
   const now = deps.now()
 
   const outcome: BoardInterestResult = await deps.db.$transaction(async (tx: any) => {
+    // Lock the job row FIRST so the count-then-write below is serialized per
+    // job across concurrent express-interest calls (READ COMMITTED otherwise
+    // lets two providers both read count=2 and both write, breaching the cap).
+    // Matches lib/matching/reservation.ts's SELECT ... FOR UPDATE precedent.
+    // Table name verified against JobRequest's @@map("job_requests").
+    await tx.$queryRaw`SELECT id FROM "job_requests" WHERE id = ${input.jobRequestId} FOR UPDATE`
+
     const job = await tx.jobRequest.findFirst({
       where: { id: input.jobRequestId, ...boardEligibilityWhere(now) },
       select: { id: true, category: true },
@@ -130,14 +149,29 @@ export async function expressBoardInterest(
 
   if (!outcome.ok) return outcome
 
-  // Outside the row transaction (matches existing respondToProviderOpportunity usage):
-  await deps.recordInterest({
-    leadId: outcome.leadId,
-    providerId: input.providerId,
-    callOutFee: input.callOutFee,
-    estimatedArrivalAt: input.estimatedArrivalAt,
-    note: input.note,
-  })
+  // Outside the row transaction (matches existing respondToProviderOpportunity usage).
+  // MUST be guarded: an unguarded throw here would (a) surface as an unhandled
+  // rejection instead of a typed result, and (b) leave the lead committed in
+  // VIEWED — every retry would then see it as an open prior lead and return
+  // ALREADY_INTERESTED forever, with the rate/arrival never recorded. On
+  // failure we compensate by flipping the lead to the terminal EXPIRED state;
+  // the revive path above already treats EXPIRED as reviveable, so the
+  // provider's next attempt works naturally instead of being stuck.
+  try {
+    await deps.recordInterest({
+      leadId: outcome.leadId,
+      providerId: input.providerId,
+      callOutFee: input.callOutFee,
+      estimatedArrivalAt: input.estimatedArrivalAt,
+      note: input.note,
+    })
+  } catch {
+    await deps.db.lead.update({
+      where: { id: outcome.leadId },
+      data: { status: 'EXPIRED', expiredAt: deps.now() },
+    })
+    return { ok: false, reason: 'INTEREST_RECORD_FAILED' }
+  }
   await deps.triggerShortlist(input.jobRequestId)
   return outcome
 }
@@ -149,6 +183,10 @@ import { isEnabled } from '@/lib/flags'
 import { findBoardJobsForProvider } from '@/lib/board/eligibility'
 import { respondToProviderOpportunity } from '@/lib/provider-opportunity-responses'
 import { generateCustomerShortlistForRequest } from '@/lib/customer-shortlists'
+import {
+  validateProviderOnboardingRates,
+  ProviderOnboardingValidationError,
+} from '@/lib/provider-onboarding-data'
 
 /**
  * Checks whether a specific job request is currently in the board result set
@@ -160,6 +198,30 @@ import { generateCustomerShortlistForRequest } from '@/lib/customer-shortlists'
 async function isProviderBoardEligibleProduction(providerId: string, jobRequestId: string): Promise<boolean> {
   const jobs = await findBoardJobsForProvider(db, providerId, {}, new Date())
   return jobs.some((job) => job.id === jobRequestId)
+}
+
+/**
+ * Pre-validates fee/arrival BEFORE any DB write, reusing the SAME exported
+ * validator respondToProviderOpportunity uses internally
+ * (validateProviderOnboardingRates), so the rules never drift between the two
+ * call sites. Without this, an invalid callOutFee/estimatedArrivalAt would
+ * only be caught after the Lead row was already created/revived inside the
+ * transaction, and the post-transaction recordInterest failure would then
+ * require the compensating EXPIRED flip for a case that was avoidable up
+ * front.
+ */
+function validateInputProduction(input: BoardInterestInput): boolean {
+  try {
+    const rates = validateProviderOnboardingRates({ callOutFeeText: String(input.callOutFee) })
+    if (rates.callOutFee == null) return false
+  } catch (error) {
+    if (error instanceof ProviderOnboardingValidationError) return false
+    throw error
+  }
+  if (!(input.estimatedArrivalAt instanceof Date) || Number.isNaN(input.estimatedArrivalAt.getTime())) {
+    return false
+  }
+  return true
 }
 
 /**
@@ -194,14 +256,17 @@ async function recordInterestProduction(args: {
  * internal maybeAutoTriggerShortlist (gated by qualified_shortlist.auto_trigger,
  * which also calls notifyCustomerShortlistReady internally once published).
  * This wrapper is an additive safety net for the case where auto-trigger is
- * off or the interest threshold was already met by a different path: it
- * mirrors maybeAutoTriggerShortlist's sequencing by calling
- * generateCustomerShortlistForRequest directly, but only when the request is
- * still open — generateCustomerShortlistForRequest itself calls
- * notifyCustomerShortlistReady (or the quick-match notify) only after a new
- * PUBLISHED shortlist is created, so this never double-notifies a request
- * that respondToProviderOpportunity already shortlisted (status will no
- * longer be OPEN/MATCHING by then).
+ * off or the interest threshold was already met by a different path.
+ *
+ * IMPORTANT: generateCustomerShortlistForRequest has NO status guard and
+ * always publishes + re-notifies when called — it does not self-guard on
+ * OPEN/MATCHING. THIS wrapper's OPEN/MATCHING pre-check below is the only
+ * thing preventing duplicate shortlists/notifies from the board path
+ * (maybeAutoTriggerShortlist, the other caller, carries its own equivalent
+ * guard independently — the two guards are not the same code, they just
+ * happen to enforce the same invariant). If this pre-check is ever removed,
+ * a request that respondToProviderOpportunity already shortlisted would be
+ * re-shortlisted and the customer re-notified.
  */
 async function triggerShortlistProduction(jobRequestId: string): Promise<void> {
   const request = await db.jobRequest.findUnique({
@@ -228,6 +293,7 @@ export async function expressBoardInterestProduction(
       db,
       flagEnabled: (key) => isEnabled(key as Parameters<typeof isEnabled>[0]),
       isProviderBoardEligible: isProviderBoardEligibleProduction,
+      validateInput: validateInputProduction,
       recordInterest: recordInterestProduction,
       triggerShortlist: triggerShortlistProduction,
     },
