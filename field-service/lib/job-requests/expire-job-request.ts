@@ -1,21 +1,39 @@
-// ─── Shared helper: expire an OPEN, MATCHING, or SHORTLIST_READY job request ──
+// ─── Shared helper: expire an OPEN/MATCHING (or, opt-in, SHORTLIST_READY) job ──
 // Called from multiple places so expiry behaviour stays consistent:
-//   1. cron/match-leads - sweeps jobs past their expiresAt
+//   1. cron/match-leads step 1h - sweeps jobs past their expiresAt (deadline-gated
+//      query: `expiresAt: { not: null, lte: now }`). This is the ONLY caller that
+//      passes `{ includeShortlistReady: true }`.
 //   2. matching/orchestrator - guards against dispatching an already-stale job
-//   3. matching/service (offerNextRankedCandidate) - terminates after queue exhaustion
+//      (OPEN/MATCHING only, mid-dispatch)
+//   3. matching/service offerNextRankedCandidate - terminates after the ranked
+//      queue is exhausted (OPEN/MATCHING only)
+//   4. matching/service rejectAssignmentOffer / expireAssignmentOffer, via the
+//      same offerNextRankedCandidate queue-exhaustion path (OPEN/MATCHING only)
 //
-// Transitions status OPEN, MATCHING, or SHORTLIST_READY → EXPIRED in a single
+// Transitions status OPEN, MATCHING, and — ONLY when the caller opts in via
+// `options.includeShortlistReady` — SHORTLIST_READY, to EXPIRED, in a single
 // transaction.
-// MATCHING must be included because AUTO_ASSIGN jobs advance to MATCHING when
-// the first offer is sent; if the entire ranked queue is exhausted while the job
-// is still in MATCHING, failing to expire it here leaves it permanently stuck.
-// SHORTLIST_READY must be included (I1, true cap-3): the provider board keeps
-// a job visible through SHORTLIST_READY until 3 open interests or customer
-// selection, so a SHORTLIST_READY job can now idle past its expiresAt with
-// open board leads still attached. Callers 2 and 3 above only ever reach jobs
-// that are OPEN/MATCHING by construction (mid-dispatch flows), so widening
-// this guard is a strict enablement for caller 1's cron sweep, not a
-// behaviour change for callers 2/3.
+//
+// MATCHING must always be included because AUTO_ASSIGN jobs advance to
+// MATCHING when the first offer is sent; if the entire ranked queue is
+// exhausted while the job is still in MATCHING, failing to expire it here
+// leaves it permanently stuck.
+//
+// SHORTLIST_READY is guarded behind an explicit opt-in (C2, re-review fix).
+// It is NOT true that callers 2-4 only ever reach jobs that are OPEN/MATCHING
+// "by construction": offerNextRankedCandidate's queue-exhaustion terminator
+// (caller 3, and transitively caller 4 via rejectAssignmentOffer /
+// expireAssignmentOffer calling offerNextRankedCandidate) can run against a
+// job that has already reached SHORTLIST_READY - true cap-3 (I1) keeps a job
+// board-visible through SHORTLIST_READY while push-origin offers are still
+// rotating in parallel. Unconditionally widening the guard to SHORTLIST_READY
+// for every caller would let a queue-exhaustion tick expire a job while the
+// customer is actively looking at a live, PUBLISHED shortlist - dead link,
+// contradictory "could not match" copy, and lost board leads that were never
+// actually exhausted. Only the cron's step-1h sweep is deadline-gated
+// (expiresAt has genuinely passed) and is therefore safe to widen; it passes
+// `{ includeShortlistReady: true }` explicitly. Every other caller keeps the
+// old OPEN/MATCHING-only behaviour by default.
 //
 // Notification (notifyExpiredJobParties) is intentionally NOT called here
 // because the cron handles the customer message after the sweep and the
@@ -29,6 +47,16 @@ export interface ExpireJobRequestResult {
   transitioned: boolean
 }
 
+export interface ExpireJobRequestOptions {
+  /**
+   * Widen the status guard to also accept SHORTLIST_READY. Default false.
+   * ONLY the cron/match-leads step-1h deadline-gated sweep should pass
+   * `true` - see the file-header comment above for why every other caller
+   * must NOT opt in.
+   */
+  includeShortlistReady?: boolean
+}
+
 // Board leads that are still "open" from the provider's perspective when the
 // job expires. PUSH-origin leads are handled by their own dedicated expiry
 // paths (see expireAssignmentOffer in lib/matching/service.ts) and are
@@ -38,7 +66,9 @@ const OPEN_BOARD_LEAD_STATUSES = ['VIEWED', 'INTERESTED', 'SHORTLISTED'] as cons
 export async function expireOpenJobRequest(
   jobRequestId: string,
   reason = 'max_age_exceeded',
+  options: ExpireJobRequestOptions = {},
 ): Promise<ExpireJobRequestResult> {
+  const includeShortlistReady = options.includeShortlistReady === true
   let transitioned = false
   let notifyTargets: { phone: string | null; suburb: string | null }[] = []
 
@@ -49,16 +79,17 @@ export async function expireOpenJobRequest(
         select: { id: true, status: true, address: { select: { suburb: true } } },
       })
 
-      // Only expire if OPEN, MATCHING, or SHORTLIST_READY - guard against
-      // concurrent cron ticks. MATCHING must be included: AUTO_ASSIGN jobs
-      // advance to MATCHING on first offer; if the full ranked queue is
-      // exhausted, the job can be stuck in MATCHING indefinitely without this
-      // guard. SHORTLIST_READY must be included (I1, true cap-3): see the
-      // file-header comment above.
-      if (
-        !jr ||
-        (jr.status !== 'OPEN' && jr.status !== 'MATCHING' && jr.status !== 'SHORTLIST_READY')
-      ) {
+      // Only expire if OPEN or MATCHING - guard against concurrent cron
+      // ticks. MATCHING must always be included: AUTO_ASSIGN jobs advance to
+      // MATCHING on first offer; if the full ranked queue is exhausted, the
+      // job can be stuck in MATCHING indefinitely without this guard.
+      // SHORTLIST_READY is only accepted when the caller explicitly opts in
+      // via `includeShortlistReady` (C2, re-review fix) - see the
+      // file-header comment above for why this must not be unconditional.
+      const acceptedStatuses: string[] = includeShortlistReady
+        ? ['OPEN', 'MATCHING', 'SHORTLIST_READY']
+        : ['OPEN', 'MATCHING']
+      if (!jr || !acceptedStatuses.includes(jr.status)) {
         return
       }
 

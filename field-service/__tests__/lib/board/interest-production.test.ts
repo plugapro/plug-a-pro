@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { mockDb, mockGenerateShortlist } = vi.hoisted(() => ({
   mockDb: {
     jobRequest: { findUnique: vi.fn() },
+    providerShortlist: { findFirst: vi.fn() },
   },
   mockGenerateShortlist: vi.fn(),
 }))
@@ -25,6 +26,7 @@ describe('triggerShortlistProduction — I1 status pre-check', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGenerateShortlist.mockResolvedValue(undefined)
+    mockDb.providerShortlist.findFirst.mockResolvedValue(null)
   })
 
   it('calls generateCustomerShortlistForRequest when the job is OPEN', async () => {
@@ -61,5 +63,53 @@ describe('triggerShortlistProduction — I1 status pre-check', () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(null)
     await triggerShortlistProduction('jr1')
     expect(mockGenerateShortlist).not.toHaveBeenCalled()
+  })
+})
+
+// Minor 1 (re-review fix): AUTO_ASSIGN double-generate/notify corner. When
+// respondToProviderOpportunity's own maybeAutoTriggerShortlist already
+// published a shortlist moments ago for the SAME interest response, this
+// wrapper's additive safety-net call must not regenerate (and re-notify) a
+// second time.
+describe('triggerShortlistProduction — Minor 1 recent-publish skip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGenerateShortlist.mockResolvedValue(undefined)
+    mockDb.jobRequest.findUnique.mockResolvedValue({ id: 'jr1', status: 'SHORTLIST_READY' })
+  })
+
+  it('skips regeneration when a PUBLISHED shortlist was published within the last 60 seconds', async () => {
+    mockDb.providerShortlist.findFirst.mockResolvedValue({ id: 'shortlist-1' })
+
+    await triggerShortlistProduction('jr1')
+
+    expect(mockDb.providerShortlist.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          requestId: 'jr1',
+          status: 'PUBLISHED',
+          publishedAt: expect.objectContaining({ gte: expect.any(Date) }),
+        }),
+      }),
+    )
+    expect(mockGenerateShortlist).not.toHaveBeenCalled()
+  })
+
+  it('regenerates when the most recent PUBLISHED shortlist is stale (older than 60 seconds)', async () => {
+    // No row matches the `publishedAt: { gte: now - 60s }` filter, so the
+    // production query returns null - simulate that directly.
+    mockDb.providerShortlist.findFirst.mockResolvedValue(null)
+
+    await triggerShortlistProduction('jr1')
+
+    expect(mockGenerateShortlist).toHaveBeenCalledWith('jr1')
+  })
+
+  it('regenerates when there is no PUBLISHED shortlist at all', async () => {
+    mockDb.providerShortlist.findFirst.mockResolvedValue(null)
+
+    await triggerShortlistProduction('jr1')
+
+    expect(mockGenerateShortlist).toHaveBeenCalledWith('jr1')
   })
 })

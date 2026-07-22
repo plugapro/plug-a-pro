@@ -147,10 +147,16 @@ export async function GET(request: Request) {
   // board keeps a job visible through SHORTLIST_READY until 3 open interests
   // or customer selection, so a SHORTLIST_READY job can now idle past its
   // expiresAt with open board leads still attached — nothing else in this
-  // cron (or elsewhere) swept that state before. expireOpenJobRequest itself
-  // already accepts SHORTLIST_READY (see lib/job-requests/expire-job-request.ts)
-  // and closes out any open board leads in the same transaction; this query
-  // just needs to find those jobs and hand them to it.
+  // cron (or elsewhere) swept that state before.
+  // This is the ONLY call site allowed to pass `{ includeShortlistReady: true }`
+  // (C2, re-review fix): the query below is deadline-gated on
+  // `expiresAt: { not: null, lte: now }`, so a job only reaches here once it
+  // has genuinely passed its own deadline - unlike the queue-exhaustion
+  // terminator in matching/service.ts, which can reach a SHORTLIST_READY job
+  // that is still well within its window while a push-origin rotation
+  // happens to run dry. expireOpenJobRequest defaults to OPEN/MATCHING-only
+  // for every other caller; see lib/job-requests/expire-job-request.ts for
+  // the full reachability writeup.
   try {
     const staleRequests = await db.jobRequest.findMany({
       where: {
@@ -163,7 +169,9 @@ export async function GET(request: Request) {
 
     for (const jr of staleRequests) {
       try {
-        const { transitioned } = await expireOpenJobRequest(jr.id, 'max_age_exceeded')
+        const { transitioned } = await expireOpenJobRequest(jr.id, 'max_age_exceeded', {
+          includeShortlistReady: true,
+        })
         if (transitioned) {
           results.expiredRequests++
           // Notify customer (fire-and-forget - failure should not block the sweep)

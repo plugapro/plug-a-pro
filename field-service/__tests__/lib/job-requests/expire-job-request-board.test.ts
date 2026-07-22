@@ -181,20 +181,26 @@ describe('expireOpenJobRequest — board lead close-out', () => {
     assertNoDeletes()
   })
 
-  // I1 close-out interaction: true cap-3 keeps a job board-visible through
-  // SHORTLIST_READY. expireOpenJobRequest previously only guarded on
-  // OPEN/MATCHING, so a job that idled past its expiresAt while
-  // SHORTLIST_READY was never swept — its open board leads (VIEWED /
-  // INTERESTED / SHORTLISTED) stayed open forever with no cron path ever
-  // reaching them. Widen the guard additively; the two existing callers
-  // (orchestrator's dispatch-time check, service.ts's queue-exhaustion
-  // terminator) only ever see OPEN/MATCHING jobs by construction, so this is
-  // a strict enablement, not a behaviour change, for them.
-  it('transitions a SHORTLIST_READY job to EXPIRED and closes out its open board leads (I1)', async () => {
+  // I1/C2 close-out interaction: true cap-3 keeps a job board-visible through
+  // SHORTLIST_READY. expireOpenJobRequest's default guard only ever accepts
+  // OPEN/MATCHING; SHORTLIST_READY is ONLY accepted when a caller explicitly
+  // passes `{ includeShortlistReady: true }`. That opt-in exists because
+  // widening the guard unconditionally is NOT a no-op for every caller: the
+  // queue-exhaustion terminator in matching/service.ts (offerNextRankedCandidate,
+  // reached from both the direct exhaustion path and rejectAssignmentOffer /
+  // expireAssignmentOffer) can run against a job that is already
+  // SHORTLIST_READY with a live, PUBLISHED shortlist the customer is actively
+  // choosing from - unconditionally expiring it there would kill a shortlist
+  // that was never actually deadline-exhausted. Only cron/match-leads step 1h
+  // is safe to widen, because its query is itself deadline-gated
+  // (`expiresAt: { not: null, lte: now }`) - a job only reaches that call site
+  // once its own deadline has genuinely passed. See the file-header comment in
+  // lib/job-requests/expire-job-request.ts for the full reachability writeup.
+  it('with includeShortlistReady:true, transitions a SHORTLIST_READY job to EXPIRED and closes out its open board leads (I1/C2)', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest({ status: 'SHORTLIST_READY' }))
     mockDb.lead.findMany.mockResolvedValue([makeBoardLead()])
 
-    const result = await expireOpenJobRequest('job-1', 'max_age_exceeded')
+    const result = await expireOpenJobRequest('job-1', 'max_age_exceeded', { includeShortlistReady: true })
 
     expect(result.transitioned).toBe(true)
     expect(mockDb.jobRequest.update).toHaveBeenCalledWith(
@@ -215,10 +221,39 @@ describe('expireOpenJobRequest — board lead close-out', () => {
     )
   })
 
-  it('never deletes any row when expiring a SHORTLIST_READY job (I1)', async () => {
+  it('never deletes any row when expiring a SHORTLIST_READY job with includeShortlistReady:true (I1/C2)', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest({ status: 'SHORTLIST_READY' }))
     mockDb.lead.findMany.mockResolvedValue([makeBoardLead()])
-    await expireOpenJobRequest('job-1', 'max_age_exceeded')
+    await expireOpenJobRequest('job-1', 'max_age_exceeded', { includeShortlistReady: true })
+    assertNoDeletes()
+  })
+
+  // C2 (re-review fix): WITHOUT the opt-in, a SHORTLIST_READY job must be a
+  // strict no-op - this is the default behaviour every non-cron caller relies
+  // on (orchestrator's dispatch-time guard, service.ts's queue-exhaustion
+  // terminator reached via offerNextRankedCandidate / rejectAssignmentOffer /
+  // expireAssignmentOffer). Without this guard, a queue-exhaustion tick could
+  // expire a job while its customer is actively looking at a live,
+  // PUBLISHED shortlist.
+  it('WITHOUT includeShortlistReady, a SHORTLIST_READY job is a strict no-op (C2)', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest({ status: 'SHORTLIST_READY' }))
+    mockDb.lead.findMany.mockResolvedValue([makeBoardLead()])
+
+    const result = await expireOpenJobRequest('job-1', 'quick_match_queue_exhausted')
+
+    expect(result.transitioned).toBe(false)
+    expect(mockDb.jobRequest.update).not.toHaveBeenCalled()
+    expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalled()
+    assertNoDeletes()
+  })
+
+  it('WITHOUT includeShortlistReady, a SHORTLIST_READY job is a no-op even when options is explicitly {} (C2)', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest({ status: 'SHORTLIST_READY' }))
+
+    const result = await expireOpenJobRequest('job-1', 'quick_match_queue_exhausted', {})
+
+    expect(result.transitioned).toBe(false)
     assertNoDeletes()
   })
 })

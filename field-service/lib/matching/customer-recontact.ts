@@ -160,6 +160,20 @@ function buildReasonedExhaustedMessage(
   return null
 }
 
+// I5 (re-review fix): a job that expires WITH a PUBLISHED ProviderShortlist
+// had a live, customer-visible shortlist of providers who had already
+// offered to help. The genuine "no-match" copy below ("we were not able to
+// match your request") is false in that case, and doubly confusing paired
+// with a shortlist link the customer may still have open. Use closed-out
+// copy instead: it acknowledges the reservation existed and invites a fresh
+// request rather than implying providers were never found.
+function buildShortlistClosedMessage(_jobRequest: MatchableJobRequestRecord) {
+  return (
+    `Your request has now closed. The providers who offered to help are no longer reserved. ` +
+    `Reply *new request* anytime and we'll get you fresh options.`
+  )
+}
+
 function buildExhaustedMessage(jobRequest: MatchableJobRequestRecord) {
   const primaryReason = latestPrimaryReason(jobRequest)
   const reasoned = primaryReason
@@ -446,13 +460,31 @@ export async function notifyCustomerNoMatch(jobRequestId: string) {
   // the customer is currently being offered alternative times.
   if (jobRequest.altSlotNegotiationSentAt && !jobRequest.altSlotNegotiationOutcome) return false
 
-  const message = buildExhaustedMessage(jobRequest)
+  // I5 (re-review fix): the "genuine no-match" copy below is wrong for a job
+  // that expired WITH a PUBLISHED ProviderShortlist - the customer had a real,
+  // live shortlist of providers who offered to help, so telling them "we were
+  // not able to match your request" is both false and jarring next to a
+  // shortlist link they may still have open. Query for a PUBLISHED shortlist
+  // and branch the copy. ProviderShortlist has @@unique([requestId, status]),
+  // so at most one PUBLISHED row can exist per job request.
+  const publishedShortlist = await db.providerShortlist.findFirst({
+    where: { requestId: jobRequest.id, status: 'PUBLISHED' },
+    select: { id: true },
+  })
+  const hadPublishedShortlist = publishedShortlist != null
+
+  const message = hadPublishedShortlist
+    ? buildShortlistClosedMessage(jobRequest)
+    : buildExhaustedMessage(jobRequest)
   const primaryReason = latestPrimaryReason(jobRequest)
   await sendText(jobRequest.customer.phone, message, {
-    templateName: 'interactive:job_request_no_match',
+    templateName: hadPublishedShortlist
+      ? 'interactive:job_request_shortlist_closed'
+      : 'interactive:job_request_no_match',
     metadata: {
       jobRequestId: jobRequest.id,
       hasFutureWindow: hasFutureExplicitRequestWindow(jobRequest),
+      hadPublishedShortlist,
       ...(primaryReason ? { primaryReason } : {}),
     },
   })

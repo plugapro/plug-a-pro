@@ -286,6 +286,20 @@ async function recordInterestProduction(args: {
   return { ok: true }
 }
 
+// Minor 1 (re-review fix): AUTO_ASSIGN double-generate/notify corner. When
+// respondToProviderOpportunity's own maybeAutoTriggerShortlist already
+// generated + published a shortlist for THIS SAME request/response (the
+// interest threshold was met inline), this wrapper's additive safety-net
+// call would immediately run generateCustomerShortlistForRequest again,
+// superseding the shortlist it just published a moment ago and re-notifying
+// the customer a second time for the same interest. Skip regeneration when a
+// PUBLISHED shortlist for the job was created within the last 60 seconds -
+// that freshness window is comfortably wider than the synchronous call
+// chain (recordInterest → maybeAutoTriggerShortlist → this wrapper) can ever
+// take, so it only catches the double-fire, not a genuinely new interest
+// arriving shortly after.
+const RECENT_SHORTLIST_SKIP_MS = 60_000
+
 /**
  * respondToProviderOpportunity already triggers shortlist generation via its
  * internal maybeAutoTriggerShortlist (gated by qualified_shortlist.auto_trigger,
@@ -312,6 +326,10 @@ async function recordInterestProduction(args: {
  * (maybeAutoTriggerShortlist, the other caller, carries its own equivalent
  * OPEN/MATCHING/SHORTLIST_READY guard independently — the two guards are not
  * the same code, they just happen to enforce the same invariant.)
+ *
+ * Minor 1: see RECENT_SHORTLIST_SKIP_MS above — a PUBLISHED shortlist
+ * published within the last 60s is treated as "this same interest already
+ * produced a shortlist" and regeneration is skipped.
  */
 export async function triggerShortlistProduction(jobRequestId: string): Promise<void> {
   const request = await db.jobRequest.findUnique({
@@ -320,6 +338,16 @@ export async function triggerShortlistProduction(jobRequestId: string): Promise<
   })
   if (!request) return
   if (request.status !== 'OPEN' && request.status !== 'MATCHING' && request.status !== 'SHORTLIST_READY') return
+
+  const recentPublished = await db.providerShortlist.findFirst({
+    where: {
+      requestId: jobRequestId,
+      status: 'PUBLISHED',
+      publishedAt: { gte: new Date(Date.now() - RECENT_SHORTLIST_SKIP_MS) },
+    },
+    select: { id: true },
+  })
+  if (recentPublished) return
 
   await generateCustomerShortlistForRequest(jobRequestId).catch((error) => {
     console.warn('[board/interest] triggerShortlist failed', {
