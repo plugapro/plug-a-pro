@@ -180,4 +180,45 @@ describe('expireOpenJobRequest — board lead close-out', () => {
     expect(mockSendText).not.toHaveBeenCalled()
     assertNoDeletes()
   })
+
+  // I1 close-out interaction: true cap-3 keeps a job board-visible through
+  // SHORTLIST_READY. expireOpenJobRequest previously only guarded on
+  // OPEN/MATCHING, so a job that idled past its expiresAt while
+  // SHORTLIST_READY was never swept — its open board leads (VIEWED /
+  // INTERESTED / SHORTLISTED) stayed open forever with no cron path ever
+  // reaching them. Widen the guard additively; the two existing callers
+  // (orchestrator's dispatch-time check, service.ts's queue-exhaustion
+  // terminator) only ever see OPEN/MATCHING jobs by construction, so this is
+  // a strict enablement, not a behaviour change, for them.
+  it('transitions a SHORTLIST_READY job to EXPIRED and closes out its open board leads (I1)', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest({ status: 'SHORTLIST_READY' }))
+    mockDb.lead.findMany.mockResolvedValue([makeBoardLead()])
+
+    const result = await expireOpenJobRequest('job-1', 'max_age_exceeded')
+
+    expect(result.transitioned).toBe(true)
+    expect(mockDb.jobRequest.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'job-1' },
+        data: expect.objectContaining({ status: 'EXPIRED' }),
+      }),
+    )
+    expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          jobRequestId: 'job-1',
+          origin: 'BOARD',
+          status: { in: ['VIEWED', 'INTERESTED', 'SHORTLISTED'] },
+        },
+        data: expect.objectContaining({ status: 'EXPIRED', expiredAt: expect.any(Date) }),
+      }),
+    )
+  })
+
+  it('never deletes any row when expiring a SHORTLIST_READY job (I1)', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest({ status: 'SHORTLIST_READY' }))
+    mockDb.lead.findMany.mockResolvedValue([makeBoardLead()])
+    await expireOpenJobRequest('job-1', 'max_age_exceeded')
+    assertNoDeletes()
+  })
 })

@@ -13,7 +13,7 @@ function deps(overrides: Record<string, any> = {}) {
     jobRequest: {
       findFirst: vi.fn(async (..._args: any[]) => {
         callLog.push('jobRequest.findFirst')
-        return { id: 'jr1', category: 'plumbing' }
+        return { id: 'jr1', category: 'plumbing', expiresAt: null }
       }),
     },
     lead: {
@@ -181,5 +181,113 @@ describe('expressBoardInterest', () => {
     const countIndex = d.callLog.indexOf('lead.count')
     expect(lockIndex).toBeGreaterThanOrEqual(0)
     expect(countIndex).toBeGreaterThan(lockIndex)
+  })
+
+  // ── C1: board leads invisible to shortlist generation ──────────────────────
+  // generateCustomerShortlistForRequest / maybeAutoTriggerShortlist both
+  // require expiresAt > now on the lead's leadInvite. Board leads used to
+  // carry expiresAt: null forever, so an INTERESTED board response was never
+  // counted and the customer never got a selectable shortlist. Fix: derive
+  // expiresAt from the job request's own expiresAt when set, else now + 7d
+  // (matches lib/matching/config.ts jobRequestMaxAgeDays default).
+  describe('C1 — expiresAt set on board-lead create/revive', () => {
+    it('CREATE uses the job request expiresAt when non-null', async () => {
+      const jobExpiresAt = new Date('2026-07-25T00:00:00Z')
+      const d = deps()
+      d.db._tx.jobRequest.findFirst = vi.fn().mockResolvedValue({ id: 'jr1', category: 'plumbing', expiresAt: jobExpiresAt })
+      await expressBoardInterest(d, input)
+      expect(d.db._tx.lead.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ expiresAt: jobExpiresAt }),
+        }),
+      )
+    })
+
+    it('CREATE defaults to now + 7 days when the job request expiresAt is null', async () => {
+      const d = deps()
+      d.db._tx.jobRequest.findFirst = vi.fn().mockResolvedValue({ id: 'jr1', category: 'plumbing', expiresAt: null })
+      await expressBoardInterest(d, input)
+      const expected = new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000)
+      expect(d.db._tx.lead.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ expiresAt: expected }),
+        }),
+      )
+    })
+
+    it('REVIVE uses the job request expiresAt when non-null', async () => {
+      const jobExpiresAt = new Date('2026-07-25T00:00:00Z')
+      const d = deps()
+      d.db._tx.jobRequest.findFirst = vi.fn().mockResolvedValue({ id: 'jr1', category: 'plumbing', expiresAt: jobExpiresAt })
+      d.db._tx.lead.findUnique.mockResolvedValue({ id: 'old-lead', status: 'EXPIRED' })
+      await expressBoardInterest(d, input)
+      expect(d.db._tx.lead.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'old-lead' },
+          data: expect.objectContaining({ expiresAt: jobExpiresAt }),
+        }),
+      )
+    })
+
+    it('REVIVE defaults to now + 7 days when the job request expiresAt is null', async () => {
+      const d = deps()
+      d.db._tx.jobRequest.findFirst = vi.fn().mockResolvedValue({ id: 'jr1', category: 'plumbing', expiresAt: null })
+      d.db._tx.lead.findUnique.mockResolvedValue({ id: 'old-lead', status: 'EXPIRED' })
+      await expressBoardInterest(d, input)
+      const expected = new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000)
+      expect(d.db._tx.lead.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'old-lead' },
+          data: expect.objectContaining({ expiresAt: expected }),
+        }),
+      )
+    })
+  })
+
+  // ── I2: revive must clear selection-cycle fields ────────────────────────────
+  describe('I2 — revive clears selection-cycle fields', () => {
+    it('clears notifiedAt, notificationAttemptedAt, customerSelectedAt, declinedAt, cancelledAt, expiredAt', async () => {
+      const d = deps()
+      d.db._tx.lead.findUnique.mockResolvedValue({ id: 'old-lead', status: 'EXPIRED' })
+      await expressBoardInterest(d, input)
+      expect(d.db._tx.lead.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'old-lead' },
+          data: expect.objectContaining({
+            notifiedAt: null,
+            notificationAttemptedAt: null,
+            customerSelectedAt: null,
+            declinedAt: null,
+            cancelledAt: null,
+            expiredAt: null,
+          }),
+        }),
+      )
+    })
+  })
+
+  // ── I1 — true cap-3 board persistence ───────────────────────────────────────
+  describe('I1 — true cap-3: interest on SHORTLIST_READY / PROVIDER_CONFIRMATION_PENDING jobs', () => {
+    it('interest #2 on a SHORTLIST_READY job succeeds and re-triggers shortlist (supersede + re-notify)', async () => {
+      const d = deps()
+      // The tx findFirst uses boardEligibilityWhere, which as of I1 includes
+      // SHORTLIST_READY — the fake findFirst here simulates that the job was
+      // found (i.e. the where-clause matched), independent of literal status.
+      d.db._tx.jobRequest.findFirst = vi.fn().mockResolvedValue({ id: 'jr1', category: 'plumbing', expiresAt: null })
+      d.db._tx.lead.count.mockResolvedValue(1) // 1 open interest so far, cap is 3
+      const result = await expressBoardInterest(d, input)
+      expect(result).toEqual({ ok: true, leadId: 'lead-new' })
+      expect(d.triggerShortlist).toHaveBeenCalledWith('jr1')
+    })
+
+    it('interest on a job the tx query cannot find (e.g. PROVIDER_CONFIRMATION_PENDING) → JOB_GONE', async () => {
+      const d = deps()
+      // boardEligibilityWhere's status set does not include
+      // PROVIDER_CONFIRMATION_PENDING, so the guarded findFirst returns null.
+      d.db._tx.jobRequest.findFirst = vi.fn().mockResolvedValue(null)
+      const result = await expressBoardInterest(d, input)
+      expect(result).toEqual({ ok: false, reason: 'JOB_GONE' })
+      expect(d.db._tx.lead.create).not.toHaveBeenCalled()
+    })
   })
 })

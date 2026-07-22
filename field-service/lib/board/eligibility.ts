@@ -3,15 +3,23 @@
 // READ-ONLY module: no writes of any kind live here (data-safety constraint).
 import { pointFallsWithinRadius } from '@/lib/matching/geography'
 
-const OPEN_INTEREST_STATUSES = ['INTERESTED', 'SHORTLISTED', 'CUSTOMER_SELECTED'] as const
+export const OPEN_INTEREST_STATUSES = ['INTERESTED', 'SHORTLISTED', 'CUSTOMER_SELECTED'] as const
 export const BOARD_INTEREST_CAP = 3
 
 export function boardEligibilityWhere(now: Date) {
   return {
-    status: { in: ['OPEN', 'MATCHING'] },
+    // True cap-3 (I1): the job stays board-visible through SHORTLIST_READY
+    // until 3 open interests or customer selection. It leaves the board via
+    // PROVIDER_CONFIRMATION_PENDING (selection), MATCHED, expiry, or
+    // window-passed — all already encoded below.
+    status: { in: ['OPEN', 'MATCHING', 'SHORTLIST_READY'] },
     match: null,
     assignmentHolds: { none: { status: 'ACTIVE' } },
-    leads: { none: { status: { in: ['SENT', 'VIEWED'] }, expiresAt: { gt: now } } },
+    // C1 fix: scope the live-push-lead exclusion to PUSH origin only. Board
+    // leads are created VIEWED with a real (non-null) expiresAt as of C1, so
+    // without this origin scope a board VIEWED lead with a future expiresAt
+    // would hide the job from the board it belongs to.
+    leads: { none: { origin: 'PUSH', status: { in: ['SENT', 'VIEWED'] }, expiresAt: { gt: now } } },
     AND: [
       { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
       { OR: [{ requestedWindowEnd: null }, { requestedWindowEnd: { gt: now } }] },
@@ -47,7 +55,7 @@ export async function findBoardJobsForProvider(
   if (!provider?.active || !provider.verified) return []
 
   const areas = await client.technicianServiceArea.findMany({
-    where: { providerId },
+    where: { providerId, active: true },
     select: { locationNodeId: true, suburbKey: true, areaType: true, lat: true, lng: true, radiusKm: true },
   })
   if (areas.length === 0) return []

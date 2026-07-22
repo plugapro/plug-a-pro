@@ -2,7 +2,7 @@
 // Lead, then feeds the EXISTING Qualified Shortlist pipeline (interest record,
 // shortlist generation, customer notify). No deletes anywhere (data-safety).
 // Spec: docs/superpowers/specs/2026-07-21-provider-lead-board-design.md §1.
-import { boardEligibilityWhere, BOARD_INTEREST_CAP } from '@/lib/board/eligibility'
+import { boardEligibilityWhere, BOARD_INTEREST_CAP, OPEN_INTEREST_STATUSES } from '@/lib/board/eligibility'
 
 // Lead.status values (prisma/schema.prisma LeadStatus) that represent an
 // open/in-flight lead for a given (jobRequestId, providerId) pair. A prior
@@ -13,9 +13,10 @@ const OPEN_LEAD_STATUSES = [
   'SENT', 'VIEWED', 'INTERESTED', 'SHORTLISTED', 'CUSTOMER_SELECTED',
   'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED',
 ]
-// Subset of OPEN_LEAD_STATUSES that count against the shortlist interest cap
-// (mirrors the "open interest" definition used by findBoardJobsForProvider).
-const OPEN_INTEREST_STATUSES = ['INTERESTED', 'SHORTLISTED', 'CUSTOMER_SELECTED']
+// OPEN_INTEREST_STATUSES (subset of OPEN_LEAD_STATUSES that counts against
+// the shortlist interest cap) is imported from lib/board/eligibility.ts —
+// single source of truth shared with findBoardJobsForProvider's own
+// open-interest definition (dedupe).
 
 export type BoardInterestInput = {
   providerId: string
@@ -89,7 +90,7 @@ export async function expressBoardInterest(
 
     const job = await tx.jobRequest.findFirst({
       where: { id: input.jobRequestId, ...boardEligibilityWhere(now) },
-      select: { id: true, category: true },
+      select: { id: true, category: true, expiresAt: true },
     })
     if (!job) return { ok: false, reason: 'JOB_GONE' } as const
 
@@ -97,6 +98,15 @@ export async function expressBoardInterest(
       where: { jobRequestId: input.jobRequestId, status: { in: OPEN_INTEREST_STATUSES } },
     })
     if (openInterests >= BOARD_INTEREST_CAP) return { ok: false, reason: 'SHORTLIST_FULL' } as const
+
+    // C1 fix: board leads must carry a real (non-null) expiresAt or they are
+    // silently invisible to generateCustomerShortlistForRequest /
+    // maybeAutoTriggerShortlist, which both require leadInvite.expiresAt >
+    // now. Derive it from the job request's own expiresAt when set, else
+    // default to now + 7 days (matches lib/matching/config.ts's
+    // jobRequestMaxAgeDays default for jobs with no explicit deadline).
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+    const leadExpiresAt = job.expiresAt ?? new Date(now.getTime() + SEVEN_DAYS_MS)
 
     const prior = await tx.lead.findUnique({
       where: { jobRequestId_providerId: { jobRequestId: input.jobRequestId, providerId: input.providerId } },
@@ -111,9 +121,25 @@ export async function expressBoardInterest(
       // Terminal prior lead (EXPIRED/DECLINED/CANCELLED/SUPERSEDED): revive it —
       // the unique (jobRequestId, providerId) constraint forbids a second row.
       // Never delete/replace; always UPDATE the existing row.
+      // I2: also clear every selection-cycle field a prior lifecycle (push
+      // offer, customer selection, decline, cancellation, expiry) may have
+      // left set — a revived board lead must start clean, not carry stale
+      // state from whatever terminal path it came from.
       await tx.lead.update({
         where: { id: prior.id },
-        data: { origin: 'BOARD', status: 'VIEWED', viewedAt: now, respondedAt: null, expiresAt: null },
+        data: {
+          origin: 'BOARD',
+          status: 'VIEWED',
+          viewedAt: now,
+          respondedAt: null,
+          expiresAt: leadExpiresAt,
+          notifiedAt: null,
+          notificationAttemptedAt: null,
+          customerSelectedAt: null,
+          declinedAt: null,
+          cancelledAt: null,
+          expiredAt: null,
+        },
       })
       leadId = prior.id
     } else {
@@ -125,6 +151,7 @@ export async function expressBoardInterest(
           status: 'VIEWED',
           sentAt: now,
           viewedAt: now,
+          expiresAt: leadExpiresAt,
         },
         select: { id: true },
       })
@@ -268,21 +295,31 @@ async function recordInterestProduction(args: {
  *
  * IMPORTANT: generateCustomerShortlistForRequest has NO status guard and
  * always publishes + re-notifies when called — it does not self-guard on
- * OPEN/MATCHING. THIS wrapper's OPEN/MATCHING pre-check below is the only
- * thing preventing duplicate shortlists/notifies from the board path
+ * OPEN/MATCHING/SHORTLIST_READY. THIS wrapper's status pre-check below is the
+ * only thing preventing shortlist regeneration/notify on a job that has
+ * already left the board (PROVIDER_CONFIRMATION_PENDING via customer
+ * selection, MATCHED, EXPIRED, etc).
+ *
+ * True cap-3 (I1): the job stays board-visible through SHORTLIST_READY until
+ * 3 open interests or customer selection, so SHORTLIST_READY is now an
+ * ALLOWED status here, not a blocked one. Each new interest on a
+ * SHORTLIST_READY job calling generateCustomerShortlistForRequest again is
+ * the intended regeneration path — it supersedes the prior PUBLISHED
+ * shortlist (see generateCustomerShortlistForRequest's
+ * `providerShortlist.updateMany({ status: 'PUBLISHED' } → 'SUPERSEDED')`)
+ * and re-notifies the customer. THAT re-notify IS the per-interest notify the
+ * spec demands — it is not a duplicate-notify bug to guard against.
  * (maybeAutoTriggerShortlist, the other caller, carries its own equivalent
- * guard independently — the two guards are not the same code, they just
- * happen to enforce the same invariant). If this pre-check is ever removed,
- * a request that respondToProviderOpportunity already shortlisted would be
- * re-shortlisted and the customer re-notified.
+ * OPEN/MATCHING/SHORTLIST_READY guard independently — the two guards are not
+ * the same code, they just happen to enforce the same invariant.)
  */
-async function triggerShortlistProduction(jobRequestId: string): Promise<void> {
+export async function triggerShortlistProduction(jobRequestId: string): Promise<void> {
   const request = await db.jobRequest.findUnique({
     where: { id: jobRequestId },
     select: { id: true, status: true },
   })
   if (!request) return
-  if (request.status !== 'OPEN' && request.status !== 'MATCHING') return
+  if (request.status !== 'OPEN' && request.status !== 'MATCHING' && request.status !== 'SHORTLIST_READY') return
 
   await generateCustomerShortlistForRequest(jobRequestId).catch((error) => {
     console.warn('[board/interest] triggerShortlist failed', {

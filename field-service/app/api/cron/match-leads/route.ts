@@ -139,13 +139,22 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1h. Expire OPEN job requests that have passed their expiresAt deadline.
-  // Only processes jobs where expiresAt was explicitly set (legacy jobs without
-  // the field are ignored). Notify customer after each transition.
+  // 1h. Expire OPEN/MATCHING/SHORTLIST_READY job requests that have passed
+  // their expiresAt deadline. Only processes jobs where expiresAt was
+  // explicitly set (legacy jobs without the field are ignored). Notify
+  // customer after each transition.
+  // SHORTLIST_READY is included additively (I1, true cap-3): the provider
+  // board keeps a job visible through SHORTLIST_READY until 3 open interests
+  // or customer selection, so a SHORTLIST_READY job can now idle past its
+  // expiresAt with open board leads still attached — nothing else in this
+  // cron (or elsewhere) swept that state before. expireOpenJobRequest itself
+  // already accepts SHORTLIST_READY (see lib/job-requests/expire-job-request.ts)
+  // and closes out any open board leads in the same transaction; this query
+  // just needs to find those jobs and hand them to it.
   try {
     const staleRequests = await db.jobRequest.findMany({
       where: {
-        status: 'OPEN',
+        status: { in: ['OPEN', 'SHORTLIST_READY'] },
         expiresAt: { not: null, lte: new Date() },
       },
       select: { id: true },

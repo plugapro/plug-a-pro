@@ -1,13 +1,21 @@
-// ─── Shared helper: expire an OPEN or MATCHING job request ───────────────────
+// ─── Shared helper: expire an OPEN, MATCHING, or SHORTLIST_READY job request ──
 // Called from multiple places so expiry behaviour stays consistent:
 //   1. cron/match-leads - sweeps jobs past their expiresAt
 //   2. matching/orchestrator - guards against dispatching an already-stale job
 //   3. matching/service (offerNextRankedCandidate) - terminates after queue exhaustion
 //
-// Transitions status OPEN or MATCHING → EXPIRED in a single transaction.
+// Transitions status OPEN, MATCHING, or SHORTLIST_READY → EXPIRED in a single
+// transaction.
 // MATCHING must be included because AUTO_ASSIGN jobs advance to MATCHING when
 // the first offer is sent; if the entire ranked queue is exhausted while the job
 // is still in MATCHING, failing to expire it here leaves it permanently stuck.
+// SHORTLIST_READY must be included (I1, true cap-3): the provider board keeps
+// a job visible through SHORTLIST_READY until 3 open interests or customer
+// selection, so a SHORTLIST_READY job can now idle past its expiresAt with
+// open board leads still attached. Callers 2 and 3 above only ever reach jobs
+// that are OPEN/MATCHING by construction (mid-dispatch flows), so widening
+// this guard is a strict enablement for caller 1's cron sweep, not a
+// behaviour change for callers 2/3.
 //
 // Notification (notifyExpiredJobParties) is intentionally NOT called here
 // because the cron handles the customer message after the sweep and the
@@ -41,11 +49,18 @@ export async function expireOpenJobRequest(
         select: { id: true, status: true, address: { select: { suburb: true } } },
       })
 
-      // Only expire if OPEN or MATCHING - guard against concurrent cron ticks.
-      // MATCHING must be included: AUTO_ASSIGN jobs advance to MATCHING on first
-      // offer; if the full ranked queue is exhausted, the job can be stuck in
-      // MATCHING indefinitely without this guard.
-      if (!jr || (jr.status !== 'OPEN' && jr.status !== 'MATCHING')) return
+      // Only expire if OPEN, MATCHING, or SHORTLIST_READY - guard against
+      // concurrent cron ticks. MATCHING must be included: AUTO_ASSIGN jobs
+      // advance to MATCHING on first offer; if the full ranked queue is
+      // exhausted, the job can be stuck in MATCHING indefinitely without this
+      // guard. SHORTLIST_READY must be included (I1, true cap-3): see the
+      // file-header comment above.
+      if (
+        !jr ||
+        (jr.status !== 'OPEN' && jr.status !== 'MATCHING' && jr.status !== 'SHORTLIST_READY')
+      ) {
+        return
+      }
 
       await tx.jobRequest.update({
         where: { id: jobRequestId },
