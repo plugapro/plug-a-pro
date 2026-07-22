@@ -36,7 +36,9 @@ contradicts the claim-semantics decision.)
 ### 1. Board eligibility (pure query, no new state machine)
 
 A `JobRequest` is board-eligible iff ALL of:
-- `status` IN (`OPEN`, `MATCHING`)
+- `status` IN (`OPEN`, `MATCHING`, `SHORTLIST_READY`) — SHORTLIST_READY keeps the job
+  board-visible until the cap or a customer selection (true cap-3, user-ratified at final
+  review 2026-07-22)
 - `expiresAt` IS NULL OR `expiresAt` > now()
 - `requestedWindowEnd` IS NULL OR `requestedWindowEnd` > now()  ← "past due" exclusion
 - no `Match` exists for it
@@ -87,8 +89,10 @@ Server action (`lib/board/interest.ts`, called from the page):
 
 ### 4. Customer selection
 
-- On EVERY interest (1st through 3rd): WhatsApp to the customer via ONE new UTILITY
-  template `customer_shortlist_review` — body: "Hi {{1}}, {{2}} provider(s) are available
+- On EVERY interest (1st through 3rd): the board regenerates the shortlist (existing
+  `generateCustomerShortlistForRequest` supersedes the prior published list) which re-sends
+  the EXISTING customer notify (`interactive:client_shortlist_ready` machinery) — no new
+  Meta template (implementation discovery; original `customer_shortlist_review` plan dropped) — body: "Hi {{1}}, {{2}} provider(s) are available
   for your job. Tap below to review and choose." + dynamic-URL button whose suffix
   variable is `JobRequest.customerAccessToken`, landing on the EXISTING token-authed
   customer tracking page (exact route confirmed at planning time from the smoke-suite
@@ -150,3 +154,16 @@ expiry path (`expireOpenJobRequest`), additively.
 - First customer-picked match created end-to-end via the board (the metric that matters).
 - Zero leakage: no customer name/phone/street address visible pre-selection (review gate).
 - Push pipeline metrics unchanged when flag OFF (byte-equivalent behaviour).
+
+## Implementation amendments (ratified during build, 2026-07-22)
+
+- Board leads carry a real `expiresAt` (job's own expiry, else +7d) so their responses
+  satisfy the shared shortlist-generation predicates; the board's live-push exclusion is
+  scoped to `origin: PUSH`.
+- Interest collects `callOutFee` + `estimatedArrivalAt` (the shortlist ranks by fee).
+- Non-selected providers stay open as cascade fallbacks until the job resolves (existing
+  pipeline design) rather than closing at selection.
+- v1 area coverage is node-id/suburb/RADIUS (no regionKey or legacy-string fallback tier);
+  region-only-coverage providers see an empty board. Fast-follow: reuse
+  `providerCoversAddress` from lib/matching/filter.ts.
+- Detail view + safe-preview attachments deferred (card-only board in v1).
