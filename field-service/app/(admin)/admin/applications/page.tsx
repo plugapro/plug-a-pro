@@ -46,6 +46,7 @@ import {
 } from '@/lib/ops-queue'
 import { Badge } from '@/components/ui/badge'
 import { SubmitButton } from '@/components/admin/ui'
+import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -1388,7 +1389,21 @@ export default async function ApplicationsPage({
                 <div className="space-y-2 rounded-lg border border-border p-2 text-xs text-muted-foreground">
                   <p className="font-medium text-foreground">Application evidence</p>
                   {app.evidenceFileUrls.length > 0 ? (
-                    <p>Evidence URLs: {app.evidenceFileUrls.join(', ')}</p>
+                    <div className="space-y-1">
+                      <p>Evidence photos ({app.evidenceFileUrls.length}):</p>
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                        {app.evidenceFileUrls.map((url, index) => (
+                          <AttachmentThumbnail
+                            key={url}
+                            attachmentId={`evidence-${index + 1}`}
+                            src={url}
+                            alt={`Evidence photo ${index + 1}`}
+                            className="h-20 w-full rounded-md border border-border object-cover"
+                            fallbackText="Evidence photo unavailable"
+                          />
+                        ))}
+                      </div>
+                    </div>
                   ) : null}
                   {app.evidenceNote ? <p>Evidence note: {app.evidenceNote}</p> : null}
                   {app.idNumber ? <p>Identity number field present: supplied</p> : null}
