@@ -24,11 +24,14 @@ export default async function ProviderBoardPage({
 }) {
   const session = await requireProvider()
   // User-scoped check: enabledForUsers allows private preview before global flip.
-  if (!(await isEnabled('provider.board.v1', { userId: session.id }))) notFound()
+  const flagOn = await isEnabled('provider.board.v1', { userId: session.id })
+  console.log('[board:debug] gate', JSON.stringify({ userId: session.id, flagOn }))
+  if (!flagOn) notFound()
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
     select: { id: true, skills: true },
   })
+  console.log('[board:debug] provider', JSON.stringify({ found: !!provider, providerId: provider?.id ?? null }))
 
   if (!provider) {
     return (
@@ -43,6 +46,13 @@ export default async function ProviderBoardPage({
   const suburbQuery = typeof params.q === 'string' ? params.q : undefined
 
   const jobs = await findBoardJobsForProvider(db, provider.id, { category, suburbQuery })
+  console.log('[board:debug] result', JSON.stringify({
+    providerId: provider.id,
+    category: category ?? null,
+    q: suburbQuery ?? null,
+    jobs: jobs.length,
+    jobIds: jobs.map((j) => j.id),
+  }))
   const skills = provider.skills ?? []
 
   const jobCards: BoardJobCardData[] = jobs.map((job) => ({
