@@ -12,7 +12,7 @@ import { requireProvider } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
-import { findBoardJobsForProvider } from '@/lib/board/eligibility'
+import { findBoardJobsForProvider, boardEligibilityWhere, OPEN_INTEREST_STATUSES } from '@/lib/board/eligibility'
 import { BoardJobCard, type BoardJobCardData } from './BoardJobCard'
 
 export const metadata = buildMetadata({ title: 'Job Board', noIndex: true })
@@ -20,7 +20,7 @@ export const metadata = buildMetadata({ title: 'Job Board', noIndex: true })
 export default async function ProviderBoardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string | string[]; q?: string | string[] }>
+  searchParams: Promise<{ category?: string | string[]; q?: string | string[]; debug?: string | string[] }>
 }) {
   const session = await requireProvider()
   // User-scoped check: enabledForUsers allows private preview before global flip.
@@ -46,14 +46,45 @@ export default async function ProviderBoardPage({
   const suburbQuery = typeof params.q === 'string' ? params.q : undefined
 
   const jobs = await findBoardJobsForProvider(db, provider.id, { category, suburbQuery })
-  console.log('[board:debug] result', JSON.stringify({
-    providerId: provider.id,
-    category: category ?? null,
-    q: suburbQuery ?? null,
-    jobs: jobs.length,
-    jobIds: jobs.map((j) => j.id),
-  }))
   const skills = provider.skills ?? []
+
+  // TEMPORARY diagnostic: ?debug=1 renders the stage-by-stage counts so the
+  // empty-state cause is visible on-device. Remove with the board investigation.
+  const debugOn = (Array.isArray(params.debug) ? params.debug[0] : params.debug) === '1'
+  let debugReport: string[] | null = null
+  if (debugOn) {
+    const now = new Date()
+    const areas = await db.technicianServiceArea.findMany({
+      where: { providerId: provider.id, active: true },
+      select: { locationNodeId: true, suburbKey: true, areaType: true },
+    })
+    const candidates = await db.jobRequest.findMany({
+      where: boardEligibilityWhere(now) as never,
+      select: {
+        id: true,
+        category: true,
+        address: { select: { locationNodeId: true, suburb: true } },
+        leads: { where: { status: { in: [...OPEN_INTEREST_STATUSES] } }, select: { status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    })
+    const nodeIds = new Set(areas.map((a) => a.locationNodeId).filter(Boolean))
+    const skillSet = new Set(skills.map((s) => s.toLowerCase()))
+    debugReport = [
+      `now=${now.toISOString()}`,
+      `providerId=${provider.id}`,
+      `skills(${skills.length})=${skills.join(',') || 'NONE'}`,
+      `activeAreas=${areas.length} nodeIds=${nodeIds.size}`,
+      `eligibleCandidates=${candidates.length}`,
+      ...candidates.slice(0, 5).map((c) =>
+        `cand ${c.id} cat=${c.category} skillMatch=${skillSet.has(String(c.category ?? '').toLowerCase())} ` +
+        `node=${c.address?.locationNodeId ?? 'null'} areaMatch=${!!(c.address?.locationNodeId && nodeIds.has(c.address.locationNodeId))} ` +
+        `interests=${c.leads.length}`,
+      ),
+      `finalJobs=${jobs.length}`,
+    ]
+  }
 
   const jobCards: BoardJobCardData[] = jobs.map((job) => ({
     id: job.id,
@@ -115,6 +146,14 @@ export default async function ProviderBoardPage({
           </button>
         </form>
       </div>
+
+      {debugReport && (
+        <div className="px-[18px] mb-4">
+          <pre className="whitespace-pre-wrap break-all rounded-[12px] bg-[#111] p-3 text-[10px] leading-[1.5] text-[#7CFFB2]">
+            {debugReport.join('\n')}
+          </pre>
+        </div>
+      )}
 
       <div className="px-[18px]">
         {jobCards.length === 0 ? (
