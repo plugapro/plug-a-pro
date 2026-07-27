@@ -323,6 +323,17 @@ export const TEMPLATES = {
       'Hi {{1}}, Plug A Pro now requires identity verification for all providers. Verify by {{2}} to keep receiving job leads - it takes about 5 minutes. Tap the button below to start.',
   },
 
+  provider_registration_resume_nudge: {
+    name: 'provider_registration_resume_nudge',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description:
+      'Draft-abandonment recovery: provider started the registration wizard, left a phone, never submitted. Sent max twice (2h, 24h). CTA URL button back to the wizard.',
+    // {{1}} provider first name; button (url, index 0): {{1}} resume token suffix appended to /provider/register?resume=
+    example:
+      'Hi {{1}}, your Plug A Pro provider application is saved but not finished. Tap below to pick up where you left off — it takes just a few minutes.',
+  },
+
   // ─── Provider Quality Uplift nudges ──────────────────────────────────────
   // Templates submitted to Meta in support of the Quality Uplift admin flow
   // (lib/provider-quality/). Until each one is APPROVED at Meta, sends will

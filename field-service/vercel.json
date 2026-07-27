@@ -93,6 +93,10 @@
     {
       "path": "/api/cron/inbound-whatsapp-redrive",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/draft-abandonment-nudge",
+      "schedule": "*/30 6-19 * * *"
     }
   ]
 }
