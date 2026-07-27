@@ -24,6 +24,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { SubmitButton } from '@/components/admin/ui'
+import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { CopyWaLink } from '@/components/admin/applications/CopyWaLink'
 import {
   applyFilters,
@@ -910,11 +911,26 @@ function DrawerApplicationDetails({ app }: { app: ApplicationInput }) {
 }
 
 function DrawerEvidence({ app }: { app: ApplicationInput }) {
-  if (app.attachments.length === 0 && !app.evidenceNote) return null
+  if (app.attachments.length === 0 && app.evidenceFileUrls.length === 0 && !app.evidenceNote)
+    return null
   return (
     <section className="space-y-1.5 text-xs">
       <p className="font-semibold uppercase tracking-wider text-muted-foreground">Evidence</p>
       {app.evidenceNote ? <p className="italic text-muted-foreground">“{app.evidenceNote}”</p> : null}
+      {app.evidenceFileUrls.length > 0 ? (
+        <div className="grid grid-cols-3 gap-2">
+          {app.evidenceFileUrls.map((url, index) => (
+            <AttachmentThumbnail
+              key={url}
+              attachmentId={`evidence-${index + 1}`}
+              src={url}
+              alt={`Evidence photo ${index + 1}`}
+              className="h-20 w-full rounded-md border border-border object-cover"
+              fallbackText="Evidence photo unavailable"
+            />
+          ))}
+        </div>
+      ) : null}
       <ul className="space-y-1">
         {app.attachments.map((att) => {
           const isImage = att.mimeType?.startsWith('image/') && att.safeForPreview
