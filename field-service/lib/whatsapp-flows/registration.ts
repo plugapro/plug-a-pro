@@ -35,7 +35,9 @@ import {
   buildProviderApplicationSubmittedMessage,
   buildProviderOnboardingIntroMessage,
   getProviderTermsUrl,
+  getPublicAppUrl,
 } from '../provider-credit-copy'
+import { mintResumeTokenForDraft } from '../provider-registration/pwa-flow'
 import {
   getPilotServiceCategories,
   RESTRICTED_SKILL_NOTICE,
@@ -531,6 +533,39 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
       `⏳ Your provider profile is already on file.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *jobs* to check leads or *menu* to return to the main menu.`
     )
     return { nextStep: 'done' }
+  }
+
+  // Cross-channel resume: if this provider already has an in-progress PWA
+  // registration draft for the same phone, offer a self-serve web link to
+  // continue exactly where they left off instead of forcing a full re-entry on
+  // WhatsApp. Behind a flag; reuses the #190 resume-token + ?resume deep-link
+  // primitives. Best-effort — a failure here must not block the normal intro.
+  if (await isEnabled('provider.registration.cross_channel_resume')) {
+    try {
+      const draft = await db.providerApplicationDraft.findFirst({
+        where: { phone: { in: phoneVariants }, submittedApplicationId: null },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, lastCompletedStep: true },
+      })
+      if (draft && (draft.lastCompletedStep ?? 0) > 0) {
+        const rawToken = await mintResumeTokenForDraft(db, draft.id)
+        const resumeUrl = getPublicAppUrl(`/provider/register?resume=${rawToken}`)
+        // getPublicAppUrl returns '' when no public base URL is configured; skip
+        // rather than emit a broken CTA (the normal intro below still fires).
+        if (resumeUrl) {
+          await sendCtaUrl(
+            ctx.phone,
+            "👋 You've already started your Plug A Pro application on our web app. Tap below to continue exactly where you left off — no need to start over.",
+            'Continue on web',
+            resumeUrl,
+            undefined,
+            { templateName: 'interactive:provider_registration_cross_channel_resume' },
+          )
+        }
+      }
+    } catch (error) {
+      console.warn('[registration-flow] cross-channel resume link failed', { error })
+    }
   }
 
   await sendButtons(

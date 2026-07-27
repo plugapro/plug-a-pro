@@ -526,6 +526,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'prod',
     defaultValue: false,
   },
+  'provider.registration.cross_channel_resume': {
+    description:
+      'When a provider messages "join" on WhatsApp but already has an in-progress PWA registration draft (same phone), offer a self-serve web-resume link (/provider/register?resume=…) so they can continue where they left off instead of re-entering everything. Reuses the #190 resume-token + ?resume deep-link primitives. Default OFF.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   // ─── Operational digests ─────────────────────────────────────────────────────
   'ops.daily_snapshot_whatsapp_digest': {
     description: 'Send the daily provider snapshot as a WhatsApp digest to ADMIN_WHATSAPP_NUMBER after the cron persists the snapshot row. Default off until Meta approves the admin_daily_provider_snapshot Utility template. Send failures are caught and logged — they do not affect snapshot persistence.',
