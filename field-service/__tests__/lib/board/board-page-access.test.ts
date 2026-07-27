@@ -28,7 +28,7 @@ describe('/provider/board page', () => {
     mockFindBoardJobsForProvider.mockResolvedValue([])
   })
 
-  it('404s when the provider.board.v1 flag is off, before touching auth or the DB', async () => {
+  it('404s when the provider.board.v1 flag is off for this user, before touching the DB', async () => {
     mockIsEnabled.mockResolvedValue(false)
     const Page = (await import('@/app/(provider)/provider/board/page')).default
 
@@ -36,8 +36,21 @@ describe('/provider/board page', () => {
       Page({ searchParams: Promise.resolve({}) }),
     ).rejects.toMatchObject({ digest: expect.stringContaining('NEXT_HTTP_ERROR_FALLBACK;404') })
 
-    expect(mockRequireProvider).not.toHaveBeenCalled()
+    // Auth resolves FIRST so the flag check can be user-scoped (enabledForUsers
+    // private preview); the DB and board query stay untouched when gated off.
+    expect(mockIsEnabled).toHaveBeenCalledWith('provider.board.v1', { userId: 'user-1' })
     expect(mockDb.provider.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('renders for a user in enabledForUsers while the flag is globally off (private preview)', async () => {
+    // Simulate flags.ts semantics: row disabled globally, user targeted.
+    mockIsEnabled.mockImplementation(async (_key: string, ctx?: { userId?: string }) => ctx?.userId === 'user-1')
+    const Page = (await import('@/app/(provider)/provider/board/page')).default
+
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
+
+    expect(html).toContain('Job board')
+    expect(mockIsEnabled).toHaveBeenCalledWith('provider.board.v1', { userId: 'user-1' })
   })
 
   it('shows a setup notice instead of crashing when the session has no provider row', async () => {

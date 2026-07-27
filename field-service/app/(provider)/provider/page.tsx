@@ -92,7 +92,7 @@ function UrgencyChip({ urgency }: { urgency: string | null }) {
 
 export default async function ProviderHomePage() {
   const session = await requireProvider()
-  const boardEnabled = await isEnabled('provider.board.v1')
+  const boardEnabled = await isEnabled('provider.board.v1', { userId: session.id })
 
   const provider = await db.provider.findUnique({
     where: { userId: session.id },

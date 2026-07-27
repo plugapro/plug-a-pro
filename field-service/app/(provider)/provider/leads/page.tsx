@@ -16,7 +16,7 @@ export const metadata = buildMetadata({ title: 'My Leads', noIndex: true })
 
 export default async function ProviderLeadsPage() {
   const session = await requireProvider()
-  const boardEnabled = await isEnabled('provider.board.v1')
+  const boardEnabled = await isEnabled('provider.board.v1', { userId: session.id })
 
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
