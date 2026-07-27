@@ -194,6 +194,25 @@ test.describe('Pay@ sprint — unauthenticated route checks', () => {
     }
   })
 
+  test('/provider/board redirects unauthenticated users to sign-in', async ({ page }) => {
+    // Same shape as the /provider/credits check above: /provider/board sits under
+    // PROVIDER_PATHS in proxy.ts, so auth is enforced before the page's own
+    // provider.board.v1 flag check ever runs. Two outcomes are acceptable: (a) the
+    // proxy redirects away from /provider/board (mobile UA path), or (b) the proxy
+    // returns the mobile-only interstitial at 200 on the same URL (desktop UA path,
+    // gated BEFORE the auth check by design). What must NOT happen is the actual
+    // board UI rendering — detected here by the absence of a board-page marker in
+    // the served HTML.
+    const response = await page.goto('/provider/board')
+    const finalUrl = page.url()
+    const stayedOnBoardUrl = finalUrl.includes('/provider/board') && response?.status() === 200
+    if (stayedOnBoardUrl) {
+      const title = await page.title()
+      const isMobileOnlyInterstitial = title === 'Use mobile for Plug A Pro'
+      expect(isMobileOnlyInterstitial, `expected mobile-only interstitial, got title="${title}"`).toBe(true)
+    }
+  })
+
   test('cron /api/cron/expire-payment-intents rejects without bearer token', async ({ request }) => {
     const res = await request.get('/api/cron/expire-payment-intents')
     expect(res.status()).toBe(401)

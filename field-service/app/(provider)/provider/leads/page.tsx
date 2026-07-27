@@ -2,10 +2,11 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
-import { Inbox, MapPin, Clock3, Sparkles } from 'lucide-react'
+import { Inbox, MapPin, Clock3, Sparkles, LayoutGrid } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getProviderLeadListForProvider } from '@/lib/provider-lead-list'
 import { SectionLabel } from '@/components/ui/section-label'
@@ -15,6 +16,7 @@ export const metadata = buildMetadata({ title: 'My Leads', noIndex: true })
 
 export default async function ProviderLeadsPage() {
   const session = await requireProvider()
+  const boardEnabled = await isEnabled('provider.board.v1')
 
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
@@ -46,6 +48,23 @@ export default async function ProviderLeadsPage() {
             : `${leads.length} ${leads.length === 1 ? 'lead' : 'leads'} waiting for your response.`}
         </p>
       </div>
+
+      {boardEnabled && (
+        <div className="px-[18px] pb-4">
+          <Link
+            href="/provider/board"
+            className="flex items-center gap-3 bg-card rounded-[16px] shadow-[inset_0_0_0_1px_var(--border)] px-4 py-3 hover:shadow-[var(--shadow-float)] transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 active:translate-y-px"
+          >
+            <div className="flex items-center justify-center w-9 h-9 rounded-[11px] shrink-0 brand-gradient-soft text-[var(--brand-purple)]">
+              <LayoutGrid size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[14px] font-semibold text-[var(--ink)] tracking-[-0.01em]">Job board</p>
+              <p className="text-[12px] text-[var(--ink-mute)] mt-0.5">Browse open jobs in your area and put your hand up.</p>
+            </div>
+          </Link>
+        </div>
+      )}
 
       <div className="px-[18px]">
         {leads.length === 0 ? (

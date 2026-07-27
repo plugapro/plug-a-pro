@@ -10,6 +10,7 @@ import {
   Clock3,
   Coins,
   Inbox,
+  LayoutGrid,
   ListChecks,
   MapPin,
   Sparkles,
@@ -25,6 +26,7 @@ import {
 import { ProviderSignOutButton } from '@/components/provider/ProviderSignOutButton'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { JobCard } from '@/components/shared/JobCard'
 import { Button } from '@/components/ui/button'
@@ -90,6 +92,7 @@ function UrgencyChip({ urgency }: { urgency: string | null }) {
 
 export default async function ProviderHomePage() {
   const session = await requireProvider()
+  const boardEnabled = await isEnabled('provider.board.v1')
 
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
@@ -492,6 +495,9 @@ export default async function ProviderHomePage() {
         {/* Quick links */}
         <section className="bg-card rounded-[24px] shadow-[inset_0_0_0_1px_var(--border)] overflow-hidden divide-y divide-[var(--border)]">
           {[
+            ...(boardEnabled
+              ? [{ href: '/provider/board', icon: <LayoutGrid size={18} />, label: 'Job board', hue: 'var(--brand-purple)' }]
+              : []),
             { href: '/provider/credits', icon: <Wallet size={18} />, label: 'Top up / view credits', hue: 'var(--brand-purple)' },
             { href: '/provider/voucher', icon: <Tag size={18} />, label: 'Redeem voucher code', hue: 'var(--color-teal)' },
             { href: '/provider/earnings', icon: <Coins size={18} />, label: 'Earnings', hue: 'var(--color-teal)' },

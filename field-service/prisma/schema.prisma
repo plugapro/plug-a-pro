@@ -610,6 +610,7 @@ model Lead {
   matchScore              Float?
   rankingPosition         Int?
   status                  LeadStatus @default(SENT)
+  origin                  String     @default("PUSH") // "PUSH" (cron dispatch) | "BOARD" (provider self-serve pull)
   sentAt                  DateTime   @default(now())
   viewedAt                DateTime?
   respondedAt             DateTime?

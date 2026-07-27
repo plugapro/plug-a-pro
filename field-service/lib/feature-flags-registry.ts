@@ -279,6 +279,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.board.v1': {
+    description:
+      'Provider lead board: /provider/board pull surface for job requests whose push offers lapsed. OFF until customer-notify path verified for web-origin customers.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   // ─── Matching engine ─────────────────────────────────────────────────────────
   'matching.v2.candidate_pool': {
     description: 'Use precomputed candidate pool in the matching orchestrator instead of a live DB scan. Speeds up dispatch and reduces query load.',

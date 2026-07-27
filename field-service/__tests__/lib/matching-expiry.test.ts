@@ -45,6 +45,9 @@ const { mockDb, mockEmitMatchEvent, mockSendText, mockSendProviderLeadExpired } 
       findMany: vi.fn(),
       update: vi.fn(),
     },
+    providerShortlist: {
+      findFirst: vi.fn(),
+    },
     provider: {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -193,6 +196,10 @@ function setupBaseTransaction() {
   mockDb.jobRequest.update.mockResolvedValue({})
   // loadMatchingJobRequest inside createOfferForAttempt
   mockDb.jobRequest.findUnique.mockResolvedValue(makeMatchingJobRequest())
+  // I5: notifyCustomerNoMatch's PUBLISHED-shortlist check. Default no
+  // shortlist so existing genuine-no-match-copy assertions are unaffected;
+  // tests that need the shortlist-closed copy override this explicitly.
+  mockDb.providerShortlist.findFirst.mockResolvedValue(null)
   // loadProviderOfferContact inside createOfferForAttempt
   mockDb.provider.findUniqueOrThrow.mockResolvedValue({
     id: 'provider-2', name: 'Bob', phone: '+27829876543',
