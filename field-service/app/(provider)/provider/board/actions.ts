@@ -35,6 +35,7 @@ export async function expressInterestAction(formData: FormData): Promise<BoardIn
 
   const result = await expressBoardInterestProduction({
     providerId: provider.id,
+    flagCtxUserId: session.id,
     jobRequestId,
     callOutFee,
     estimatedArrivalAt,

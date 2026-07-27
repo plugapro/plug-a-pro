@@ -22,9 +22,9 @@ export default async function ProviderBoardPage({
 }: {
   searchParams: Promise<{ category?: string | string[]; q?: string | string[] }>
 }) {
-  if (!(await isEnabled('provider.board.v1'))) notFound()
-
   const session = await requireProvider()
+  // User-scoped check: enabledForUsers allows private preview before global flip.
+  if (!(await isEnabled('provider.board.v1', { userId: session.id }))) notFound()
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
     select: { id: true, skills: true },

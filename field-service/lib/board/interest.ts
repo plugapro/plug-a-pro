@@ -20,6 +20,8 @@ const OPEN_LEAD_STATUSES = [
 
 export type BoardInterestInput = {
   providerId: string
+  /** Session userId for user-scoped flag checks (enabledForUsers private preview). */
+  flagCtxUserId?: string
   jobRequestId: string
   callOutFee: number
   estimatedArrivalAt: Date
@@ -364,7 +366,11 @@ export async function expressBoardInterestProduction(
     {
       now: () => new Date(),
       db,
-      flagEnabled: (key) => isEnabled(key as Parameters<typeof isEnabled>[0]),
+      flagEnabled: (key) =>
+        isEnabled(
+          key as Parameters<typeof isEnabled>[0],
+          input.flagCtxUserId ? { userId: input.flagCtxUserId } : undefined,
+        ),
       isProviderBoardEligible: isProviderBoardEligibleProduction,
       validateInput: validateInputProduction,
       recordInterest: recordInterestProduction,
