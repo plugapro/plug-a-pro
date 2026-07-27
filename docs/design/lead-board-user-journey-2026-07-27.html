@@ -1,0 +1,134 @@
+<title>Job Board — user journey</title>
+<style>
+  :root{
+    --ink:#232B33; --paper:#FAF7F2; --card:#FFFFFF;
+    --accent:#D95B22; --accent-soft:#FBEADF;
+    --wa:#1B9E52; --wa-soft:#E7F5EC;
+    --sys:#3E4C5C; --sys-soft:#EDF0F3;
+    --mute:#8A8378; --line:#E5DFD4;
+    --display:"Avenir Next Condensed","Futura","Arial Narrow",sans-serif;
+    --body:"Avenir Next","Seravek",-apple-system,"Segoe UI",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 28px 64px}
+  header h1{font-family:var(--display);font-weight:600;font-size:clamp(28px,4vw,40px);letter-spacing:.01em;margin:0 0 6px;text-wrap:balance}
+  header .sub{max-width:62ch;color:var(--sys);margin:0 0 4px}
+  .state{display:inline-block;margin-top:10px;font-family:var(--mono);font-size:11.5px;background:var(--ink);color:var(--paper);padding:4px 10px;border-radius:3px;letter-spacing:.04em}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;margin:26px 0 8px;font-size:13px;color:var(--sys)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:3px;flex:none}
+  .sw.p{background:var(--accent)} .sw.w{background:var(--wa)} .sw.s{background:var(--sys)}
+
+  .scroller{overflow-x:auto;margin:18px -28px 0;padding:0 28px 8px}
+  .lanes{min-width:1360px;display:grid;grid-template-columns:110px repeat(6,1fr);gap:0 14px}
+  .phase-h{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.06em;text-transform:uppercase;padding:0 2px 10px;border-bottom:2px solid var(--ink)}
+  .phase-h .n{font-family:var(--mono);font-size:11px;color:var(--accent);display:block;letter-spacing:.1em;margin-bottom:2px}
+  .lane-label{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);
+    writing-mode:vertical-rl;transform:rotate(180deg);justify-self:center;align-self:center}
+  .cell{padding:16px 2px;border-bottom:1px dashed var(--line);display:flex;flex-direction:column;gap:8px;justify-content:center}
+  .lane-end .cell{border-bottom:none}
+
+  .step{border-radius:6px;padding:10px 12px;font-size:13.5px;line-height:1.4;background:var(--card);border:1px solid var(--line);box-shadow:0 1px 2px rgba(35,43,51,.06)}
+  .step b{display:block;font-size:13.5px;margin-bottom:2px}
+  .step .d{color:var(--sys);font-size:12.5px}
+  .step.provider{border-left:4px solid var(--accent);background:linear-gradient(0deg,var(--card),var(--card)),var(--accent-soft)}
+  .step.wa{border-left:4px solid var(--wa);background:var(--wa-soft);border-color:#CBE7D5}
+  .step.wa b::before{content:"WhatsApp · ";font-family:var(--mono);font-size:10.5px;color:var(--wa);letter-spacing:.05em}
+  .step.sys{background:var(--sys-soft);border:1px dashed #C6CFD8;border-left:4px solid var(--sys);color:var(--sys)}
+  .step.sys b{color:var(--sys)}
+  .handoff{align-self:center;font-family:var(--mono);font-size:11px;color:var(--mute);padding:0;line-height:1}
+  .chip{display:inline-block;font-family:var(--mono);font-size:10.5px;background:var(--ink);color:var(--paper);border-radius:3px;padding:2px 6px;margin-top:6px;letter-spacing:.03em}
+  .chip.warn{background:var(--accent)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:36px}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px 22px}
+  .panel h2{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.05em;text-transform:uppercase;margin:0 0 12px}
+  .panel ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+  .panel li::marker{color:var(--accent)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:13.5px}
+  .split h3{font-family:var(--mono);font-size:11px;letter-spacing:.08em;margin:0 0 8px;color:var(--sys)}
+  .split .no h3{color:#B4231F}
+  .split ul{padding-left:16px;margin:0;display:flex;flex-direction:column;gap:5px}
+  .split .no li::marker{content:"✕ ";color:#B4231F;font-size:11px}
+  .split .yes li::marker{content:"✓ ";color:var(--wa);font-size:11px}
+  footer{margin-top:34px;font-size:12.5px;color:var(--mute);max-width:70ch}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>The Job Board — how an unmatched job finds its provider</h1>
+  <p class="sub">When a customer's request goes unanswered by push offers, it stops dead-ending. It becomes searchable: nearby providers pull it, raise a hand with a price, and the customer chooses.</p>
+  <span class="state">STATUS: LIVE-DARK · flag provider.board.v1 OFF · private preview: 1 test provider</span>
+  <div class="legend">
+    <span><i class="sw p"></i>Provider acts in the app</span>
+    <span><i class="sw w"></i>WhatsApp message lands</span>
+    <span><i class="sw s"></i>Platform does it automatically</span>
+  </div>
+</header>
+
+<div class="scroller"><div class="lanes">
+  <div></div>
+  <div class="phase-h"><span class="n">PHASE 1</span>Job goes unanswered</div>
+  <div class="phase-h"><span class="n">PHASE 2</span>Provider searches</div>
+  <div class="phase-h"><span class="n">PHASE 3</span>Raises a hand</div>
+  <div class="phase-h"><span class="n">PHASE 4</span>Customer chooses</div>
+  <div class="phase-h"><span class="n">PHASE 5</span>Provider confirms</div>
+  <div class="phase-h"><span class="n">PHASE 6</span>Matched</div>
+
+  <!-- PROVIDER LANE -->
+  <div class="lane-label">Provider</div>
+  <div class="cell"><div class="step sys"><b>Top-ranked providers ignore push offers</b><span class="d">Each had a 60-min window. All lapsed or declined.</span></div></div>
+  <div class="cell"><div class="step provider"><b>Opens “Job board” in the app</b><span class="d">Entry from Leads page or dashboard. Filters by their trade + suburb. Sees only jobs in their own service areas.</span></div>
+    <div class="step provider"><b>Reads a privacy-safe card</b><span class="d">“Painting — Repaint boundary wall · Wilgeheuwel · this week · 1/3 interested”</span></div></div>
+  <div class="cell"><div class="step provider"><b>Taps “I'm interested”</b><span class="d">Enters call-out fee + earliest arrival (+ optional note). No charge yet.</span><span class="chip">CAP: max 3 providers per job</span></div></div>
+  <div class="cell"><div class="step sys"><b>Waits on the shortlist</b><span class="d">Still free to work the board — nothing is reserved for them yet.</span></div></div>
+  <div class="cell"><div class="step wa"><b>“✅ Customer selected you”</b><span class="d">Accept / Decline buttons. Accepting runs the normal gate: KYC verified + lead credits charged.</span></div></div>
+  <div class="cell"><div class="step provider"><b>Job unlocked</b><span class="d">Customer name, phone and full address now visible. It appears under “My Jobs”.</span></div></div>
+
+  <!-- PLATFORM LANE -->
+  <div class="lane-label">Platform</div>
+  <div class="cell"><div class="step sys"><b>Job becomes board-eligible</b><span class="d">Alive, in-window, unmatched, push exhausted → listed for in-area, skill-matched providers only.</span></div></div>
+  <div class="cell"><div class="step sys"><b>Guards every view</b><span class="d">No identity shown. Area + skill checked server-side.</span></div></div>
+  <div class="cell"><div class="step sys"><b>Locks &amp; verifies</b><span class="d">Atomic cap check (no over-subscription race), one hand-raise per provider, then publishes/refreshes the shortlist ranked by call-out fee.</span></div></div>
+  <div class="cell"><div class="step sys"><b>Re-notifies per new interest</b><span class="d">Shortlist superseded and customer pinged again at 2/3 and 3/3.</span></div></div>
+  <div class="cell"><div class="step sys"><b>Creates the Match</b><span class="d">Race-safe: one match per job, ever. If the provider never confirms, the job returns to the board.</span></div></div>
+  <div class="cell"><div class="step sys"><b>Removes it from the board</b><span class="d">Matched jobs vanish from every other provider's search instantly.</span></div></div>
+
+  <!-- CUSTOMER LANE -->
+  <div class="lane-label lane-end">Customer</div>
+  <div class="cell lane-endc"><div class="step sys"><b>Waiting — request submitted earlier</b><span class="d">Via WhatsApp or the website. So far: silence.</span></div></div>
+  <div class="cell"></div>
+  <div class="cell"><div class="step wa"><b>“A provider is available for your job”</b><span class="d">Sent the moment the first hand goes up. Button opens their private tracking link — no login.</span></div></div>
+  <div class="cell"><div class="step provider" style="border-left-color:var(--wa)"><b>Reviews up to 3 provider cards</b><span class="d">First name, rating, jobs completed, call-out fee — no phone numbers. One tap to choose.</span></div></div>
+  <div class="cell"><div class="step sys"><b>Waits for confirmation</b><span class="d">Their pick is pinged; the other hands stay warm as fallbacks.</span></div></div>
+  <div class="cell"><div class="step wa"><b>“You're matched”</b><span class="d">Provider details shared; booking flow continues as normal.</span></div></div>
+</div></div>
+
+<div class="cols">
+  <div class="panel">
+    <h2>How a job leaves the board</h2>
+    <ul>
+      <li><b>Matched</b> — a customer picked and the provider confirmed. Gone for everyone else.</li>
+      <li><b>Shortlist full</b> — 3 hands are up; new providers see “this job just filled up”.</li>
+      <li><b>Past due</b> — the customer's time window passes → hidden immediately.</li>
+      <li><b>Expired</b> — 7-day lifetime ends → job closes, customer told, and every interested provider gets a courteous “no longer available, more jobs on your board”.</li>
+      <li><b>No-show pick</b> — chosen provider never confirms → job quietly returns to the board.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h2>What a browsing provider sees</h2>
+    <div class="split">
+      <div class="yes"><h3>VISIBLE BEFORE SELECTION</h3>
+        <ul><li>Trade + job title &amp; description</li><li>Suburb only (e.g. Wilgeheuwel)</li><li>Requested time window</li><li>Interest count (n/3)</li></ul></div>
+      <div class="no"><h3>HIDDEN UNTIL MATCHED</h3>
+        <ul><li>Customer name</li><li>Phone number</li><li>Street address &amp; gate codes</li><li>Any contact channel</li></ul></div>
+    </div>
+    <p style="font-size:12.5px;color:var(--mute);margin:14px 0 0">Identity unlocks only after the customer chooses <em>and</em> the provider passes KYC + credit checks — the same gate as push leads. Off-platform poaching has nothing to work with.</p>
+  </div>
+</div>
+
+<footer>Plug A Pro · provider lead board (PR #192, merged 2026-07-27). Push matching is unchanged — the board is a second door into the same pipeline, so every safety rail (KYC, credits, one-match-per-job) is inherited, not re-implemented.</footer>
+</div>
