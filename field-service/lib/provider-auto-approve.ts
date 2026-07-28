@@ -703,11 +703,13 @@ export async function autoApproveProviderApplications(
   // Defense-in-depth kill switch. Field-completeness checks alone must never promote a
   // provider to active/verified/ACTIVE without an explicit operator opt-in. This guard
   // lives inside the function (not just the cron route) so no caller - tests, future
-  // routes, manual scripts - can bypass it. Disabled by default; manual admin approval
-  // is a separate path and is unaffected.
-  if (!(await isEnabled('provider.auto_approve.enabled'))) {
+  // routes, manual scripts - can bypass it. It intentionally checks the SAME key as the
+  // cron route: a second key (provider.auto_approve.enabled) once guarded this spot, and
+  // the 6 June freeze was only half-lifted because ops flipped one key but not the other.
+  // Disabled by default; manual admin approval is a separate path and is unaffected.
+  if (!(await isEnabled('provider.onboarding.auto_approve'))) {
     console.warn(
-      '[auto-approve] skipped: feature flag provider.auto_approve.enabled is disabled; no applications were auto-approved (manual admin review required)',
+      '[auto-approve] skipped: feature flag provider.onboarding.auto_approve is disabled; no applications were auto-approved (manual admin review required)',
     )
     return emptyAutoApproveResult('AUTO_APPROVE_FLAG_DISABLED')
   }
