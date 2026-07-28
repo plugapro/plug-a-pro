@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>za.co.plugapro.acquisition-weekly</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/shimane/Projects/Plug A Pro/scripts/acquisition-weekly-cron.sh</string>
+  </array>
+
+  <!-- Mondays at 08:07. Off the :00 mark on purpose. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>8</integer>
+    <key>Minute</key><integer>7</integer>
+  </dict>
+
+  <!-- If the Mac was asleep at 08:07, run once on wake instead of skipping the week. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/shimane/Projects/Plug A Pro/docs/marketing/acquisition-weekly/.launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/shimane/Projects/Plug A Pro/docs/marketing/acquisition-weekly/.launchd.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,4 @@
+# Run logs from the launchd weekly job — noise, not record.
+.cron.log
+.launchd.out.log
+.launchd.err.log
