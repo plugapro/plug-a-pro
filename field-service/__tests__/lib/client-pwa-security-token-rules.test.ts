@@ -12,6 +12,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Every test in this file does `await import('@/lib/job-request-access')` —
+// the first test pays the full cold-import cost. Under full-suite parallel
+// CPU contention this regularly exceeds 15s; 20s gives stable headroom
+// (validated 2026-06-08).
+vi.setConfig({ testTimeout: 20_000 })
+
 // ─── DB mock (hoisted) ────────────────────────────────────────────────────────
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {

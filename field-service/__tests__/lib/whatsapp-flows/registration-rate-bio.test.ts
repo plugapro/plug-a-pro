@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { FlowContext } from '@/lib/whatsapp-flows/types'
 
+// Heavy dynamic imports under full-suite parallel load can exceed the
+// default 5s testTimeout. Bump per-file (validated 2026-06-08).
+vi.setConfig({ testTimeout: 15_000 })
+
 // Mocks mirror the surface from registration-profile-photo.test.ts so the new
 // optional steps (Phase 4 follow-up Tasks 1 + 2) can be exercised in isolation.
 
