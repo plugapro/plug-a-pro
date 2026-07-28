@@ -404,13 +404,13 @@ describe('createJobRequest', () => {
 
     await createJobRequest({
       ...BASE_PARAMS,
-      phone: '0773923802',
+      phone: '27000000001',
     })
 
     expect(tx.customer.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { phone: '+27773923802' },
+      where: { phone: '+27000000001' },
       create: expect.objectContaining({
-        phone: '+27773923802',
+        phone: '+27000000001',
         isTestUser: true,
         cohortName: 'internal_staff_test',
       }),

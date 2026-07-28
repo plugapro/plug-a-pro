@@ -177,7 +177,7 @@ describe('provider promo award service', () => {
   })
 
   it('awards 10 onboarding test credits to selected internal staff numbers', async () => {
-    state.provider = makeProvider({ phone: '+27764010810' })
+    state.provider = makeProvider({ phone: '+27000000009' })
 
     const result = await awardPromoCreditsForMilestone(
       'provider-1',

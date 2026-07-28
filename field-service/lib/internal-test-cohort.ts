@@ -2,24 +2,32 @@ import { normalizePhone } from './utils'
 
 export const INTERNAL_TEST_COHORT_NAME = 'internal_staff_test'
 
+// SECURITY (finding ca4b71d2): the internal staff phone numbers are real PII and
+// MUST NOT be committed to source. They are supplied at runtime via environment
+// variables (set in Vercel for production, and in vitest.config.ts as synthetic
+// reserved-style numbers for tests). The module reads the env at import time, so
+// the env vars must be present at process LAUNCH (see vitest.config.ts comment).
+//
 // Bootstrap list - seeds Customer.isTestUser / Provider.isTestUser when those
 // rows are first created. The DB flags are authoritative once a row exists;
 // adding/removing test users at runtime should be done by flipping the DB flag,
-// not by editing this list. We still consult the list as a fallback for
+// not by editing the env var. We still consult the list as a fallback for
 // recipients whose DB row hasn't been loaded into the cohort context yet.
-export const INTERNAL_TEST_PHONE_NUMBERS = [
-  '+27773923802',
-  '+27764010810',
-  '+27823035070',
-  '+27832114183',
-  '+27824978565',
-  '+27827006695',
-  '+27738131154',
-] as const
+function parseE164List(raw: string | undefined): readonly string[] {
+  if (!raw) return []
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => normalizePhone(entry))
+}
 
-export const INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS = [
-  '+27764010810',
-] as const
+export const INTERNAL_TEST_PHONE_NUMBERS: readonly string[] = parseE164List(
+  process.env.INTERNAL_TEST_PHONE_NUMBERS,
+)
+
+export const INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS: readonly string[] =
+  parseE164List(process.env.INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS)
 
 export const INTERNAL_TEST_ONBOARDING_CREDITS = 10
 

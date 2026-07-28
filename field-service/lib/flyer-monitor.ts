@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { INTERNAL_TEST_PHONE_NUMBERS } from '@/lib/internal-test-cohort'
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000
 const SAST_OFFSET_MS = 2 * 60 * 60 * 1000
@@ -8,14 +9,12 @@ const MONITOR_SLOT_HOURS = [0, 6, 12, 18]
 const MONITOR_SLOT_MINUTE = 13
 const CAMPAIGN_BASELINE_UTC = new Date('2026-05-28T07:31:00.000Z')
 
-const EXCLUDED_PHONES = [
-  '+27773923802',
-  '+27764010810',
-  '+27823035070',
-  '+27832114183',
-  '+27824978565',
-  '+27827006695',
-  '+27738131154',
+// SECURITY (finding ca4b71d2): the real internal staff numbers are no longer
+// hardcoded here. They are sourced from INTERNAL_TEST_PHONE_NUMBERS, which is
+// populated from environment variables at import time (real numbers via Vercel
+// env in production; synthetic numbers via vitest.config.ts in tests). The
+// remaining entries below are synthetic test/QA numbers that are safe to commit.
+const SYNTHETIC_EXCLUDED_PHONES = [
   '+27711000001',
   '+27799000001',
   '+27800111222',
@@ -23,6 +22,11 @@ const EXCLUDED_PHONES = [
   '+27823035040',
   '+27831000001',
   '+447710173736',
+]
+
+const EXCLUDED_PHONES = [
+  ...INTERNAL_TEST_PHONE_NUMBERS,
+  ...SYNTHETIC_EXCLUDED_PHONES,
 ]
 
 const EXCLUDED_NORMALIZED = new Set(EXCLUDED_PHONES)
