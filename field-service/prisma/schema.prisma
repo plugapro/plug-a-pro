@@ -2388,6 +2388,10 @@ enum OpsQueueType {
   PAYMENT_FOLLOW_UP
   PROVIDER_ONBOARDING
   IDENTITY_VERIFICATION
+  // CJ-06: durable record of a booking reschedule request (entityId = bookingId)
+  RESCHEDULE_REQUEST
+  // CJ-03 backstop: post-match customer notification failed (entityId = jobRequestId)
+  CUSTOMER_NOTIFY_FAILED
 }
 
 enum InspectionStatus {
