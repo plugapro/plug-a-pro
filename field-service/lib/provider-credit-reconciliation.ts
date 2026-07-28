@@ -27,7 +27,11 @@ const CREDITABLE_STATUSES = [
 ] as const
 // CREATED is reserved for future gateway-initiated intents. Manual EFT intents
 // currently start at PENDING_PAYMENT.
-const MATCHABLE_STATUSES = ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'] as const
+// EXPIRED is matchable so an admin can recover a real payment that landed after
+// the checkout window closed or whose gateway ITN was lost (e.g. a Pay@ till
+// receipt). Matching requires a statement/receipt reference, which is the proof
+// gate; the action layer additionally restricts this to FINANCE/ADMIN/OWNER.
+const MATCHABLE_STATUSES = ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT', 'EXPIRED'] as const
 
 type ReconciliationErrorCode =
   | 'NOT_FOUND'
@@ -108,7 +112,15 @@ function assertCreditableStatus(intent: PaymentIntent) {
     )
   }
 
-  if (intent.expiresAt && intent.expiresAt.getTime() < Date.now()) {
+  // The checkout-window expiry only blocks crediting an intent whose funds are
+  // still unconfirmed. Once an admin has matched it against a bank/till statement
+  // (MATCHED_ON_STATEMENT) the money is confirmed in hand, so the original
+  // expiry no longer applies - this is the recovery path for a late/lost payment.
+  if (
+    intent.status !== 'MATCHED_ON_STATEMENT' &&
+    intent.expiresAt &&
+    intent.expiresAt.getTime() < Date.now()
+  ) {
     throw new ProviderCreditReconciliationError(
       'INVALID_STATUS',
       'This payment intent has expired.',

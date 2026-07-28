@@ -277,4 +277,48 @@ describe('provider credit reconciliation service', () => {
       code: 'AMOUNT_MISMATCH',
     } satisfies Partial<ProviderCreditReconciliationError>)
   })
+
+  it('matches an expired intent when an admin confirms funds against a statement (till-receipt recovery)', async () => {
+    // A provider who pays at a Pay@ till just after the checkout window closes,
+    // or whose gateway ITN is lost, leaves an EXPIRED intent with real funds
+    // banked. An admin with proof (receipt reference) must be able to recover it.
+    state.intent = makeIntent({
+      status: 'EXPIRED',
+      paymentMethod: 'PAYAT',
+      bankStatementReference: null,
+      paidAt: null,
+      expiresAt: new Date('2026-04-28T10:05:00.000Z'),
+    })
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-29T10:05:00.000Z'))
+
+    const { intent } = await reconcilePaymentIntent('intent-1', 'admin-user-1', 'FLASH-RECEIPT-123')
+
+    expect(intent.status).toBe('MATCHED_ON_STATEMENT')
+    expect(intent.bankStatementReference).toBe('FLASH-RECEIPT-123')
+    vi.useRealTimers()
+  })
+
+  it('credits a matched intent even when the original checkout window expired (funds confirmed in hand)', async () => {
+    state.intent = makeIntent({
+      status: 'MATCHED_ON_STATEMENT',
+      paymentMethod: 'PAYAT',
+      bankStatementReference: 'FLASH-RECEIPT-123',
+      expiresAt: new Date('2026-04-28T10:05:00.000Z'),
+    })
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-29T10:05:00.000Z'))
+
+    const result = await creditPaymentIntent('intent-1', 'admin-user-1', {
+      adminNote: 'Till receipt recovery',
+    })
+
+    expect(result.intent.status).toBe('CREDITED')
+    expect(result.ledgerEntries[0]).toMatchObject({
+      entryType: 'TOPUP_CREDIT',
+      creditType: 'PAID',
+      amountCredits: 2,
+    })
+    vi.useRealTimers()
+  })
 })

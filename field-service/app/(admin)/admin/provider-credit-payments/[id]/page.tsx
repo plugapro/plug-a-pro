@@ -126,8 +126,11 @@ export default async function ProviderCreditPaymentDetailPage({
   })
 
   const isPayfastIntent = ['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'].includes(intent.paymentMethod)
-  // Matching (bank statement reconciliation) applies to manual EFT only.
-  const canMatch = !isPayfastIntent && ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'].includes(intent.status)
+  // Matching (bank statement reconciliation) applies to manual EFT and Pay@.
+  // EXPIRED is matchable so ops can recover a real payment that landed after the
+  // checkout window closed or whose gateway ITN was lost (e.g. a Pay@ till
+  // receipt) - match against the receipt reference, then credit.
+  const canMatch = !isPayfastIntent && ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT', 'EXPIRED'].includes(intent.status)
   // Payfast intents can be manually credited when stuck in PENDING_PAYMENT or
   // ITN_RECEIVED (ITN arrived but automatic crediting failed).
   const canCredit = isPayfastIntent
