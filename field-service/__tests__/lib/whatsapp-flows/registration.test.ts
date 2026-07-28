@@ -8,7 +8,7 @@
 //  6. syncProviderRecord: phone normalization (local format → E.164)
 //  7. reconcileProviderRecordsFromApplications: same phone in two applications → upserts same Provider id
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 vi.mock('@/lib/db', () => {
@@ -48,6 +48,14 @@ vi.mock('@/lib/db', () => {
       update: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
+    // Cross-channel resume (provider.registration.cross_channel_resume): startRegistration
+    // looks up an in-progress PWA draft by phone and mints a resume token for the web link.
+    providerApplicationDraft: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    registrationResumeToken: {
+      create: vi.fn().mockResolvedValue({ id: 'rrt-mock' }),
+    },
   }
   mockDb.$transaction.mockImplementation(async (callback) => {
     if (typeof callback === 'function') return callback(mockDb)
@@ -74,8 +82,15 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: vi.fn().mockResolvedValue(undefined),
   sendButtons: vi.fn().mockResolvedValue(undefined),
   sendList: vi.fn().mockResolvedValue(undefined),
-  sendCtaUrl: vi.fn().mockResolvedValue(undefined),
+  sendCtaUrl: vi.fn().mockResolvedValue('wamid.mock'),
 }))
+
+// Preserve the real flags module but make isEnabled controllable per-test. Default
+// OFF matches the prior behaviour (real isEnabled resolves false with no DB row).
+vi.mock('@/lib/flags', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/flags')>()
+  return { ...actual, isEnabled: vi.fn().mockResolvedValue(false) }
+})
 
 vi.mock('@/lib/whatsapp', () => ({
   sendTemplate: vi.fn().mockResolvedValue(undefined),
@@ -109,6 +124,7 @@ vi.mock('@/lib/location-nodes', () => ({
 
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 import { normalizePhone } from '@/lib/utils'
+import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
 import * as whatsapp from '@/lib/whatsapp'
@@ -133,6 +149,9 @@ function resetDbMocks() {
     count: (args.where.id.in as string[]).length,
   }))
   ;(db.auditLog.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
+  ;((db as any).providerApplicationDraft.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+  ;((db as any).registrationResumeToken.create as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'rrt-mock' })
+  ;(isEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
 }
 
 function makeCtx(step: string, replyId?: string, replyText?: string, data: object = {}) {
@@ -1618,5 +1637,72 @@ describe('syncProviderRecord - phone normalization', () => {
     // WhatsApp delivers SA numbers as 27xxxxxxxxx (no + prefix)
     expect(normalizePhone('27821234567')).toBe('+27821234567')
     expect(normalizePhone('27821234567')).toBe('+27821234567')
+  })
+})
+
+// ─── Cross-channel resume (provider.registration.cross_channel_resume) ─────────
+// When a provider messages "join" on WhatsApp but already has an in-progress PWA
+// registration draft for the same phone, offer a self-serve web-resume link so
+// they continue where they left off instead of re-entering everything.
+describe('startRegistration - cross-channel PWA draft resume', () => {
+  const prevAppUrl = process.env.NEXT_PUBLIC_APP_URL
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbMocks()
+    // getPublicAppUrl returns '' without a configured base; give it one so the
+    // resume link is emittable in the test environment.
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.plugapro.co.za'
+  })
+  afterEach(() => {
+    if (prevAppUrl === undefined) delete process.env.NEXT_PUBLIC_APP_URL
+    else process.env.NEXT_PUBLIC_APP_URL = prevAppUrl
+  })
+
+  it('flag ON + in-progress PWA draft: sends a /provider/register?resume= web link', async () => {
+    ;(isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => key === 'provider.registration.cross_channel_resume',
+    )
+    ;((db as any).providerApplicationDraft.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'draft_1234',
+      lastCompletedStep: 3,
+    })
+
+    await handleRegistrationFlow(makeCtx('reg_start'))
+
+    // Minted a resume token for the existing draft…
+    expect((db as any).registrationResumeToken.create).toHaveBeenCalled()
+    // …and surfaced it as a CTA URL pointing at the PWA resume deep link.
+    const resumeCall = (wa.sendCtaUrl as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => typeof c[3] === 'string' && c[3].includes('/provider/register?resume='),
+    )
+    expect(resumeCall, 'expected a sendCtaUrl call with a /provider/register?resume= url').toBeTruthy()
+  })
+
+  it('flag OFF: does not look up drafts and sends no resume link', async () => {
+    ;(isEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false)
+    ;((db as any).providerApplicationDraft.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'draft_1234',
+      lastCompletedStep: 3,
+    })
+
+    await handleRegistrationFlow(makeCtx('reg_start'))
+
+    expect((db as any).registrationResumeToken.create).not.toHaveBeenCalled()
+    const resumeCall = (wa.sendCtaUrl as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => typeof c[3] === 'string' && c[3].includes('/provider/register?resume='),
+    )
+    expect(resumeCall).toBeFalsy()
+  })
+
+  it('flag ON but no draft: falls through to the normal fresh-start flow', async () => {
+    ;(isEnabled as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => key === 'provider.registration.cross_channel_resume',
+    )
+    ;((db as any).providerApplicationDraft.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+    const result = await handleRegistrationFlow(makeCtx('reg_start'))
+
+    expect((db as any).registrationResumeToken.create).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('reg_collect_name')
   })
 })
