@@ -48,7 +48,10 @@ async function getProviderWalletBalanceFromLedger(providerId: string): Promise<{
 }
 
 // How long the provider has to accept/decline after customer selection.
-const PROVIDER_CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000
+// Exported so the stranded-request expiry sweep (lib/job-requests/
+// expire-job-request.ts) reuses the same 24h selection window instead of
+// forking a second constant.
+export const PROVIDER_CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000
 
 // Provider lead notification reservation TTL in milliseconds.
 // A reservation prevents duplicate notifications when a retry occurs.

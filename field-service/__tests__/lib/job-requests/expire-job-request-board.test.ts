@@ -7,6 +7,7 @@ const { mockDb, mockSendText } = vi.hoisted(() => ({
     jobRequest: {
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       delete: vi.fn(),
       deleteMany: vi.fn(),
     },
@@ -81,6 +82,11 @@ describe('expireOpenJobRequest — board lead close-out', () => {
     )
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest())
     mockDb.jobRequest.update.mockResolvedValue({})
+    // expireOpenJobRequest CAS write (CJ-08, platform audit 2026-07-06):
+    // status-guarded updateMany rather than a plain update, so a concurrent
+    // transition between the read and the write cannot expire a request
+    // that just moved forward.
+    mockDb.jobRequest.updateMany.mockResolvedValue({ count: 1 })
     mockDb.lead.findMany.mockResolvedValue([makeBoardLead()])
     mockDb.lead.updateMany.mockResolvedValue({ count: 1 })
     mockSendText.mockResolvedValue(undefined)
@@ -151,9 +157,9 @@ describe('expireOpenJobRequest — board lead close-out', () => {
     const result = await expireOpenJobRequest('job-1', 'max_age_exceeded')
 
     expect(result.transitioned).toBe(true)
-    expect(mockDb.jobRequest.update).toHaveBeenCalledWith(
+    expect(mockDb.jobRequest.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'job-1' },
+        where: expect.objectContaining({ id: 'job-1' }),
         data: expect.objectContaining({ status: 'EXPIRED' }),
       }),
     )
@@ -203,9 +209,9 @@ describe('expireOpenJobRequest — board lead close-out', () => {
     const result = await expireOpenJobRequest('job-1', 'max_age_exceeded', { includeShortlistReady: true })
 
     expect(result.transitioned).toBe(true)
-    expect(mockDb.jobRequest.update).toHaveBeenCalledWith(
+    expect(mockDb.jobRequest.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'job-1' },
+        where: expect.objectContaining({ id: 'job-1' }),
         data: expect.objectContaining({ status: 'EXPIRED' }),
       }),
     )
@@ -242,7 +248,7 @@ describe('expireOpenJobRequest — board lead close-out', () => {
     const result = await expireOpenJobRequest('job-1', 'quick_match_queue_exhausted')
 
     expect(result.transitioned).toBe(false)
-    expect(mockDb.jobRequest.update).not.toHaveBeenCalled()
+    expect(mockDb.jobRequest.updateMany).not.toHaveBeenCalled()
     expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
     expect(mockSendText).not.toHaveBeenCalled()
     assertNoDeletes()

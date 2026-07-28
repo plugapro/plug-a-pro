@@ -1,11 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDbReviewCreate, mockResolveReviewAccessToken } = vi.hoisted(() => ({
-  mockDbReviewCreate: vi.fn(),
-  mockResolveReviewAccessToken: vi.fn(),
-}))
+const { mockDb, mockDbReviewCreate, mockResolveReviewAccessToken } = vi.hoisted(() => {
+  const mockDbReviewCreate = vi.fn()
+  // CJ-02: submitReview now resolves linkage (match.findUnique), writes inside
+  // $transaction and recomputes the provider average (job.findMany,
+  // review.findMany, provider.updateMany on the tx client).
+  const tx = {
+    review: { create: mockDbReviewCreate, findMany: vi.fn() },
+    job: { findMany: vi.fn() },
+    provider: { updateMany: vi.fn() },
+  }
+  const mockDb = {
+    tx,
+    review: { create: mockDbReviewCreate },
+    match: { findUnique: vi.fn() },
+    job: { findUnique: vi.fn() },
+    $transaction: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => fn(tx)),
+  }
+  return { mockDb, mockDbReviewCreate, mockResolveReviewAccessToken: vi.fn() }
+})
 
-vi.mock('../../lib/db', () => ({ db: { review: { create: mockDbReviewCreate } } }))
+vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/review-access', () => ({ resolveReviewAccessToken: mockResolveReviewAccessToken }))
 
 import { submitReview } from '../../app/review/[token]/actions'
@@ -24,6 +39,14 @@ const validContext = {
 beforeEach(() => {
   vi.clearAllMocks()
   mockDbReviewCreate.mockResolvedValue({ id: 'review-1' })
+  mockDb.match.findUnique.mockResolvedValue({
+    id: 'match-1',
+    providerId: 'p-1',
+    booking: { job: { id: 'job-1' } },
+  })
+  mockDb.tx.job.findMany.mockResolvedValue([{ id: 'job-1' }])
+  mockDb.tx.review.findMany.mockResolvedValue([{ id: 'review-1', score: 5 }])
+  mockDb.tx.provider.updateMany.mockResolvedValue({ count: 1 })
 })
 
 describe('submitReview', () => {

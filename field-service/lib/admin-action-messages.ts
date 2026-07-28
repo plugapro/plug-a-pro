@@ -13,8 +13,32 @@ export function getPaymentAdminMessage(code?: string | null) {
   }
 }
 
-export function getApplicationsAdminMessage(code?: string | null) {
+const MATCHABILITY_REASON_LABELS: Record<string, string> = {
+  PROVIDER_ACTIVE: 'provider record inactive',
+  PROVIDER_VERIFIED: 'provider not verified',
+  PROVIDER_STATUS_ACTIVE: 'provider status not ACTIVE',
+  KYC_VERIFIED_OR_GRACE: 'KYC not verified',
+  ACTIVE_SERVICE_AREA: 'no active service area (invisible to matching)',
+  SKILLS_PRESENT: 'no skills recorded',
+  CATEGORY_APPROVAL: 'all skill categories blocked',
+}
+
+export function describeMatchabilityReasons(reasons?: string | null): string {
+  if (!reasons) return 'unknown reason'
+  return reasons
+    .split(',')
+    .map((code) => MATCHABILITY_REASON_LABELS[code.trim()] ?? code.trim())
+    .filter(Boolean)
+    .join('; ')
+}
+
+export function getApplicationsAdminMessage(code?: string | null, reasons?: string | null) {
   switch (code) {
+    case 'application_approved_not_matchable':
+      return {
+        tone: 'error' as const,
+        text: `Application approved, BUT the provider is not matchable yet: ${describeMatchabilityReasons(reasons)}. Fix these on the provider profile or the provider will never receive leads.`,
+      }
     case 'duplicate_active_application':
       return {
         tone: 'error' as const,
