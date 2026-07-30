@@ -21,7 +21,7 @@ const messageEventCreate = vi.mocked(db.messageEvent.create)
 
 // Not in INTERNAL_TEST_PHONE_NUMBERS, so the real cohort helpers treat the
 // send as production traffic and the success create path runs.
-const PROD_PHONE = '+27000000001'
+const PROD_PHONE = '+27821234567'
 
 describe('logOutboundMessage provider/lead FK columns', () => {
   beforeEach(() => {

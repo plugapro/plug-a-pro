@@ -83,7 +83,7 @@ describe('outbound message event cohort guard', () => {
     const { logOutboundMessage } = await import('@/lib/message-events')
 
     const result = await logOutboundMessage({
-      to: '+27773923802',
+      to: '+27000000001',
       templateName: 'test-template',
       body: 'Internal test',
       metadata: { isTestRequest: true, traceId: 'trace-ret' },

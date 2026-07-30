@@ -6,6 +6,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Heavy dynamic imports under full-suite parallel load can exceed the
+// default 5s testTimeout. Bump per-file (same pattern as matching-funnel.test.ts).
+vi.setConfig({ testTimeout: 15_000 })
+
 const { mockIsEnabled, mockRequireProvider, mockDb, mockFindBoardJobsForProvider } = vi.hoisted(() => ({
   mockIsEnabled: vi.fn(),
   mockRequireProvider: vi.fn(),

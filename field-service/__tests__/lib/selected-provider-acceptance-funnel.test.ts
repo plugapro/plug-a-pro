@@ -33,6 +33,15 @@ vi.mock('../../lib/workflow-events/record', () => ({
 }))
 
 vi.mock('../../lib/provider-accepted-lock', () => ({
+  AcceptedLeadLockError: class AcceptedLeadLockError extends Error {
+    constructor(
+      public readonly code: string,
+      message: string,
+    ) {
+      super(message)
+      this.name = 'AcceptedLeadLockError'
+    }
+  },
   lockAcceptedLeadAfterCreditInTransaction: vi.fn(async () => ({
     alreadyLocked: false,
     notificationPayload: { leadId: 'lead_1', providerId: 'prov_1' },
@@ -42,6 +51,16 @@ vi.mock('../../lib/provider-accepted-lock', () => ({
 }))
 
 vi.mock('../../lib/provider-credit-application', () => ({
+  ProviderCreditApplicationError: class ProviderCreditApplicationError extends Error {
+    constructor(
+      public readonly code: string,
+      message: string,
+      public readonly currentCreditBalance?: number,
+    ) {
+      super(message)
+      this.name = 'ProviderCreditApplicationError'
+    }
+  },
   applyProviderCreditForAcceptedLeadInTransaction: vi.fn(async () => ({
     currentCreditBalance: 4,
     paidCreditBalance: 3,
@@ -82,7 +101,13 @@ const txLead = {
   updateMany: vi.fn(async () => ({ count: 1 })),
 }
 const txAuditLog = { create: vi.fn(async () => ({})) }
-const txStub = { lead: txLead, auditLog: txAuditLog }
+// Pre-gate (#60): acceptSelectedProviderJob checks the wallet before moving a
+// CUSTOMER_SELECTED lead any further. Sufficient balance so the happy-path
+// tests below reach the same behavior they exercised before that pre-gate existed.
+const txProviderWallet = {
+  findUnique: vi.fn(async () => ({ paidCreditBalance: 5, promoCreditBalance: 0, status: 'ACTIVE' })),
+}
+const txStub = { lead: txLead, auditLog: txAuditLog, providerWallet: txProviderWallet }
 type TxStub = typeof txStub
 
 vi.mock('../../lib/db', () => ({

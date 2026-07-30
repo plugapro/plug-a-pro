@@ -1796,7 +1796,7 @@ describe('Fix C: providerRate rows replayed on PASS', () => {
 // Fix A: NEEDS_MANUAL_REVIEW / EXPIRED / CANCELLED → recordManualReviewForApplication
 // creates a MORE_INFO_REQUIRED application so the applicant is never silently stranded.
 describe('recordManualReviewForApplication (Fix A)', () => {
-  const INTERNAL_TEST_COHORT_PHONE = '+27823035070' // from INTERNAL_TEST_PHONE_NUMBERS list
+  const INTERNAL_TEST_COHORT_PHONE = '+27000000001' // synthetic test-cohort number, see vitest.config.ts
 
   beforeEach(() => {
     vi.clearAllMocks()
