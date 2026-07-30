@@ -30,6 +30,7 @@ import {
 import { buildMetadata } from '@/lib/metadata'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { hasApplicationIdNumber } from '@/lib/pii-id-number'
 import {
   listProviderOnboardingRecoveryRows,
   filterAdminActionableRecoveryRows,
@@ -121,6 +122,7 @@ const providerApplicationSelect = {
   cohortName: true,
   submittedAt: true,
   idNumber: true,
+  idNumberLast4: true,
   evidenceNote: true,
   evidenceFileUrls: true,
   attachments: {
@@ -165,6 +167,7 @@ function evaluateApplicationCompleteness(application: {
   availability: string | null
   callOutFee: { toString(): string } | number | string | null
   idNumber: string | null
+  idNumberLast4?: string | null
   attachments: Array<{ label: string | null; id: string }>
   provider?: { avatarUrl: string | null } | null
 }) {
@@ -182,6 +185,7 @@ function evaluateApplicationCompleteness(application: {
     availability: application.availability,
     callOutFee,
     idNumber: application.idNumber,
+    idNumberLast4: application.idNumberLast4 ?? null,
     avatarUrl: application.provider?.avatarUrl ?? null,
     profilePhotoAttachmentId,
   })
@@ -1438,7 +1442,7 @@ export default async function ApplicationsPage({
                 <p className="text-xs text-muted-foreground">
                   Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
                   {' · '}Ref: {app.id.slice(-8).toUpperCase()}
-                  {' · '}ID: {app.idNumber ? '✓ provided' : app._count.attachments > 0 ? `${app._count.attachments} file(s)` : 'not provided'}
+                  {' · '}ID: {hasApplicationIdNumber(app) ? '✓ provided' : app._count.attachments > 0 ? `${app._count.attachments} file(s)` : 'not provided'}
                 </p>
 
                 <div className="space-y-2 rounded-lg border border-border p-2 text-xs text-muted-foreground">
@@ -1461,7 +1465,7 @@ export default async function ApplicationsPage({
                     </div>
                   ) : null}
                   {app.evidenceNote ? <p>Evidence note: {app.evidenceNote}</p> : null}
-                  {app.idNumber ? <p>Identity number field present: supplied</p> : null}
+                  {hasApplicationIdNumber(app) ? <p>Identity number field present: supplied</p> : null}
                   {app.attachments.length > 0 ? (
                     <div className="space-y-1">
                       <p>Uploaded files ({app.attachments.length}):</p>
@@ -1558,7 +1562,7 @@ export default async function ApplicationsPage({
                     </SubmitButton>
                   </form>
 
-                  {submittedStageTemplatesEnabled && !app.idNumber && (
+                  {submittedStageTemplatesEnabled && !hasApplicationIdNumber(app) && (
                   <form action={requestIdNumber}>
                     <input type="hidden" name="id" value={app.id} />
                     <SubmitButton
