@@ -37,7 +37,7 @@ export class PayatConfigError extends Error {
  */
 export class PayatApiError extends Error {
   constructor(
-    public readonly stage: 'rtp_create_failed' | 'rtp_response_invalid',
+    public readonly stage: 'rtp_create_failed' | 'rtp_response_invalid' | 'rtp_read_failed',
     public readonly status?: number,
     detail?: string,
   ) {
@@ -45,6 +45,8 @@ export class PayatApiError extends Error {
       detail ??
         (stage === 'rtp_create_failed'
           ? `Pay@ RTP creation failed: HTTP ${status ?? '?'}`
+          : stage === 'rtp_read_failed'
+          ? `Pay@ RTP read failed: HTTP ${status ?? '?'}`
           : 'Pay@ RTP response did not include sourceReference'),
     )
     this.name = 'PayatApiError'
