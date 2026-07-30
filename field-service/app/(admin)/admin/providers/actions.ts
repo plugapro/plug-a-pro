@@ -7,7 +7,7 @@ import { normalizePhone } from '@/lib/utils'
 import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import { normaliseLocationDisplayNames } from '@/lib/location-format'
 import type { KycStatus, ProviderStatus } from '@prisma/client'
-import { autoApproveLowRiskCategories } from '@/lib/provider-categories'
+import { autoApproveLowRiskCategories, reconcileProviderCategoriesForSkills } from '@/lib/provider-categories'
 import { isKycRequiredForActivation } from '@/lib/kyc-policy'
 import { isEnabled } from '@/lib/flags'
 import { KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
@@ -320,6 +320,9 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
       }
 
       const nextServiceAreas = parseServiceAreas(data.serviceAreas)
+      const skills = data.skills
+        ? data.skills.split(',').map((skill) => skill.trim()).filter(Boolean)
+        : []
 
       await tx.provider.update({
         where: { id: data.providerId },
@@ -328,9 +331,7 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
           phone: data.phone,
           email: data.email || null,
           experience: data.experience || null,
-          skills: data.skills
-            ? data.skills.split(',').map((skill) => skill.trim()).filter(Boolean)
-            : [],
+          skills,
           serviceAreas: nextServiceAreas,
         },
       })
@@ -341,6 +342,16 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
         JSON.stringify([...provider.serviceAreas].sort()) !== JSON.stringify([...nextServiceAreas].sort())
       if (serviceAreasChanged) {
         await ensureProviderMatchable(tx, data.providerId)
+      }
+
+      // Mirror the provider self-service path: a skill added to an approved
+      // provider must be reviewed before matching surfaces it. Creates
+      // PENDING_REVIEW provider_categories rows for newly added (non-low-risk)
+      // skills; existing approved rows are never downgraded. The actor for this
+      // change is captured by crudAction's own provider.update_profile audit row
+      // written in this same transaction.
+      if (await isEnabled('provider.skill_category_review')) {
+        await reconcileProviderCategoriesForSkills(tx, data.providerId, skills)
       }
 
       return { id: data.providerId }

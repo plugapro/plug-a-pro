@@ -5,6 +5,98 @@ import { CategoryRiskTier } from '@prisma/client'
 export type CategoryApprovalStatus = 'APPROVED' | 'PENDING_REVIEW'
 
 /**
+ * Minimal structural shape of the Prisma client surface used by
+ * reconcileProviderCategoriesForSkills, so callers can pass either the
+ * singleton `db` or an interactive transaction client.
+ */
+type ProviderCategoryReconcileClient = {
+  providerCategory: {
+    findMany: (...args: any[]) => Promise<Array<{ categorySlug: string }>>
+    createMany: (...args: any[]) => Promise<unknown>
+  }
+  provider: { findUnique: (...args: any[]) => Promise<{ status: string } | null> }
+  category: {
+    findMany: (...args: any[]) => Promise<Array<{ slug: string; id: string; riskTier: CategoryRiskTier }>>
+  }
+  auditLog: { createMany: (...args: any[]) => Promise<unknown> }
+}
+
+/**
+ * Ensures every skill in `skillTags` has a provider_categories row. Rows are
+ * only ever CREATED for skills with no existing row — existing rows (including
+ * APPROVED ones) are never modified or downgraded. New rows use the same
+ * initial-status rule as onboarding (resolveInitialApprovalStatus): APPROVED
+ * only for an ACTIVE provider + LOW-risk category, otherwise PENDING_REVIEW.
+ *
+ * This closes the post-approval skill-addition gap: a provider (or admin) who
+ * adds a high-risk skill after approval gets a PENDING_REVIEW row, which the
+ * matching gate (filter.ts / service.ts) excludes until an admin approves it.
+ * Skill removals are intentionally not handled here.
+ */
+export async function reconcileProviderCategoriesForSkills(
+  client: ProviderCategoryReconcileClient,
+  providerId: string,
+  skillTags: string[],
+  opts: { actorId?: string; actorRole?: string } = {},
+): Promise<{ created: Array<{ categorySlug: string; approvalStatus: CategoryApprovalStatus }> }> {
+  if (skillTags.length === 0) return { created: [] }
+
+  const existing = await client.providerCategory.findMany({
+    where: { providerId, categorySlug: { in: skillTags } },
+    select: { categorySlug: true },
+  })
+  const existingSlugs = new Set(existing.map((row) => row.categorySlug))
+  const newSlugs = skillTags.filter((slug) => !existingSlugs.has(slug))
+  if (newSlugs.length === 0) return { created: [] }
+
+  const [provider, categories] = await Promise.all([
+    client.provider.findUnique({ where: { id: providerId }, select: { status: true } }),
+    client.category.findMany({
+      where: { slug: { in: newSlugs } },
+      select: { slug: true, id: true, riskTier: true },
+    }),
+  ])
+  const providerActive = provider?.status === 'ACTIVE'
+  const riskBySlug = new Map(categories.map((c) => [c.slug, c.riskTier]))
+  const idBySlug = new Map(categories.map((c) => [c.slug, c.id]))
+
+  const created = newSlugs.map((slug) => ({
+    categorySlug: slug,
+    categoryId: idBySlug.get(slug) ?? null,
+    approvalStatus: (providerActive && riskBySlug.get(slug) === CategoryRiskTier.LOW
+      ? 'APPROVED'
+      : 'PENDING_REVIEW') as CategoryApprovalStatus,
+  }))
+
+  await client.providerCategory.createMany({
+    data: created.map((row) => ({
+      providerId,
+      categoryId: row.categoryId,
+      categorySlug: row.categorySlug,
+      approvalStatus: row.approvalStatus,
+    })),
+    skipDuplicates: true,
+  })
+
+  await client.auditLog.createMany({
+    data: created.map((row) => ({
+      actorId: opts.actorId ?? 'system',
+      actorRole: opts.actorRole ?? 'SYSTEM',
+      action: 'provider_category.created_on_skill_add',
+      entityType: 'ProviderCategory',
+      entityId: `${providerId}:${row.categorySlug}`,
+      after: {
+        approvalStatus: row.approvalStatus,
+        categorySlug: row.categorySlug,
+        providerId,
+      },
+    })),
+  })
+
+  return { created: created.map(({ categorySlug, approvalStatus }) => ({ categorySlug, approvalStatus })) }
+}
+
+/**
  * Determines the initial approvalStatus for a new provider_categories row.
  * Returns APPROVED only when the provider is ACTIVE and the category is LOW risk.
  * Falls back to PENDING_REVIEW for any unknown category slug.

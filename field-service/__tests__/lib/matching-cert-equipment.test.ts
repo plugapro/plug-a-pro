@@ -40,6 +40,9 @@ const {
     // WS-B.1 tables (present in this test file)
     providerCertification: { findMany: vi.fn() },
     providerEquipment: { findMany: vi.fn() },
+    // Per-category approval gate (#107): rankCandidatesForJobRequest queries
+    // this unconditionally to hold back high-risk skills pending review.
+    providerCategory: { findMany: vi.fn() },
   },
 }))
 
@@ -151,6 +154,9 @@ function setupBatchMocks(
   mockDb.dispatchDecision.findMany.mockResolvedValue([])
   mockDb.providerCertification.findMany.mockResolvedValue(adminCerts)
   mockDb.providerEquipment.findMany.mockResolvedValue(adminEquip)
+  // No row ⇒ category-approval gate passes (permissive default for providers
+  // with no explicit PENDING_REVIEW/REJECTED category row).
+  mockDb.providerCategory.findMany.mockResolvedValue([])
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

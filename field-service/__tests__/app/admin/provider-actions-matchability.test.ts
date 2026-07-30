@@ -35,7 +35,10 @@ vi.mock('@/lib/provider-record/resolve-service-area-labels', () => ({
 
 vi.mock('@/lib/kyc-policy', () => ({ isKycRequiredForActivation: vi.fn().mockResolvedValue(false) }))
 vi.mock('@/lib/provider-lead-eligibility', () => ({ checkCanBeApproved: vi.fn().mockReturnValue({ ok: true }) }))
-vi.mock('@/lib/provider-categories', () => ({ autoApproveLowRiskCategories: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/provider-categories', () => ({
+  autoApproveLowRiskCategories: vi.fn().mockResolvedValue(undefined),
+  reconcileProviderCategoriesForSkills: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('@/lib/internal-test-cohort', () => ({ createTestCohortContext: vi.fn().mockReturnValue({ isTestUser: false, cohortName: null }) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 

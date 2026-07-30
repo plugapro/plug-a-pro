@@ -4,7 +4,9 @@ import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { syncProviderSkills } from '@/lib/provider-skills'
+import { reconcileProviderCategoriesForSkills } from '@/lib/provider-categories'
 import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
+import { isEnabled } from '@/lib/flags'
 
 type ActionResult = { ok: true; message: string } | { ok: false; error: string }
 
@@ -95,6 +97,17 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
       })
 
       await syncProviderSkills(tx, provider.id, skillTags)
+
+      // Post-approval skill additions must be reviewed before matching can
+      // surface a provider for a high-risk category they added themselves.
+      // Creates PENDING_REVIEW provider_categories rows for newly added
+      // (non-low-risk) skills; existing approved rows are never downgraded.
+      if (await isEnabled('provider.skill_category_review')) {
+        await reconcileProviderCategoriesForSkills(tx, provider.id, skillTags, {
+          actorId: provider.id,
+          actorRole: 'provider',
+        })
+      }
 
       if (formData.get('serviceAreasPickerRendered') === '1') {
         // Service area picker submits structured node IDs; deactivate removed nodes and upsert current ones.
