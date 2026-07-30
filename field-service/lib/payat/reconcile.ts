@@ -1,10 +1,11 @@
 import { db } from '@/lib/db'
 import { readPayatSingleRtp } from './read'
 import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gateway-itn'
+import type { InternalPayAtGoStatus } from '@/lib/payat-go/status'
 
 export type ReconcileOutcome =
   | { action: 'credited'; ledgerEntryId: string }
-  | { action: 'not_paid'; internalStatus: string }
+  | { action: 'not_paid'; internalStatus: InternalPayAtGoStatus }
   | { action: 'skipped'; reason: string }
 
 /**

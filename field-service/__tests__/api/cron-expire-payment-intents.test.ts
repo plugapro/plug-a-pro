@@ -71,8 +71,10 @@ describe('GET /api/cron/expire-payment-intents', () => {
       expired: 3,
       payatReconciled: 0,
       payatReconcileSkipped: 0,
+      payatReconcileFailed: 0,
       silentExpiries: 0,
       payatDeferred: 0,
+      payatDeferTimeouts: 0,
       payatItnRecovered: 0,
       payatItnSkipped: 0,
       payatItnFailed: 0,
@@ -157,8 +159,31 @@ describe('GET /api/cron/expire-payment-intents', () => {
   })
 
   describe('payat reconcile sweep (payments.payat.reconcile_sweep)', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000
+
     beforeEach(() => {
       mockIsEnabled.mockResolvedValue(true)
+    })
+
+    it('queries the reconcile batch ordered by expiresAt ascending, capped at 50', async () => {
+      mockDb.paymentIntent.findMany
+        .mockResolvedValueOnce([]) // due-for-expiry sweep
+        .mockResolvedValueOnce([]) // ITN recovery batch
+
+      const { GET } = await import('@/app/api/cron/expire-payment-intents/route')
+      await GET(cronRequest('Bearer cron-secret'))
+
+      expect(mockDb.paymentIntent.findMany).toHaveBeenNthCalledWith(1, {
+        where: {
+          paymentMethod: 'PAYAT',
+          status: 'PENDING_PAYMENT',
+          expiresAt: { lt: expect.any(Date), not: null },
+          clientAccountNumber: { not: null },
+        },
+        select: { id: true, createdAt: true },
+        orderBy: { expiresAt: 'asc' },
+        take: 50,
+      })
     })
 
     it('credits a paid-but-unnotified intent instead of expiring it', async () => {
@@ -175,6 +200,7 @@ describe('GET /api/cron/expire-payment-intents', () => {
       expect(body.payatReconciled).toBe(1)
       expect(body.silentExpiries).toBe(0)
       expect(body.payatDeferred).toBe(0)
+      expect(body.payatDeferTimeouts).toBe(0)
     })
 
     it('counts an intent that expires unpaid as a silent expiry', async () => {
@@ -190,13 +216,14 @@ describe('GET /api/cron/expire-payment-intents', () => {
 
       expect(body.silentExpiries).toBe(1)
       expect(body.payatDeferred).toBe(0)
+      expect(body.payatDeferTimeouts).toBe(0)
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining('"event":"payat.silent_expiry"')
       )
       errorSpy.mockRestore()
     })
 
-    it('defers a recently-created intent still PENDING at Pay@ instead of expiring it', async () => {
+    it('defers a just-created intent still PENDING at Pay@ instead of expiring it', async () => {
       mockDb.paymentIntent.findMany
         .mockResolvedValueOnce([{ id: 'intent-pending-recent', createdAt: new Date() }])
         .mockResolvedValueOnce([])
@@ -208,6 +235,7 @@ describe('GET /api/cron/expire-payment-intents', () => {
 
       expect(body.payatDeferred).toBe(1)
       expect(body.silentExpiries).toBe(0)
+      expect(body.payatDeferTimeouts).toBe(0)
       expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
         where: {
           status: 'PENDING_PAYMENT',
@@ -218,8 +246,61 @@ describe('GET /api/cron/expire-payment-intents', () => {
       })
     })
 
-    it('stops deferring and expires a still-PENDING intent once it is older than 7 days, logging a distinct event', async () => {
-      const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)
+    it('still defers a PENDING intent ~6 days old (inside the 7-day bound)', async () => {
+      const sixDaysAgo = new Date(Date.now() - 6 * DAY_MS)
+      mockDb.paymentIntent.findMany
+        .mockResolvedValueOnce([{ id: 'intent-pending-6d', createdAt: sixDaysAgo }])
+        .mockResolvedValueOnce([])
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'not_paid', internalStatus: 'PENDING' })
+
+      const { GET } = await import('@/app/api/cron/expire-payment-intents/route')
+      const res = await GET(cronRequest('Bearer cron-secret'))
+      const body = await res.json()
+
+      expect(body.payatDeferred).toBe(1)
+      expect(body.payatDeferTimeouts).toBe(0)
+      expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'PENDING_PAYMENT',
+          expiresAt: { lt: expect.any(Date), not: null },
+          id: { notIn: ['intent-pending-6d'] },
+        },
+        data: { status: 'EXPIRED' },
+      })
+    })
+
+    it('stops deferring a PENDING intent just past the 7-day bound (7 days + 1 minute old)', async () => {
+      const justOverSevenDays = new Date(Date.now() - (7 * DAY_MS + 60 * 1000))
+      mockDb.paymentIntent.findMany
+        .mockResolvedValueOnce([{ id: 'intent-pending-boundary', createdAt: justOverSevenDays }])
+        .mockResolvedValueOnce([])
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'not_paid', internalStatus: 'PENDING' })
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const { GET } = await import('@/app/api/cron/expire-payment-intents/route')
+      const res = await GET(cronRequest('Bearer cron-secret'))
+      const body = await res.json()
+
+      expect(body.payatDeferred).toBe(0)
+      expect(body.payatDeferTimeouts).toBe(1)
+      expect(body.silentExpiries).toBe(0)
+      // The updateMany predicate must not exclude this intent - it is
+      // allowed to expire.
+      expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'PENDING_PAYMENT',
+          expiresAt: { lt: expect.any(Date), not: null },
+        },
+        data: { status: 'EXPIRED' },
+      })
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"payat.deferred_expiry"')
+      )
+      errorSpy.mockRestore()
+    })
+
+    it('stops deferring and expires a still-PENDING intent well past the 7-day bound, logging a distinct event, counted as payatDeferTimeouts not silentExpiries', async () => {
+      const eightDaysAgo = new Date(Date.now() - 8 * DAY_MS)
       mockDb.paymentIntent.findMany
         .mockResolvedValueOnce([{ id: 'intent-pending-stale', createdAt: eightDaysAgo }])
         .mockResolvedValueOnce([])
@@ -231,6 +312,8 @@ describe('GET /api/cron/expire-payment-intents', () => {
       const body = await res.json()
 
       expect(body.payatDeferred).toBe(0)
+      expect(body.payatDeferTimeouts).toBe(1)
+      expect(body.silentExpiries).toBe(0)
       // The updateMany predicate must not exclude this intent - it is
       // allowed to expire.
       expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
@@ -241,7 +324,7 @@ describe('GET /api/cron/expire-payment-intents', () => {
         data: { status: 'EXPIRED' },
       })
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"event":"payat.reconcile_defer_timeout"')
+        expect.stringContaining('"event":"payat.deferred_expiry"')
       )
       errorSpy.mockRestore()
     })
@@ -259,6 +342,7 @@ describe('GET /api/cron/expire-payment-intents', () => {
       const body = await res.json()
 
       expect(body.payatReconcileSkipped).toBe(1)
+      expect(body.payatReconcileFailed).toBe(0)
       expect(body.silentExpiries).toBe(0)
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('"reason":"already credited"')
@@ -268,7 +352,7 @@ describe('GET /api/cron/expire-payment-intents', () => {
       warnSpy.mockRestore()
     })
 
-    it('does not abort the sweep when reconcilePayatIntent throws for one intent', async () => {
+    it('defers (does not expire) a recent intent when reconcilePayatIntent throws, and counts it as failed not skipped', async () => {
       mockDb.paymentIntent.findMany
         .mockResolvedValueOnce([
           { id: 'intent-throws', createdAt: new Date() },
@@ -285,11 +369,82 @@ describe('GET /api/cron/expire-payment-intents', () => {
       const body = await res.json()
 
       expect(mockReconcilePayatIntent).toHaveBeenCalledTimes(2)
-      expect(body.payatReconcileSkipped).toBe(1)
+      expect(body.payatReconcileSkipped).toBe(0)
+      expect(body.payatReconcileFailed).toBe(1)
       expect(body.payatReconciled).toBe(1)
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining('"errorName":"Error"')
       )
+      // A throw means we don't know whether the provider paid - the intent
+      // must not be expired this run (money-losing direction is never OK).
+      expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'PENDING_PAYMENT',
+          expiresAt: { lt: expect.any(Date), not: null },
+          id: { notIn: ['intent-throws'] },
+        },
+        data: { status: 'EXPIRED' },
+      })
+      errorSpy.mockRestore()
+    })
+
+    it('does not defer a throw for an intent older than the 7-day bound', async () => {
+      const eightDaysAgo = new Date(Date.now() - 8 * DAY_MS)
+      mockDb.paymentIntent.findMany
+        .mockResolvedValueOnce([{ id: 'intent-throws-stale', createdAt: eightDaysAgo }])
+        .mockResolvedValueOnce([])
+      mockReconcilePayatIntent.mockRejectedValue(new Error('network read failed'))
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const { GET } = await import('@/app/api/cron/expire-payment-intents/route')
+      const res = await GET(cronRequest('Bearer cron-secret'))
+      const body = await res.json()
+
+      expect(body.payatReconcileFailed).toBe(1)
+      expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'PENDING_PAYMENT',
+          expiresAt: { lt: expect.any(Date), not: null },
+        },
+        data: { status: 'EXPIRED' },
+      })
+      errorSpy.mockRestore()
+    })
+
+    it('protects un-swept PAYAT intents from expiring when the batch cap is hit', async () => {
+      const dueBatch = Array.from({ length: 50 }, (_, i) => ({
+        id: `intent-batch-${i}`,
+        createdAt: new Date(),
+      }))
+      mockDb.paymentIntent.findMany
+        .mockResolvedValueOnce(dueBatch)
+        .mockResolvedValueOnce([])
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'not_paid', internalStatus: 'SENT' })
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const { GET } = await import('@/app/api/cron/expire-payment-intents/route')
+      await GET(cronRequest('Bearer cron-secret'))
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"payat.reconcile_batch_saturated"')
+      )
+      expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'PENDING_PAYMENT',
+          expiresAt: { lt: expect.any(Date), not: null },
+          NOT: {
+            OR: [
+              { id: { in: [] } },
+              {
+                paymentMethod: 'PAYAT',
+                clientAccountNumber: { not: null },
+                id: { notIn: dueBatch.map((i) => i.id) },
+              },
+            ],
+          },
+        },
+        data: { status: 'EXPIRED' },
+      })
       errorSpy.mockRestore()
     })
 

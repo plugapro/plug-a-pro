@@ -10,6 +10,7 @@
 // an expiry date are left for admin reconciliation.
 
 import { NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gateway-itn'
 import { isEnabled } from '@/lib/flags'
@@ -40,12 +41,20 @@ export async function GET(request: Request) {
 
     let payatReconciled = 0
     let payatReconcileSkipped = 0
+    let payatReconcileFailed = 0
     let silentExpiries = 0
     let payatDeferred = 0
+    let payatDeferTimeouts = 0
     // Intents that must NOT be marked EXPIRED this run because Pay@ still
-    // reports them as PENDING (money in flight). Excluded from the
-    // updateMany below and re-read on the next cron cycle.
+    // reports them as PENDING (money in flight), or because we could not
+    // read Pay@ at all and don't know. Excluded from the updateMany below
+    // and re-read on the next cron cycle.
     const deferredIntentIds: string[] = []
+    // Every id we attempted this run, whether it was credited, deferred,
+    // found genuinely unpaid, skipped, or failed. Used to bound the blast
+    // radius of the batch cap below.
+    const sweptIntentIds = new Set<string>()
+    let batchSaturated = false
 
     if (await isEnabled('payments.payat.reconcile_sweep')) {
       // Every Pay@ intent about to be expired gets one last authoritative check.
@@ -60,12 +69,25 @@ export async function GET(request: Request) {
           clientAccountNumber: { not: null },
         },
         select: { id: true, createdAt: true },
+        orderBy: { expiresAt: 'asc' },
         take: PAYAT_RECONCILE_BATCH,
       })
+
+      batchSaturated = dueForExpiry.length === PAYAT_RECONCILE_BATCH
+      if (batchSaturated) {
+        // There may be more eligible PAYAT intents than we fetched this run.
+        // The updateMany below must not blind-expire whatever we didn't get
+        // to - see the un-swept-intent exclusion applied to it.
+        console.error(JSON.stringify({
+          event: 'payat.reconcile_batch_saturated',
+          batchSize: PAYAT_RECONCILE_BATCH,
+        }))
+      }
 
       const deferCutoff = new Date(now.getTime() - PAYAT_RECONCILE_DEFER_MAX_MS)
 
       for (const intent of dueForExpiry) {
+        sweptIntentIds.add(intent.id)
         try {
           const outcome = await reconcilePayatIntent(intent.id)
 
@@ -89,12 +111,13 @@ export async function GET(request: Request) {
             if (outcome.internalStatus === 'PENDING') {
               // Still PENDING after PAYAT_RECONCILE_DEFER_MAX_DAYS - stop
               // deferring so this can't block the provider's future
-              // top-ups forever. Distinct event name from the plain
-              // silent-expiry case below so on-call can tell "gave up
-              // waiting" apart from "definitely never paid".
-              silentExpiries += 1
+              // top-ups forever. Pay@ told us money was in flight and we
+              // gave up waiting - the opposite claim from a silent expiry
+              // (money never found), needs a human on the Pay@ portal, and
+              // is tracked in its own counter with its own event name.
+              payatDeferTimeouts += 1
               console.error(JSON.stringify({
-                event: 'payat.reconcile_defer_timeout',
+                event: 'payat.deferred_expiry',
                 intentId: intent.id,
                 internalStatus: outcome.internalStatus,
               }))
@@ -124,7 +147,18 @@ export async function GET(request: Request) {
             reason: outcome.reason,
           }))
         } catch (error) {
-          payatReconcileSkipped += 1
+          // reconcilePayatIntent throws on any Pay@ read failure (network,
+          // non-2xx, missing rtp:read scope, bad JSON) - which means we do
+          // NOT know whether the provider paid. Defer rather than let it
+          // fall through to expiry: expiring here is irreversible (EXPIRED
+          // is not creditable), while deferring just retries next hour,
+          // still bounded by the same 7-day cutoff as a confirmed PENDING.
+          // This matters most on first rollout, before rtp:read is granted,
+          // when every read 403s.
+          if (intent.createdAt > deferCutoff) {
+            deferredIntentIds.push(intent.id)
+          }
+          payatReconcileFailed += 1
           console.error(JSON.stringify({
             event: 'payat.reconcile_failed',
             intentId: intent.id,
@@ -134,16 +168,36 @@ export async function GET(request: Request) {
       }
     }
 
+    const expiryWhere: Prisma.PaymentIntentWhereInput = {
+      status: 'PENDING_PAYMENT',
+      expiresAt: { lt: now, not: null },
+    }
+
+    if (batchSaturated) {
+      // Batch cap hit: an unknown number of un-swept PAYAT intents with a
+      // clientAccountNumber may still be due for expiry. Protect them (and
+      // anything explicitly deferred from this batch) from being expired
+      // blind - they'll be picked up on a later run.
+      expiryWhere.NOT = {
+        OR: [
+          { id: { in: deferredIntentIds } },
+          {
+            paymentMethod: 'PAYAT',
+            clientAccountNumber: { not: null },
+            id: { notIn: Array.from(sweptIntentIds) },
+          },
+        ],
+      }
+    } else if (deferredIntentIds.length > 0) {
+      expiryWhere.id = { notIn: deferredIntentIds }
+    }
+
     const result = await db.paymentIntent.updateMany({
-      where: {
-        status: 'PENDING_PAYMENT',
-        expiresAt: { lt: now, not: null },
-        ...(deferredIntentIds.length > 0 ? { id: { notIn: deferredIntentIds } } : {}),
-      },
+      where: expiryWhere,
       data: { status: 'EXPIRED' },
     })
 
-    console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}, payat-reconciled=${payatReconciled}, payat-deferred=${payatDeferred}, silent-expiries=${silentExpiries}`)
+    console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}, payat-reconciled=${payatReconciled}, payat-reconcile-skipped=${payatReconcileSkipped}, payat-reconcile-failed=${payatReconcileFailed}, payat-deferred=${payatDeferred}, payat-defer-timeouts=${payatDeferTimeouts}, silent-expiries=${silentExpiries}`)
 
     const itnIntents = await db.paymentIntent.findMany({
       where: {
@@ -193,8 +247,10 @@ export async function GET(request: Request) {
       expired: result.count,
       payatReconciled,
       payatReconcileSkipped,
+      payatReconcileFailed,
       silentExpiries,
       payatDeferred,
+      payatDeferTimeouts,
       payatItnRecovered: recovered,
       payatItnSkipped: skipped,
       payatItnFailed: failed,
