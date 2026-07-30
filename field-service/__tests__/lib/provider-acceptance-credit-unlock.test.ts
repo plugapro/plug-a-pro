@@ -277,7 +277,31 @@ describe('provider final acceptance credit application', () => {
     })
   })
 
+  it('rejects acceptance and keeps customer details locked when credits are insufficient', async () => {
+    state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
+
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-c13', providerId: 'provider-c13' })
+
+    // Pre-gate: with the lead still in CUSTOMER_SELECTED, an insufficient
+    // wallet is caught before any state change is made at all.
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+    expect(state.lead.status).toBe('CUSTOMER_SELECTED')
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('Thandi')
+    expect(JSON.stringify(result)).not.toContain('+2712')
+    expect(JSON.stringify(result)).not.toContain('Oak Avenue')
+  })
+
   it('keeps customer details locked and reports failure when credit is required', async () => {
+    // Lead was already accepted in a prior call (PROVIDER_ACCEPTED), so the
+    // CUSTOMER_SELECTED pre-gate does not apply here; this exercises the later
+    // checkProviderLeadCreditBalanceInTransaction recheck path instead.
+    state.lead = makeLead({ status: 'PROVIDER_ACCEPTED' })
     state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
     const result = await acceptSelectedProviderJob({ leadId: 'lead-c13', providerId: 'provider-c13' })
@@ -294,6 +318,8 @@ describe('provider final acceptance credit application', () => {
         leadStatus: 'CREDIT_REQUIRED',
       },
     })
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
     expect(JSON.stringify(result)).not.toContain('Thandi')
     expect(JSON.stringify(result)).not.toContain('+2712')
     expect(JSON.stringify(result)).not.toContain('Oak Avenue')
