@@ -12,8 +12,17 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gateway-itn'
+import { isEnabled } from '@/lib/flags'
+import { reconcilePayatIntent } from '@/lib/payat/reconcile'
 
 const PAYAT_ITN_RECOVERY_BATCH = 25
+const PAYAT_RECONCILE_BATCH = 50
+// How long we keep deferring an intent Pay@ still reports as PENDING
+// (PROCESSING_PAYMENT / PAYMENT_READY_FOR_SETTLEMENT) before giving up and
+// letting it expire unpaid. Bounds the case where Pay@ never resolves the
+// intent so it can't block that provider's future top-ups indefinitely.
+const PAYAT_RECONCILE_DEFER_MAX_DAYS = 7
+const PAYAT_RECONCILE_DEFER_MAX_MS = PAYAT_RECONCILE_DEFER_MAX_DAYS * 24 * 60 * 60 * 1000
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -29,15 +38,112 @@ export async function GET(request: Request) {
     const reqId = crypto.randomUUID().slice(0, 8)
     const now = new Date()
 
+    let payatReconciled = 0
+    let payatReconcileSkipped = 0
+    let silentExpiries = 0
+    let payatDeferred = 0
+    // Intents that must NOT be marked EXPIRED this run because Pay@ still
+    // reports them as PENDING (money in flight). Excluded from the
+    // updateMany below and re-read on the next cron cycle.
+    const deferredIntentIds: string[] = []
+
+    if (await isEnabled('payments.payat.reconcile_sweep')) {
+      // Every Pay@ intent about to be expired gets one last authoritative check.
+      // Order matters: EXPIRED is not in GATEWAY_CREDITABLE_STATUSES, so this
+      // must happen before the updateMany below - an intent expired first can
+      // never be credited afterwards.
+      const dueForExpiry = await db.paymentIntent.findMany({
+        where: {
+          paymentMethod: 'PAYAT',
+          status: 'PENDING_PAYMENT',
+          expiresAt: { lt: now, not: null },
+          clientAccountNumber: { not: null },
+        },
+        select: { id: true, createdAt: true },
+        take: PAYAT_RECONCILE_BATCH,
+      })
+
+      const deferCutoff = new Date(now.getTime() - PAYAT_RECONCILE_DEFER_MAX_MS)
+
+      for (const intent of dueForExpiry) {
+        try {
+          const outcome = await reconcilePayatIntent(intent.id)
+
+          if (outcome.action === 'credited') {
+            payatReconciled += 1
+            continue
+          }
+
+          if (outcome.action === 'not_paid') {
+            if (outcome.internalStatus === 'PENDING' && intent.createdAt > deferCutoff) {
+              // Pay@ says the money is mid-settlement (PROCESSING_PAYMENT /
+              // PAYMENT_READY_FOR_SETTLEMENT). Leave it PENDING_PAYMENT so it
+              // is re-read next cycle instead of expiring it out from under
+              // an in-flight payment. This is good news, not a failure -
+              // tracked separately from silentExpiries.
+              payatDeferred += 1
+              deferredIntentIds.push(intent.id)
+              continue
+            }
+
+            if (outcome.internalStatus === 'PENDING') {
+              // Still PENDING after PAYAT_RECONCILE_DEFER_MAX_DAYS - stop
+              // deferring so this can't block the provider's future
+              // top-ups forever. Distinct event name from the plain
+              // silent-expiry case below so on-call can tell "gave up
+              // waiting" apart from "definitely never paid".
+              silentExpiries += 1
+              console.error(JSON.stringify({
+                event: 'payat.reconcile_defer_timeout',
+                intentId: intent.id,
+                internalStatus: outcome.internalStatus,
+              }))
+              continue
+            }
+
+            silentExpiries += 1
+            // Loud on purpose: money was requested, the window closed, and no
+            // payment was found. If this is ever non-zero while providers say
+            // they paid, the read path itself is wrong.
+            console.error(JSON.stringify({
+              event: 'payat.silent_expiry',
+              intentId: intent.id,
+              internalStatus: outcome.internalStatus,
+            }))
+            continue
+          }
+
+          // outcome.action === 'skipped' - not an error. Benign for
+          // already-credited intents and the loser of a concurrent
+          // double-credit race; logged (not at error level) so the reason
+          // is still visible without being treated as a failure.
+          payatReconcileSkipped += 1
+          console.warn(JSON.stringify({
+            event: 'payat.reconcile_skipped',
+            intentId: intent.id,
+            reason: outcome.reason,
+          }))
+        } catch (error) {
+          payatReconcileSkipped += 1
+          console.error(JSON.stringify({
+            event: 'payat.reconcile_failed',
+            intentId: intent.id,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }))
+        }
+      }
+    }
+
     const result = await db.paymentIntent.updateMany({
       where: {
         status: 'PENDING_PAYMENT',
         expiresAt: { lt: now, not: null },
+        ...(deferredIntentIds.length > 0 ? { id: { notIn: deferredIntentIds } } : {}),
       },
       data: { status: 'EXPIRED' },
     })
 
-    console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}`)
+    console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}, payat-reconciled=${payatReconciled}, payat-deferred=${payatDeferred}, silent-expiries=${silentExpiries}`)
 
     const itnIntents = await db.paymentIntent.findMany({
       where: {
@@ -85,6 +191,10 @@ export async function GET(request: Request) {
     console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
     return NextResponse.json({
       expired: result.count,
+      payatReconciled,
+      payatReconcileSkipped,
+      silentExpiries,
+      payatDeferred,
       payatItnRecovered: recovered,
       payatItnSkipped: skipped,
       payatItnFailed: failed,
