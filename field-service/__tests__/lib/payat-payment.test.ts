@@ -121,7 +121,37 @@ describe('Pay@ merchant RTP payment service', () => {
       sourceReference: 'PAT-RETAIL-001',
       requestToPayId: 99001,
       paymentLink: 'https://go.payat.co.za/pay/abc123',
+      clientAccountNumber: expect.stringMatching(/^\d{14}$/),
     })
+  })
+
+  it('returns the generated clientAccountNumber so it can be persisted for rtp:read', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({
+        paymentLink: 'https://go.payat.co.za/pay/abc',
+        sourceReference: '1170041885683103429129986',
+        requestToPayId: 335645,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
+    const result = await createPayatPaymentRequest({
+      topupId: 'intent-1',
+      amountCents: 10000,
+      description: 'Plug A Pro credits top-up',
+      providerPhone: '+27820000000',
+      providerName: 'Test Provider',
+      providerEmail: 'test@example.com',
+    })
+
+    // The value we send to Pay@ must be the value we keep.
+    const sentBody = JSON.parse(fetchMock.mock.calls.at(-1)![1].body as string)
+    expect(result.clientAccountNumber).toBe(sentBody.clientAccountNumber)
+    expect(result.clientAccountNumber).toMatch(/^\d{14}$/)
   })
 
   it('throws rtp_response_invalid when paymentLink is absent (paymentLink is required on integrator endpoint)', async () => {

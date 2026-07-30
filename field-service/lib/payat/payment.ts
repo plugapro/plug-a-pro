@@ -19,6 +19,7 @@ export type PayatPaymentResponse = {
   // The integrator endpoint (/integrator/rtp/create/single/…) does not include them.
   sourceReference?: string
   requestToPayId?: number
+  clientAccountNumber: string
 }
 
 export class PayatConfigError extends Error {
@@ -67,6 +68,7 @@ function generateClientAccountNumber() {
 function mapPayatResponse(
   data: Record<string, unknown>,
   fallbackReference: string,
+  clientAccountNumber: string,
 ): PayatPaymentResponse {
   // paymentLink is required on the integrator endpoint - the provider cannot pay without it.
   const rawLink = data.paymentLink ?? data.payment_link ?? data.url ?? data.checkoutUrl
@@ -86,7 +88,13 @@ function mapPayatResponse(
       ? requestToPayIdRaw
       : undefined
 
-  return { reference: fallbackReference, paymentLink: rawLink, sourceReference, requestToPayId }
+  return {
+    reference: fallbackReference,
+    paymentLink: rawLink,
+    sourceReference,
+    requestToPayId,
+    clientAccountNumber,
+  }
 }
 
 function maskPhone(phone: string): string {
@@ -181,6 +189,8 @@ async function sendPayatPaymentRequest(
     retry: !retryOnUnauthorized,
   }))
 
+  const clientAccountNumber = generateClientAccountNumber()
+
   let response: Response
   try {
     response = await fetch(
@@ -192,7 +202,7 @@ async function sendPayatPaymentRequest(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          clientAccountNumber: generateClientAccountNumber(),
+          clientAccountNumber,
           // Pay@ YAPI integrator RTP expects amounts as integers in cents.
           amount: params.amountCents,
           minimumAmount: params.amountCents,
@@ -288,7 +298,7 @@ async function sendPayatPaymentRequest(
     throw new PayatApiError('rtp_response_invalid')
   }
 
-  const result = mapPayatResponse(responseData, params.topupId)
+  const result = mapPayatResponse(responseData, params.topupId, clientAccountNumber)
 
   console.info(JSON.stringify({
     event: 'payat.rtp_response_ok',

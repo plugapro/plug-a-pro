@@ -399,6 +399,7 @@ export type PayatTopUpResultData = {
   paymentLink: string
   sourceReference?: string | null
   requestToPayId?: number | null
+  clientAccountNumber?: string | null
 }
 
 export type ProviderPayatTopUpResponse =
@@ -658,6 +659,7 @@ export async function createPayatTopUpIntent(
       data: {
         sourceReference: payat.sourceReference,
         requestToPayId: payat.requestToPayId,
+        clientAccountNumber: payat.clientAccountNumber,
         metadata: toJson({
           ...(typeof intent.metadata === 'object' && intent.metadata && !Array.isArray(intent.metadata)
             ? intent.metadata
