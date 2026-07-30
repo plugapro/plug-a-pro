@@ -2,7 +2,12 @@ import { createHmac } from 'crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { mockDb, mockCreditProviderWalletFromPayatWebhook } = vi.hoisted(() => ({
+const {
+  mockDb,
+  mockCreditProviderWalletFromPayatWebhook,
+  mockIsEnabled,
+  mockReconcilePayatIntent,
+} = vi.hoisted(() => ({
   mockDb: {
     paymentIntent: {
       findUnique: vi.fn(),
@@ -12,12 +17,22 @@ const { mockDb, mockCreditProviderWalletFromPayatWebhook } = vi.hoisted(() => ({
     },
   },
   mockCreditProviderWalletFromPayatWebhook: vi.fn(),
+  mockIsEnabled: vi.fn(),
+  mockReconcilePayatIntent: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 
 vi.mock('@/lib/provider-credit-gateway-itn', () => ({
   creditProviderWalletFromPayatWebhook: mockCreditProviderWalletFromPayatWebhook,
+}))
+
+vi.mock('@/lib/flags', () => ({
+  isEnabled: mockIsEnabled,
+}))
+
+vi.mock('@/lib/payat/reconcile', () => ({
+  reconcilePayatIntent: mockReconcilePayatIntent,
 }))
 
 function sign(body: string) {
@@ -60,6 +75,8 @@ describe('POST /api/payat/webhook', () => {
       credited: true,
       ledgerEntryId: 'ledger-1',
     })
+    // Default to legacy behaviour unless a test opts into the doorbell path.
+    mockIsEnabled.mockResolvedValue(false)
   })
 
   it('rejects invalid signatures without touching the wallet', async () => {
@@ -320,5 +337,92 @@ describe('POST /api/payat/webhook', () => {
       expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
     )
     expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
+
+  describe('doorbell mode (payments.payat.readback_verification)', () => {
+    it('ignores a webhook-claimed amount and credits from the Pay@ read instead', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'credited', ledgerEntryId: 'led-1' })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      // Webhook lies: claims R1 paid against an R100 (10000-cent) intent.
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 100 }),
+      )
+
+      expect(res.status).toBe(200)
+      // The decision came from the read, not the payload.
+      expect(mockReconcilePayatIntent).toHaveBeenCalledWith('intent-1')
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+      expect(mockDb.paymentIntent.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('returns 200 without crediting when the read says the payment is not complete', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'not_paid', internalStatus: 'SENT' })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ received: true })
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+    })
+
+    it('falls back to legacy payload-trusting behaviour when the flag is off', async () => {
+      mockIsEnabled.mockResolvedValue(false)
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockReconcilePayatIntent).not.toHaveBeenCalled()
+    })
+
+    it('rejects an unsigned request before the flag or reconcile path is ever consulted', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 10_000 }, 'bad-signature'),
+      )
+
+      expect(res.status).toBe(401)
+      expect(mockReconcilePayatIntent).not.toHaveBeenCalled()
+    })
+
+    it('propagates a Pay@ read failure so the route errors and Pay@ retries, instead of swallowing it', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+      const readError = new Error('Pay@ read failed: 403 missing rtp:read scope')
+      mockReconcilePayatIntent.mockRejectedValue(readError)
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      await expect(
+        POST(request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 10_000 })),
+      ).rejects.toThrow(readError)
+
+      // A structured log is emitted before the throw - event, intent id, and the
+      // error *name* only. Never the message/stack (may carry Pay@ response
+      // content) and never the merchant identifier or provider PII.
+      const logged = consoleErrorSpy.mock.calls.find(([arg]) =>
+        typeof arg === 'string' && arg.includes('payat.webhook_reconcile_failed'),
+      )
+      expect(logged).toBeDefined()
+      const parsed = JSON.parse(logged![0] as string)
+      expect(parsed).toMatchObject({
+        event: 'payat.webhook_reconcile_failed',
+        intentId: 'intent-1',
+        errorName: 'Error',
+      })
+      expect(JSON.stringify(parsed)).not.toContain('rtp:read')
+      expect(JSON.stringify(parsed)).not.toContain('missing')
+
+      consoleErrorSpy.mockRestore()
+    })
   })
 })

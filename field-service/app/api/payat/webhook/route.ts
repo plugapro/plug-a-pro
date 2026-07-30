@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { type NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gateway-itn'
+import { isEnabled } from '@/lib/flags'
+import { reconcilePayatIntent } from '@/lib/payat/reconcile'
 
 type PayatWebhookPayload = {
   reference?: unknown
@@ -162,6 +164,45 @@ export async function POST(request: NextRequest) {
   }
 
   if (!PAYMENT_COMPLETE_STATUSES.has(payload.status)) {
+    return NextResponse.json({ received: true })
+  }
+
+  // Doorbell mode: the signed webhook tells us WHICH intent moved, never
+  // WHETHER it was paid or for how much. Pay@ is asked directly. This is the
+  // only path that is safe when the webhook is unreliable — which, on this
+  // account, it demonstrably is (0 of 3 ITNs delivered as of 2026-07-28).
+  if (await isEnabled('payments.payat.readback_verification')) {
+    if (!payload.reference) {
+      return NextResponse.json({ received: true, ignored: 'no_reference' })
+    }
+
+    let outcome: Awaited<ReturnType<typeof reconcilePayatIntent>>
+    try {
+      outcome = await reconcilePayatIntent(payload.reference)
+    } catch (error) {
+      // reconcilePayatIntent throws on any Pay@ read failure (network,
+      // non-2xx, a missing rtp:read scope, bad JSON). Let it propagate so the
+      // route returns a 5xx and Pay@ retries the notification - swallowing it
+      // here would ack a real payment we never actually verified. Log only
+      // the error *name*: the message/stack can carry Pay@ response content,
+      // and never log the merchant identifier or provider PII.
+      console.error(JSON.stringify({
+        event: 'payat.webhook_reconcile_failed',
+        intentId: payload.reference,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }))
+      throw error
+    }
+
+    console.info(JSON.stringify({
+      event: 'payat.webhook_reconciled',
+      intentId: payload.reference,
+      action: outcome.action,
+      // Recorded so a webhook that consistently disagrees with the read is
+      // visible in logs rather than silently tolerated.
+      webhookClaimedStatus: payload.status,
+    }))
+
     return NextResponse.json({ received: true })
   }
 
