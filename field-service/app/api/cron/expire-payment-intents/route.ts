@@ -45,6 +45,17 @@ export async function GET(request: Request) {
     let silentExpiries = 0
     let payatDeferred = 0
     let payatDeferTimeouts = 0
+    // Pay@ returned a state we cannot read as "no money arrived": PAID with an
+    // amount we could not confirm, FAILED (PARTIAL_PAYMENT_RECEIVED /
+    // PAYMENT_FEES_ISSUE - real money at a till), or an unmapped state. Never
+    // expired on the first pass; counted apart from silentExpiries because a
+    // silent expiry asserts no payment was found, which here would be a lie.
+    let payatIndeterminate = 0
+    let payatIndeterminateExpiries = 0
+    // Gave up on an intent whose Pay@ read kept throwing past the defer bound.
+    // Distinct from payatReconcileFailed (a transient failure that retries next
+    // hour) because this one is the irreversible expiry.
+    let payatReadFailureExpiries = 0
     // Intents that must NOT be marked EXPIRED this run because Pay@ still
     // reports them as PENDING (money in flight), or because we could not
     // read Pay@ at all and don't know. Excluded from the updateMany below
@@ -126,12 +137,45 @@ export async function GET(request: Request) {
 
             silentExpiries += 1
             // Loud on purpose: money was requested, the window closed, and no
-            // payment was found. If this is ever non-zero while providers say
-            // they paid, the read path itself is wrong.
+            // payment was found. Only reachable for SENT / EXPIRED / CANCELLED
+            // - states that positively mean no money arrived. If this is ever
+            // non-zero while providers say they paid, the read path is wrong.
             console.error(JSON.stringify({
               event: 'payat.silent_expiry',
               intentId: intent.id,
               internalStatus: outcome.internalStatus,
+            }))
+            continue
+          }
+
+          if (outcome.action === 'indeterminate') {
+            if (intent.createdAt > deferCutoff) {
+              // We could not confirm that no money arrived. Expiring here is
+              // irreversible (EXPIRED is not creditable) and would strand a
+              // provider who paid at a till - the exact failure this branch
+              // exists to eliminate. Defer under the same 7-day bound instead.
+              payatIndeterminate += 1
+              deferredIntentIds.push(intent.id)
+              console.error(JSON.stringify({
+                event: 'payat.indeterminate_state',
+                intentId: intent.id,
+                internalStatus: outcome.internalStatus,
+                expectedAmountCents: outcome.expectedAmountCents,
+                amountPaidCents: outcome.amountPaidCents,
+              }))
+              continue
+            }
+
+            // Past the defer bound. This one is expired without ever having
+            // been confirmed unpaid, so it needs a human on the Pay@ portal -
+            // its own event, never folded into silentExpiries.
+            payatIndeterminateExpiries += 1
+            console.error(JSON.stringify({
+              event: 'payat.indeterminate_expiry',
+              intentId: intent.id,
+              internalStatus: outcome.internalStatus,
+              expectedAmountCents: outcome.expectedAmountCents,
+              amountPaidCents: outcome.amountPaidCents,
             }))
             continue
           }
@@ -155,10 +199,22 @@ export async function GET(request: Request) {
           // still bounded by the same 7-day cutoff as a confirmed PENDING.
           // This matters most on first rollout, before rtp:read is granted,
           // when every read 403s.
+          payatReconcileFailed += 1
           if (intent.createdAt > deferCutoff) {
             deferredIntentIds.push(intent.id)
+          } else {
+            // Past the defer bound with the read still failing - we are about
+            // to expire an intent we never once managed to check. Indis-
+            // tinguishable from a transient failure unless it gets its own
+            // event: this is the sustained-403 rollout shape (rtp:read scope
+            // not granted), where on day 7 intents start dying silently.
+            payatReadFailureExpiries += 1
+            console.error(JSON.stringify({
+              event: 'payat.read_failure_expiry',
+              intentId: intent.id,
+              errorName: error instanceof Error ? error.name : 'UnknownError',
+            }))
           }
-          payatReconcileFailed += 1
           console.error(JSON.stringify({
             event: 'payat.reconcile_failed',
             intentId: intent.id,
@@ -197,7 +253,7 @@ export async function GET(request: Request) {
       data: { status: 'EXPIRED' },
     })
 
-    console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}, payat-reconciled=${payatReconciled}, payat-reconcile-skipped=${payatReconcileSkipped}, payat-reconcile-failed=${payatReconcileFailed}, payat-deferred=${payatDeferred}, payat-defer-timeouts=${payatDeferTimeouts}, silent-expiries=${silentExpiries}`)
+    console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}, payat-reconciled=${payatReconciled}, payat-reconcile-skipped=${payatReconcileSkipped}, payat-reconcile-failed=${payatReconcileFailed}, payat-deferred=${payatDeferred}, payat-defer-timeouts=${payatDeferTimeouts}, payat-indeterminate=${payatIndeterminate}, payat-indeterminate-expiries=${payatIndeterminateExpiries}, payat-read-failure-expiries=${payatReadFailureExpiries}, silent-expiries=${silentExpiries}`)
 
     const itnIntents = await db.paymentIntent.findMany({
       where: {
@@ -251,6 +307,9 @@ export async function GET(request: Request) {
       silentExpiries,
       payatDeferred,
       payatDeferTimeouts,
+      payatIndeterminate,
+      payatIndeterminateExpiries,
+      payatReadFailureExpiries,
       payatItnRecovered: recovered,
       payatItnSkipped: skipped,
       payatItnFailed: failed,

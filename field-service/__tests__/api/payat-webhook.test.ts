@@ -383,6 +383,118 @@ describe('POST /api/payat/webhook', () => {
       expect(mockReconcilePayatIntent).not.toHaveBeenCalled()
     })
 
+    it('does NOT ack-and-drop a sourceReference-only webhook the read-back cannot resolve', async () => {
+      // Doorbell mode resolves by primary key only, so a Pay@ notification
+      // carrying reference/sourceReference yields "intent not found". Acking
+      // that with a 200 loses the payment: Pay@ never retries. It must fall
+      // through to the legacy paymentReference lookup, which credits today.
+      mockIsEnabled.mockResolvedValue(true)
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'skipped', reason: 'intent not found' })
+      mockDb.paymentIntent.findUnique.mockResolvedValue(null)
+      mockDb.paymentIntent.findFirst.mockResolvedValue({
+        id: 'intent-payat-1',
+        amountCents: 10_000,
+        providerId: 'provider-1',
+        status: 'PENDING_PAYMENT',
+        creditedAt: null,
+        paymentMethod: 'PAYAT',
+        metadata: null,
+      })
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ sourceReference: 'PAT-ABCDEF', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockDb.paymentIntent.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ paymentReference: 'PAT-ABCDEF', paymentMethod: 'PAYAT' }),
+        }),
+      )
+      expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"payat.webhook_readback_fallthrough"')
+      )
+      warnSpy.mockRestore()
+    })
+
+    it('falls through to the legacy path for a pre-migration intent with no clientAccountNumber', async () => {
+      // Every intent created before this deploy has a null clientAccountNumber
+      // and can never be read back. The sweep cannot rescue them either (it
+      // filters clientAccountNumber: { not: null }), so dropping them here
+      // would be permanent.
+      mockIsEnabled.mockResolvedValue(true)
+      mockReconcilePayatIntent.mockResolvedValue({
+        action: 'skipped',
+        reason: 'no clientAccountNumber',
+      })
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-payat-1', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"reason":"no clientAccountNumber"')
+      )
+      warnSpy.mockRestore()
+    })
+
+    it('still acks a benign already-credited skip without touching the legacy path', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'skipped', reason: 'already credited' })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockDb.paymentIntent.findUnique).not.toHaveBeenCalled()
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+    })
+
+    it('still acks the concurrent-race loser without touching the legacy path', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+      mockReconcilePayatIntent.mockResolvedValue({
+        action: 'skipped',
+        reason: 'already credited (concurrent call)',
+      })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockDb.paymentIntent.findUnique).not.toHaveBeenCalled()
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+    })
+
+    it('acks an indeterminate read without crediting or touching the legacy path', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+      mockReconcilePayatIntent.mockResolvedValue({
+        action: 'indeterminate',
+        internalStatus: 'FAILED',
+        expectedAmountCents: 10_700,
+        amountPaidCents: 5_000,
+      })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-1', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockDb.paymentIntent.findUnique).not.toHaveBeenCalled()
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+    })
+
     it('rejects an unsigned request before the flag or reconcile path is ever consulted', async () => {
       mockIsEnabled.mockResolvedValue(true)
 
