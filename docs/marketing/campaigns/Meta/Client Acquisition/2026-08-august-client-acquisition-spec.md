@@ -103,11 +103,19 @@ Hold back garden/appliances (13 each) — too thin to headline; they remain book
 ## 6. Companion workstream — the cheaper half of the campaign
 
 **The provider funnel leaks are now worth more than the ad spend.** Current backlog:
-**161** drafts parked at the evidence step, **115** finished review but never submitted,
-and **12 of 15** recent approvals have no service area (invisible to matching).
+**161** drafts parked at the evidence step, **115** finished review but never submitted.
 
-- Backfilling those 12 approvals **5×'s the recent campaign's matchable yield** (3 → 15)
-  at zero ad cost, in the exact suburbs in §2.
+**Corrected 2026-08-03 — the "12 approvals with no service area" was NOT a bug.** Root-cause
+investigation (see `provider-record.ts:128` + `service-area-guard.ts:22`) showed their TSA
+rows exist and are deliberately `active=false` because the providers are **outside the
+`jhb_west` matching fence** (Soweto, Sandton, Pretoria East, Tembisa, east/south JHB) — the
+designed PR #168 behaviour. They are pre-positioned inventory for future region launches,
+not broken records. No backfill; activating them would break the fence.
+
+- **The real supply fix:** the provider acquisition campaign's geo (Johannesburg/Soweto/
+  Sandton/Randburg +17km) recruits ~80% of its approvals outside the fence. Narrow the
+  provider campaign to the same §2 pin set so its yield lands where matching operates.
+  Ads Manager change, zero code.
 - Converting one-third of the 276 parked drafts roughly **doubles the matchable bench**
   behind this campaign's pins.
 - Priority order stands from the 2026-07-28 baseline: GA4 key events → matchability
@@ -122,7 +130,7 @@ An August demand campaign pointed at a bench that quietly doubled is a different
 | G1 | GA4 key events configured (`job_request_submitted` at minimum) | June failed unmeasured; never again | ❌ 0 key events |
 | G2 | Pixel `job_request_submitted` verified firing on prod (mobile UA) | Conversions objective depends on it | ◻ re-verify (last checked June) |
 | G3 | One end-to-end test booking on prod | The booking flow has produced 6 JRs in 5 weeks; prove the rail before paying for traffic | ◻ |
-| G4 | Matchability backfill of the 12 service-area-less approvals | Don't advertise into a bench 80% smaller than it should be | ❌ |
+| G4 | Narrow the provider campaign's geo to the §2 pin set | ~80% of provider-ad approvals currently land outside the matching fence (root-caused 2026-08-03: fence design, not a data bug) | ❌ |
 | G5 | Owner approval of visual previews | Standing rule: previews before publishing, even paused | ◻ |
 
 G1–G3 are the same work the funnel needs anyway; nothing here is campaign-only overhead.
