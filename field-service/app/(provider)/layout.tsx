@@ -24,7 +24,7 @@ export default async function ProviderLayout({
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
-      <main className="flex-1 pb-[calc(80px+env(safe-area-inset-bottom,0px))]">
+      <main className="flex-1 pb-[calc(96px+env(safe-area-inset-bottom,0px))]">
         {children}
       </main>
       <BottomNav items={navItems} />
