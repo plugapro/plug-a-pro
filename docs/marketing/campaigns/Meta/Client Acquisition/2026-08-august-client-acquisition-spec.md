@@ -130,7 +130,7 @@ An August demand campaign pointed at a bench that quietly doubled is a different
 | G1 | GA4 key events configured | June failed unmeasured; never again | ✅ 2026-08-05 — request_submitted, booking_started, quote_started, provider_application_submitted starred; root cause of historical zeros was default lead-gen names (qualify_lead etc.) that the app never sends |
 | G2 | Pixel `job_request_submitted` verified firing on prod (mobile UA) | Conversions objective depends on it | ◻ re-verify (last checked June) |
 | G3 | One end-to-end test booking on prod | The booking flow has produced 6 JRs in 5 weeks; prove the rail before paying for traffic | ◻ |
-| G4 | Narrow the provider campaign's geo to the §2 pin set | ~80% of provider-ad approvals currently land outside the matching fence (root-caused 2026-08-03: fence design, not a data bug) | ❌ |
+| G4 | Narrow the provider campaign's geo to the §2 pin set | ~80% of provider-ad approvals currently land outside the matching fence (root-caused 2026-08-03: fence design, not a data bug) | ✅ 2026-08-14 — spending provider ad set `120247565556140243` swapped from "Johannesburg +25km" to the same 4 jhb_west pins (`narrow-provider-geo-to-jhb-west-pins.mjs`); trade interests + age preserved; ad set stays PAUSED |
 | G5 | Owner approval of visual previews | Standing rule: previews before publishing, even paused | ◻ |
 
 G1–G3 are the same work the funnel needs anyway; nothing here is campaign-only overhead.
