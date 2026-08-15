@@ -4,7 +4,10 @@
 // behaviour is unit-testable without a DOM.
 
 import { describe, expect, it } from 'vitest'
-import { nextActionForAuthFailure } from '@/components/customer/bookingSubmitAuthGate'
+import {
+  nextActionForAuthFailure,
+  resolveSubmitErrorMessage,
+} from '@/components/customer/bookingSubmitAuthGate'
 
 describe('nextActionForAuthFailure', () => {
   it('opens the inline OTP dialog on 401 when the flag is enabled', () => {
@@ -56,5 +59,45 @@ describe('nextActionForAuthFailure', () => {
     expect(
       nextActionForAuthFailure({ status: 500, flagEnabled: false, alreadyRetried: false }),
     ).toBe('none')
+  })
+})
+
+describe('resolveSubmitErrorMessage', () => {
+  const GENERIC = 'We could not submit your request right now. Please try again.'
+  const REVIEW = 'Please review your address and job details, then try again.'
+
+  it('surfaces the server message on a 422 serviceability rejection', () => {
+    expect(
+      resolveSubmitErrorMessage(422, { message: 'We are not active in this area yet.' }),
+    ).toBe('We are not active in this area yet.')
+  })
+
+  it('surfaces the server message on a 429 active-request cap', () => {
+    expect(
+      resolveSubmitErrorMessage(429, {
+        message: 'You have too many active service requests. Please wait for one to be resolved before submitting a new one.',
+      }),
+    ).toBe(
+      'You have too many active service requests. Please wait for one to be resolved before submitting a new one.',
+    )
+  })
+
+  it('uses the review copy for a 400 with no usable message', () => {
+    expect(resolveSubmitErrorMessage(400, null)).toBe(REVIEW)
+    expect(resolveSubmitErrorMessage(400, {})).toBe(REVIEW)
+  })
+
+  it('falls back to generic copy for a 500 (no message leaks internals)', () => {
+    // 500 returns only { error: 'Failed to create job request' } — no message.
+    expect(resolveSubmitErrorMessage(500, {})).toBe(GENERIC)
+    expect(resolveSubmitErrorMessage(500, null)).toBe(GENERIC)
+  })
+
+  it('ignores a blank/whitespace message and falls back', () => {
+    expect(resolveSubmitErrorMessage(422, { message: '   ' })).toBe(GENERIC)
+  })
+
+  it('ignores a non-string message and falls back', () => {
+    expect(resolveSubmitErrorMessage(422, { message: 42 })).toBe(GENERIC)
   })
 })
