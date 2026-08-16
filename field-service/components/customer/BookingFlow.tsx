@@ -23,7 +23,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker, type Selection as SuburbSelection } from './SuburbPicker'
 import { InlineOtpDialog } from '@/components/customer/InlineOtpDialog'
-import { nextActionForAuthFailure } from '@/components/customer/bookingSubmitAuthGate'
+import { nextActionForAuthFailure, resolveSubmitErrorMessage } from '@/components/customer/bookingSubmitAuthGate'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { trackJobRequestSubmitted } from '@/lib/meta-pixel'
 import { analytics } from '@/lib/analytics'
@@ -653,10 +653,11 @@ export function BookingFlow({
         setOtpDialogOpen(true)
         return
       }
-      if (res.status === 400) {
-        throw new Error('Please review your address and job details, then try again.')
-      }
-      throw new Error('We could not submit your request right now. Please try again.')
+      // Surface the server's user-facing reason when it supplies one (422
+      // serviceability guards, 429 active-request cap); otherwise fall back to
+      // generic copy. See resolveSubmitErrorMessage.
+      const errorBody = (await res.json().catch(() => null)) as { message?: string } | null
+      throw new Error(resolveSubmitErrorMessage(res.status, errorBody))
     }
 
     const data = await res.json()
