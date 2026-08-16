@@ -277,6 +277,29 @@ export const TEMPLATES = {
       'Hi {{1}}, a new {{2}} lead is available in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
   },
 
+  // ─── Provider lead-response comms (warning + no-show deactivation) ─────────
+  // UTILITY so they deliver outside the 24h session window once approved.
+  // Both carry {{1}} = provider name only. See lib/provider-lead-response-comms.ts.
+  provider_lead_response_warning: {
+    name: 'provider_lead_response_warning',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Warns a provider who has received leads but never responded that their profile may be paused.',
+    // {{1}} provider name
+    example:
+      "Hi {{1}}, this is Plug A Pro. You've been sent customer job leads but haven't responded. Please respond when you receive a lead - customers are waiting. If future leads go unanswered, your profile may be paused. Reply here if you need help using the app. Thanks.",
+  },
+
+  provider_deactivated_no_show: {
+    name: 'provider_deactivated_no_show',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Notifies a provider their profile was paused for not responding to leads; invites a reply to be reactivated.',
+    // {{1}} provider name
+    example:
+      "Hi {{1}}, this is Plug A Pro. You received customer job leads recently but didn't respond to them, so we've paused your profile to keep customers matched with active providers. We'd like to have you back - just reply to this message telling us you're ready to take jobs and why you'd like to be reactivated, and our team will restore your profile. Thanks.",
+  },
+
   provider_rfp_lead_invite: {
     name: 'provider_rfp_lead_invite',
     language: 'en_ZA',
