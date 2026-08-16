@@ -302,6 +302,11 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.comms.lead_response': {
+    description: 'Automated provider lead-response comms (scripts/provider-lead-response-sweep.ts + lib/provider-lead-response-comms.ts): warning to providers who ignore leads, and no-show deactivation notices. When OFF, the sweep dry-runs a preview but never sends or deactivates. Flip ON per env after the Meta-approved templates (provider_lead_response_warning, provider_deactivated_no_show) land in WhatsApp Business.',
+    owner: 'ops',
+    defaultValue: false,
+  },
   'matching.verification_trust_tier': {
     description: 'Hard-tier candidate ranking by KYC verification: kycStatus=VERIFIED providers sort above all others within the same eligible pool, then by score; non-verified ranked by score among themselves. Keeps the legacy grace flag honest (non-verified still match) but ensures truly lead-eligible providers get the first response window. Default OFF — flip on per environment after smoke-testing.',
     owner: 'eng',

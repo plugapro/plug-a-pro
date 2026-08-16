@@ -60,6 +60,20 @@ const REJECTED_IDS = [
 //   all bodies below end with static text (punctuation or a word after the last variable).
 const TEMPLATES = [
   {
+    name: 'provider_lead_response_warning',
+    category: 'UTILITY',
+    // {{1}} provider name
+    body: "Hi {{1}}, this is Plug A Pro. You've been sent customer job leads but haven't responded. Please respond when you receive a lead - customers are waiting. If future leads go unanswered, your profile may be paused. Reply here if you need help using the app. Thanks.",
+    examples: ['Archie'],
+  },
+  {
+    name: 'provider_deactivated_no_show',
+    category: 'UTILITY',
+    // {{1}} provider name
+    body: "Hi {{1}}, this is Plug A Pro. You received customer job leads recently but didn't respond to them, so we've paused your profile to keep customers matched with active providers. We'd like to have you back - just reply to this message telling us you're ready to take jobs and why you'd like to be reactivated, and our team will restore your profile. Thanks.",
+    examples: ['Jonathan'],
+  },
+  {
     name: 'booking_rescheduled',
     category: 'UTILITY',
     // {{1}} name, {{2}} service, {{3}} old slot, {{4}} new slot, {{5}} booking URL
