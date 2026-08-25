@@ -25,6 +25,9 @@ const QUEUE_TYPE_TO_KEY: Record<OpsQueueType, OpsDashboardQueueKey | null> = {
   DISPUTE:            'trustRecovery',
   PROVIDER_ONBOARDING:'providerOnboarding',
   IDENTITY_VERIFICATION:'identityVerification',
+  // No dedicated ops-dashboard queue yet — falls through to the 1-day default below.
+  RESCHEDULE_REQUEST:   null,
+  CUSTOMER_NOTIFY_FAILED: null,
 }
 
 export function slaFor(queueType: OpsQueueType): SlaSpec {
