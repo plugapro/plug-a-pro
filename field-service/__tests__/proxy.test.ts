@@ -206,10 +206,11 @@ describe('proxy admin access', () => {
 
     const res = await proxy(new NextRequest('http://localhost/api/auth/phone-exists'))
 
-    expect(res.status).toBe(307)
-    expect(res.headers.get('location')).toBe(
-      'http://localhost/sign-in?callbackUrl=%2Fbookings&next=%2Fbookings',
-    )
+    // Unauthenticated protected APIs now get a JSON 401 (not a sign-in
+    // redirect); the property under test — the handler is never reached
+    // without a session — is unchanged.
+    expect(res.status).toBe(401)
+    expect(res.headers.get('location')).toBeNull()
   })
 
   it('does not expose OTP verify-failed telemetry as a public route (finding d3930a40)', async () => {
@@ -221,7 +222,8 @@ describe('proxy admin access', () => {
 
     const res = await proxy(new NextRequest('http://localhost/api/security/otp/verify-failed'))
 
-    expect(res.status).toBe(307)
+    expect(res.status).toBe(401)
+    expect(res.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
@@ -278,6 +280,31 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBe(
       'http://localhost/sign-in?callbackUrl=%2Fprofile&next=%2Fprofile',
     )
+  })
+
+  it('returns JSON 401 (not a sign-in redirect) for unauthenticated protected API calls', async () => {
+    // fetch() transparently follows redirects, so an API 307 to /sign-in makes
+    // the caller see HTML/405 instead of the auth failure — the signed-out
+    // booking submit showed a generic error banner instead of redirecting.
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(
+      new NextRequest('http://localhost/api/customer/bookings', { method: 'POST' }),
+    )
+
+    expect(res.status).toBe(401)
+    expect(res.headers.get('location')).toBeNull()
+    expect(await res.json()).toEqual({ error: 'Unauthorised' })
+  })
+
+  it('returns JSON 401 for unauthenticated protected provider API calls', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/provider/leads'))
+
+    expect(res.status).toBe(401)
+    expect(res.headers.get('location')).toBeNull()
+    expect(await res.json()).toEqual({ error: 'Unauthorised' })
   })
 
   it('allows provider credit terms without an OTP session', async () => {
@@ -539,7 +566,8 @@ describe('proxy admin access', () => {
 
     expect(report.status).toBe(200)
     expect(report.headers.get('location')).toBeNull()
-    expect(verifyFailed.status).toBe(307)
+    expect(verifyFailed.status).toBe(401)
+    expect(verifyFailed.headers.get('location')).toBeNull()
     expect(stepUp.status).toBe(200)
     expect(stepUp.headers.get('location')).toBeNull()
     expect(stepUpNormalHost.status).toBe(200)
