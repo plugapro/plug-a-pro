@@ -5,10 +5,24 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { MapPin, ChevronDown, X, Search } from 'lucide-react'
 import { formatLocationSlugLabel } from '@/lib/location-format'
+import {
+  isNotYetActive,
+  sortAreaResultsLiveFirst,
+  type AreaServiceStatus,
+} from '@/lib/area-service-status'
 
 const STORAGE_KEY = 'pap-area'
 
 type AreaOption = { slug: string; label: string }
+
+// Search results carry region context so duplicate suburb names are
+// distinguishable (there are two "Northcliff" nodes — one in jhb_west, one in
+// jhb_north; picking the wrong one dead-ends the booking) and so not-yet-active
+// areas are visibly secondary instead of identical twins of serviceable ones.
+type AreaSearchResult = AreaOption & {
+  regionKey?: string | null
+  serviceStatus?: AreaServiceStatus
+}
 
 interface AreaSelectorProps {
   currentArea?: string
@@ -49,7 +63,7 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<AreaOption[]>([])
+  const [results, setResults] = useState<AreaSearchResult[]>([])
   const areaSnapshot = useSyncExternalStore(subscribeToAreaStore, getAreaSnapshot, () => '')
   const selectedArea = parseAreaSnapshot(areaSnapshot)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -66,7 +80,18 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
     const controller = new AbortController()
     fetch(`/api/locations/search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
       .then(r => r.json())
-      .then((data: AreaOption[]) => setResults(data.map(n => ({ slug: n.slug, label: n.label }))))
+      .then((data: AreaSearchResult[]) =>
+        setResults(
+          sortAreaResultsLiveFirst(
+            data.map(n => ({
+              slug: n.slug,
+              label: n.label,
+              regionKey: n.regionKey ?? null,
+              serviceStatus: n.serviceStatus,
+            })),
+          ),
+        ),
+      )
       .catch(() => {})
     return () => controller.abort()
   }, [])
@@ -185,18 +210,37 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
                   No areas found for &ldquo;{query}&rdquo;
                 </p>
               ) : (
-                results.map(r => (
-                  <button
-                    key={r.slug}
-                    type="button"
-                    onClick={() => select(r)}
-                    className="w-full text-left flex items-center gap-3 px-3 py-3.5 rounded-[14px] transition-colors hover:bg-[var(--card-alt)]"
-                    style={{ color: 'var(--ink)' }}
-                  >
-                    <MapPin size={15} style={{ color: 'var(--brand-purple)', flexShrink: 0 }} />
-                    <span className="text-[14px] font-medium">{r.label}</span>
-                  </button>
-                ))
+                results.map(r => {
+                  const regionLabel = r.regionKey ? formatLocationSlugLabel(r.regionKey) : ''
+                  const notYetActive = isNotYetActive(r.serviceStatus)
+                  return (
+                    <button
+                      key={r.slug}
+                      type="button"
+                      onClick={() => select({ slug: r.slug, label: r.label })}
+                      className="w-full text-left flex items-center gap-3 px-3 py-3.5 rounded-[14px] transition-colors hover:bg-[var(--card-alt)]"
+                      style={{ color: 'var(--ink)' }}
+                    >
+                      <MapPin
+                        size={15}
+                        style={{ color: notYetActive ? 'var(--ink-mute)' : 'var(--brand-purple)', flexShrink: 0 }}
+                      />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[14px] font-medium truncate">{r.label}</span>
+                        {regionLabel && (
+                          <span className="block text-[12px] truncate" style={{ color: 'var(--ink-mute)' }}>
+                            {regionLabel}
+                          </span>
+                        )}
+                      </span>
+                      {notYetActive && (
+                        <span className="text-[11px] font-semibold shrink-0" style={{ color: 'var(--ink-mute)' }}>
+                          Not yet active
+                        </span>
+                      )}
+                    </button>
+                  )
+                })
               )}
 
               {displayLabel && (

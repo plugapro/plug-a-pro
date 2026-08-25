@@ -250,6 +250,10 @@ export async function proxy(request: NextRequest) {
       })
 
       if (!access.ok) {
+        // API calls get the JSON 401 (same reasoning as redirectToSignIn).
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+        }
         // Route authenticated users lacking provider access to the provider sign-in
         // screen and include a role-mismatch hint so we can show recovery copy.
         // The callback target is also sanitized so provider auth cannot be
@@ -328,6 +332,16 @@ function redirectToSignIn(
   effectivePath: string,
   isAdminDomain = false,
 ): NextResponse {
+  // API calls must never be redirected to an HTML sign-in page: fetch()
+  // transparently follows the redirect, so the caller sees a non-auth status
+  // (or HTML where it expected JSON) instead of the 401 — e.g. a signed-out
+  // booking submit showed the generic "could not submit" banner instead of
+  // the sign-in redirect its 401 handler implements. Surface the auth
+  // failure directly and let each client's 401 path do its job.
+  if (effectivePath.startsWith('/api/')) {
+    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+  }
+
   let destination = '/sign-in'
   // Preserve route ownership on redirects:
   // customer routes always return to /sign-in,
