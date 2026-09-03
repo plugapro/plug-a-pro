@@ -495,8 +495,10 @@ describe('POST /api/payat/webhook', () => {
       expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
     })
 
-    it('rejects an unsigned request before the flag or reconcile path is ever consulted', async () => {
-      mockIsEnabled.mockResolvedValue(true)
+    it('rejects an unsigned request when only readback_verification is on (the unsigned door needs its own flag)', async () => {
+      mockIsEnabled.mockImplementation(
+        async (key: string) => key === 'payments.payat.readback_verification',
+      )
 
       const { POST } = await import('@/app/api/payat/webhook/route')
       const res = await POST(
@@ -535,6 +537,140 @@ describe('POST /api/payat/webhook', () => {
       expect(JSON.stringify(parsed)).not.toContain('missing')
 
       consoleErrorSpy.mockRestore()
+    })
+  })
+
+  describe('unsigned doorbell mode (payments.payat.webhook_unsigned_doorbell)', () => {
+    const enableUnsignedDoorbell = () =>
+      mockIsEnabled.mockImplementation(
+        async (key: string) => key === 'payments.payat.webhook_unsigned_doorbell',
+      )
+
+    // Pay@'s real notification shape (IntegratorPaymentNotificationDetailsModel):
+    // no clientReferenceNumber, no status, no amount - just accountNumber,
+    // referenceNumber and amountPaid.
+    const realPayatPayload = {
+      accountNumber: '14723011626829',
+      referenceNumber: 'intent-payat-1',
+      amountPaid: 10_700,
+      customer: 'Test Customer',
+      businessName: 'Plug A Pro',
+    }
+
+    it('is rejected with 401 when the flag is off (default)', async () => {
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(request(realPayatPayload, ''))
+
+      expect(res.status).toBe(401)
+      expect(mockReconcilePayatIntent).not.toHaveBeenCalled()
+    })
+
+    it('resolves a real Pay@ payload by referenceNumber and reconciles via the read, never the payload', async () => {
+      enableUnsignedDoorbell()
+      mockDb.paymentIntent.findUnique.mockResolvedValue({ id: 'intent-payat-1' })
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'credited', ledgerEntryId: 'led-1' })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(request(realPayatPayload, ''))
+
+      expect(res.status).toBe(200)
+      expect(mockReconcilePayatIntent).toHaveBeenCalledWith('intent-payat-1')
+      // The unsigned path must never touch the payload-trusting legacy code.
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+      expect(mockDb.paymentIntent.update).not.toHaveBeenCalled()
+      expect(mockDb.paymentIntent.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('falls back to clientAccountNumber lookup when no reference field matches', async () => {
+      enableUnsignedDoorbell()
+      mockDb.paymentIntent.findUnique.mockResolvedValue(null)
+      mockDb.paymentIntent.findFirst
+        .mockResolvedValueOnce(null) // paymentReference lookup
+        .mockResolvedValueOnce({ id: 'intent-payat-2' }) // clientAccountNumber lookup
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'not_paid', internalStatus: 'SENT' })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(request(realPayatPayload, ''))
+
+      expect(res.status).toBe(200)
+      expect(mockDb.paymentIntent.findFirst).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { clientAccountNumber: '14723011626829', paymentMethod: 'PAYAT' },
+        }),
+      )
+      expect(mockReconcilePayatIntent).toHaveBeenCalledWith('intent-payat-2')
+    })
+
+    it('acks the portal Test mock payload (no matching intent) without calling Pay@', async () => {
+      enableUnsignedDoorbell()
+      mockDb.paymentIntent.findUnique.mockResolvedValue(null)
+      mockDb.paymentIntent.findFirst.mockResolvedValue(null)
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ accountNumber: '00000000000000', referenceNumber: 'mock-ref', amountPaid: 100 }, ''),
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ received: true, ignored: 'no_matching_intent' })
+      expect(mockReconcilePayatIntent).not.toHaveBeenCalled()
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+    })
+
+    it('never marks an intent FAILED from an unsigned claimed status (forged CANCELLED is inert)', async () => {
+      enableUnsignedDoorbell()
+      mockDb.paymentIntent.findUnique.mockResolvedValue({ id: 'intent-payat-1' })
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'not_paid', internalStatus: 'SENT' })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ clientReferenceNumber: 'intent-payat-1', status: 'CANCELLED' }, ''),
+      )
+
+      expect(res.status).toBe(200)
+      // The legacy path would updateMany the intent to FAILED. Unsigned must not.
+      expect(mockDb.paymentIntent.updateMany).not.toHaveBeenCalled()
+      expect(mockDb.paymentIntent.update).not.toHaveBeenCalled()
+      expect(mockReconcilePayatIntent).toHaveBeenCalledWith('intent-payat-1')
+    })
+
+    it('acks an unverifiable pre-migration intent without reaching the legacy credit path', async () => {
+      enableUnsignedDoorbell()
+      mockDb.paymentIntent.findUnique.mockResolvedValue({ id: 'intent-old' })
+      mockReconcilePayatIntent.mockResolvedValue({ action: 'skipped', reason: 'no clientAccountNumber' })
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(request({ clientReferenceNumber: 'intent-old' }, ''))
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ received: true, ignored: 'unverifiable_intent' })
+      expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+    })
+
+    it('propagates a Pay@ read failure as a 5xx so Pay@ retries the unsigned notification', async () => {
+      enableUnsignedDoorbell()
+      mockDb.paymentIntent.findUnique.mockResolvedValue({ id: 'intent-payat-1' })
+      const readError = new Error('Pay@ read failed: 403')
+      mockReconcilePayatIntent.mockRejectedValue(readError)
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      await expect(POST(request(realPayatPayload, ''))).rejects.toThrow(readError)
+
+      consoleErrorSpy.mockRestore()
+    })
+
+    it('leaves the signed legacy path untouched when the flag is on but the signature is valid', async () => {
+      enableUnsignedDoorbell()
+
+      const { POST } = await import('@/app/api/payat/webhook/route')
+      const res = await POST(
+        request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
+      expect(mockReconcilePayatIntent).not.toHaveBeenCalled()
     })
   })
 })
