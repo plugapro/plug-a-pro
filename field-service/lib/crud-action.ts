@@ -122,6 +122,13 @@ interface CrudActionOptions<TInput, TOutput> {
    * The AuditLog / AdminAuditEvent rows are written in the same transaction.
    */
   run: (input: TInput, tx: TxClient) => Promise<TOutput>
+  /**
+   * Interactive-transaction limits. Prisma's defaults (5s timeout, 2s
+   * maxWait) are too tight for heavy actions: provider approval times out
+   * with P2028 inside syncProviderRecord's availability/service-area
+   * upserts. Callers with known-long transactions can raise these further.
+   */
+  transactionOptions?: { timeout?: number; maxWait?: number }
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -231,6 +238,13 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
     })
 
     return result
+  }, {
+    // 15s covers the current worst case (provider approval: auth-user
+    // resolution + syncProviderRecord upserts + audit rows) with headroom,
+    // and stays far under the 300s function limit. The long-term fix is
+    // moving network I/O (Supabase auth) out of the transaction.
+    timeout: opts.transactionOptions?.timeout ?? 15_000,
+    maxWait: opts.transactionOptions?.maxWait ?? 5_000,
   })
 
   return { ok: true, data }
