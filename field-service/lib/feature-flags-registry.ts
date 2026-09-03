@@ -591,6 +591,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  'payments.payat.webhook_unsigned_doorbell': {
+    description:
+      "Accept Pay@ payment notifications that carry no valid x-payat-signature, as doorbell-only: the payload is never trusted for status or amount - the intent is resolved by reference/accountNumber and rtp:read decides everything. Required because the Pay@ merchant-portal webhook sends NO auth header at all (their spec offers NO_AUTH/BASIC/OAUTH2/API_KEY, never an HMAC), so the signed path can never fire in production. Requires the rtp:read scope on PAYAT_CLIENT_ID.",
+    owner: 'eng',
+    defaultValue: false,
+  },
   'payments.payat.reconcile_sweep': {
     description:
       'Before the expire-payment-intents cron marks a PENDING_PAYMENT intent EXPIRED, read its true state from Pay@ and credit it if paid. This is the safety net that catches every missed ITN. Requires the rtp:read scope on PAYAT_CLIENT_ID.',

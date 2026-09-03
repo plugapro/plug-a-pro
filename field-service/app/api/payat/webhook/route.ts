@@ -14,6 +14,12 @@ type PayatWebhookPayload = {
   amount?: unknown
   transactionId?: unknown
   paymentId?: unknown
+  // Fields from Pay@'s documented IntegratorPaymentNotificationDetailsModel -
+  // the shape real notifications (and the portal's Test button) actually send:
+  // accountNumber is our stored clientAccountNumber, referenceNumber is the
+  // clientReferenceNumber we set at RTP creation (the PaymentIntent id).
+  accountNumber?: unknown
+  referenceNumber?: unknown
 }
 
 // Statuses that represent a completed payment and trigger wallet crediting.
@@ -130,6 +136,95 @@ function normalisePayload(payload: PayatWebhookPayload) {
   return { reference, usedClientRef, status, amount, gatewayReference }
 }
 
+function payloadString(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return ''
+}
+
+// An unsigned request may only point at an intent - reconcilePayatIntent asks
+// Pay@ directly and is the sole authority on crediting. The payload-trusting
+// legacy paths (amount comparison, FAILED marking on claimed statuses) are
+// unreachable from here: a forged request can at worst trigger a verified read.
+async function handleUnsignedDoorbell(rawBody: string): Promise<NextResponse> {
+  let parsed: PayatWebhookPayload
+  try {
+    parsed = JSON.parse(rawBody) as PayatWebhookPayload
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const reference =
+    payloadString(parsed.clientReferenceNumber) ||
+    payloadString(parsed.reference) ||
+    payloadString(parsed.sourceReference) ||
+    payloadString(parsed.referenceNumber)
+  const accountNumber = payloadString(parsed.accountNumber)
+
+  let intentId: string | null = null
+  if (reference) {
+    const byId = await db.paymentIntent.findUnique({
+      where: { id: reference },
+      select: { id: true },
+    })
+    if (byId) {
+      intentId = byId.id
+    } else {
+      const byPaymentReference = await db.paymentIntent.findFirst({
+        where: { paymentReference: reference, paymentMethod: 'PAYAT' },
+        select: { id: true },
+      })
+      if (byPaymentReference) intentId = byPaymentReference.id
+    }
+  }
+  if (!intentId && accountNumber) {
+    const byAccount = await db.paymentIntent.findFirst({
+      where: { clientAccountNumber: accountNumber, paymentMethod: 'PAYAT' },
+      select: { id: true },
+    })
+    if (byAccount) intentId = byAccount.id
+  }
+
+  if (!intentId) {
+    // Includes the merchant portal's Test button, whose mock payload never
+    // matches a real intent. Ack it - retrying junk helps nobody - but log so
+    // a rising count of unmatchable real notifications stays visible.
+    console.warn(JSON.stringify({ event: 'payat.webhook_unsigned_unmatched' }))
+    return NextResponse.json({ received: true, ignored: 'no_matching_intent' })
+  }
+
+  let outcome: Awaited<ReturnType<typeof reconcilePayatIntent>>
+  try {
+    outcome = await reconcilePayatIntent(intentId)
+  } catch (error) {
+    // Same contract as the signed doorbell: a Pay@ read failure must surface
+    // as a 5xx so Pay@ retries - acking an unverified payment would drop it.
+    // Log the error *name* only; message/stack can carry Pay@ response content.
+    console.error(JSON.stringify({
+      event: 'payat.webhook_reconcile_failed',
+      intentId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    }))
+    throw error
+  }
+
+  if (outcome.action === 'skipped' && outcome.reason === 'no clientAccountNumber') {
+    // A pre-migration intent the read-back can never verify. The legacy path
+    // would credit it from the payload - but an unsigned request must never
+    // reach payload-trusting code, so this stays a manual portal reconciliation.
+    console.warn(JSON.stringify({ event: 'payat.webhook_unsigned_unverifiable', intentId }))
+    return NextResponse.json({ received: true, ignored: 'unverifiable_intent' })
+  }
+
+  console.info(JSON.stringify({
+    event: 'payat.webhook_reconciled',
+    intentId,
+    action: outcome.action,
+    signed: false,
+  }))
+  return NextResponse.json({ received: true })
+}
+
 export async function POST(request: NextRequest) {
   // Validate configuration before reading the body - fail with a structured log
   // rather than an unhandled exception that obscures the root cause.
@@ -145,6 +240,13 @@ export async function POST(request: NextRequest) {
   const signature = request.headers.get('x-payat-signature') ?? ''
 
   if (!isValidSignature(rawBody, signature, secret)) {
+    // Pay@'s merchant-portal webhook registration takes only a URL - production
+    // notifications arrive with no signature header at all (their spec's webhook
+    // auth options are NO_AUTH/BASIC/OAUTH2/API_KEY; an HMAC is not one of them).
+    // The unsigned doorbell accepts them without trusting a single byte.
+    if (await isEnabled('payments.payat.webhook_unsigned_doorbell')) {
+      return handleUnsignedDoorbell(rawBody)
+    }
     console.warn('[payat-webhook] rejected notification with invalid signature')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
