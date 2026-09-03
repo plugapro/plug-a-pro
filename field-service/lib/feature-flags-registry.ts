@@ -584,6 +584,19 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  // ─── Pay@ payment reconciliation ─────────────────────────────────────────────
+  'payments.payat.readback_verification': {
+    description:
+      'Treat the Pay@ ITN webhook as a doorbell only: ignore its status/amount and verify against rtp:read before crediting. Requires the rtp:read scope on PAYAT_CLIENT_ID. Keep OFF until that scope is granted, otherwise every webhook 403s on read and credits nothing.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'payments.payat.reconcile_sweep': {
+    description:
+      'Before the expire-payment-intents cron marks a PENDING_PAYMENT intent EXPIRED, read its true state from Pay@ and credit it if paid. This is the safety net that catches every missed ITN. Requires the rtp:read scope on PAYAT_CLIENT_ID.',
+    owner: 'eng',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY

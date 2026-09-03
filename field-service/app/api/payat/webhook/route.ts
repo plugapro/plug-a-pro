@@ -2,6 +2,9 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { type NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gateway-itn'
+import { isEnabled } from '@/lib/flags'
+import { reconcilePayatIntent } from '@/lib/payat/reconcile'
+import { resolveExpectedPayatAmountCents } from '@/lib/payat/expected-amount'
 
 type PayatWebhookPayload = {
   reference?: unknown
@@ -25,6 +28,23 @@ const TERMINAL_NEGATIVE_STATUSES = new Set(['CANCELLED', 'REVERSED', 'REFUNDED']
 const BENIGN_NOT_CREDITED_REASONS = new Set([
   'already credited',
   'already credited (concurrent call)',
+])
+
+// Doorbell mode resolves the intent by primary key only. These two skip reasons
+// mean the read-back path could not find the intent at all - NOT that there was
+// nothing to credit:
+//   - 'intent not found'      Pay@ sent reference/sourceReference instead of
+//                             clientReferenceNumber; the legacy path resolves
+//                             that by paymentReference.
+//   - 'no clientAccountNumber' the intent predates clientAccountNumber
+//                             persistence, so it can never be read back - but
+//                             the legacy path credits it today.
+// Acking these with a 200 would drop a real payment and Pay@ would never retry.
+// Fall through to the legacy path instead. Every other skip reason (already
+// credited, and the concurrent-race loser) is benign and still acks.
+const DOORBELL_FALLTHROUGH_SKIP_REASONS = new Set([
+  'intent not found',
+  'no clientAccountNumber',
 ])
 
 function requireWebhookSecret(): string {
@@ -165,6 +185,57 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
+  // Doorbell mode: the signed webhook tells us WHICH intent moved, never
+  // WHETHER it was paid or for how much. Pay@ is asked directly. This is the
+  // only path that is safe when the webhook is unreliable — which, on this
+  // account, it demonstrably is (0 of 3 ITNs delivered as of 2026-07-28).
+  if (await isEnabled('payments.payat.readback_verification')) {
+    if (!payload.reference) {
+      return NextResponse.json({ received: true, ignored: 'no_reference' })
+    }
+
+    let outcome: Awaited<ReturnType<typeof reconcilePayatIntent>>
+    try {
+      outcome = await reconcilePayatIntent(payload.reference)
+    } catch (error) {
+      // reconcilePayatIntent throws on any Pay@ read failure (network,
+      // non-2xx, a missing rtp:read scope, bad JSON). Let it propagate so the
+      // route returns a 5xx and Pay@ retries the notification - swallowing it
+      // here would ack a real payment we never actually verified. Log only
+      // the error *name*: the message/stack can carry Pay@ response content,
+      // and never log the merchant identifier or provider PII.
+      console.error(JSON.stringify({
+        event: 'payat.webhook_reconcile_failed',
+        intentId: payload.reference,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }))
+      throw error
+    }
+
+    if (outcome.action === 'skipped' && DOORBELL_FALLTHROUGH_SKIP_REASONS.has(outcome.reason)) {
+      // The read-back could not identify the intent. Do NOT ack - hand this
+      // notification to the legacy path below, which resolves the alternate
+      // reference form and can still credit pre-migration intents. Logged
+      // distinctly so a rising count is visible during rollout.
+      console.warn(JSON.stringify({
+        event: 'payat.webhook_readback_fallthrough',
+        intentId: payload.reference,
+        reason: outcome.reason,
+      }))
+    } else {
+      console.info(JSON.stringify({
+        event: 'payat.webhook_reconciled',
+        intentId: payload.reference,
+        action: outcome.action,
+        // Recorded so a webhook that consistently disagrees with the read is
+        // visible in logs rather than silently tolerated.
+        webhookClaimedStatus: payload.status,
+      }))
+
+      return NextResponse.json({ received: true })
+    }
+  }
+
   // Primary lookup: clientReferenceNumber is our intent UUID primary key.
   let intent = await db.paymentIntent.findUnique({
     where: { id: payload.reference },
@@ -219,14 +290,8 @@ export async function POST(request: NextRequest) {
 
   // If payAtAmountCents was stored in metadata at intent creation (fee-inclusive amount
   // sent to Pay@), compare against that. Fallback to amountCents for pre-fee intents.
-  const rawMeta = intent.metadata
-  const storedPayAtCents =
-    typeof rawMeta === 'object' && rawMeta !== null && !Array.isArray(rawMeta) &&
-    typeof (rawMeta as Record<string, unknown>).payAtAmountCents === 'number' &&
-    Number.isFinite((rawMeta as Record<string, unknown>).payAtAmountCents as number)
-      ? (rawMeta as Record<string, unknown>).payAtAmountCents as number
-      : null
-  const expectedAmountCents = storedPayAtCents ?? intent.amountCents
+  // Shared with the read-back reconcile path so the two cannot diverge.
+  const expectedAmountCents = resolveExpectedPayatAmountCents(intent.metadata, intent.amountCents)
 
   if (!Number.isFinite(payload.amount) || payload.amount !== expectedAmountCents) {
     console.error('[payat-webhook] amount mismatch; marking intent failed', {

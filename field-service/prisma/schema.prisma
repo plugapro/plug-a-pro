@@ -1403,6 +1403,10 @@ model PaymentIntent {
   // Pay@ merchant RTP fields — populated after a successful rtp/create/single call.
   sourceReference        String? // retail till reference (numeric, shown to provider at counter)
   requestToPayId         Int? // Pay@ internal RTP integer id (for rtp:read / rtp:cancel)
+  // Pay@ RTP lookup key. Required for rtp:read reconciliation — without it an
+  // intent cannot be checked against Pay@. Nullable because intents created
+  // before 2026-07-29 never captured it.
+  clientAccountNumber    String?
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
@@ -1410,6 +1414,7 @@ model PaymentIntent {
   @@index([status, createdAt])
   @@index([bankStatementReference])
   @@index([sourceReference])
+  @@index([clientAccountNumber])
   @@map("payment_intents")
 }
 

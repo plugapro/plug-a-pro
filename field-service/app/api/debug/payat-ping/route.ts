@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { requireAdminApi } from '@/lib/auth'
+import { readPayatSingleRtp } from '@/lib/payat/read'
+import { PayatApiError } from '@/lib/payat/payment'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -154,6 +156,50 @@ export async function GET(request: NextRequest) {
     PAYAT_CLIENT_SECRET: describeSecret(clientSecret),
     PAYAT_MERCHANT_IDENTIFIER: maskIdentifier(merchantIdentifier),
     NEXT_PUBLIC_APP_URL: appUrl || '(MISSING)',
+  }
+
+  // ── Optional: rtp/read shape check ─────────────────────────────────────────
+  // `?read=<clientAccountNumber>` exercises the production read path against a
+  // real RTP so the response shape can be confirmed BEFORE either reconcile
+  // flag is flipped. This matters because no captured rtp/read payload exists:
+  // whether Pay@ reports amounts in cents or rands, as numbers or strings,
+  // decides whether the sweep can confirm a payment at all. Point it at an
+  // intent of a KNOWN value - amountPaidCents coming back as 350 for an
+  // R350.00 payment means rands, not cents.
+  //
+  // Returns parsed, non-sensitive fields only: never the raw body (may echo
+  // provider name/phone/email), never the merchant identifier.
+  const readAccount = request.nextUrl.searchParams.get('read')?.trim()
+  if (readAccount) {
+    try {
+      const state = await readPayatSingleRtp(readAccount)
+      return NextResponse.json({
+        env,
+        read: {
+          ok: true,
+          clientAccountNumber: maskIdentifier(readAccount),
+          // Raw provider state string, kept verbatim so an unmapped value is
+          // visible rather than flattened into UNKNOWN.
+          accountState: state.accountState,
+          internalStatus: state.internalStatus,
+          amountCents: state.amountCents,
+          amountPaidCents: state.amountPaidCents,
+          paidAt: state.paidAt?.toISOString() ?? null,
+          expiresAt: state.expiresAt?.toISOString() ?? null,
+        },
+      })
+    } catch (err) {
+      // Error NAME and HTTP status only - Pay@ error messages can carry
+      // response content.
+      return NextResponse.json({
+        env,
+        read: {
+          ok: false,
+          errorName: err instanceof Error ? err.name : 'UnknownError',
+          httpStatus: err instanceof PayatApiError ? err.status ?? null : null,
+        },
+      })
+    }
   }
 
   // ── Step 1: OAuth token (client_credentials) ───────────────────────────────
