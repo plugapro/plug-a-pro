@@ -3,7 +3,7 @@
 This file is the Session 0 audit for the current workspace.
 
 ## Scope
-- Monorepo root: `/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro`
+- Monorepo root: `/Users/shimane/Projects/Plug A Pro`
 - Admin app: `field-service/`
 - Marketing site: `marketing/`
 - Prompt-pack companion docs currently live in `outputs/`, not `reference/`:
@@ -281,3 +281,9 @@ This file is the Session 0 audit for the current workspace.
 6. Every PR touching admin flows should keep or extend Playwright smoke coverage.
 7. No `as any` without a nearby TODO explaining why it is temporarily required.
 8. Detail pages must guard nullable relations; error boundaries are the last line of defence, not the first.
+
+## OpenBrain
+- Canonical project name: **`Plug A Pro`** (the duplicate registry rows `PlugAPro` / `Plug-A-Pro` were merged into it on 2026-09-07; the CLI's `resolveProjectId` and the knowledge filters now accept any spelling, so `--project "Plug A Pro"` is the one to use everywhere).
+- Session hooks (`.claude/settings.json`, `.codex/hooks.json`) call `/Users/shimane/Projects/MobileApps/OpenBrain/backend/scripts/session-context.sh 'Plug A Pro'`. The script derives the backend path from its own location and fails loud with a specific reason instead of a bare "unavailable".
+- Backend checkout: `/Users/shimane/Projects/MobileApps/OpenBrain/backend` (CLI = local Postgres on 5433; the MCP servers talk to the Cloudflare Worker, a separate database — log to both when it matters).
+- If OpenBrain is ever unreachable at session end, write the log to `openbrain/<domain>/<slug>-<date>.md` with a `> Pending OpenBrain sync` header and replay it next session (both rails), then stamp the file `Synced`.
