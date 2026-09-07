@@ -1,6 +1,6 @@
 # engineering — Pay@ webhook root cause found + fixed: unsigned-doorbell mode, portal test GREEN (2026-09-03)
 
-> Pending OpenBrain sync — MCP tokens expired.
+> Synced to OpenBrain 2026-09-07 (local CLI backend + Worker MCP).
 > Tags: domain:engineering, payat, payments, webhook, root-cause
 
 **Root cause of 0-for-all ITN delivery since May:** Pay@ never signs webhook calls. Their OpenAPI spec

@@ -1,6 +1,6 @@
 # ops — provider lead-response comms ACTIVATED: 7 deactivation notices + 4 warnings sent (2026-08-25)
 
-> Pending OpenBrain sync — both MCP connections token-expired at session end.
+> Synced to OpenBrain 2026-09-07 (local CLI backend + Worker MCP).
 > Tags: domain:ops, provider-engagement, whatsapp, comms, activation
 
 Provider-comms system fully activated same-day as the funnel-fix deploy (#204 live).
