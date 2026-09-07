@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/shimane/Projects/MobileApps/OpenBrain/backend/scripts/session-context.sh 'Plug A Pro'"
+            "command": "/Users/shimane/.openbrain/bin/session-context 'Plug A Pro'"
           }
         ]
       }
