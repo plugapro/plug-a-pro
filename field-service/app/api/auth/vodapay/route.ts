@@ -19,15 +19,21 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { recordAuditLog } from '@/lib/audit'
 import { createServiceClient } from '@/lib/auth'
-import { buildSessionCookieHeader, resolveSessionMaxAge } from '@/lib/auth-session-cookie'
+import { resolveSessionMaxAge, SESSION_COOKIE_NAME } from '@/lib/auth-session-cookie'
+import { issueAuthSessionWithSecurityGate } from '@/lib/auth-session-gate'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { checkVodapayAuthLimit } from '@/lib/rate-limit'
 import { trustedClientIp } from '@/lib/request-ip'
 import { normalizePhone } from '@/lib/utils'
 import { applyToken, inquiryUserInfo, VodapayApiError } from '@/lib/vodapay/client'
-import { resolveVodapayAuthUser, resolveVodapayCustomer } from '@/lib/vodapay/identity'
+import {
+  findVodapayAuthUserByPhone,
+  resolveVodapayAuthUser,
+  resolveVodapayCustomer,
+} from '@/lib/vodapay/identity'
 
 const E164 = /^\+[1-9]\d{7,14}$/
 
@@ -36,10 +42,33 @@ const E164 = /^\+[1-9]\d{7,14}$/
 // is defence in depth on top of the AdminUser lookup below.
 const BLOCKED_METADATA_ROLES = new Set(['admin', 'owner'])
 
+const SOURCE_ROUTE = '/api/auth/vodapay' as const
+
 function jsonError(error: string, status: number) {
   const res = NextResponse.json({ error }, { status })
   res.headers.set('Cache-Control', 'no-store')
   return res
+}
+
+function clearSessionCookieHeader(): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`
+}
+
+async function auditRefusal(params: {
+  phone: string
+  userId: string | null
+  code: string
+  detail?: Record<string, unknown>
+}): Promise<void> {
+  await recordAuditLog({
+    actorId: params.userId ?? 'system',
+    actorRole: params.userId ? 'customer' : 'system',
+    action: 'auth.vodapay_session_refused',
+    entityType: 'phone',
+    entityId: params.phone,
+    after: { source: SOURCE_ROUTE, code: params.code, ...params.detail },
+  }).catch(() => undefined)
 }
 
 export async function POST(request: NextRequest) {
@@ -79,30 +108,62 @@ export async function POST(request: NextRequest) {
 
     const fullName = info.userName?.fullName
     const admin = createServiceClient()
-    const authUser = await resolveVodapayAuthUser({ admin, db }, { externalId, phone, fullName })
+
+    // READ-ONLY first: every eligibility refusal below must happen before anything
+    // is written, so a refused request never leaves a new auth user (or a derived
+    // address attached to a staff/provider account) behind.
+    const existingAuthUser = await findVodapayAuthUserByPhone({ db }, phone)
 
     // Staff and provider accounts are out of scope for the customer mini-program.
     // Refusing here also preserves the invariant in lib/auth.ts#linkCustomerAccount:
     // a provider-only account must never be auto-given a Customer record.
-    if (authUser.metadataRole && BLOCKED_METADATA_ROLES.has(authUser.metadataRole)) {
+    if (
+      existingAuthUser?.metadataRole &&
+      BLOCKED_METADATA_ROLES.has(existingAuthUser.metadataRole)
+    ) {
+      await auditRefusal({
+        phone,
+        userId: existingAuthUser.userId,
+        code: 'blocked_metadata_role',
+      })
       return jsonError('account_not_eligible', 403)
     }
+
     const [staffRow, providerRow] = await Promise.all([
       // Same predicate proxy.ts uses to grant /admin (userId OR email), so an
       // invited-but-not-yet-accepted admin row is caught too.
-      db.adminUser.findFirst({
-        where: { OR: [{ userId: authUser.userId }, { email: authUser.email }] },
-        select: { id: true },
-      }),
+      existingAuthUser
+        ? db.adminUser.findFirst({
+            where: {
+              OR: [
+                { userId: existingAuthUser.userId },
+                ...(existingAuthUser.email ? [{ email: existingAuthUser.email }] : []),
+              ],
+            },
+            select: { id: true },
+          })
+        : null,
       db.provider.findFirst({
-        where: { OR: [{ userId: authUser.userId }, { phone }] },
+        where: existingAuthUser
+          ? { OR: [{ userId: existingAuthUser.userId }, { phone }] }
+          : { phone },
         select: { id: true },
       }),
     ])
     if (staffRow || providerRow) {
+      await auditRefusal({
+        phone,
+        userId: existingAuthUser?.userId ?? null,
+        code: staffRow ? 'staff_account' : 'provider_account',
+      })
       return jsonError('account_not_eligible', 403)
     }
 
+    // Guards passed — writes start here.
+    const authUser = await resolveVodapayAuthUser(
+      { admin, db },
+      { externalId, phone, fullName, existing: existingAuthUser },
+    )
     const { customerId } = await resolveVodapayCustomer({}, { externalId, phone, fullName })
 
     const { data: link, error: linkError } = await admin.auth.admin.generateLink({
@@ -130,14 +191,62 @@ export async function POST(request: NextRequest) {
 
     await linkCustomerUserId(customerId, authUser.userId)
 
+    // Same lockout / step-up gate every other session-issuing route runs through.
+    // Applied unconditionally here (no flag): a federated login carries no OTP
+    // challenge of its own, so this gate is the only thing standing between a
+    // SIM-swap-style takeover of the VodaPay-side number and a live session on a
+    // locked account. It also fails closed if the security state store is slow,
+    // and writes the audit trail for the issuance.
+    const gated = await issueAuthSessionWithSecurityGate({
+      accessToken: verified.session.access_token,
+      phoneE164: phone,
+      userId: authUser.userId,
+      maxAge: resolveSessionMaxAge(verified.session.expires_in),
+      sourceRoute: SOURCE_ROUTE,
+    })
+
+    if (!gated.ok && gated.reason === 'LOCKED') {
+      await auditRefusal({
+        phone,
+        userId: authUser.userId,
+        code: gated.metadata?.code ?? 'ACCOUNT_LOCKED',
+      })
+      const res = NextResponse.json(
+        { locked: true, code: gated.metadata?.code ?? 'ACCOUNT_LOCKED' },
+        { status: 423 },
+      )
+      res.headers.set('Set-Cookie', clearSessionCookieHeader())
+      res.headers.set('Cache-Control', 'no-store')
+      return res
+    }
+
+    if (!gated.ok && gated.reason === 'STEP_UP_REQUIRED') {
+      await auditRefusal({ phone, userId: authUser.userId, code: 'STEP_UP_REQUIRED' })
+      const res = NextResponse.json({
+        stepUpRequired: true,
+        redirectTo: '/security/checkpoint',
+      })
+      res.headers.set('Set-Cookie', clearSessionCookieHeader())
+      res.headers.append('Set-Cookie', gated.pendingStepUpCookie)
+      res.headers.set('Cache-Control', 'no-store')
+      return res
+    }
+
+    await recordAuditLog({
+      actorId: authUser.userId,
+      actorRole: 'customer',
+      action: 'auth.vodapay_session_issued',
+      entityType: 'phone',
+      entityId: phone,
+      after: {
+        source: SOURCE_ROUTE,
+        customerId,
+        authUserSource: authUser.source,
+      },
+    }).catch(() => undefined)
+
     const res = NextResponse.json({ ok: true })
-    res.headers.set(
-      'Set-Cookie',
-      buildSessionCookieHeader(
-        verified.session.access_token,
-        resolveSessionMaxAge(verified.session.expires_in),
-      ),
-    )
+    res.headers.set('Set-Cookie', gated.setCookie)
     res.headers.set('Cache-Control', 'no-store')
     return res
   } catch (err) {

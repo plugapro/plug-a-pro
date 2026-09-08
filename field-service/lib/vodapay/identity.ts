@@ -21,6 +21,47 @@ export const VODAPAY_CUSTOMER_NAME_FALLBACK = 'VodaPay Customer'
 
 type Db = typeof realDb
 
+/** Prisma unique-constraint violation, duck-typed so mocked clients work too. */
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return Boolean(
+    error && typeof error === 'object' && (error as { code?: unknown }).code === 'P2002',
+  )
+}
+
+async function resolveCustomerRecord(
+  db: Db,
+  input: { phone: string; fullName?: string },
+): Promise<{ customerId: string; created: boolean }> {
+  const byPhone = await db.customer.findFirst({
+    where: { phone: input.phone },
+    select: { id: true },
+  })
+  if (byPhone) return { customerId: byPhone.id, created: false }
+
+  try {
+    const created = await db.customer.create({
+      data: {
+        phone: input.phone,
+        name: input.fullName?.trim() || VODAPAY_CUSTOMER_NAME_FALLBACK,
+        channel: 'PWA',
+      },
+      select: { id: true },
+    })
+    return { customerId: created.id, created: true }
+  } catch (error) {
+    if (!isUniqueConstraintViolation(error)) throw error
+    // Customer.phone is unique: a concurrent first login (double-submit in the
+    // WebView) created the row between our read and this write. Converge on it
+    // instead of surfacing a 500.
+    const raced = await db.customer.findFirst({
+      where: { phone: input.phone },
+      select: { id: true },
+    })
+    if (!raced) throw error
+    return { customerId: raced.id, created: false }
+  }
+}
+
 export async function resolveVodapayCustomer(
   deps: { db?: Db },
   input: { externalId: string; phone: string; fullName?: string },
@@ -38,37 +79,32 @@ export async function resolveVodapayCustomer(
   })
   if (existing) return { customerId: existing.customerId, created: false }
 
-  const byPhone = await db.customer.findFirst({
-    where: { phone: input.phone },
-    select: { id: true },
-  })
-  if (byPhone) {
-    await db.customerExternalIdentity.create({
-      data: {
-        customerId: byPhone.id,
+  const customer = await resolveCustomerRecord(db, input)
+
+  // upsert, not create: two concurrent logins for the same externalId both miss
+  // the lookup above, and the second create would hit the (provider, externalId)
+  // unique index. The upsert returns whichever row won, so both callers agree on
+  // one customer instead of one of them 500ing.
+  const link = await db.customerExternalIdentity.upsert({
+    where: {
+      provider_externalId: {
         provider: VODAPAY_IDENTITY_PROVIDER,
         externalId: input.externalId,
       },
-    })
-    return { customerId: byPhone.id, created: false }
-  }
-
-  const created = await db.customer.create({
-    data: {
-      phone: input.phone,
-      name: input.fullName?.trim() || VODAPAY_CUSTOMER_NAME_FALLBACK,
-      channel: 'PWA',
     },
-    select: { id: true },
-  })
-  await db.customerExternalIdentity.create({
-    data: {
-      customerId: created.id,
+    create: {
+      customerId: customer.customerId,
       provider: VODAPAY_IDENTITY_PROVIDER,
       externalId: input.externalId,
     },
+    update: {},
+    select: { customerId: true },
   })
-  return { customerId: created.id, created: true }
+
+  return {
+    customerId: link.customerId,
+    created: customer.created && link.customerId === customer.customerId,
+  }
 }
 
 /**
@@ -156,7 +192,24 @@ function metadataRoleOf(rawUserMetaData: unknown): string | null {
   return typeof role === 'string' && role.trim() ? role.trim().toLowerCase() : null
 }
 
-async function findExistingAuthUserByPhone(db: AuthLookupClient, phone: string) {
+/** What the read-only lookup can tell the caller before anything is written. */
+export type ExistingVodapayAuthUser = {
+  userId: string
+  email: string | null
+  metadataRole: string | null
+}
+
+/**
+ * READ-ONLY lookup of the Supabase auth user behind a phone number. Split out from
+ * {@link resolveVodapayAuthUser} so callers can run eligibility checks (staff /
+ * provider refusals) *before* any auth user is created or mutated — otherwise a
+ * request that is about to be refused has already written to auth.users.
+ */
+export async function findVodapayAuthUserByPhone(
+  deps: { db?: AuthLookupClient },
+  phone: string,
+): Promise<ExistingVodapayAuthUser | null> {
+  const db = deps.db ?? (realDb as unknown as AuthLookupClient)
   const authPhone = supabaseAuthPhone(phone)
   const rows = await db.$queryRaw<AuthUserRow[]>`
     select id, email, raw_user_meta_data
@@ -168,26 +221,41 @@ async function findExistingAuthUserByPhone(db: AuthLookupClient, phone: string) 
     limit 1
   `
 
-  return rows[0] ?? null
+  const row = rows[0]
+  if (!row?.id) return null
+  return {
+    userId: row.id,
+    email: row.email?.trim() || null,
+    metadataRole: metadataRoleOf(row.raw_user_meta_data),
+  }
 }
 
 /**
- * Resolve (or create) the Supabase auth user behind a VodaPay-verified phone number
- * and guarantee it carries an email address, which is what the installed SDK's only
- * server-side session-mint path (`admin.generateLink`) requires.
+ * MUTATING half: create the auth user (or attach the derived address to an existing
+ * one) so it carries the email that the installed SDK's only server-side
+ * session-mint path (`admin.generateLink`) requires.
  *
- * An existing user's real email is never replaced — it is returned as-is and used
- * for the magic-link mint. The derived VodaPay address is only attached when the
- * user has none.
+ * Call {@link findVodapayAuthUserByPhone} first and pass the result as `existing` —
+ * the caller's eligibility guards must have run by this point. An existing user's
+ * real email is never replaced; it is returned as-is for the mint.
  */
 export async function resolveVodapayAuthUser(
   deps: { admin: VodapayAuthAdminClient; db?: AuthLookupClient },
-  input: { externalId: string; phone: string; fullName?: string },
+  input: {
+    externalId: string
+    phone: string
+    fullName?: string
+    existing?: ExistingVodapayAuthUser | null
+  },
 ): Promise<VodapayAuthUser> {
   const db = deps.db ?? (realDb as unknown as AuthLookupClient)
-  const authPhone = supabaseAuthPhone(input.phone)
   const derivedEmail = vodapayAuthEmail(input.externalId)
 
+  if (input.existing) {
+    return attachEmailIfMissing(deps.admin, input.existing, derivedEmail)
+  }
+
+  const authPhone = supabaseAuthPhone(input.phone)
   const { data, error } = await deps.admin.auth.admin.createUser({
     phone: authPhone,
     phone_confirm: true,
@@ -208,18 +276,29 @@ export async function resolveVodapayAuthUser(
     throw new Error('Supabase user creation failed')
   }
 
-  const existing = await findExistingAuthUserByPhone(db, input.phone)
-  if (!existing?.id) {
+  // The account appeared between the caller's lookup and this write.
+  const raced = await findVodapayAuthUserByPhone({ db }, input.phone)
+  if (!raced) {
     throw new Error('Supabase user lookup failed')
   }
+  return attachEmailIfMissing(deps.admin, raced, derivedEmail)
+}
 
-  const metadataRole = metadataRoleOf(existing.raw_user_meta_data)
-  const existingEmail = existing.email?.trim()
-  if (existingEmail) {
-    return { userId: existing.id, email: existingEmail, source: 'existing', metadataRole }
+async function attachEmailIfMissing(
+  admin: VodapayAuthAdminClient,
+  existing: ExistingVodapayAuthUser,
+  derivedEmail: string,
+): Promise<VodapayAuthUser> {
+  if (existing.email) {
+    return {
+      userId: existing.userId,
+      email: existing.email,
+      source: 'existing',
+      metadataRole: existing.metadataRole,
+    }
   }
 
-  const updated = await deps.admin.auth.admin.updateUserById(existing.id, {
+  const updated = await admin.auth.admin.updateUserById(existing.userId, {
     email: derivedEmail,
     email_confirm: true,
   })
@@ -227,5 +306,10 @@ export async function resolveVodapayAuthUser(
     throw new Error('Supabase user email attach failed')
   }
 
-  return { userId: existing.id, email: derivedEmail, source: 'existing', metadataRole }
+  return {
+    userId: existing.userId,
+    email: derivedEmail,
+    source: 'existing',
+    metadataRole: existing.metadataRole,
+  }
 }
