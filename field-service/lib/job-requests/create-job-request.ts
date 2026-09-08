@@ -29,6 +29,13 @@ import {
 } from '../customer-address-book'
 import { recordWorkflowEvent } from '../workflow-events/record'
 
+export function normalizeRequestSource(
+  source: string | null | undefined,
+): 'whatsapp' | 'pwa' | 'vodapay' | 'merged' {
+  if (source === 'whatsapp' || source === 'pwa' || source === 'vodapay') return source
+  return 'merged'
+}
+
 export interface CreateJobRequestParams {
   // Customer identity - supply one of the two sets:
   // Web path: userId + phone (from session)
@@ -500,7 +507,7 @@ export async function createJobRequest(
       customerId: customer.id,
       authUserId: params.userId ?? null,
       customerPhone: params.phone,
-      source: params.source === 'whatsapp' ? 'whatsapp' : params.source === 'pwa' ? 'pwa' : 'merged',
+      source: normalizeRequestSource(params.source),
       snapshot: {
         label: params.addressLine1?.trim() || params.street,
         street: params.street,
@@ -620,7 +627,7 @@ export async function createJobRequest(
     actorId: result.customerId,
     entityType: 'JOB_REQUEST',
     entityId: result.jobRequestId,
-    source: params.source === 'whatsapp' ? 'whatsapp' : params.source === 'pwa' ? 'pwa' : 'system',
+    source: (() => { const s = normalizeRequestSource(params.source); return s === 'merged' ? 'system' : s })(),
     metadata: {
       category: params.category,
       assignmentMode: initialAssignmentMode,

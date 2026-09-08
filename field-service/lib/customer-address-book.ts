@@ -125,7 +125,7 @@ export async function syncReusableCustomerAddressFromSnapshot(
     customerId: string
     authUserId?: string | null
     customerPhone?: string | null
-    source: 'whatsapp' | 'pwa' | 'merged'
+    source: 'whatsapp' | 'pwa' | 'vodapay' | 'merged'
     snapshot: AddressSnapshot
   },
 ): Promise<{ customerAddressId: string; created: boolean; wasDefault: boolean }> {
@@ -239,7 +239,7 @@ export async function resolveReusableCustomerSites(params: {
   customerId: string
   authUserId?: string | null
   customerPhone?: string | null
-  source: 'whatsapp' | 'pwa' | 'merged'
+  source: 'whatsapp' | 'pwa' | 'vodapay' | 'merged'
   limit?: number
 }): Promise<ResolvedCustomerSavedSite[]> {
   const limit = params.limit ?? 8
