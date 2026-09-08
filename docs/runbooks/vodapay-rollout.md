@@ -232,10 +232,22 @@ incident.
 
 ## Watch after flip
 
-- **`WorkflowEvent` rows with `source=vodapay`** in the admin funnel report
-  (`/admin/reports` funnel view). `lib/admin/funnel-aggregate.ts` groups by the raw
-  source string rather than an allowlist, so `vodapay` rows show up with no code
-  change required — confirm they're actually arriving once the channel flag is live.
+- **`WorkflowEvent` rows with `source='vodapay'`.** There is no admin UI to browse
+  these by source today: `lib/admin/funnel-aggregate.ts` never references `source` at
+  all — the funnel view (`/admin/reports`) breaks down only by category and suburb.
+  `vodapay` rows are silently included in the aggregate totals but are **not**
+  observable by source anywhere in `/admin`. Watch via a direct DB query instead
+  (table/column names verified against the `WorkflowEvent` model in
+  `prisma/schema.prisma`: `@@map("workflow_events")`, and `occurredAt` has no
+  `@map`, so it's the literal, case-sensitive column name):
+
+  ```sql
+  SELECT count(*) FROM workflow_events
+  WHERE source = 'vodapay' AND "occurredAt" > now() - interval '1 day';
+  ```
+
+  or log inspection. A `source` breakdown in the funnel report is a small future
+  enhancement — not something this branch ships.
 - **`ServiceAreaWaitlist` rows with `source=vodapay`** — marketplace demand from
   outside the current service fence, surfaced through the VodaPay channel
   specifically. Distinct signal from WhatsApp/PWA waitlist volume; useful for deciding
