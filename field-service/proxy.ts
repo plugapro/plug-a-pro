@@ -56,6 +56,9 @@ const PUBLIC_PATHS = [
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET
   '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
+  '/api/webhooks/vodapay', // VodaPay Cashier notify webhook (Task 17); already covered by the
+                           // '/api/webhooks' prefix above - listed explicitly for the same
+                           // documentation style as the other PSP webhook paths below
   '/api/payat/webhook',    // Pay@ provider-credit webhook callback from Pay@ infrastructure
   '/api/payat-go/callback',// Pay@Go RTP callback from Pay@ infrastructure
   '/api/review-first/provider-profile/shortlist', // signed profile-token shortlist action
