@@ -7,6 +7,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { getRequestChannel } from '@/lib/channel'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { cancelBookingLifecycle } from '@/lib/bookings'
 import { BOOKING_CANCEL_REASONS } from '@/lib/booking-cancel-reasons'
@@ -36,6 +37,7 @@ export default async function BookingDetailPage({
 }) {
   const { id } = await params
   const { reschedule } = await searchParams
+  const channel = await getRequestChannel()
   const session = await getSession()
   if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
@@ -332,7 +334,8 @@ export default async function BookingDetailPage({
                 <div className="text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>Service provider</div>
               </div>
               <div className="flex items-center gap-2">
-                {booking.status !== 'CANCELLED' && booking.match.provider.phone && (
+                {/* Hidden in VodaPay mode: wa.me links break out of the mini-program WebView. */}
+                {channel !== 'vodapay' && booking.status !== 'CANCELLED' && booking.match.provider.phone && (
                   <WhatsAppLink
                     href={`https://wa.me/${booking.match.provider.phone.replace(/^\+/, '').replace(/\D/g, '')}`}
                     source="customer_booking_message_provider"
