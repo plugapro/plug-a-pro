@@ -1348,6 +1348,12 @@ model Payment {
   // and the payment-confirmation-redrive cron (attempts capped).
   bookingConfirmationSentAt   DateTime?
   bookingConfirmationAttempts Int       @default(0)
+  // I-4 residual 2 (Task 16 round 2): atomic per-booking counter of VodaPay
+  // checkout mints. Read via an atomic { increment: 1 } update so concurrent
+  // checkout initiations can never observe/reuse the same counter value.
+  // Only meaningful for pspProvider:'vodapay' rows; every other row keeps the
+  // column default (0). No backfill needed - 0 means "no VodaPay attempts yet".
+  vodapayAttempt Int @default(0)
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 

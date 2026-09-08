@@ -66,9 +66,25 @@ export async function POST(request: NextRequest) {
 
       // Early-return BEFORE handlePaymentSuccess to prevent any duplicate DB writes.
       if (guard.outcome === 'duplicate') {
-        console.info(
-          `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
-        )
+        // NEW-2b: a duplicate `success` whose incoming pspReference differs
+        // from what's already stored means a SECOND, distinct session got
+        // paid for this booking - a possible double charge. Loud log with a
+        // distinct marker for ops/finance to grep on; still return 200 (this
+        // is not a signature/parse failure and must not trigger PSP retries).
+        if (guard.storedPspReference && guard.storedPspReference !== event.pspReference) {
+          console.error(
+            `[webhook/payments:${reqId}] DUPLICATE_SUCCESS_DIFFERENT_PSP_REFERENCE - possible double charge, manual refund needed`,
+            {
+              bookingId: event.bookingId,
+              storedPspReference: guard.storedPspReference,
+              incomingPspReference: event.pspReference,
+            },
+          )
+        } else {
+          console.info(
+            `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
+          )
+        }
         // SRE-02: a duplicate delivery is a free re-drive opportunity. If the
         // booking confirmation never went out (sentinel null), attempt it now.
         // sendPaidBookingConfirmation is idempotent (sentinel + attempt cap)

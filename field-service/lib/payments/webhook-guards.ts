@@ -20,7 +20,13 @@ const AMOUNT_TOLERANCE_CENTS = 1
 export type PaymentSuccessGuardResult =
   | { outcome: 'unknown_booking' }
   | { outcome: 'amount_mismatch'; storedAmountCents: number; receivedAmountCents: number }
-  | { outcome: 'duplicate'; bookingConfirmationSentAt: Date | null }
+  // NEW-2b: storedPspReference lets the caller detect a duplicate `success`
+  // whose incoming pspReference differs from what we already recorded -
+  // that means a SECOND, distinct live session for the same booking got
+  // paid (the "two payable sessions" hazard NEW-2a mitigates at mint time),
+  // a possible double charge that needs a loud log and manual follow-up
+  // rather than the routine "duplicate delivery" info log.
+  | { outcome: 'duplicate'; bookingConfirmationSentAt: Date | null; storedPspReference: string | null }
   | { outcome: 'proceed' }
 
 /**
@@ -35,7 +41,7 @@ export async function guardPaymentSuccessWebhook(params: {
 }): Promise<PaymentSuccessGuardResult> {
   const existingPayment = await db.payment.findUnique({
     where: { bookingId: params.bookingId },
-    select: { status: true, amount: true, bookingConfirmationSentAt: true },
+    select: { status: true, amount: true, bookingConfirmationSentAt: true, pspReference: true },
   })
 
   if (!existingPayment) {
@@ -64,6 +70,7 @@ export async function guardPaymentSuccessWebhook(params: {
     return {
       outcome: 'duplicate',
       bookingConfirmationSentAt: existingPayment.bookingConfirmationSentAt,
+      storedPspReference: existingPayment.pspReference,
     }
   }
 

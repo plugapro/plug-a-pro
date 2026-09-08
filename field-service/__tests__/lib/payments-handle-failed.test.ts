@@ -173,3 +173,66 @@ describe('handlePaymentFailed', () => {
     )
   })
 })
+
+// NEW-3 (Task 16 round 2): a late/stale VodaPay payment.failed notify for an
+// abandoned attempt must not fail a live, newer session or trigger re-mint
+// churn. VodapayCashierProvider.parseWebhookEvent exposes the 0-based attempt
+// index on event.raw.vodapayAttempt; handlePaymentFailed compares it against
+// the payment's current vodapayAttempt column (post-increment total mint
+// count, 1-based - so latestMintedAttempt = current.vodapayAttempt - 1).
+describe('handlePaymentFailed — stale VodaPay attempt guard (NEW-3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.PAYMENT_COLLECTION_MODE
+    mockClaimOpsQueueItem.mockResolvedValue({})
+    mockNotifyCustomerPaymentFailed.mockResolvedValue({ sent: true })
+  })
+
+  const staleVodapayEvent = (attempt: number) => ({
+    type: 'payment.failed' as const,
+    bookingId: 'booking-1',
+    pspReference: 'psp-ref-old',
+    amount: 45000,
+    currency: 'ZAR',
+    raw: { vodapayAttempt: attempt },
+  })
+
+  it('ignores a payment.failed notify for an attempt older than the latest minted attempt', async () => {
+    // Two mints have happened (column=2 -> latest minted attempt id=1); the
+    // event is for attempt 0, an already-abandoned, older mint.
+    mockDb.payment.findUnique.mockResolvedValueOnce({ vodapayAttempt: 2 })
+
+    const { handlePaymentFailed } = await import('@/lib/payments')
+    await handlePaymentFailed(staleVodapayEvent(0))
+
+    expect(mockDb.payment.updateMany).not.toHaveBeenCalled()
+    expect(mockNotifyCustomerPaymentFailed).not.toHaveBeenCalled()
+    expect(mockClaimOpsQueueItem).not.toHaveBeenCalled()
+  })
+
+  it('processes a payment.failed notify for the current (latest-minted) attempt normally', async () => {
+    // One mint has happened (column=1 -> latest minted attempt id=0), and the
+    // event IS for attempt 0 - its own, current session's failure.
+    mockDb.payment.findUnique.mockResolvedValueOnce({ vodapayAttempt: 1 })
+    mockDb.payment.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.booking.findUnique.mockResolvedValue(BOOKING_WITH_CUSTOMER)
+
+    const { handlePaymentFailed } = await import('@/lib/payments')
+    await handlePaymentFailed(staleVodapayEvent(0))
+
+    expect(mockDb.payment.updateMany).toHaveBeenCalledOnce()
+  })
+
+  it('a non-VodaPay event (no vodapayAttempt on raw) never triggers the staleness lookup', async () => {
+    mockDb.payment.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.booking.findUnique.mockResolvedValue(BOOKING_WITH_CUSTOMER)
+
+    const { handlePaymentFailed } = await import('@/lib/payments')
+    await handlePaymentFailed(EVENT) // raw: {} - Peach/PayAtGo shape, no vodapayAttempt key
+
+    // Bypass mode (PAYMENT_COLLECTION_MODE unset) also means
+    // refreshCheckoutUrlForFailedPayment never runs, so this asserts zero
+    // findUnique calls at all - proof the staleness lookup was skipped.
+    expect(mockDb.payment.findUnique).not.toHaveBeenCalled()
+  })
+})

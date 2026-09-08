@@ -23,7 +23,7 @@ import { notifyCustomerPaymentFailed } from './client-pwa-submission-notificatio
 import { createPayAtGoBookingPaymentRequest } from './payat-go'
 import { emitServerConversion } from './marketing/server-events'
 import { isEnabled } from './flags'
-import { VodapayCashierProvider } from './payments/providers/vodapay'
+import { VodapayCashierProvider, extractVodapayAttempt } from './payments/providers/vodapay'
 export { formatCurrency } from './currency'
 
 export type PaymentCollectionMode = 'bypass' | 'checkout'
@@ -47,6 +47,13 @@ export interface CheckoutParams {
   cancelUrl: string
   notifyUrl: string // webhook URL
   metadata?: Record<string, string>
+  // NEW-2a: signals that the caller KNOWS any previous session for this
+  // booking is dead (e.g. a payment.failed notify was just received for it)
+  // and a fresh, live session must be minted regardless. Providers that
+  // support reusing an existing unexpired session (currently only
+  // VodapayCashierProvider) must skip that reuse check when this is true.
+  // Providers that don't implement reuse (Peach, Pay@Go) ignore this field.
+  forceNewSession?: boolean
 }
 
 export interface CheckoutSession {
@@ -84,12 +91,20 @@ function readPaymentEnv(name: string): string {
   return globalThis.process?.env?.[name]?.trim() ?? ''
 }
 
+// NEW-1: shared normalization so ANY source of a provider name (the
+// PSP_PROVIDER env var, or a stored Payment.pspProvider column read back for
+// a refund) gets the same legacy-value handling. PayFast has been removed as
+// a PSP; a stale/stored 'payfast' maps to 'peach' instead of getProvider()
+// throwing "Unknown PSP provider". Falsy input (env unset, or a null
+// Payment.pspProvider) normalizes to `undefined` so callers can fall back to
+// resolvePspProviderName() themselves.
+function normalizePspProviderName(name: string | null | undefined): string | undefined {
+  if (!name) return undefined
+  return name === 'payfast' ? 'peach' : name
+}
+
 function resolvePspProviderName(): string {
-  // PayFast has been removed as a PSP. A stale `PSP_PROVIDER=payfast` (still set in
-  // some environments) maps to the default so getProvider() never throws on it.
-  const configured = readPaymentEnv('PSP_PROVIDER')
-  if (!configured || configured === 'payfast') return 'peach'
-  return configured
+  return normalizePspProviderName(readPaymentEnv('PSP_PROVIDER')) ?? 'peach'
 }
 
 // Per-channel override on top of resolvePspProviderName(): a booking whose
@@ -309,7 +324,11 @@ class PayAtGoProvider implements PspProvider {
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
 function getProvider(name?: string): PspProvider {
-  const provider = name ?? resolvePspProviderName()
+  // NEW-1: normalize explicit names the same way the env default is
+  // normalized, so a legacy/stored 'payfast' (e.g. Payment.pspProvider on an
+  // old row) maps to 'peach' instead of hitting the "Unknown PSP provider"
+  // throw below.
+  const provider = normalizePspProviderName(name) ?? resolvePspProviderName()
   switch (provider) {
     case 'peach':
       return new PeachPaymentsProvider()
@@ -391,6 +410,10 @@ export async function initializeBookingPayment(params: {
   customerEmail?: string | null
   customerPhone?: string | null
   description: string
+  // NEW-2a: threaded through to CheckoutParams.forceNewSession - set true
+  // only by callers that KNOW the previous session is dead (currently the
+  // payment.failed retry path in refreshCheckoutUrlForFailedPayment).
+  forceNewSession?: boolean
 }): Promise<BookingPaymentSetup> {
   // West Rand pilot gate. Look up the booking's category + suburb so we never
   // open a payable session for a category the pilot is suppressing (e.g. an
@@ -499,6 +522,7 @@ export async function initializeBookingPayment(params: {
     metadata: {
       bookingId: params.bookingId,
     },
+    forceNewSession: params.forceNewSession,
   }, pspName)
 
   return {
@@ -613,6 +637,32 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
 const TERMINAL_PAYMENT_STATUSES = ['PAID', 'REFUNDED', 'PARTIALLY_REFUNDED'] as const
 
 export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
+  // NEW-3: a late/stale VodaPay payment.failed notify for an attempt OLDER
+  // than the payment's latest-minted attempt must not fail a live, newer
+  // session, nor trigger re-mint churn (the retryCheckoutUrl branch below
+  // would otherwise mint yet another session for an already-superseded
+  // failure). Only vodapay-originated events carry an attempt (see
+  // VodapayCashierProvider.parseWebhookEvent); every other provider's events
+  // return null here and this check is a no-op.
+  const eventAttempt = extractVodapayAttempt(event.raw)
+  if (eventAttempt !== null) {
+    const current = await db.payment.findUnique({
+      where: { bookingId: event.bookingId },
+      select: { vodapayAttempt: true },
+    })
+    // current.vodapayAttempt is the post-increment TOTAL mint count
+    // (1-based); the latest actually-minted attempt id is one less
+    // (0-based - see VodapayCashierProvider.createCheckout).
+    if (current && eventAttempt < current.vodapayAttempt - 1) {
+      console.warn('[payments] ignoring stale VodaPay payment.failed notify for an abandoned attempt', {
+        bookingId: event.bookingId,
+        eventAttempt,
+        latestAttempt: current.vodapayAttempt - 1,
+      })
+      return
+    }
+  }
+
   // SRE-01: guarded updateMany instead of update.
   //   - Unknown bookingId → count 0 (no P2025 throw → no 500 → no PSP retry loop)
   //   - Payment already PAID/REFUNDED/PARTIALLY_REFUNDED → count 0 (a late or
@@ -722,6 +772,11 @@ async function refreshCheckoutUrlForFailedPayment(
       customerEmail: null,
       customerPhone,
       description: `Booking ${bookingId.slice(-8).toUpperCase()} payment retry`,
+      // NEW-2a: this path only runs because a payment.failed notify was just
+      // received for the CURRENT session - it is known dead. Force a fresh
+      // mint instead of letting a reuse-capable provider (VodaPay) hand back
+      // the same dead session's checkoutUrl.
+      forceNewSession: true,
     })
     return setup.checkoutUrl ?? payment.checkoutUrl
   } catch (err) {
@@ -750,6 +805,10 @@ export async function issueRefund(params: {
   // those can diverge per-booking now that resolvePspProviderNameFor() picks
   // 'vodapay' per-channel. `?? undefined` keeps today's behaviour exactly
   // when pspProvider is null (getProvider falls back to resolvePspProviderName()).
+  // NEW-1: getProvider() itself now normalizes a legacy stored 'payfast'
+  // value to 'peach' (same mapping resolvePspProviderName() applies to the
+  // env var), so a payment collected before PayFast was removed as a PSP no
+  // longer hits the "Unknown PSP provider" throw here.
   const result = await getProvider(payment.pspProvider ?? undefined).createRefund(
     payment.pspReference,
     params.amountCents,

@@ -97,4 +97,29 @@ describe('issueRefund — provider routing', () => {
     )
     expect(mockRefundPayment).not.toHaveBeenCalled()
   })
+
+  // NEW-1: a stored 'payfast' Payment.pspProvider (a payment collected before
+  // PayFast was removed as a PSP) must normalize to Peach the same way the
+  // PSP_PROVIDER env var does, not hit getProvider()'s "Unknown PSP provider"
+  // throw.
+  it("normalizes a legacy pspProvider:'payfast' to Peach instead of throwing", async () => {
+    mockDb.payment.findUnique.mockResolvedValue({
+      bookingId: 'booking-4',
+      pspReference: 'legacy_ref_1',
+      pspProvider: 'payfast',
+      amount: 500,
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'refund-4' }),
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const { issueRefund } = await import('@/lib/payments')
+    const result = await issueRefund({ bookingId: 'booking-4', amountCents: 50000 })
+
+    expect(fetchMock).toHaveBeenCalledOnce() // routed to Peach, not thrown
+    expect(mockRefundPayment).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+  })
 })

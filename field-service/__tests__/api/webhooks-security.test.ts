@@ -369,6 +369,50 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     expect(sendBookingConfirmation).not.toHaveBeenCalled()
   })
 
+  // NEW-2b: a duplicate `success` whose incoming pspReference differs from
+  // the one already stored means a SECOND, distinct session got paid for
+  // this booking - a possible double charge. Must log loudly with a
+  // distinct marker instead of the routine info log, but still return 200.
+  it('logs a distinct double-charge marker (console.error) when a duplicate success carries a different pspReference', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PAID',
+      amount: 500,
+      bookingConfirmationSentAt: new Date('2026-05-01T08:00:00Z'),
+      pspReference: 'psp-ref-DIFFERENT', // mocked parseWebhookEvent returns 'psp-ref-001'
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    const { POST } = await import('../../app/api/webhooks/payments/route')
+    const req = new NextRequest('http://localhost/api/webhooks/payments', {
+      method: 'POST',
+      body: '{"type":"payment.success"}',
+      headers: { 'Content-Type': 'application/json', 'x-signature': 'valid' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200) // still 200 - not a signature/parse failure, no PSP retry storm
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('DUPLICATE_SUCCESS_DIFFERENT_PSP_REFERENCE'),
+      expect.objectContaining({
+        bookingId: 'booking-001',
+        storedPspReference: 'psp-ref-DIFFERENT',
+        incomingPspReference: 'psp-ref-001',
+      }),
+    )
+    // The routine "duplicate delivery - already processed" info log must NOT
+    // also fire for this case - it's the loud marker or the quiet one, never both.
+    expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining('Duplicate delivery'))
+
+    const { sendBookingConfirmation } = await import('@/lib/whatsapp')
+    expect(sendBookingConfirmation).not.toHaveBeenCalled() // sentinel already set
+
+    errorSpy.mockRestore()
+    infoSpy.mockRestore()
+  })
+
   it('re-drives the missed confirmation on duplicate delivery when the sentinel is null (SRE-02)', async () => {
     const { db } = await import('@/lib/db')
     // Duplicate delivery: PAID but the confirmation never went out.

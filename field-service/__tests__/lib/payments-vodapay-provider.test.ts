@@ -18,7 +18,7 @@ vi.mock('@/lib/vodapay/client', () => ({
   refundPayment: mockRefundPayment,
 }))
 
-import { VodapayCashierProvider } from '@/lib/payments/providers/vodapay'
+import { VodapayCashierProvider, extractVodapayAttempt } from '@/lib/payments/providers/vodapay'
 import { buildSignaturePayload, signRequest } from '@/lib/vodapay/signing'
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -102,32 +102,34 @@ describe('VodapayCashierProvider', () => {
   })
 })
 
-// ─── I-4: retryable paymentRequestId ───────────────────────────────────────────
+const CHECKOUT_PARAMS = {
+  bookingId: 'ckbooking0001abc',
+  amount: 45000,
+  currency: 'ZAR',
+  description: 'plumbing booking',
+  successUrl: 'https://app.example/bookings/ckbooking0001abc',
+  cancelUrl: 'https://app.example/quotes',
+  notifyUrl: 'https://app.example/api/webhooks/payments',
+}
+
+// ─── I-4 (residual 1+2): atomic, retry-safe paymentRequestId ─────────────────
 // A VodaPay checkout's paymentExpiryTime is ~30 min. Reusing the same
 // paymentRequestId on a retry (failed attempt, expired session, customer
 // re-clicking a stale link) can never mint a new payable session at VodaPay
-// ("dead payment"). createCheckout mints "<bookingId>.<n>", where n advances
-// each time a checkout is re-initiated for a booking that already has one.
-describe('VodapayCashierProvider.createCheckout — retryable paymentRequestId', () => {
-  const CHECKOUT_PARAMS = {
-    bookingId: 'ckbooking0001abc',
-    amount: 45000,
-    currency: 'ZAR',
-    description: 'plumbing booking',
-    successUrl: 'https://app.example/bookings/ckbooking0001abc',
-    cancelUrl: 'https://app.example/quotes',
-    notifyUrl: 'https://app.example/api/webhooks/payments',
-  }
-
+// ("dead payment"). createCheckout mints "<bookingId>.<n>" via a single
+// atomic `{ increment: 1 }` UPDATE on Payment.vodapayAttempt - never a
+// separate read-then-write - so the counter can't be lost on a throw
+// (residual 1) and can't race under concurrent initiations (residual 2).
+describe('VodapayCashierProvider.createCheckout — atomic paymentRequestId', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.NEXT_PUBLIC_APP_URL = 'https://app.example'
-    mockDb.payment.update.mockResolvedValue({})
     mockPayCashier.mockResolvedValue({ paymentId: 'vp_1', redirectUrl: 'https://vodapay.example/pay' })
   })
 
-  it('mints "<bookingId>.0" on the first checkout for a booking (no pspCheckoutId yet)', async () => {
-    mockDb.payment.findUnique.mockResolvedValue({ pspCheckoutId: null, metadata: {} })
+  it('mints "<bookingId>.0" on the very first checkout for a booking (no existing session)', async () => {
+    mockDb.payment.findUnique.mockResolvedValue({ status: 'PENDING', checkoutUrl: null, pspCheckoutId: null })
+    mockDb.payment.update.mockResolvedValue({ vodapayAttempt: 1 })
 
     await new VodapayCashierProvider().createCheckout(CHECKOUT_PARAMS)
 
@@ -136,53 +138,48 @@ describe('VodapayCashierProvider.createCheckout — retryable paymentRequestId',
     )
   })
 
-  it('mints a fresh, incremented id when a checkout is re-initiated after a previous session exists (failure/expiry retry)', async () => {
-    mockDb.payment.findUnique.mockResolvedValue({
-      pspCheckoutId: 'vp_prev_session', // an earlier attempt already minted a (now dead) session
-      metadata: { vodapayAttempt: 0 },
-    })
+  it('increments via a single atomic { increment: 1 } update, not a read-then-write', async () => {
+    mockDb.payment.update.mockResolvedValue({ vodapayAttempt: 1 })
 
-    await new VodapayCashierProvider().createCheckout(CHECKOUT_PARAMS)
+    await new VodapayCashierProvider().createCheckout({ ...CHECKOUT_PARAMS, forceNewSession: true })
 
-    expect(mockPayCashier).toHaveBeenCalledWith(
-      expect.objectContaining({ paymentRequestId: 'ckbooking0001abc.1' }),
-    )
-  })
-
-  it('keeps advancing across repeated retries', async () => {
-    mockDb.payment.findUnique.mockResolvedValue({
-      pspCheckoutId: 'vp_prev_session',
-      metadata: { vodapayAttempt: 3 },
-    })
-
-    await new VodapayCashierProvider().createCheckout(CHECKOUT_PARAMS)
-
-    expect(mockPayCashier).toHaveBeenCalledWith(
-      expect.objectContaining({ paymentRequestId: 'ckbooking0001abc.4' }),
-    )
-  })
-
-  it('persists the new attempt number onto Payment.metadata (preserving unrelated keys) before contacting VodaPay', async () => {
-    mockDb.payment.findUnique.mockResolvedValue({
-      pspCheckoutId: 'vp_prev_session',
-      metadata: { vodapayAttempt: 0, unrelatedKey: 'keep-me' },
-    })
-
-    await new VodapayCashierProvider().createCheckout(CHECKOUT_PARAMS)
-
+    expect(mockDb.payment.update).toHaveBeenCalledTimes(1)
     expect(mockDb.payment.update).toHaveBeenCalledWith({
       where: { bookingId: 'ckbooking0001abc' },
-      data: { metadata: { vodapayAttempt: 1, unrelatedKey: 'keep-me' } },
+      data: { vodapayAttempt: { increment: 1 } },
+      select: { vodapayAttempt: true },
     })
-    // Written before payCashier is contacted, so the counter survives even if
-    // payCashier throws.
+  })
+
+  it('mints "<bookingId>.<n>" from the post-increment counter on a forced (failure-driven) retry', async () => {
+    mockDb.payment.update.mockResolvedValue({ vodapayAttempt: 4 })
+
+    await new VodapayCashierProvider().createCheckout({ ...CHECKOUT_PARAMS, forceNewSession: true })
+
+    expect(mockPayCashier).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentRequestId: 'ckbooking0001abc.3' }),
+    )
+  })
+
+  it('residual 1: a throw from payCashier does not roll back the already-persisted counter', async () => {
+    mockDb.payment.update.mockResolvedValue({ vodapayAttempt: 1 })
+    mockPayCashier.mockRejectedValueOnce(new Error('network timeout'))
+
+    await expect(
+      new VodapayCashierProvider().createCheckout({ ...CHECKOUT_PARAMS, forceNewSession: true }),
+    ).rejects.toThrow('network timeout')
+
+    // The increment already happened (and was awaited) BEFORE payCashier was
+    // ever called - unlike the old pspCheckoutId-gated scheme, a retry after
+    // this throw reads a counter that has already advanced, so it can never
+    // recompute the same ".0" id again.
+    expect(mockDb.payment.update).toHaveBeenCalledOnce()
     expect(mockDb.payment.update.mock.invocationCallOrder[0]).toBeLessThan(
       mockPayCashier.mock.invocationCallOrder[0],
     )
   })
 
   it('webhook event still maps back to the booking for a first-attempt id', () => {
-    mockDb.payment.findUnique.mockResolvedValue({ pspCheckoutId: null, metadata: {} })
     const body = JSON.stringify({
       paymentId: 'vp_1', paymentRequestId: 'ckbooking0001abc.0',
       paymentAmount: { currency: 'ZAR', value: '45000' },
@@ -200,6 +197,109 @@ describe('VodapayCashierProvider.createCheckout — retryable paymentRequestId',
     })
     const evt = new VodapayCashierProvider().parseWebhookEvent(body)
     expect(evt.bookingId).toBe('ckbooking0001abc')
+  })
+})
+
+// ─── NEW-2a: reuse an existing unexpired session instead of re-minting ───────
+// "Two payable sessions, one charge silently dropped" hazard: a duplicate/
+// racing checkout initiation (e.g. a re-run quote-approval call) must hand
+// back the SAME session, not open a second live one. Only the failure-driven
+// retry path (which explicitly knows the previous session died - a
+// payment.failed notify was just received for it) sets forceNewSession: true
+// to bypass this reuse check.
+describe('VodapayCashierProvider.createCheckout — session reuse', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.example'
+  })
+
+  it('reuses an existing PENDING session with a checkoutUrl instead of minting a new one', async () => {
+    mockDb.payment.findUnique.mockResolvedValue({
+      status: 'PENDING',
+      checkoutUrl: 'https://vodapay.example/pay/existing',
+      pspCheckoutId: 'vp_existing',
+    })
+
+    const session = await new VodapayCashierProvider().createCheckout(CHECKOUT_PARAMS)
+
+    expect(session).toEqual({ id: 'vp_existing', url: 'https://vodapay.example/pay/existing' })
+    expect(mockPayCashier).not.toHaveBeenCalled()
+    expect(mockDb.payment.update).not.toHaveBeenCalled() // counter not advanced - no new mint happened
+  })
+
+  it('mints fresh when no checkoutUrl/pspCheckoutId is on the row yet', async () => {
+    mockDb.payment.findUnique.mockResolvedValue({ status: 'PENDING', checkoutUrl: null, pspCheckoutId: null })
+    mockDb.payment.update.mockResolvedValue({ vodapayAttempt: 1 })
+    mockPayCashier.mockResolvedValue({ paymentId: 'vp_new', redirectUrl: 'https://vodapay.example/pay/new' })
+
+    await new VodapayCashierProvider().createCheckout(CHECKOUT_PARAMS)
+
+    expect(mockPayCashier).toHaveBeenCalledOnce()
+  })
+
+  it('forceNewSession bypasses reuse and mints fresh even when a live session already exists', async () => {
+    mockDb.payment.update.mockResolvedValue({ vodapayAttempt: 2 })
+    mockPayCashier.mockResolvedValue({ paymentId: 'vp_new', redirectUrl: 'https://vodapay.example/pay/new' })
+
+    const session = await new VodapayCashierProvider().createCheckout({ ...CHECKOUT_PARAMS, forceNewSession: true })
+
+    expect(session).toEqual({ id: 'vp_new', url: 'https://vodapay.example/pay/new' })
+    // forceNewSession skips the reuse-check read entirely.
+    expect(mockDb.payment.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('NEW-4: falls back to minting fresh and logs a warning when the reuse-check lookup throws', async () => {
+    mockDb.payment.findUnique.mockRejectedValue(new Error('db timeout'))
+    mockDb.payment.update.mockResolvedValue({ vodapayAttempt: 1 })
+    mockPayCashier.mockResolvedValue({ paymentId: 'vp_new', redirectUrl: 'https://vodapay.example/pay/new' })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const session = await new VodapayCashierProvider().createCheckout(CHECKOUT_PARAMS)
+
+    expect(session).toEqual({ id: 'vp_new', url: 'https://vodapay.example/pay/new' })
+    expect(mockPayCashier).toHaveBeenCalledOnce()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('reusable checkout session'),
+      expect.objectContaining({ bookingId: 'ckbooking0001abc' }),
+    )
+    warnSpy.mockRestore()
+  })
+})
+
+// ─── NEW-3: parseWebhookEvent exposes the attempt for staleness detection ────
+describe('VodapayCashierProvider.parseWebhookEvent — attempt exposure', () => {
+  it('exposes the 0-based attempt index on event.raw for a dotted paymentRequestId', () => {
+    const body = JSON.stringify({
+      paymentId: 'P1', paymentRequestId: 'ckbooking0001abc.2',
+      paymentAmount: { currency: 'ZAR', value: '45000' },
+      result: { resultStatus: 'F' },
+    })
+    const evt = new VodapayCashierProvider().parseWebhookEvent(body)
+    expect(extractVodapayAttempt(evt.raw)).toBe(2)
+  })
+
+  it('exposes null when paymentRequestId has no dot (legacy/defensive shape)', () => {
+    const body = JSON.stringify({
+      paymentId: 'P1', paymentRequestId: 'pay_row_1',
+      paymentAmount: { currency: 'ZAR', value: '45000' },
+      result: { resultStatus: 'F' },
+    })
+    const evt = new VodapayCashierProvider().parseWebhookEvent(body)
+    expect(extractVodapayAttempt(evt.raw)).toBeNull()
+  })
+})
+
+describe('extractVodapayAttempt', () => {
+  it('returns null for non-VodaPay raw payloads', () => {
+    expect(extractVodapayAttempt({})).toBeNull()
+    expect(extractVodapayAttempt(null)).toBeNull()
+    expect(extractVodapayAttempt(undefined)).toBeNull()
+    expect(extractVodapayAttempt('not-an-object')).toBeNull()
+    expect(extractVodapayAttempt({ vodapayAttempt: 'not-a-number' })).toBeNull()
+  })
+
+  it('returns the numeric attempt when present', () => {
+    expect(extractVodapayAttempt({ vodapayAttempt: 3 })).toBe(3)
   })
 })
 
