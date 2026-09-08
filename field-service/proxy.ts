@@ -67,6 +67,7 @@ const PUBLIC_PATHS = [
   '/api/auth/hooks',                // Supabase Auth webhook hooks (send-sms, etc.) — signature-verified, no session cookie
   '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
+  '/api/auth/vodapay',              // unauthenticated — exchanges a VodaPay authCode for the customer session cookie; handler is flag-gated by channel.vodapay.v1 and per-IP rate limited
   '/api/track',                     // public tracking API; handler validates tracking identifiers
   '/api/locations',                 // public canonical location taxonomy used before booking/provider registration auth
   '/api/customer/notify-interest',  // public "notify me when this service is available" capture; handler enforces flag + SA-phone validation + per-IP/phone rate limits
