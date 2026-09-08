@@ -22,6 +22,8 @@ import { OPS_QUEUE_TYPES, claimOpsQueueItem } from './ops-queue'
 import { notifyCustomerPaymentFailed } from './client-pwa-submission-notifications'
 import { createPayAtGoBookingPaymentRequest } from './payat-go'
 import { emitServerConversion } from './marketing/server-events'
+import { isEnabled } from './flags'
+import { VodapayCashierProvider } from './payments/providers/vodapay'
 export { formatCurrency } from './currency'
 
 export type PaymentCollectionMode = 'bypass' | 'checkout'
@@ -67,7 +69,7 @@ export interface RefundResult {
   refundReference: string
 }
 
-interface PspProvider {
+export interface PspProvider {
   createCheckout(params: CheckoutParams): Promise<CheckoutSession>
   verifyWebhook(rawBody: string, signature: string): boolean
   parseWebhookEvent(rawBody: string): PaymentEvent
@@ -88,6 +90,20 @@ function resolvePspProviderName(): string {
   const configured = readPaymentEnv('PSP_PROVIDER')
   if (!configured || configured === 'payfast') return 'peach'
   return configured
+}
+
+// Per-channel override on top of resolvePspProviderName(): a booking whose
+// JobRequest originated in the VodaPay super-app ('vodapay' source) is routed
+// to the VodaPay Cashier provider — but only while 'payments.vodapay.v1' is
+// on. Every other source (and vodapay-sourced bookings while the flag is
+// off) falls through to the existing global PSP_PROVIDER resolution
+// unchanged. Pure and unit-testable (no DB/flag reads here).
+export function resolvePspProviderNameFor(input: {
+  jobRequestSource?: string | null
+  vodapayFlagOn: boolean
+}): string {
+  if (input.jobRequestSource === 'vodapay' && input.vodapayFlagOn) return 'vodapay'
+  return resolvePspProviderName()
 }
 
 // ─── Provider: Peach Payments (South Africa) ─────────────────────────────────
@@ -292,13 +308,15 @@ class PayAtGoProvider implements PspProvider {
 
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
-function getProvider(): PspProvider {
-  const provider = resolvePspProviderName()
+function getProvider(name?: string): PspProvider {
+  const provider = name ?? resolvePspProviderName()
   switch (provider) {
     case 'peach':
       return new PeachPaymentsProvider()
     case 'payat_go':
       return new PayAtGoProvider()
+    case 'vodapay':
+      return new VodapayCashierProvider()
     default:
       throw new Error(`Unknown PSP provider: ${provider}. Set PSP_PROVIDER env var.`)
   }
@@ -306,8 +324,11 @@ function getProvider(): PspProvider {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export async function createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
-  const providerName = resolvePspProviderName()
+export async function createCheckout(
+  params: CheckoutParams,
+  providerName?: string,
+): Promise<CheckoutSession> {
+  const resolvedProviderName = providerName ?? resolvePspProviderName()
 
   // SRE-04: the Payment row must exist BEFORE the PSP session is created.
   // If the session were created first and this upsert failed, a customer could
@@ -321,18 +342,18 @@ export async function createCheckout(params: CheckoutParams): Promise<CheckoutSe
       collectionMode: 'PLATFORM_CHECKOUT',
       amount: params.amount / 100,
       currency: params.currency,
-      pspProvider: providerName,
+      pspProvider: resolvedProviderName,
     },
     update: {
       collectionMode: 'PLATFORM_CHECKOUT',
-      pspProvider: providerName,
+      pspProvider: resolvedProviderName,
       status: 'PENDING',
     },
   })
 
   let session: CheckoutSession
   try {
-    session = await getProvider().createCheckout(params)
+    session = await getProvider(resolvedProviderName).createCheckout(params)
   } catch (err) {
     // Keep the row PENDING (no checkout exists, so nothing is payable) and
     // record why session creation failed for ops visibility, then rethrow so
@@ -384,6 +405,7 @@ export async function initializeBookingPayment(params: {
           jobRequest: {
             select: {
               category: true,
+              source: true,
               address: { select: { locationNodeId: true } },
             },
           },
@@ -416,7 +438,17 @@ export async function initializeBookingPayment(params: {
     throw new CategoryGatedByPilotError(jobRequestForGate?.category ?? 'unknown')
   }
 
-  const mode = getPaymentCollectionMode()
+  // Per-channel PSP override: a VodaPay-sourced JobRequest is routed to the
+  // VodaPay Cashier provider (flag-gated) and forced into checkout mode -
+  // VodaPay-in-app payment has no "bypass" concept. Every other source keeps
+  // the existing PAYMENT_COLLECTION_MODE-driven bypass/checkout behaviour
+  // byte-identical.
+  const vodapayFlagOn = await isEnabled('payments.vodapay.v1')
+  const pspName = resolvePspProviderNameFor({
+    jobRequestSource: jobRequestForGate?.source ?? null,
+    vodapayFlagOn,
+  })
+  const mode = pspName === 'vodapay' ? 'checkout' : getPaymentCollectionMode()
 
   if (mode === 'bypass') {
     // Launch-mode bypass keeps a payment record for traceability, but no online
@@ -467,7 +499,7 @@ export async function initializeBookingPayment(params: {
     metadata: {
       bookingId: params.bookingId,
     },
-  })
+  }, pspName)
 
   return {
     mode,
