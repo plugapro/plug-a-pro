@@ -84,6 +84,56 @@ describe('POST /api/funnel/request-started', () => {
     )
   })
 
+  it('overrides the client-supplied source with "vodapay" when the pap_channel cookie says vodapay', async () => {
+    mockCookieGet.mockImplementation((name: string) => {
+      if (name === 'pap_session') return { value: 'session-abc' }
+      if (name === 'pap_channel') return { value: 'vodapay' }
+      return undefined
+    })
+    const { POST } = await import('@/app/api/funnel/request-started/route')
+    const req = new NextRequest('http://localhost/api/funnel/request-started', {
+      method: 'POST',
+      // Client always sends source: 'pwa' today (the HttpOnly pap_channel
+      // cookie is invisible to the browser beacon) — the cookie must win.
+      body: JSON.stringify({ serviceId: 'plumbing', source: 'pwa', landingPath: '/book/plumbing' }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(204)
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'REQUEST_STARTED',
+        entityId: 'session-abc',
+        source: 'vodapay',
+      }),
+    )
+  })
+
+  it('keeps source "pwa" unchanged when there is no pap_channel cookie', async () => {
+    mockCookieGet.mockImplementation((name: string) =>
+      name === 'pap_session' ? { value: 'session-abc' } : undefined,
+    )
+    const { POST } = await import('@/app/api/funnel/request-started/route')
+    const req = new NextRequest('http://localhost/api/funnel/request-started', {
+      method: 'POST',
+      body: JSON.stringify({ serviceId: 'plumbing', landingPath: '/book/plumbing' }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(204)
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'REQUEST_STARTED',
+        entityId: 'session-abc',
+        source: 'pwa',
+      }),
+    )
+  })
+
   it('ignores invalid payloads with 400', async () => {
     mockCookieGet.mockImplementation((name: string) =>
       name === 'pap_session' ? { value: 'session-abc' } : undefined,

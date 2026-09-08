@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { z } from 'zod'
 import { recordWorkflowEvent } from '@/lib/workflow-events/record'
+import { CHANNEL_COOKIE, parseChannelCookie } from '@/lib/channel'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
   }
 
   const jar = await cookies()
+  const channel = parseChannelCookie(jar.get(CHANNEL_COOKIE)?.value)
   let sessionId = jar.get(SESSION_COOKIE)?.value
   if (!sessionId) {
     sessionId = cryptoRandomId()
@@ -41,7 +43,10 @@ export async function POST(request: NextRequest) {
       actorType: 'anonymous',
       entityType: 'ANONYMOUS_SESSION',
       entityId: sessionId,
-      source: parsed.source ?? 'pwa',
+      // The pap_channel cookie is HttpOnly and invisible to the client beacon,
+      // so a VodaPay-channel request always wins over the client-supplied
+      // source. Non-VodaPay requests keep the existing client-source/'pwa' fallback.
+      source: channel === 'vodapay' ? 'vodapay' : parsed.source ?? 'pwa',
       metadata: {
         serviceId: parsed.serviceId,
         landingPath: parsed.landingPath,

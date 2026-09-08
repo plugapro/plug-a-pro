@@ -91,22 +91,11 @@ one; none accepts a phone). No mail must ever be able to deliver to this domain:
 became routable, the derived addresses would become a phishing/account-recovery
 surface for a domain that isn't actually attended.
 
-### Gate 3 — close or accept the ungated WhatsApp CTA on provider profiles
+### Gate 3 — closed: provider-profile WhatsApp CTA is channel-gated
 
-`app/(customer)/providers/[id]/page.tsx:292-308` renders a `WhatsAppLink` ("Chat on
-WhatsApp", `wa.me/27693552447...`) with **no channel check**. Every other WhatsApp
-affordance on the customer home/booking flow was gated on `channel !== 'vodapay'`
-(Task 9), but this one surface was out of that task's scope and was never revisited.
-In VodaPay mode this CTA is currently visible on provider profile pages — a customer
-inside the mini-program WebView can tap it and leave the sandboxed VodaPay flow for
-an external WhatsApp deep link.
-
-Action before flipping the flag: either (a) wrap it in `{channel !== 'vodapay' && (...)}`
-the same way the home page CTAs are gated (read `getRequestChannel()` into this page,
-mirroring Task 9's pattern), or (b) accept it knowingly as a documented, intentional
-exception (e.g. if VodaPay's review explicitly allows an external-chat escape hatch)
-and record that decision in this runbook or an OpenBrain decision entry. Do not ship
-silently either way — pick one and write down which.
+Provider-profile WhatsApp CTAs (`app/(customer)/providers/[id]/page.tsx`) are now
+channel-gated the same way as the home/booking flow CTAs (`channel !== 'vodapay'`)
+as of this branch — no further action needed before flipping the flag.
 
 ## `VODAPAY_VERIFY_RESPONSES` — first thing to check on sandbox 401s
 
