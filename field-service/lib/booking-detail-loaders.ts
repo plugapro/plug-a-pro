@@ -88,6 +88,9 @@ const customerBookingInclude = {
     },
   },
   quote: true,
+  payment: {
+    select: { status: true, checkoutUrl: true, collectionMode: true },
+  },
   job: {
     include: {
       statusHistory: { orderBy: { timestamp: 'asc' } },

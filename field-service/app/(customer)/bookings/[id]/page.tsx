@@ -23,6 +23,7 @@ import { AlertCallout } from '@/components/shared/AlertCallout'
 import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 import { AutoRefresh } from '@/components/customer/AutoRefresh'
+import { PayNowCard } from '@/components/customer/PayNowCard'
 import { ChevronLeft, Wrench, MapPin, Star } from 'lucide-react'
 import { getCustomerBookingDetailForViewer } from '@/lib/booking-detail-loaders'
 
@@ -371,6 +372,15 @@ export default async function BookingDetailPage({
           )}
         </div>
       </div>
+
+      {/* Pay now (checkout-mode payments only; bypass/OFFLINE_RECORDED rows never render this) */}
+      {booking.payment?.collectionMode === 'PLATFORM_CHECKOUT' &&
+        booking.payment.checkoutUrl &&
+        (booking.payment.status === 'PENDING' || booking.payment.status === 'PAID') && (
+          <div className="px-[18px] mt-4">
+            <PayNowCard checkoutUrl={booking.payment.checkoutUrl} paymentStatus={booking.payment.status} />
+          </div>
+        )}
 
       {/* Reschedule banner */}
       {reschedule === 'requested' && (
