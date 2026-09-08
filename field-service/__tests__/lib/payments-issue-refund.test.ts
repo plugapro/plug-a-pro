@@ -122,4 +122,28 @@ describe('issueRefund — provider routing', () => {
     expect(mockRefundPayment).not.toHaveBeenCalled()
     expect(result.success).toBe(true)
   })
+
+  // Round 3 minor fix: normalizePspProviderName matched 'payfast' exactly -
+  // a stored column value with stray whitespace or mixed case must still
+  // normalize to Peach.
+  it("normalizes a stored pspProvider with whitespace/mixed case (' PayFast ') to Peach", async () => {
+    mockDb.payment.findUnique.mockResolvedValue({
+      bookingId: 'booking-5',
+      pspReference: 'legacy_ref_2',
+      pspProvider: ' PayFast ',
+      amount: 500,
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'refund-5' }),
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const { issueRefund } = await import('@/lib/payments')
+    const result = await issueRefund({ bookingId: 'booking-5', amountCents: 50000 })
+
+    expect(fetchMock).toHaveBeenCalledOnce() // routed to Peach, not thrown
+    expect(mockRefundPayment).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+  })
 })

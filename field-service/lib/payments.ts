@@ -99,8 +99,15 @@ function readPaymentEnv(name: string): string {
 // Payment.pspProvider) normalizes to `undefined` so callers can fall back to
 // resolvePspProviderName() themselves.
 function normalizePspProviderName(name: string | null | undefined): string | undefined {
-  if (!name) return undefined
-  return name === 'payfast' ? 'peach' : name
+  // Round-3 minor fix: trim + lowercase so a stored-column value with stray
+  // whitespace or mixed case ('PayFast', ' payfast') still normalizes -
+  // matching exactly on 'payfast' alone missed those. Applied uniformly to
+  // both callers (the env var path already trims via readPaymentEnv, but not
+  // lowercase; the explicit-name/stored-column path via getProvider had
+  // neither).
+  const normalized = name?.trim().toLowerCase()
+  if (!normalized) return undefined
+  return normalized === 'payfast' ? 'peach' : normalized
 }
 
 function resolvePspProviderName(): string {
