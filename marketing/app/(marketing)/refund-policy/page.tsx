@@ -25,7 +25,7 @@ export default function RefundPolicyPage() {
           section where required by law.
         </p>
 
-        <h2>27.1 Platform role</h2>
+        <h2 id="27-1">27.1 Platform role</h2>
         <p>
           Plug A Pro is a platform that helps customers find and book independent service providers.
           The service contract for the actual work is between the customer and the independent provider.
@@ -33,7 +33,7 @@ export default function RefundPolicyPage() {
           provider credits and payments where implemented. Plug A Pro does not perform the service itself.
         </p>
 
-        <h2>27.2 What Plug A Pro can and cannot refund</h2>
+        <h2 id="27-2">27.2 What Plug A Pro can and cannot refund</h2>
         <ul>
           <li><strong>Platform-facilitated customer payments:</strong> where Plug A Pro handled the customer payment, Plug A Pro may process or facilitate a refund according to this section, the Platform record, payment processor rules and applicable law.</li>
           <li><strong>Direct or off-platform payments:</strong> where the customer paid the provider directly, Plug A Pro can review the dispute record and support communication, but cannot refund money it never handled.</li>
@@ -42,7 +42,7 @@ export default function RefundPolicyPage() {
           <li><strong>Provider settlements:</strong> where Plug A Pro facilitated payment to a provider, provider settlement deductions may apply for provider-caused failures, refunds, chargebacks, fraud, no-shows or other breaches under the Service Provider Terms (§ 28).</li>
         </ul>
 
-        <h2>27.3 How to request help</h2>
+        <h2 id="27-3">27.3 How to request help</h2>
         <p>
           Contact support via WhatsApp or email at{" "}
           <a href="mailto:support@plugapro.co.za">support@plugapro.co.za</a>. Include the booking, job,
@@ -52,13 +52,13 @@ export default function RefundPolicyPage() {
           within 5 business days. Complex disputes may take longer where both sides need to respond.
         </p>
 
-        <h2>27.4 Customer cancellation scenarios</h2>
+        <h2 id="27-4">27.4 Customer cancellation scenarios</h2>
         <p><strong>Before a provider is assigned or selected:</strong> if Plug A Pro facilitated payment and no provider has been assigned or selected, the customer will generally receive a full refund to the original payment method, subject to payment processor timing and applicable law.</p>
         <p><strong>After provider assignment or selection, but before dispatch:</strong> the customer will generally receive a refund less any cancellation or call-out fee that was clearly disclosed and approved in the quote or booking record, subject to applicable law.</p>
         <p><strong>After the provider is en route, has arrived or cannot access the site:</strong> a disclosed call-out fee, travel cost or reasonable preparation cost may be deducted where the Platform record supports it and the fee was properly disclosed. Customers must provide accurate address details, site access and a reasonably safe site.</p>
         <p><strong>Incorrect customer information:</strong> where work cannot proceed because the customer supplied materially incorrect information, Plug A Pro may facilitate a partial refund, settlement adjustment or cancellation outcome based on the quote, job record, provider evidence and applicable law.</p>
 
-        <h2>27.5 Provider-caused cancellations and failures</h2>
+        <h2 id="27-5">27.5 Provider-caused cancellations and failures</h2>
         <p>
           If a provider cancels, does not arrive, lacks the required tools, skills, licence or
           availability or otherwise causes the job to fail, the customer may be entitled to a full or
@@ -66,7 +66,7 @@ export default function RefundPolicyPage() {
           may result in provider suspension, removal, lead-credit consequences or settlement deductions.
         </p>
 
-        <h2>27.6 Quality complaints and incomplete work</h2>
+        <h2 id="27-6">27.6 Quality complaints and incomplete work</h2>
         <p>
           The provider is responsible for workmanship, site conduct, tools, licensing, insurance, safety
           compliance and legal compliance. Plug A Pro will facilitate a support process by reviewing the
@@ -77,7 +77,7 @@ export default function RefundPolicyPage() {
           the service and does not guarantee workmanship or outcome unless expressly stated otherwise.
         </p>
 
-        <h2>27.7 Extra work</h2>
+        <h2 id="27-7">27.7 Extra work</h2>
         <p>
           Customers must approve extras in writing through the Platform before the provider performs
           that extra work. If extra work was approved and paid for but not completed, the customer may
@@ -86,7 +86,7 @@ export default function RefundPolicyPage() {
           customer-provider dispute.
         </p>
 
-        <h2>27.8 Fraud, abuse, chargebacks and unsafe conduct</h2>
+        <h2 id="27-8">27.8 Fraud, abuse, chargebacks and unsafe conduct</h2>
         <p>
           Plug A Pro may delay, refuse, reverse or investigate a refund, credit reversal or settlement
           where there is suspected fraud, abuse, fabricated evidence, unlawful conduct, payment reversal,
@@ -94,7 +94,7 @@ export default function RefundPolicyPage() {
           may override normal Platform timing.
         </p>
 
-        <h2>27.9 Provider credit purchase reversals</h2>
+        <h2 id="27-9">27.9 Provider credit purchase reversals</h2>
         <p>
           Provider credit purchase reversals are separate from customer refunds. Purchased provider
           credits are generally non-refundable once bought, except where required by law or where Plug
@@ -103,7 +103,7 @@ export default function RefundPolicyPage() {
           admin-approved exception.
         </p>
 
-        <h2>27.10 Provider lead-credit deduction disputes</h2>
+        <h2 id="27-10">27.10 Provider lead-credit deduction disputes</h2>
         <p>
           Providers may query a lead-credit deduction where the lead was invalid, duplicated, materially
           in the wrong category or location, linked to an invalid customer number, not actually requested

@@ -16,7 +16,8 @@ export default function ServicePolicyPage() {
         <p>
           Plug A Pro currently serves <strong>Johannesburg West / Roodepoort</strong>.
           If your address is outside this area, we add you to our waitlist and
-          notify you when we launch near you. See <a href="/areas">service areas</a>.
+          notify you when we launch near you. See{" "}
+          <a href="/areas/johannesburg">service areas</a>.
         </p>
 
         <h2>Requesting a service</h2>

@@ -149,9 +149,10 @@ export default function TermsPage() {
         <h2>9. Cancellations and Refunds</h2>
         <p>
           Cancellation and refund rights depend on who cancels, when and whether service has commenced.
-          See <a href="#refunds">§ 27 Refunds and Cancellations</a> below for the full matrix covering all
-          scenarios, including Platform-facilitated customer payment refunds, Provider Credit reversals,
-          Provider cancellations, Customer no-shows and partial completions.
+          See our <a href="/refund-policy">Refunds and Cancellations policy</a> (referenced in{" "}
+          <a href="#refunds">§ 27</a> below) for the full matrix covering all scenarios, including
+          Platform-facilitated customer payment refunds, Provider Credit reversals, Provider
+          cancellations, Customer no-shows and partial completions.
         </p>
         <p>
           Your statutory rights under the Consumer Protection Act 68 of 2008 (&ldquo;CPA&rdquo;) are not
@@ -508,7 +509,8 @@ export default function TermsPage() {
           opportunity through the Platform, WhatsApp or Provider Portal. Previewing a lead, showing
           interest, being shortlisted, Customer selection before your final acceptance, declining or
           expiry does not use credits. Purchased credits are generally non-refundable once bought,
-          except where required by law or under the exceptions listed in § 27.9 above. Full provider
+          except where required by law or under the exceptions listed in{" "}
+          <a href="/refund-policy#27-9">§ 27.9 of the Refunds and Cancellations policy</a>. Full provider
           credit rules are in the <a href="/credits-policy">Provider Credits Terms and Rules</a>.
         </p>
 
