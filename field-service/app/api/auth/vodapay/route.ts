@@ -5,9 +5,21 @@
 // Supabase session so the rest of the PWA sees an ordinary signed-in customer.
 //
 // Body: { authCode: string }
-// Returns: { ok: true } with the HttpOnly sb-access-token cookie set, or
-//          404 (flag off) / 400 (no authCode) / 401 (VodaPay auth failed) /
-//          403 (phone belongs to a staff or provider account) / 429 / 503 / 500.
+// Responses:
+//   200 { ok: true }                              — signed in; sets the HttpOnly
+//                                                   sb-access-token session cookie
+//   200 { stepUpRequired, redirectTo }            — account needs OTP step-up; NO session
+//                                                   cookie (the existing one is cleared and
+//                                                   a pending step-up cookie is set instead)
+//   400 { error: 'auth_code_required' }           — missing/blank authCode
+//   401 { error: 'vodapay_auth_failed' | 'phone_unavailable' }
+//   403 { error: 'account_not_eligible' }         — phone belongs to a staff or provider account
+//   404 { error: 'not_available' }                — channel.vodapay.v1 is off
+//   423 { locked, code }                          — account locked, or the security-state store
+//                                                   was unavailable (fail-closed); clears the cookie
+//   429 { error: 'rate_limited' } / 503 { error: 'rate_limiter_unavailable' }
+//   500 { error: 'session_mint_failed' | 'internal' }
+// Only the 200 { ok: true } branch ever issues a session.
 //
 // SESSION MINT: supabase-js 2.106.0 has no `auth.admin.createSession`, so the only
 // server-side path to an access token is admin.generateLink({ type: 'magiclink' })
