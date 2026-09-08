@@ -78,6 +78,7 @@ const PUBLIC_PATHS = [
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard
   '/vodapay',                       // VodaPay super-app mini-program entry — WebView loads before any session cookie exists
+  '/api/channel',                   // sets the pap_channel cookie for the VodaPay WebView before any session cookie exists; handler is flag-gated by channel.vodapay.v1
   '/r',                             // short WhatsApp handoff alias — server redirects via token resolver
   '/ticket',                        // public token-gated invoice — server-rendered, no session cookie
   '/client/handoff',                // WhatsApp handoff deep-link — token validates identity
