@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ProviderRegistrationCtaLink } from "@/components/marketing/ProviderRegistrationCta";
-import { siteConfig } from "@/lib/metadata";
+import { siteConfig, vatNumber, registeredAddress } from "@/lib/metadata";
 import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
 
@@ -48,9 +48,11 @@ export function Footer() {
         </nav>
       </div>
       <div className="container mx-auto max-w-5xl px-4 mt-8 pt-6 border-t border-border/40 text-xs text-muted-foreground flex justify-between items-center">
-        <span>
+        <div>
           © {new Date().getFullYear()} {siteConfig.legalEntity} t/a {siteConfig.name} · Reg {siteConfig.legalEntityRegistration}
-        </span>
+          {vatNumber ? <span> · VAT {vatNumber}</span> : null}
+          {registeredAddress ? <p className="mt-1">{registeredAddress}</p> : null}
+        </div>
         <div className="flex items-center gap-4">
           <Link href={siteConfig.links.instagram} target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="hover:text-foreground transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

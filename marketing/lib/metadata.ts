@@ -23,6 +23,15 @@ export const siteConfig = {
   },
 } as const;
 
+// Env-driven legal identity fields. Left unset (null) until the owner
+// supplies real values via `vercel env add` (see task-4 brief) — rendering
+// code must treat these as optional and show nothing when null.
+export const vatNumber = process.env.NEXT_PUBLIC_VAT_NUMBER?.trim() || null;
+export const registeredAddress =
+  process.env.NEXT_PUBLIC_REGISTERED_ADDRESS?.trim() || null;
+export const supportEmail = "support@plugapro.co.za";
+export const supportPhoneDisplay = "+27 69 355 2447";
+
 /**
  * Returns the web app origin.
  * Reads NEXT_PUBLIC_APP_URL at runtime so deployments can override the

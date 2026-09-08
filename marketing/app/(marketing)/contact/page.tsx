@@ -16,6 +16,10 @@ export default function ContactPage() {
       <p className="text-muted-foreground mb-8">
         We&apos;d love to hear from you.
       </p>
+      <div className="mb-8 space-y-1 text-sm">
+        <p>Email: <a className="underline" href="mailto:support@plugapro.co.za">support@plugapro.co.za</a></p>
+        <p>Phone / WhatsApp: <a className="underline" href="tel:+27693552447">+27 69 355 2447</a></p>
+      </div>
       <ContactForm />
       <div className="mt-8 border-t border-border/40 pt-8">
         <p className="text-sm text-muted-foreground mb-3">Or reach us directly:</p>
