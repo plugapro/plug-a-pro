@@ -77,6 +77,7 @@ const PUBLIC_PATHS = [
   // behind the session gate. In production they are additionally 403'd outright.
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard
+  '/vodapay',                       // VodaPay super-app mini-program entry — WebView loads before any session cookie exists
   '/r',                             // short WhatsApp handoff alias — server redirects via token resolver
   '/ticket',                        // public token-gated invoice — server-rendered, no session cookie
   '/client/handoff',                // WhatsApp handoff deep-link — token validates identity
@@ -385,6 +386,9 @@ function shouldEnforceMobileOnlyForPath(pathname: string, host: string): boolean
   if (pathname.startsWith('/admin')) return false
   // Public status/monitoring surface stays desktop-reachable.
   if (pathname === '/status' || pathname.startsWith('/status/')) return false
+  // VodaPay mini-program WebView is not a real mobile browser; the interstitial
+  // would strand the host app's in-app session, so exempt it like /status.
+  if (pathname === '/vodapay' || pathname.startsWith('/vodapay/')) return false
   return true
 }
 

@@ -73,6 +73,9 @@ export function isDesktopBrowserUserAgent(userAgent: string | null | undefined):
   if (/android/.test(ua) && !/mobile/.test(ua)) return false
   if (/crios|fxios/.test(ua)) return false
   if (/bot|crawl|spider|slurp|preview|monitor|curl|wget|headless|lighthouse|pingdom|uptime/.test(ua)) return false
+  // Super-app WebViews (VodaPay = Ant/Alipay runtime). Fail open like bots:
+  // blocking the host app's WebView would kill the mini-program channel.
+  if (/miniprogram|alipayclient|vodapay/.test(ua)) return false
   // Mac Safari is indistinguishable from an iPadOS 13+ Safari UA; fail open and
   // let the client gate decide. Desktop Mac Chrome/Firefox/Edge carry chrome/edg/opr.
   if (/macintosh/.test(ua) && /safari/.test(ua) && !/chrome|chromium|edg|opr/.test(ua)) return false
