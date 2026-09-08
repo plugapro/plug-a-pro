@@ -41,7 +41,12 @@ vi.mock('@/lib/payments', () => ({
     type: 'payment.success',
     bookingId: 'booking-001',
     pspReference: 'psp-ref-001',
-    amountCents: 50000,
+    // Real PaymentEvent field is `amount` (cents), not `amountCents` - fixed
+    // per I-3: the old wrong field name meant `event.amount` was `undefined`
+    // here, and the pre-fix guard's Math.abs(NaN - stored) > tolerance was
+    // (incorrectly) `false`, so these tests were passing the amount guard by
+    // accident rather than on a matching amount.
+    amount: 50000,
     currency: 'ZAR',
   }),
   handlePaymentSuccess: vi.fn().mockResolvedValue(undefined),
@@ -303,6 +308,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     // Idempotency check - payment not yet PAID (first delivery)
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PENDING',
+      amount: 500, // rand - matches the mocked event's amount: 50000 cents
       bookingConfirmationSentAt: null,
     })
     // sendPaidBookingConfirmation re-reads the (now PAID) payment (SRE-02)
@@ -345,6 +351,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     // Idempotency check - payment already PAID and confirmation sentinel set
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PAID',
+      amount: 500,
       bookingConfirmationSentAt: new Date('2026-05-01T08:00:00Z'),
     })
 
@@ -367,6 +374,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     // Duplicate delivery: PAID but the confirmation never went out.
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PAID',
+      amount: 500,
       bookingConfirmationSentAt: null,
     })
     // sendPaidBookingConfirmation re-reads the payment
@@ -399,6 +407,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     const { db } = await import('@/lib/db')
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PENDING',
+      amount: 500,
       bookingConfirmationSentAt: null,
     })
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
@@ -435,7 +444,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     ;(handlePaymentSuccess as any).mockRejectedValueOnce(new Error('database timeout: internal stack'))
 
     const { db } = await import('@/lib/db')
-    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING', amount: 500 })
 
     const { POST } = await import('../../app/api/webhooks/payments/route')
     const req = new NextRequest('http://localhost/api/webhooks/payments', {

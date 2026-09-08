@@ -43,8 +43,15 @@ export async function guardPaymentSuccessWebhook(params: {
   }
 
   // Amount validation: compare event amount (cents) against stored amount (rand).
+  // I-3: a non-numeric/undefined provider amount parses to NaN upstream (e.g.
+  // Number("abc") or parseFloat(undefined)); Math.abs(NaN - x) > tolerance is
+  // FALSE, so without an explicit finiteness check a malformed amount would
+  // silently pass this guard. Reject it as a mismatch instead.
   const storedAmountCents = Math.round(Number(existingPayment.amount) * 100)
-  if (Math.abs(params.amountCents - storedAmountCents) > AMOUNT_TOLERANCE_CENTS) {
+  if (
+    !Number.isFinite(params.amountCents) ||
+    Math.abs(params.amountCents - storedAmountCents) > AMOUNT_TOLERANCE_CENTS
+  ) {
     return {
       outcome: 'amount_mismatch',
       storedAmountCents,

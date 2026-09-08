@@ -745,7 +745,15 @@ export async function issueRefund(params: {
     throw new Error('No PSP reference found for this booking')
   }
 
-  const result = await getProvider().createRefund(payment.pspReference, params.amountCents)
+  // I-1: route the refund through the provider that actually took the money
+  // (Payment.pspProvider), not the current global PSP_PROVIDER default -
+  // those can diverge per-booking now that resolvePspProviderNameFor() picks
+  // 'vodapay' per-channel. `?? undefined` keeps today's behaviour exactly
+  // when pspProvider is null (getProvider falls back to resolvePspProviderName()).
+  const result = await getProvider(payment.pspProvider ?? undefined).createRefund(
+    payment.pspReference,
+    params.amountCents,
+  )
 
   if (result.success) {
     await db.payment.update({
