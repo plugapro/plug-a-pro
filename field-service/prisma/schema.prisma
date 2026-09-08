@@ -82,6 +82,7 @@ model Customer {
   customerNotes          CustomerNote[]
   mergeEventsAsSource    CustomerMergeEvent[]    @relation("CustomerMergeSource")
   mergeEventsAsTarget    CustomerMergeEvent[]    @relation("CustomerMergeTarget")
+  externalIdentities     CustomerExternalIdentity[]
 
   @@map("customers")
 }
@@ -3425,4 +3426,22 @@ model WorkflowEvent {
   @@index([entityType, entityId])
   @@index([occurredAt])
   @@map("workflow_events")
+}
+
+// ─── Federated customer identity (marketplace host login, e.g. VodaPay) ───────
+
+model CustomerExternalIdentity {
+  id          String   @id @default(cuid())
+  customerId  String
+  provider    String // 'VODAPAY'
+  externalId  String // host-issued user id
+  tokenCipher String? // AES-GCM envelope, key VODAPAY_TOKEN_KEY
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([provider, externalId])
+  @@index([customerId])
+  @@map("customer_external_identities")
 }
