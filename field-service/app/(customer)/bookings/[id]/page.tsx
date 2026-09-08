@@ -25,7 +25,7 @@ import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 import { AutoRefresh } from '@/components/customer/AutoRefresh'
 import { PayNowCard } from '@/components/customer/PayNowCard'
 import { ChevronLeft, Wrench, MapPin, Star } from 'lucide-react'
-import { getCustomerBookingDetailForViewer } from '@/lib/booking-detail-loaders'
+import { getCustomerBookingDetailForViewer, resolvePayNowCardProps } from '@/lib/booking-detail-loaders'
 
 export const metadata = buildMetadata({ title: 'Booking Details' })
 
@@ -71,6 +71,7 @@ export default async function BookingDetailPage({
   }
 
   const { booking, addressDisplay, providerDisplayName, providerInitials } = detail.data
+  const payNowCardProps = resolvePayNowCardProps({ channel, payment: booking.payment })
 
   // Check for existing rating
   const existingRating = await db.review.findFirst({
@@ -373,14 +374,16 @@ export default async function BookingDetailPage({
         </div>
       </div>
 
-      {/* Pay now (checkout-mode payments only; bypass/OFFLINE_RECORDED rows never render this) */}
-      {booking.payment?.collectionMode === 'PLATFORM_CHECKOUT' &&
-        booking.payment.checkoutUrl &&
-        (booking.payment.status === 'PENDING' || booking.payment.status === 'PAID') && (
-          <div className="px-[18px] mt-4">
-            <PayNowCard checkoutUrl={booking.payment.checkoutUrl} paymentStatus={booking.payment.status} />
-          </div>
-        )}
+      {/* Pay now — VodaPay-collected payments only, and only while the request is
+          actually in VodaPay-channel mode (see resolvePayNowCardProps: both the
+          payment's own pspProvider AND the pap_channel cookie must agree it's
+          VodaPay, so a web/WhatsApp customer never sees this even for a Peach/
+          Pay@Go PLATFORM_CHECKOUT row). */}
+      {payNowCardProps && (
+        <div className="px-[18px] mt-4">
+          <PayNowCard checkoutUrl={payNowCardProps.checkoutUrl} paymentStatus={payNowCardProps.paymentStatus} />
+        </div>
+      )}
 
       {/* Reschedule banner */}
       {reschedule === 'requested' && (

@@ -474,3 +474,109 @@ describe('booking detail loaders', () => {
     expect(result).toEqual({ ok: false, error: 'query_failed' })
   })
 })
+
+// ─── Pay Now card gate (Task 18 review fix) ────────────────────────────────
+// resolvePayNowCardProps is pure — no db mock needed. Covers the review's
+// exact scenario matrix: the card must require BOTH the payment's own
+// pspProvider === 'vodapay' AND the request channel === 'vodapay' before it
+// renders. Either alone must never be sufficient.
+describe('resolvePayNowCardProps', () => {
+  function makePayment(overrides?: Partial<{
+    status: string
+    checkoutUrl: string | null
+    collectionMode: string | null
+    pspProvider: string | null
+  }>) {
+    return {
+      status: 'PENDING',
+      checkoutUrl: 'https://pay.example/session-1',
+      collectionMode: 'PLATFORM_CHECKOUT',
+      pspProvider: 'vodapay',
+      ...overrides,
+    }
+  }
+
+  it('vodapay payment + vodapay channel → card props present', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({ channel: 'vodapay', payment: makePayment() })
+    expect(result).toEqual({ checkoutUrl: 'https://pay.example/session-1', paymentStatus: 'PENDING' })
+  })
+
+  it('peach payment (PLATFORM_CHECKOUT + checkoutUrl) + web channel → no card', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({
+      channel: 'web',
+      payment: makePayment({ pspProvider: 'peach' }),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('vodapay payment + web channel → no card (channel gate alone must block it)', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({ channel: 'web', payment: makePayment() })
+    expect(result).toBeNull()
+  })
+
+  it('peach payment + vodapay channel → no card (payment gate alone must block it)', async () => {
+    // Covers a stray/forged pap_channel=vodapay cookie on a Peach-collected
+    // payment — the review's exact concern (Peach reaches PLATFORM_CHECKOUT
+    // via PAYMENT_COLLECTION_MODE=checkout).
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({
+      channel: 'vodapay',
+      payment: makePayment({ pspProvider: 'peach' }),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('pay@go payment (PLATFORM_CHECKOUT + checkoutUrl) + web channel → no card', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({
+      channel: 'web',
+      payment: makePayment({ pspProvider: 'payat_go' }),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('no payment row → no card, regardless of channel', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    expect(resolvePayNowCardProps({ channel: 'vodapay', payment: null })).toBeNull()
+    expect(resolvePayNowCardProps({ channel: 'vodapay', payment: undefined })).toBeNull()
+  })
+
+  it('vodapay payment missing checkoutUrl → no card', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({
+      channel: 'vodapay',
+      payment: makePayment({ checkoutUrl: null }),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('vodapay payment not in PLATFORM_CHECKOUT mode (bypass/OFFLINE_RECORDED) → no card', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({
+      channel: 'vodapay',
+      payment: makePayment({ collectionMode: 'OFFLINE_RECORDED' }),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('vodapay payment, PAID status → card props present with paymentStatus PAID', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({
+      channel: 'vodapay',
+      payment: makePayment({ status: 'PAID' }),
+    })
+    expect(result).toEqual({ checkoutUrl: 'https://pay.example/session-1', paymentStatus: 'PAID' })
+  })
+
+  it('vodapay payment, FAILED status → no card (out of scope, see Task 18 report)', async () => {
+    const { resolvePayNowCardProps } = await import('@/lib/booking-detail-loaders')
+    const result = resolvePayNowCardProps({
+      channel: 'vodapay',
+      payment: makePayment({ status: 'FAILED' }),
+    })
+    expect(result).toBeNull()
+  })
+})
