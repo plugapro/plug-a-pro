@@ -13,13 +13,9 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import { pickCustomerDisplayFirstName } from '@/lib/customer-name'
 import { buildMetadata } from '@/lib/metadata'
 import { isEnabled } from '@/lib/flags'
+import { getCustomerHomeSnapshot } from '@/lib/customer-home-snapshot'
 import { getServiceCategoryLabel } from '@/lib/service-categories'
 import { formatLocationSlugLabel } from '@/lib/location-format'
-import {
-  countActiveProvidersFor,
-  listServiceableCategoriesForArea,
-  resolveAreaScope,
-} from '@/lib/customer-serviceability'
 import { AppLogo } from '@/components/shared/app-logo'
 import { Wordmark } from '@/components/shared/wordmark'
 import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
@@ -118,10 +114,11 @@ export default async function CustomerHomePage({
   // Per the brief: when no area is selected we keep the platform count as the
   // default. Once an area is set we ask for the area-scoped count so the
   // home card reflects local coverage.
-  const areaScope = serviceabilityV2Enabled ? await resolveAreaScope(area).catch(() => null) : null
-  const serviceableCategories = serviceabilityV2Enabled
-    ? await listServiceableCategoriesForArea(areaScope).catch(() => [])
-    : []
+  // One cached read instead of four sequential database round trips. This data
+  // is identical for every visitor looking at the same area, and the page is
+  // where every paid ad click lands — see lib/customer-home-snapshot.ts.
+  const { areaScope, serviceableCategories, completedJobsCount, verifiedProviderCount } =
+    await getCustomerHomeSnapshot(area ?? null, serviceabilityV2Enabled)
   const selectedServiceCategory = selectedServiceTag
     ? serviceableCategories.find((category) => category.tag === selectedServiceTag) ?? null
     : null
@@ -129,12 +126,6 @@ export default async function CustomerHomePage({
     serviceableCategories.filter((c) => c.activeProviderCount > 0).map((c) => c.tag),
   )
 
-  const [completedJobsCount, verifiedProviderCount] = await Promise.all([
-    db.job.count({ where: { status: 'COMPLETED' } }),
-    serviceabilityV2Enabled && areaScope
-      ? countActiveProvidersFor({ area: areaScope }).catch(() => 0)
-      : db.provider.count({ where: { verified: true, active: true, status: 'ACTIVE' } }),
-  ]).catch(() => [0, 0] as const)
 
   const isLoggedOut = !session
   const hasProviderRole = Boolean(provider) || session?.role === 'provider' || Boolean(session?.isProvider)
