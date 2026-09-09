@@ -97,6 +97,10 @@
     {
       "path": "/api/cron/draft-abandonment-nudge",
       "schedule": "*/30 6-19 * * *"
+    },
+    {
+      "path": "/api/cron/post-match-handoff-redrive",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -9,6 +9,7 @@ import {
 } from './whatsapp-policy'
 import { sendPostMatchIntroductions } from './post-match-intro'
 import { notifyPostMatchAcceptance } from './post-match-communications'
+import { runAfterResponse } from './run-after-response'
 import { notifyLeadUnlocked } from './provider-wallet-notifications'
 import { materializeFulfilmentArtifacts } from './post-lock-fulfilment'
 
@@ -613,42 +614,25 @@ export async function notifyAcceptedLeadLocked(params: { leadId: string; provide
     // Fire template-based contact exchange (lead_unlock_provider) - works outside the 24h
     // re-engagement window because it uses a registered template, not an interactive button.
     // Look up the unlock record created during credit application.
-    void db.leadUnlock.findFirst({
-      where: { leadId: params.leadId, providerId: params.providerId },
-      select: { id: true },
-      orderBy: { createdAt: 'desc' },
-    }).then((unlock) => {
-      if (unlock) {
-        return notifyLeadUnlocked(unlock.id).catch((err: unknown) => {
-          console.error('[provider-accepted-lock] notifyLeadUnlocked failed (non-fatal)', {
-            leadId: params.leadId,
-            unlockId: unlock.id,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        })
-      }
-    }).catch((err: unknown) => {
-      console.error('[provider-accepted-lock] unlock lookup for notification failed (non-fatal)', {
-        leadId: params.leadId,
-        error: err instanceof Error ? err.message : String(err),
+    await runAfterResponse('lead-unlock-notification', async () => {
+      const unlock = await db.leadUnlock.findFirst({
+        where: { leadId: params.leadId, providerId: params.providerId },
+        select: { id: true },
+        orderBy: { createdAt: 'desc' },
       })
+      if (unlock) await notifyLeadUnlocked(unlock.id)
     })
 
     // Fire interactive CTA intro messages (contact exchange) - requires 24h re-engagement
     // window; falls back gracefully when outside the window. The template path above is the
     // reliable fallback for providers who have not messaged recently.
-    void sendPostMatchIntroductions({ leadId: params.leadId, providerId: params.providerId })
+    await runAfterResponse('post-match-introductions', () =>
+      sendPostMatchIntroductions({ leadId: params.leadId, providerId: params.providerId }))
 
     // Fire rich acceptance messages with app deep links to both parties (non-blocking).
     // Idempotency is handled inside notifyPostMatchAcceptance via hasSentPostMatchMessage.
-    void notifyPostMatchAcceptance({ leadId: params.leadId, providerId: params.providerId })
-      .catch((error) => {
-        console.error('[provider-accepted-lock-confirmation] post-match deep link notification failed (non-fatal)', {
-          leadId: params.leadId,
-          providerId: params.providerId,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      })
+    await runAfterResponse('post-match-acceptance', () =>
+      notifyPostMatchAcceptance({ leadId: params.leadId, providerId: params.providerId }))
 
     return !result.customer.failureReason && !result.provider.failureReason
   } catch (error) {

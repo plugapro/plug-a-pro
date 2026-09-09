@@ -280,6 +280,12 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  'provider.post_match_handoff.redrive': {
+    description:
+      'Cron safety net that re-sends the post-acceptance handoff (job-page link + customer contact release) for leads a provider accepted 10min-48h ago with no handoff message on record. The live path fires it via after(); this recovers anything that still fails. Idempotent - notifyPostMatchAcceptance re-checks message_events before each send.',
+    owner: 'eng',
+    defaultValue: false,
+  },
   'provider.board.v1': {
     description:
       'Provider lead board: /provider/board pull surface for job requests whose push offers lapsed. OFF until customer-notify path verified for web-origin customers.',
