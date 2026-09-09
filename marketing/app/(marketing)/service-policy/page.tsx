@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { buildMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildMetadata({
@@ -17,7 +18,7 @@ export default function ServicePolicyPage() {
           Plug A Pro currently serves <strong>Johannesburg West / Roodepoort</strong>.
           If your address is outside this area, we add you to our waitlist and
           notify you when we launch near you. See{" "}
-          <a href="/areas/johannesburg">service areas</a>.
+          <Link href="/areas/johannesburg">service areas</Link>.
         </p>
 
         <h2>Requesting a service</h2>

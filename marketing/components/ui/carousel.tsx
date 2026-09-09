@@ -95,6 +95,11 @@ function Carousel({
 
   React.useEffect(() => {
     if (!api) return
+    // Stock shadcn carousel: initial state sync from the embla instance. The
+    // react-hooks/set-state-in-effect rule (newly enforced by the current
+    // plugin version) flags it, but the subscribe-below + initial-read pattern
+    // is the embla-documented usage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     onSelect(api)
     api.on("reInit", onSelect)
     api.on("select", onSelect)
