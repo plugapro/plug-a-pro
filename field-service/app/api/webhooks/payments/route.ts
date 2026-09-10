@@ -9,8 +9,8 @@ import {
   handlePaymentSuccess,
   handlePaymentFailed,
 } from '@/lib/payments'
+import { guardPaymentSuccessWebhook } from '@/lib/payments/webhook-guards'
 import { sendPaidBookingConfirmation } from '@/lib/payment-confirmation'
-import { db } from '@/lib/db'
 import { getCorrelationId } from '@/lib/correlation'
 
 export async function POST(request: NextRequest) {
@@ -41,43 +41,55 @@ export async function POST(request: NextRequest) {
 
   try {
     if (event.type === 'payment.success') {
-      // Idempotency guard + amount validation (SECURITY 7a1438d):
-      // Load the stored Payment record to verify:
-      //   a) m_payment_id maps to a known Payment (reject unknown references)
+      // Idempotency guard + amount validation (SECURITY 7a1438d) - shared
+      // with the VodaPay notify route via lib/payments/webhook-guards.ts:
+      //   a) bookingId maps to a known Payment (reject unknown references)
       //   b) event.amount matches Payment.amount within ±0.01 rand tolerance
       //   c) payment is not already PAID (idempotency)
-      const existingPayment = await db.payment.findUnique({
-        where: { bookingId: event.bookingId },
-        select: { status: true, amount: true, bookingConfirmationSentAt: true },
+      const guard = await guardPaymentSuccessWebhook({
+        bookingId: event.bookingId,
+        amountCents: event.amount,
       })
 
-      if (!existingPayment) {
+      if (guard.outcome === 'unknown_booking') {
         console.warn(`[webhook/payments:${reqId}] Unknown bookingId ${event.bookingId}`)
         return NextResponse.json({ error: 'Not found' }, { status: 400 })
       }
 
-      // Amount validation: compare event amount (cents) against stored amount (rand).
-      // Tolerance: ±1 cent (0.01 rand) to account for floating-point rounding.
-      const storedAmountCents = Math.round(Number(existingPayment.amount) * 100)
-      const tolerance = 1 // cent
-      if (Math.abs(event.amount - storedAmountCents) > tolerance) {
+      if (guard.outcome === 'amount_mismatch') {
         console.error(`[webhook/payments:${reqId}] Amount mismatch for ${event.bookingId}`, {
-          storedCents: storedAmountCents,
-          receivedCents: event.amount,
+          storedCents: guard.storedAmountCents,
+          receivedCents: guard.receivedAmountCents,
         })
         return NextResponse.json({ error: 'Amount mismatch' }, { status: 400 })
       }
 
       // Early-return BEFORE handlePaymentSuccess to prevent any duplicate DB writes.
-      if (existingPayment.status === 'PAID') {
-        console.info(
-          `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
-        )
+      if (guard.outcome === 'duplicate') {
+        // NEW-2b: a duplicate `success` whose incoming pspReference differs
+        // from what's already stored means a SECOND, distinct session got
+        // paid for this booking - a possible double charge. Loud log with a
+        // distinct marker for ops/finance to grep on; still return 200 (this
+        // is not a signature/parse failure and must not trigger PSP retries).
+        if (guard.storedPspReference && guard.storedPspReference !== event.pspReference) {
+          console.error(
+            `[webhook/payments:${reqId}] DUPLICATE_SUCCESS_DIFFERENT_PSP_REFERENCE - possible double charge, manual refund needed`,
+            {
+              bookingId: event.bookingId,
+              storedPspReference: guard.storedPspReference,
+              incomingPspReference: event.pspReference,
+            },
+          )
+        } else {
+          console.info(
+            `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
+          )
+        }
         // SRE-02: a duplicate delivery is a free re-drive opportunity. If the
         // booking confirmation never went out (sentinel null), attempt it now.
         // sendPaidBookingConfirmation is idempotent (sentinel + attempt cap)
         // and non-throwing.
-        if (!existingPayment.bookingConfirmationSentAt) {
+        if (!guard.bookingConfirmationSentAt) {
           const redrive = await sendPaidBookingConfirmation(event.bookingId)
           console.info(
             `[webhook/payments:${reqId}] Confirmation re-drive for ${event.bookingId}: ${redrive.outcome}`,

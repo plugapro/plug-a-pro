@@ -50,14 +50,14 @@ const nextConfig: NextConfig = {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
   // Permanent redirects after consolidating the legal page set into /terms
-  // (see PR #26). Refund and Service Provider Terms content now lives as
-  // §§ 27–28 inside the main Terms document; deep links preserved via
-  // anchors. /free-templates was retired with no replacement (lead magnet
-  // sunset), so we let it 404 cleanly rather than redirecting somewhere
-  // less relevant.
+  // (see PR #26). Service Provider Terms content lives as § 28 inside the
+  // main Terms document; deep links preserved via anchors. Refunds and
+  // Cancellations now has its own standalone page at /refund-policy (§ 27
+  // in Terms links out to it) rather than a redirect. /free-templates was
+  // retired with no replacement (lead magnet sunset), so we let it 404
+  // cleanly rather than redirecting somewhere less relevant.
   async redirects() {
     return [
-      { source: "/refund-policy", destination: "/terms#refunds", permanent: true },
       { source: "/provider-terms", destination: "/terms#provider-terms", permanent: true },
       // Provider-acquisition ad vanity URL (printed on Meta creatives). Query
       // strings (utm_*) pass through to the registration wizard automatically.

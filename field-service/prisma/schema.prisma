@@ -82,6 +82,7 @@ model Customer {
   customerNotes          CustomerNote[]
   mergeEventsAsSource    CustomerMergeEvent[]    @relation("CustomerMergeSource")
   mergeEventsAsTarget    CustomerMergeEvent[]    @relation("CustomerMergeTarget")
+  externalIdentities     CustomerExternalIdentity[]
 
   @@map("customers")
 }
@@ -1347,6 +1348,12 @@ model Payment {
   // and the payment-confirmation-redrive cron (attempts capped).
   bookingConfirmationSentAt   DateTime?
   bookingConfirmationAttempts Int       @default(0)
+  // I-4 residual 2 (Task 16 round 2): atomic per-booking counter of VodaPay
+  // checkout mints. Read via an atomic { increment: 1 } update so concurrent
+  // checkout initiations can never observe/reuse the same counter value.
+  // Only meaningful for pspProvider:'vodapay' rows; every other row keeps the
+  // column default (0). No backfill needed - 0 means "no VodaPay attempts yet".
+  vodapayAttempt Int @default(0)
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
@@ -3425,4 +3432,22 @@ model WorkflowEvent {
   @@index([entityType, entityId])
   @@index([occurredAt])
   @@map("workflow_events")
+}
+
+// ─── Federated customer identity (marketplace host login, e.g. VodaPay) ───────
+
+model CustomerExternalIdentity {
+  id          String   @id @default(cuid())
+  customerId  String
+  provider    String // 'VODAPAY'
+  externalId  String // host-issued user id
+  tokenCipher String? // AES-GCM envelope, key VODAPAY_TOKEN_KEY
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([provider, externalId])
+  @@index([customerId])
+  @@map("customer_external_identities")
 }

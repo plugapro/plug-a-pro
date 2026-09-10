@@ -25,6 +25,7 @@ type LimiterKey =
   | 'notifyInterestByIp'
   | 'notifyInterestByPhone'
   | 'locationReverseByIp'
+  | 'vodapayAuthByIp'
 
 type RateLimitDecision =
   | { ok: true }
@@ -145,6 +146,16 @@ function configs(): Record<LimiterKey, LimitConfig> {
     locationReverseByIp: {
       name: 'locationReverseByIp',
       limit: envInt('LOCATION_REVERSE_LIMIT_PER_IP_HOUR', 60),
+      windowSec: HOUR,
+      prefix: 'rate_limit',
+    },
+    vodapayAuthByIp: {
+      name: 'vodapayAuthByIp',
+      // Same budget class as the OTP send-by-IP bucket (sendByIp): both are
+      // unauthenticated endpoints that mint a session for a phone number. Kept in
+      // its own bucket so VodaPay traffic can never exhaust the OTP quota for a
+      // phone/IP (the failure mode called out for the OTP buckets in proxy.ts).
+      limit: envInt('VODAPAY_AUTH_LIMIT_PER_IP_HOUR', 20),
       windowSec: HOUR,
       prefix: 'rate_limit',
     },
@@ -611,6 +622,31 @@ export async function checkLocationReverseLimit(params: {
   const decision = await consume('locationReverseByIp', `ip:${ip}`)
   if (decision.ok || decision.reason === 'limiter_unavailable') return { ok: true }
   return { ok: false, retryAfterMs: decision.retryAfterMs }
+}
+
+export type CheckVodapayAuthLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'ip_limit' | 'limiter_unavailable'; retryAfterMs: number }
+
+// Per-IP limiter for POST /api/auth/vodapay, the unauthenticated federated-login
+// endpoint that exchanges a VodaPay authCode for a Plug A Pro session cookie.
+// Fails CLOSED (like the OTP send/verify limiters) — a degraded Redis must not
+// open an unmetered session-minting endpoint.
+export async function checkVodapayAuthLimit(params: {
+  ip?: string | null
+}): Promise<CheckVodapayAuthLimitResult> {
+  // Coalesce a missing/untrusted IP into a shared bucket (otpReportByIp pattern)
+  // so a stripped X-Forwarded-For cannot skip the cap entirely.
+  const ip = params.ip?.trim() || 'unknown'
+  const decision = await consume('vodapayAuthByIp', `ip:${ip}`)
+  if (!decision.ok) {
+    return {
+      ok: false,
+      code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
+      retryAfterMs: decision.retryAfterMs,
+    }
+  }
+  return { ok: true }
 }
 
 /** Test helper. Clears the lazy clients, one-shot warning state and in-memory store. */

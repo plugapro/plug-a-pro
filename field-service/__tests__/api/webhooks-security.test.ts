@@ -41,7 +41,12 @@ vi.mock('@/lib/payments', () => ({
     type: 'payment.success',
     bookingId: 'booking-001',
     pspReference: 'psp-ref-001',
-    amountCents: 50000,
+    // Real PaymentEvent field is `amount` (cents), not `amountCents` - fixed
+    // per I-3: the old wrong field name meant `event.amount` was `undefined`
+    // here, and the pre-fix guard's Math.abs(NaN - stored) > tolerance was
+    // (incorrectly) `false`, so these tests were passing the amount guard by
+    // accident rather than on a matching amount.
+    amount: 50000,
     currency: 'ZAR',
   }),
   handlePaymentSuccess: vi.fn().mockResolvedValue(undefined),
@@ -303,6 +308,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     // Idempotency check - payment not yet PAID (first delivery)
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PENDING',
+      amount: 500, // rand - matches the mocked event's amount: 50000 cents
       bookingConfirmationSentAt: null,
     })
     // sendPaidBookingConfirmation re-reads the (now PAID) payment (SRE-02)
@@ -345,6 +351,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     // Idempotency check - payment already PAID and confirmation sentinel set
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PAID',
+      amount: 500,
       bookingConfirmationSentAt: new Date('2026-05-01T08:00:00Z'),
     })
 
@@ -362,11 +369,56 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     expect(sendBookingConfirmation).not.toHaveBeenCalled()
   })
 
+  // NEW-2b: a duplicate `success` whose incoming pspReference differs from
+  // the one already stored means a SECOND, distinct session got paid for
+  // this booking - a possible double charge. Must log loudly with a
+  // distinct marker instead of the routine info log, but still return 200.
+  it('logs a distinct double-charge marker (console.error) when a duplicate success carries a different pspReference', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({
+      status: 'PAID',
+      amount: 500,
+      bookingConfirmationSentAt: new Date('2026-05-01T08:00:00Z'),
+      pspReference: 'psp-ref-DIFFERENT', // mocked parseWebhookEvent returns 'psp-ref-001'
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    const { POST } = await import('../../app/api/webhooks/payments/route')
+    const req = new NextRequest('http://localhost/api/webhooks/payments', {
+      method: 'POST',
+      body: '{"type":"payment.success"}',
+      headers: { 'Content-Type': 'application/json', 'x-signature': 'valid' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200) // still 200 - not a signature/parse failure, no PSP retry storm
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('DUPLICATE_SUCCESS_DIFFERENT_PSP_REFERENCE'),
+      expect.objectContaining({
+        bookingId: 'booking-001',
+        storedPspReference: 'psp-ref-DIFFERENT',
+        incomingPspReference: 'psp-ref-001',
+      }),
+    )
+    // The routine "duplicate delivery - already processed" info log must NOT
+    // also fire for this case - it's the loud marker or the quiet one, never both.
+    expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining('Duplicate delivery'))
+
+    const { sendBookingConfirmation } = await import('@/lib/whatsapp')
+    expect(sendBookingConfirmation).not.toHaveBeenCalled() // sentinel already set
+
+    errorSpy.mockRestore()
+    infoSpy.mockRestore()
+  })
+
   it('re-drives the missed confirmation on duplicate delivery when the sentinel is null (SRE-02)', async () => {
     const { db } = await import('@/lib/db')
     // Duplicate delivery: PAID but the confirmation never went out.
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PAID',
+      amount: 500,
       bookingConfirmationSentAt: null,
     })
     // sendPaidBookingConfirmation re-reads the payment
@@ -399,6 +451,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     const { db } = await import('@/lib/db')
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
       status: 'PENDING',
+      amount: 500,
       bookingConfirmationSentAt: null,
     })
     ;(db.payment.findUnique as any).mockResolvedValueOnce({
@@ -435,7 +488,7 @@ describe('POST /api/webhooks/payments - idempotency', () => {
     ;(handlePaymentSuccess as any).mockRejectedValueOnce(new Error('database timeout: internal stack'))
 
     const { db } = await import('@/lib/db')
-    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING', amount: 500 })
 
     const { POST } = await import('../../app/api/webhooks/payments/route')
     const req = new NextRequest('http://localhost/api/webhooks/payments', {

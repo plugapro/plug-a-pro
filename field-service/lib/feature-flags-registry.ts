@@ -603,6 +603,19 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  // ─── VodaPay marketplace channel ────────────────────────────────────────────────
+  'channel.vodapay.v1': {
+    description:
+      'VodaPay mini-program runtime: /vodapay entry route, channel cookie, VodaPay-mode UI (WhatsApp CTAs hidden), and VodaPay federated login. OFF = /vodapay 404s and nothing changes for web/WhatsApp customers.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+  'payments.vodapay.v1': {
+    description:
+      'Route bookings whose request source is vodapay to the VodaPay cashier PSP (forced checkout mode) and process its webhook. OFF = global PSP_PROVIDER behaviour unchanged.',
+    owner: 'eng',
+    defaultValue: false,
+  },
 } as const
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS_REGISTRY

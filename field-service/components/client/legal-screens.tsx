@@ -60,14 +60,19 @@ export function LegalPageScreen({
         plugapro.co.za{path}
       </p>
       <div className="mt-3 rounded-xl bg-[var(--card-alt)] px-3 py-2 text-xs text-[var(--ink-mute)]">
-        We do not keep legal copy in this app. This is a live canonical embed.
+        We do not keep legal copy in this app. It always opens live from plugapro.co.za.
       </div>
-      <iframe
-        src={fullUrl}
-        title={title}
-        className="mt-4 h-[60vh] w-full rounded-2xl border border-border bg-card"
-        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      />
+      <a
+        href={fullUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-4 block rounded-2xl border border-border bg-card p-4"
+      >
+        <span className="font-medium">{title}</span>
+        <span className="mt-1 block text-sm text-[var(--ink-mute)]">
+          Opens on plugapro.co.za
+        </span>
+      </a>
       <div className="fixed inset-x-0 bottom-0 border-t border-border bg-[rgba(246,246,248,0.92)] px-5 pb-[calc(16px+env(safe-area-inset-bottom,0px))] pt-3 backdrop-blur-xl dark:bg-[rgba(11,11,16,0.92)]">
         <a href={fullUrl} target="_blank" rel="noopener noreferrer" className="mx-auto block w-full max-w-md rounded-2xl px-4 py-3 text-center text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, #FF1F8E 0%, #8B3FE8 50%, #2A78F0 100%)' }}>
           Open on plugapro.co.za

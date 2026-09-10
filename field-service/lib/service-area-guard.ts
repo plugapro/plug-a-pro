@@ -161,7 +161,7 @@ export async function addToServiceAreaWaitlist(params: {
   suburb?: string | null
   city: string
   province?: string | null
-  source: 'whatsapp' | 'pwa'
+  source: 'whatsapp' | 'pwa' | 'vodapay'
 }): Promise<void> {
   const suburb = normaliseLocationDisplayName(params.suburb) || null
   const city = normaliseLocationDisplayName(params.city)

@@ -88,6 +88,9 @@ const customerBookingInclude = {
     },
   },
   quote: true,
+  payment: {
+    select: { status: true, checkoutUrl: true, collectionMode: true, pspProvider: true },
+  },
   job: {
     include: {
       statusHistory: { orderBy: { timestamp: 'asc' } },
@@ -128,6 +131,54 @@ export type ProviderJobDetailLoadResult =
 export type CustomerBookingDetailLoadResult =
   | { ok: true; data: CustomerBookingDetailData }
   | { ok: false; error: DetailFailureReason }
+
+// Payment status values the Pay Now card is worth showing for: PENDING (keep
+// paying) and PAID (show the confirmed state). FAILED/REFUNDED/AUTHORISED
+// intentionally render nothing here (see Task 18 report — in-app retry on a
+// failed/expired VodaPay session needs a fresh mint, out of scope).
+const PAY_NOW_VISIBLE_STATUSES = new Set(['PENDING', 'PAID'])
+
+export interface PayNowGatePayment {
+  status: string
+  checkoutUrl: string | null
+  collectionMode: string | null
+  pspProvider: string | null
+}
+
+export interface PayNowCardProps {
+  checkoutUrl: string
+  paymentStatus: string
+}
+
+// Pure: decides whether the customer booking page's Pay Now card should
+// render, and if so with what props. Task 18 review finding (Important):
+// gating on payment state alone (PLATFORM_CHECKOUT + checkoutUrl) is
+// channel-blind — Peach reaches PLATFORM_CHECKOUT via
+// PAYMENT_COLLECTION_MODE=checkout and Pay@Go's rollout will too, so a
+// web/WhatsApp customer would see a brand-new in-app pay surface the design
+// spec explicitly forbids ("outside VodaPay mode nothing changes").
+//
+// Both gates are required, conservatively:
+//   1. payment truth — `pspProvider === 'vodapay'`, set server-side by
+//      createCheckout only when the VodaPay provider actually minted this
+//      checkout session.
+//   2. request-channel truth — `channel === 'vodapay'`, the same
+//      getRequestChannel() value the page already uses to hide WhatsApp CTAs.
+// A stray/forged pap_channel=vodapay cookie on a Peach-collected payment (or
+// vice versa) is refused by requiring BOTH to agree, not either alone.
+export function resolvePayNowCardProps(params: {
+  channel: string
+  payment: PayNowGatePayment | null | undefined
+}): PayNowCardProps | null {
+  const { channel, payment } = params
+  if (channel !== 'vodapay') return null
+  if (!payment) return null
+  if (payment.pspProvider !== 'vodapay') return null
+  if (payment.collectionMode !== 'PLATFORM_CHECKOUT') return null
+  if (!payment.checkoutUrl) return null
+  if (!PAY_NOW_VISIBLE_STATUSES.has(payment.status)) return null
+  return { checkoutUrl: payment.checkoutUrl, paymentStatus: payment.status }
+}
 
 function nonEmpty(value: string | null | undefined, fallback: string) {
   const next = value?.trim()

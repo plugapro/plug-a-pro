@@ -56,6 +56,9 @@ const PUBLIC_PATHS = [
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET
   '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
+  '/api/webhooks/vodapay', // VodaPay Cashier notify webhook (Task 17); already covered by the
+                           // '/api/webhooks' prefix above - listed explicitly for the same
+                           // documentation style as the other PSP webhook paths below
   '/api/payat/webhook',    // Pay@ provider-credit webhook callback from Pay@ infrastructure
   '/api/payat-go/callback',// Pay@Go RTP callback from Pay@ infrastructure
   '/api/review-first/provider-profile/shortlist', // signed profile-token shortlist action
@@ -67,6 +70,7 @@ const PUBLIC_PATHS = [
   '/api/auth/hooks',                // Supabase Auth webhook hooks (send-sms, etc.) — signature-verified, no session cookie
   '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
+  '/api/auth/vodapay',              // unauthenticated — exchanges a VodaPay authCode for the customer session cookie; handler is flag-gated by channel.vodapay.v1 and per-IP rate limited
   '/api/track',                     // public tracking API; handler validates tracking identifiers
   '/api/locations',                 // public canonical location taxonomy used before booking/provider registration auth
   '/api/customer/notify-interest',  // public "notify me when this service is available" capture; handler enforces flag + SA-phone validation + per-IP/phone rate limits
@@ -77,6 +81,8 @@ const PUBLIC_PATHS = [
   // behind the session gate. In production they are additionally 403'd outright.
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
   '/status',                        // public service status dashboard
+  '/vodapay',                       // VodaPay super-app mini-program entry — WebView loads before any session cookie exists
+  '/api/channel',                   // sets the pap_channel cookie for the VodaPay WebView before any session cookie exists; handler is flag-gated by channel.vodapay.v1
   '/r',                             // short WhatsApp handoff alias — server redirects via token resolver
   '/ticket',                        // public token-gated invoice — server-rendered, no session cookie
   '/client/handoff',                // WhatsApp handoff deep-link — token validates identity
@@ -385,6 +391,9 @@ function shouldEnforceMobileOnlyForPath(pathname: string, host: string): boolean
   if (pathname.startsWith('/admin')) return false
   // Public status/monitoring surface stays desktop-reachable.
   if (pathname === '/status' || pathname.startsWith('/status/')) return false
+  // VodaPay mini-program WebView is not a real mobile browser; the interstitial
+  // would strand the host app's in-app session, so exempt it like /status.
+  if (pathname === '/vodapay' || pathname.startsWith('/vodapay/')) return false
   return true
 }
 

@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { getRequestChannel } from '@/lib/channel'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import { parseAttributionJson } from '@/lib/attribution'
@@ -69,6 +70,8 @@ export async function POST(req: NextRequest) {
   if (!session.phone) {
     return NextResponse.json({ error: 'Verified phone required' }, { status: 403 })
   }
+
+  const channel = await getRequestChannel()
 
   // Rate limit: check for too many active requests. JobRequest.customerId stores
   // the internal Customer.id, NOT the Supabase Auth user id on session.id, so we
@@ -259,7 +262,7 @@ export async function POST(req: NextRequest) {
         province: resolvedAddress.province,
         suburb: resolvedAddress.suburb,
         category: canonicalCategory,
-        source: 'pwa',
+        source: channel === 'vodapay' ? 'vodapay' : 'pwa',
       }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
 
       return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
@@ -284,7 +287,7 @@ export async function POST(req: NextRequest) {
         province: resolvedAddress.province,
         suburb: resolvedAddress.suburb,
         category: canonicalCategory,
-        source: 'pwa',
+        source: channel === 'vodapay' ? 'vodapay' : 'pwa',
       }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
 
       return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
@@ -446,7 +449,7 @@ export async function POST(req: NextRequest) {
       province: resolvedAddress.province,
       postalCode: resolvedAddress.postalCode,
       locationNodeId: resolvedAddress.locationNodeId,
-      source: 'pwa',
+      source: channel === 'vodapay' ? 'vodapay' : 'pwa',
       urgency: urgency ?? null,
       providerPreference: providerPreference ?? null,
       budgetPreference: budgetPreference ?? null,

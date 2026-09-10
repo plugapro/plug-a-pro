@@ -44,9 +44,15 @@ export const WHATSAPP_REGISTRATION_FRICTION_FLAGS = [
   'provider.onboarding.quality_gate_v2',
 ] as const satisfies readonly FeatureFlagKey[]
 
+export const VODAPAY_FLAGS = [
+  'channel.vodapay.v1',
+  'payments.vodapay.v1',
+] as const satisfies readonly FeatureFlagKey[]
+
 export const FEATURE_FLAG_GROUPS = {
   'ops-crud': OPS_CRUD_FEATURE_FLAGS,
   'whatsapp-registration-friction': WHATSAPP_REGISTRATION_FRICTION_FLAGS,
+  'vodapay': VODAPAY_FLAGS,
 } as const satisfies Record<string, readonly FeatureFlagKey[]>
 
 export type FeatureFlagGroup = keyof typeof FEATURE_FLAG_GROUPS

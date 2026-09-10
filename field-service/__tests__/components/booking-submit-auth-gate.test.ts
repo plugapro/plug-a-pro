@@ -60,6 +60,61 @@ describe('nextActionForAuthFailure', () => {
       nextActionForAuthFailure({ status: 500, flagEnabled: false, alreadyRetried: false }),
     ).toBe('none')
   })
+
+  // ── VodaPay bridge login (Task 15) ────────────────────────────────────────
+  // vodapayAvailable takes priority over the inline-OTP dialog: when the
+  // mini-program bridge is present, the federated login is a strictly better
+  // UX than an inline OTP form inside a WebView.
+
+  it('vodapay channel with bridge → open_vodapay', () => {
+    expect(
+      nextActionForAuthFailure({
+        status: 401,
+        flagEnabled: true,
+        alreadyRetried: false,
+        vodapayAvailable: true,
+      }),
+    ).toBe('open_vodapay')
+  })
+
+  it('vodapay unavailable falls back to dialog', () => {
+    expect(
+      nextActionForAuthFailure({
+        status: 401,
+        flagEnabled: true,
+        alreadyRetried: false,
+        vodapayAvailable: false,
+      }),
+    ).toBe('open_dialog')
+  })
+
+  it('vodapay available but the inline-OTP flag is off still opens vodapay (independent gates)', () => {
+    expect(
+      nextActionForAuthFailure({
+        status: 403,
+        flagEnabled: false,
+        alreadyRetried: false,
+        vodapayAvailable: true,
+      }),
+    ).toBe('open_vodapay')
+  })
+
+  it('vodapay available but already retried → redirect (safety valve, no infinite bridge-login loop)', () => {
+    expect(
+      nextActionForAuthFailure({
+        status: 401,
+        flagEnabled: true,
+        alreadyRetried: true,
+        vodapayAvailable: true,
+      }),
+    ).toBe('redirect')
+  })
+
+  it('omitting vodapayAvailable behaves exactly like passing false (back-compat default)', () => {
+    expect(
+      nextActionForAuthFailure({ status: 401, flagEnabled: true, alreadyRetried: false }),
+    ).toBe('open_dialog')
+  })
 })
 
 describe('resolveSubmitErrorMessage', () => {

@@ -24,6 +24,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker, type Selection as SuburbSelection } from './SuburbPicker'
 import { InlineOtpDialog } from '@/components/customer/InlineOtpDialog'
 import { nextActionForAuthFailure, resolveSubmitErrorMessage } from '@/components/customer/bookingSubmitAuthGate'
+import { useVodapayLogin } from '@/components/customer/useVodapayLogin'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { trackJobRequestSubmitted } from '@/lib/meta-pixel'
 import { analytics } from '@/lib/analytics'
@@ -206,6 +207,10 @@ export function BookingFlow({
     formData: FormData
     timing: ReturnType<typeof resolvePreferredTimingWindow>
   } | null>(null)
+  // VodaPay bridge login (Task 15): when this page is running inside the
+  // VodaPay mini-program WebView, a signed-out submit prefers the bridge's
+  // federated login over the inline OTP dialog. See bookingSubmitAuthGate.ts.
+  const vodapay = useVodapayLogin()
   const streetSummary = buildLegacyStreetAddress(address)
   const draftStorageKey = `plugapro:client-request-draft:${category.slug}`
   const hasInitialDraft = Boolean(initialDraft && Object.values(initialDraft).some(Boolean))
@@ -620,9 +625,18 @@ export function BookingFlow({
     }
   }
 
-  // POST + response handling shared by the first submit and the post-OTP
-  // retry. `alreadyRetried` feeds the auth gate so a second 401/403 falls back
-  // to the legacy /sign-in redirect instead of looping the dialog.
+  // Draft is auto-saved to localStorage - redirect to sign-in and come back.
+  // Shared by the legacy 'redirect' action and the VodaPay-login-failed
+  // fallback below.
+  function redirectToSignIn() {
+    const returnPath = `${window.location.pathname}${window.location.search}`
+    window.location.href = `/sign-in?next=${encodeURIComponent(returnPath || `/book/${category.slug}`)}`
+  }
+
+  // POST + response handling shared by the first submit and the post-OTP /
+  // post-VodaPay-login retry. `alreadyRetried` feeds the auth gate so a
+  // second 401/403 falls back to the legacy /sign-in redirect instead of
+  // looping the dialog (or re-prompting the VodaPay bridge).
   async function submitBookingFormData(
     formData: FormData,
     timing: ReturnType<typeof resolvePreferredTimingWindow>,
@@ -638,11 +652,44 @@ export function BookingFlow({
         status: res.status,
         flagEnabled: inlineOtpEnabled,
         alreadyRetried,
+        vodapayAvailable: vodapay.available,
       })
       if (authAction === 'redirect') {
-        // Draft is auto-saved to localStorage - redirect to sign-in and come back
-        const returnPath = `${window.location.pathname}${window.location.search}`
-        window.location.href = `/sign-in?next=${encodeURIComponent(returnPath || `/book/${category.slug}`)}`
+        redirectToSignIn()
+        return
+      }
+      if (authAction === 'open_vodapay') {
+        // Signed-out submit inside the VodaPay mini-program: try the bridge's
+        // federated login before falling back to the inline OTP dialog.
+        const result = await vodapay.login()
+        if (result.ok) {
+          await submitBookingFormData(formData, timing, true)
+          return
+        }
+        if (result.locked) {
+          setError('This account has been locked for security reasons. Please contact support.')
+          return
+        }
+        if (result.stepUp) {
+          // useVodapayLogin already navigated the browser to the security
+          // checkpoint (window.location.assign) — nothing left to do here.
+          return
+        }
+        // Login failed for any other reason: fall back exactly like a
+        // non-VodaPay signed-out submit would have (inline OTP dialog if the
+        // flag is on, else the legacy /sign-in redirect).
+        const fallbackAction = nextActionForAuthFailure({
+          status: res.status,
+          flagEnabled: inlineOtpEnabled,
+          alreadyRetried,
+          vodapayAvailable: false,
+        })
+        if (fallbackAction === 'open_dialog') {
+          pendingSubmitRef.current = { formData, timing }
+          setOtpDialogOpen(true)
+        } else {
+          redirectToSignIn()
+        }
         return
       }
       if (authAction === 'open_dialog') {

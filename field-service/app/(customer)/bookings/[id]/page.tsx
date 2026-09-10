@@ -7,6 +7,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { getRequestChannel } from '@/lib/channel'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { cancelBookingLifecycle } from '@/lib/bookings'
 import { BOOKING_CANCEL_REASONS } from '@/lib/booking-cancel-reasons'
@@ -22,8 +23,9 @@ import { AlertCallout } from '@/components/shared/AlertCallout'
 import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 import { AutoRefresh } from '@/components/customer/AutoRefresh'
+import { PayNowCard } from '@/components/customer/PayNowCard'
 import { ChevronLeft, Wrench, MapPin, Star } from 'lucide-react'
-import { getCustomerBookingDetailForViewer } from '@/lib/booking-detail-loaders'
+import { getCustomerBookingDetailForViewer, resolvePayNowCardProps } from '@/lib/booking-detail-loaders'
 
 export const metadata = buildMetadata({ title: 'Booking Details' })
 
@@ -36,6 +38,7 @@ export default async function BookingDetailPage({
 }) {
   const { id } = await params
   const { reschedule } = await searchParams
+  const channel = await getRequestChannel()
   const session = await getSession()
   if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
@@ -68,6 +71,7 @@ export default async function BookingDetailPage({
   }
 
   const { booking, addressDisplay, providerDisplayName, providerInitials } = detail.data
+  const payNowCardProps = resolvePayNowCardProps({ channel, payment: booking.payment })
 
   // Check for existing rating
   const existingRating = await db.review.findFirst({
@@ -332,7 +336,8 @@ export default async function BookingDetailPage({
                 <div className="text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>Service provider</div>
               </div>
               <div className="flex items-center gap-2">
-                {booking.status !== 'CANCELLED' && booking.match.provider.phone && (
+                {/* Hidden in VodaPay mode: wa.me links break out of the mini-program WebView. */}
+                {channel !== 'vodapay' && booking.status !== 'CANCELLED' && booking.match.provider.phone && (
                   <WhatsAppLink
                     href={`https://wa.me/${booking.match.provider.phone.replace(/^\+/, '').replace(/\D/g, '')}`}
                     source="customer_booking_message_provider"
@@ -368,6 +373,17 @@ export default async function BookingDetailPage({
           )}
         </div>
       </div>
+
+      {/* Pay now — VodaPay-collected payments only, and only while the request is
+          actually in VodaPay-channel mode (see resolvePayNowCardProps: both the
+          payment's own pspProvider AND the pap_channel cookie must agree it's
+          VodaPay, so a web/WhatsApp customer never sees this even for a Peach/
+          Pay@Go PLATFORM_CHECKOUT row). */}
+      {payNowCardProps && (
+        <div className="px-[18px] mt-4">
+          <PayNowCard checkoutUrl={payNowCardProps.checkoutUrl} paymentStatus={payNowCardProps.paymentStatus} />
+        </div>
+      )}
 
       {/* Reschedule banner */}
       {reschedule === 'requested' && (
