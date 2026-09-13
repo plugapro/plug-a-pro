@@ -402,9 +402,15 @@ export async function notifyPostMatchAcceptance(params: {
   //      plain text (Meta returns "Re-engagement message"). The failure is
   //      recorded explicitly with NO_ACTIVE_WHATSAPP_SERVICE_WINDOW so ops
   //      can manually follow up.
+  // Both templates count as "the customer has been told". The fallback
+  // (customer_match_found) is what actually lands whenever the primary is
+  // unapproved, so checking only the primary made the guard blind to its own
+  // success — and any retry (the redrive cron runs every 15 minutes) would
+  // message the customer again, repeatedly, for as long as the provider side
+  // stayed unresolved.
   if (customer.phone && !(await hasSentPostMatchMessage({
     to: customer.phone,
-    templateNames: ['post_match_customer_provider_accepted'],
+    templateNames: ['post_match_customer_provider_accepted', 'customer_match_found'],
     leadId: lead.id,
   }))) {
     const customerBody =

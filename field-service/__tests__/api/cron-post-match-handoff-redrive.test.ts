@@ -111,6 +111,41 @@ describe('GET /api/cron/post-match-handoff-redrive', () => {
     expect(lte.getTime()).toBeLessThan(Date.now())
   })
 
+  it('never redrives an acceptance the provider has not paid for', async () => {
+    await run()
+    const where = mockDb.lead.findMany.mock.calls[0]![0].where
+
+    // providerAcceptedAt is stamped at PROVIDER_ACCEPTED, before the credit is
+    // applied. Redriving those would release the customer's name and phone —
+    // the monetised product — to a provider who never bought the lead.
+    expect(where.status).toEqual({ in: ['CREDIT_APPLIED', 'ACCEPTED', 'ACCEPTED_LOCKED'] })
+    expect(where.status.in).not.toContain('PROVIDER_ACCEPTED')
+    expect(where.status.in).not.toContain('CREDIT_REQUIRED')
+  })
+
+  it('requires a credit unlock row, not just an accepted status', async () => {
+    await run()
+    const where = mockDb.lead.findMany.mock.calls[0]![0].where
+
+    // Ledger-first: the unlock row is what the ledger writes.
+    expect(where.unlock).toEqual({ isNot: null })
+  })
+
+  it('excludes already-handled acceptances in the query, before the batch limit', async () => {
+    await run()
+    const args = mockDb.lead.findMany.mock.calls[0]![0]
+
+    // Filtering after `take` let 25 delivered rows fill every run and starve
+    // genuinely stranded ones until they aged past the cutoff.
+    expect(args.where.messageEvents).toEqual({
+      none: {
+        templateName: { in: ['provider_job_accepted_next_steps', 'post_match_provider_job_accepted'] },
+        status: { in: ['SENT', 'DELIVERED', 'READ'] },
+      },
+    })
+    expect(args.take).toBe(25)
+  })
+
   it('keeps going when one lead fails and reports the failure', async () => {
     mockDb.lead.findMany.mockResolvedValue([
       strandedLead({ id: 'lead-1' }),

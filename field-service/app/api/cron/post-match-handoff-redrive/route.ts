@@ -21,7 +21,7 @@
 // Flag-gated by `provider.post_match_handoff.redrive`.
 
 import { NextResponse } from 'next/server'
-import { MessageStatus } from '@prisma/client'
+import { LeadStatus, MessageStatus } from '@prisma/client'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { notifyPostMatchAcceptance } from '@/lib/post-match-communications'
@@ -38,6 +38,20 @@ const DELIVERED_STATUSES: MessageStatus[] = [
   MessageStatus.SENT,
   MessageStatus.DELIVERED,
   MessageStatus.READ,
+]
+
+// Only redrive acceptances the provider has actually PAID for. providerAcceptedAt
+// is stamped at PROVIDER_ACCEPTED (lib/provider-credit-check.ts:419) — before the
+// credit is applied — so a lead sitting in PROVIDER_ACCEPTED or CREDIT_REQUIRED has
+// an acceptance timestamp but no debit. notifyPostMatchAcceptance releases the
+// customer's name and phone, which is the monetised product; sending it for an
+// unpaid acceptance would give a lead away for free and leak customer contact
+// details to a provider who never bought them. CREDIT_APPLIED counts: the debit
+// has landed and only the lock is outstanding.
+const PAID_ACCEPTED_STATUSES: LeadStatus[] = [
+  LeadStatus.CREDIT_APPLIED,
+  LeadStatus.ACCEPTED,
+  LeadStatus.ACCEPTED_LOCKED,
 ]
 
 // Give the live path time to land before retrying, and refuse to wake up
@@ -67,6 +81,20 @@ export async function GET(request: Request) {
         lte: new Date(now - MIN_AGE_MINUTES * 60_000),
       },
       isTestLead: false,
+      // Paid acceptances only — see PAID_ACCEPTED_STATUSES.
+      status: { in: PAID_ACCEPTED_STATUSES },
+      // A credit debit must exist. Status alone is not proof: the unlock row is
+      // what the ledger writes, so requiring it keeps this ledger-first.
+      unlock: { isNot: null },
+      // Exclude already-handled acceptances in the QUERY, not after the batch
+      // limit. Filtering afterwards let 25 delivered rows fill every run and
+      // starve genuinely stranded ones until they aged past the 48h cutoff.
+      messageEvents: {
+        none: {
+          templateName: { in: HANDOFF_TEMPLATES },
+          status: { in: DELIVERED_STATUSES },
+        },
+      },
     },
     select: { id: true, providerId: true, jobRequestId: true, providerAcceptedAt: true },
     orderBy: { providerAcceptedAt: 'asc' },

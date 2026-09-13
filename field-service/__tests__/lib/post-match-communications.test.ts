@@ -186,6 +186,22 @@ describe('post-match communications', () => {
     expect(sendButtons).not.toHaveBeenCalled()
   })
 
+  it('treats the customer fallback template as proof the customer was told', async () => {
+    ;(db.messageEvent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+    await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+    // customer_match_found is what actually lands whenever the primary template
+    // is unapproved. Checking only the primary made the guard blind to its own
+    // success, so any retry — the redrive cron runs every 15 minutes — would
+    // message the customer again for as long as the provider side stayed stuck.
+    const customerLookup = (db.messageEvent.findFirst as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call[0]?.where?.templateName?.in as string[] | undefined)
+      .find((names) => names?.includes('post_match_customer_provider_accepted'))
+
+    expect(customerLookup).toContain('customer_match_found')
+  })
+
   it('builds a secure accepted-lead customer contact redirect and logs the handover', async () => {
     ;(resolveProviderLeadAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: 'active',
