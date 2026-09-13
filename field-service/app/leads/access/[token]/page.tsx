@@ -36,6 +36,7 @@ import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
 import { getSession } from '@/lib/auth'
+import { runAfterResponse } from '@/lib/run-after-response'
 
 async function resolveSessionProviderPhone(): Promise<string | undefined> {
   const session = await getSession()
@@ -160,10 +161,18 @@ async function acceptLeadWithToken(formData: FormData) {
       const { acceptAssignmentOffer } = await import('@/lib/matching/service')
       const offerResult = await acceptAssignmentOffer({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa' })
       if (offerResult.ok) {
-        // acceptAssignmentOffer does not send notifications - fire-and-forget
-        import('@/lib/post-match-communications').then(({ notifyPostMatchAcceptance }) =>
-          notifyPostMatchAcceptance({ leadId: lead.id, providerId: lead.providerId, matchId: offerResult.matchId, creditTransactionId: offerResult.creditTransactionId })
-        ).catch(() => {})
+        // acceptAssignmentOffer does not send notifications. Deferred rather than
+        // fire-and-forget: a floating promise here is abandoned when the function
+        // suspends, which is how every handoff message was lost from 2026-07-01.
+        await runAfterResponse('post-match-acceptance:pwa', async () => {
+          const { notifyPostMatchAcceptance } = await import('@/lib/post-match-communications')
+          await notifyPostMatchAcceptance({
+            leadId: lead.id,
+            providerId: lead.providerId,
+            matchId: offerResult.matchId,
+            creditTransactionId: offerResult.creditTransactionId,
+          })
+        })
       }
       result = offerResult.ok
         ? { ok: true as const, currentCreditBalance: offerResult.currentCreditBalance, alreadyAccepted: offerResult.alreadyUnlocked ?? false, creditCheck: null }

@@ -306,7 +306,15 @@ describe('MVP1 selected-provider acceptance end to end', () => {
       'lead.provider_credit_applied',
       'lead.provider_accepted_locked',
     ])
-    expect(mockSendTemplate).toHaveBeenCalledTimes(2)
+    // Three messages, not two: both lock confirmations AND the post-match
+    // handoff that releases customer contact and gives the provider their job
+    // page. This assertion read `2` until 2026-09-09 because the handoff was
+    // fired as a floating promise and silently abandoned when the serverless
+    // function suspended — the defect was encoded here as expected behaviour.
+    // In production that cost every accepted lead its next step: 4 providers
+    // accepted between June and August, none were told what to do, and not one
+    // quote was ever created.
+    expect(mockSendTemplate).toHaveBeenCalledTimes(3)
     expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
       to: '+27220000000',
       template: 'mvp1_accepted_lock_customer_confirmation',
@@ -314,6 +322,14 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
       to: '+27110000000',
       template: 'mvp1_accepted_lock_provider_confirmation',
+    }))
+    // The post-match notification now actually runs. Only the customer half is
+    // asserted here: the provider half needs a signed job-handover URL, which
+    // this harness does not stub, so it takes the window-gated fallback path.
+    // End-to-end provider delivery is covered by the booking smoke test.
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27220000000',
+      template: 'post_match_customer_provider_accepted',
     }))
   })
 
@@ -339,7 +355,7 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     })
     expect(state.wallet.paidCreditBalance).toBe(1)
     expect(state.ledgerEntries).toHaveLength(1)
-    expect(mockSendTemplate).toHaveBeenCalledTimes(2)
+    expect(mockSendTemplate).toHaveBeenCalledTimes(3)
   })
 
   it('completes the full lock when the provider retries after topping up from CREDIT_REQUIRED', async () => {
@@ -376,6 +392,6 @@ describe('MVP1 selected-provider acceptance end to end', () => {
       'lead.provider_credit_applied',
       'lead.provider_accepted_locked',
     ])
-    expect(mockSendTemplate).toHaveBeenCalledTimes(2)
+    expect(mockSendTemplate).toHaveBeenCalledTimes(3)
   })
 })
