@@ -29,7 +29,9 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_PROBE_SCOPE = 'rtp:create:single rtp:read'
-const ACCOUNT_PATTERN = /^\d{6,20}$/
+// Same contract as the production readers (lib/payat/read.ts:54,
+// lib/payat-go/client.ts:537,606): 1-14 numeric digits.
+const ACCOUNT_PATTERN = /^\d{1,14}$/
 const FETCH_TIMEOUT_MS = 8_000
 
 function present(value: string | undefined) {
@@ -38,7 +40,7 @@ function present(value: string | undefined) {
 }
 
 function maskAccount(value: string) {
-  return value.length <= 6 ? '***' : `${value.slice(0, 3)}...${value.slice(-3)} (${value.length} digits)`
+  return value.length <= 4 ? '***' : `${value.slice(0, 2)}...${value.slice(-2)} (${value.length} digits)`
 }
 
 /**
@@ -69,6 +71,19 @@ function extractGrantedScope(body: Record<string, unknown>): string {
     }
   }
   return '(not reported)'
+}
+
+/**
+ * The probe exists to surface invalid_scope / invalid_client, so those OAuth
+ * fields are reported — but only those. Everything else in an error body is
+ * reduced to the HTTP status.
+ */
+function describeOauthError(status: number, body: Record<string, unknown>): string {
+  const code = typeof body.error === 'string' ? body.error.slice(0, 60) : null
+  const description = typeof body.error_description === 'string' ? body.error_description.slice(0, 200) : null
+  if (code && description) return `${code}: ${description}`
+  if (code) return code
+  return `HTTP ${status} (no OAuth error fields in body)`
 }
 
 export async function GET(request: NextRequest) {
@@ -134,9 +149,10 @@ export async function GET(request: NextRequest) {
     requestedScope,
     grantedScope: accessToken ? extractGrantedScope(parsed) : null,
     expiresIn: typeof parsed.expires_in === 'number' ? parsed.expires_in : null,
-    // Token-endpoint error bodies (invalid_scope, invalid_client, …) carry no
-    // secrets and are exactly what this probe exists to surface.
-    error: tokenResponse.ok ? null : rawBody.slice(0, 300),
+    // Only allowlisted OAuth error fields, never the raw body: a pathological
+    // non-2xx response could still echo an access_token, and this route
+    // guarantees tokens never leave it (same discipline as lib/payat/token.ts).
+    error: tokenResponse.ok ? null : describeOauthError(tokenResponse.status, parsed),
   }
 
   if (!accessToken || !account) {

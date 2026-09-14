@@ -79,7 +79,7 @@ describe('GET /api/internal/payat-scope-probe', () => {
 
     expect(body.token.ok).toBe(false)
     expect(body.token.httpStatus).toBe(400)
-    expect(body.token.error).toContain('invalid_scope')
+    expect(body.token.error).toBe('invalid_scope: rtp:read not granted')
   })
 
   it('reads an RTP with the probe token and returns lifecycle fields without customer PII', async () => {
@@ -131,8 +131,21 @@ describe('GET /api/internal/payat-scope-probe', () => {
   })
 
   it('rejects a malformed account before any Pay@ call is made', async () => {
-    const response = await run({ account: 'not-a-number' })
-    expect(response.status).toBe(400)
+    for (const bad of ['not-a-number', '123456789012345']) {
+      const response = await run({ account: bad })
+      expect(response.status).toBe(400)
+    }
     expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('never echoes a token that leaks through a non-2xx error body', async () => {
+    mockFetch.mockResolvedValueOnce(tokenResponse(
+      { error: 'server_error', access_token: 'leaked-through-error', trace: 'internal stack' }, 500))
+
+    const text = JSON.stringify(await (await run()).json())
+
+    expect(text).not.toContain('leaked-through-error')
+    expect(text).not.toContain('internal stack')
+    expect(text).toContain('server_error')
   })
 })
