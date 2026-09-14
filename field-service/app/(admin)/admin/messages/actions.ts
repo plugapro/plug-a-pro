@@ -14,6 +14,74 @@ const OUTBOUND_FLAG = 'admin.messages.outbound'
 
 const MAX_BROADCAST_RECIPIENTS = Number(process.env.BROADCAST_MAX_RECIPIENTS ?? '50')
 
+// ─── Shared send helpers ──────────────────────────────────────────────────────
+
+type SendableEvent = {
+  id: string
+  to: string
+  templateName: string | null
+  body: string | null
+  metadata: Prisma.JsonValue
+}
+
+function extractBodyComponents(metadata: Prisma.JsonValue): WhatsAppComponent[] {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return []
+  const components = (metadata as Record<string, unknown>).bodyComponents
+  return Array.isArray(components) ? (components as unknown as WhatsAppComponent[]) : []
+}
+
+/**
+ * Attempt the actual WhatsApp send for a QUEUED MessageEvent row and mark it
+ * SENT or FAILED. Never throws — the outcome is recorded on the row and
+ * returned to the caller.
+ *
+ * Send strategy:
+ *   1. templateName matches a registered template → sendTemplate with the
+ *      bodyComponents recorded in metadata (works outside the 24h window).
+ *   2. Otherwise, if a body exists → free-form sendText (only lands inside the
+ *      24h window; an honest FAILED row is recorded when Meta rejects it).
+ */
+async function attemptWhatsappSend(event: SendableEvent): Promise<{ sent: boolean; failureReason?: string }> {
+  try {
+    const { sendTemplate, sendText } = await import('@/lib/whatsapp')
+    const { TEMPLATES } = await import('@/lib/messaging-templates')
+
+    let externalId: string
+    if (event.templateName && event.templateName in TEMPLATES) {
+      externalId = await sendTemplate({
+        to: event.to,
+        template: event.templateName as TemplateName,
+        components: extractBodyComponents(event.metadata),
+      })
+    } else if (event.body) {
+      externalId = await sendText({
+        to: event.to,
+        text: event.body,
+        templateName: event.templateName ?? 'freeform:text',
+        // This row IS the message event — don't let sendText create a second one.
+        recordMessageEvent: false,
+      })
+    } else {
+      throw new Error('Message has no registered template or body to re-send')
+    }
+
+    await db.messageEvent.updateMany({
+      where: { id: event.id, status: 'QUEUED' },
+      data: { status: 'SENT', externalId, sentAt: new Date(), failureReason: null },
+    })
+    return { sent: true }
+  } catch (err) {
+    const failureReason = err instanceof Error ? err.message : String(err)
+    await db.messageEvent
+      .updateMany({
+        where: { id: event.id, status: 'QUEUED' },
+        data: { status: 'FAILED', failureReason: failureReason.slice(0, 1000), sentAt: new Date() },
+      })
+      .catch(() => {})
+    return { sent: false, failureReason }
+  }
+}
+
 // ─── Retry ────────────────────────────────────────────────────────────────────
 
 const RetryMessageSchema = z.object({
@@ -22,13 +90,23 @@ const RetryMessageSchema = z.object({
 
 type RetryInput = z.infer<typeof RetryMessageSchema>
 
+/**
+ * AD-01: Retry re-sends the failed message inline.
+ *
+ * The FAILED row is preserved as history (status and failureReason untouched).
+ * A NEW MessageEvent attempt row is created (metadata.retryOfId links it back)
+ * and the send is attempted immediately: the new row ends up SENT or FAILED —
+ * never a dangling QUEUED row that nothing consumes.
+ */
 export async function retryMessageAction(input: RetryInput) {
   const before = await db.messageEvent.findUnique({
     where: { id: input.messageId },
-    select: { id: true, status: true, channel: true, to: true },
+    select: { id: true, status: true, channel: true, to: true, failureReason: true },
   })
 
-  const result = await crudAction<RetryInput, { id: string }>({
+  let retryEvent: SendableEvent | null = null
+
+  const result = await crudAction<RetryInput, { id: string; retryOfId: string }>({
     entity: 'MessageEvent',
     entityId: input.messageId,
     action: 'message.retry',
@@ -40,24 +118,72 @@ export async function retryMessageAction(input: RetryInput) {
     run: async (data, tx) => {
       const message = await tx.messageEvent.findUnique({
         where: { id: data.messageId },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          status: true,
+          channel: true,
+          to: true,
+          templateName: true,
+          body: true,
+          metadata: true,
+          customerId: true,
+          bookingId: true,
+          providerId: true,
+          leadId: true,
+          isTestEvent: true,
+          cohortName: true,
+        },
       })
       if (!message) throw new CrudActionError('NOT_FOUND', `Message ${data.messageId} not found.`)
       if (message.status !== 'FAILED') {
         throw new CrudActionError('CONFLICT', `Cannot retry a ${message.status} message.`)
       }
-      await tx.messageEvent.update({
-        where: { id: data.messageId },
+      if (message.channel !== 'WHATSAPP') {
+        throw new CrudActionError('CONFLICT', `Cannot retry a ${message.channel} message — only WhatsApp retries are supported.`)
+      }
+
+      const originalMetadata =
+        message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+          ? (message.metadata as Prisma.JsonObject)
+          : {}
+
+      const attempt = await tx.messageEvent.create({
         data: {
+          customerId: message.customerId,
+          bookingId: message.bookingId,
+          providerId: message.providerId,
+          leadId: message.leadId,
+          channel: message.channel,
+          direction: 'OUTBOUND',
+          templateName: message.templateName,
+          body: message.body,
+          to: message.to,
           status: 'QUEUED',
-          failureReason: null,
+          isTestEvent: message.isTestEvent,
+          cohortName: message.cohortName,
+          metadata: {
+            ...originalMetadata,
+            retryOfId: message.id,
+            adminRetry: true,
+          } as Prisma.InputJsonValue,
         },
+        select: { id: true, to: true, templateName: true, body: true, metadata: true },
       })
-      return { id: data.messageId }
+
+      retryEvent = attempt
+      return { id: attempt.id, retryOfId: message.id }
     },
   })
+
+  // Inline send — outside the audit transaction so a slow/failed Meta call
+  // never rolls back the attempt record. The outcome lands on the new row.
+  let sendOutcome: { sent: boolean; failureReason?: string } = { sent: false, failureReason: 'Send not attempted' }
+  if (retryEvent) {
+    sendOutcome = await attemptWhatsappSend(retryEvent)
+  }
+
   revalidatePath('/admin/messages')
-  return result
+  return { ...result, sent: sendOutcome.sent, failureReason: sendOutcome.failureReason }
 }
 
 export async function retryMessageFromFormAction(formData: FormData) {
@@ -123,7 +249,12 @@ export async function sendAdminWhatsappAction(input: SendAdminWhatsappInput) {
           templateName: data.templateKey,
           to: customer.phone,
           status: 'QUEUED',
-          metadata: { adminSend: true, adminCustomerId: data.customerId } as Prisma.InputJsonValue,
+          metadata: JSON.parse(JSON.stringify({
+            adminSend: true,
+            adminCustomerId: data.customerId,
+            // Persisted so a later Retry can reconstruct the exact send.
+            bodyComponents,
+          })) as Prisma.InputJsonValue,
         },
         select: { id: true },
       })
@@ -194,6 +325,13 @@ const QueueBroadcastSchema = z.object({
 
 type QueueBroadcastInput = z.infer<typeof QueueBroadcastSchema>
 
+/**
+ * AD-01: Broadcast sends inline. Nothing consumes QUEUED rows, so leaving them
+ * queued was a silent no-op. The rows are created QUEUED inside the audited
+ * transaction, then sent in a bounded loop (MAX_BROADCAST_RECIPIENTS cap) with
+ * per-recipient error isolation — one bad number never aborts the batch, and
+ * every row ends the action as SENT or FAILED.
+ */
 export async function queueBroadcastAction(input: QueueBroadcastInput) {
   const { TEMPLATES } = await import('@/lib/messaging-templates')
   if (!(input.templateKey in TEMPLATES)) {
@@ -204,6 +342,8 @@ export async function queueBroadcastAction(input: QueueBroadcastInput) {
     input.bodyParams.length > 0
       ? [{ type: 'body', parameters: input.bodyParams.map((text) => ({ type: 'text' as const, text })) }]
       : []
+
+  let queuedEvents: SendableEvent[] = []
 
   const result = await crudAction<QueueBroadcastInput, { queued: number }>({
     entity: 'MessageEvent',
@@ -228,28 +368,42 @@ export async function queueBroadcastAction(input: QueueBroadcastInput) {
         throw new CrudActionError('CONFLICT', 'No eligible recipients found for this audience.')
       }
 
-      await tx.messageEvent.createMany({
-        data: customers.map((c) => ({
-          customerId: c.id,
-          channel: 'WHATSAPP' as const,
-          templateName: data.templateKey,
-          to: c.phone,
-          status: 'QUEUED' as const,
-          metadata: JSON.parse(JSON.stringify({
-            broadcast: true,
-            audienceType: data.audienceType,
-            bodyComponents,
-          })) as Prisma.InputJsonValue,
-        })),
-        skipDuplicates: true,
-      })
+      const created: SendableEvent[] = []
+      for (const c of customers) {
+        const event = await tx.messageEvent.create({
+          data: {
+            customerId: c.id,
+            channel: 'WHATSAPP',
+            templateName: data.templateKey,
+            to: c.phone,
+            status: 'QUEUED',
+            metadata: JSON.parse(JSON.stringify({
+              broadcast: true,
+              audienceType: data.audienceType,
+              bodyComponents,
+            })) as Prisma.InputJsonValue,
+          },
+          select: { id: true, to: true, templateName: true, body: true, metadata: true },
+        })
+        created.push(event)
+      }
 
-      return { queued: customers.length }
+      queuedEvents = created
+      return { queued: created.length }
     },
   })
 
+  // Inline bounded send loop with per-recipient error isolation.
+  let sent = 0
+  let failed = 0
+  for (const event of queuedEvents) {
+    const outcome = await attemptWhatsappSend(event)
+    if (outcome.sent) sent++
+    else failed++
+  }
+
   revalidatePath('/admin/messages')
-  return result
+  return { ...result, data: { ...result.data, sent, failed } }
 }
 
 export async function queueBroadcastFromFormAction(formData: FormData) {
