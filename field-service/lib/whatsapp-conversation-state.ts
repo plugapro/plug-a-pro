@@ -76,6 +76,7 @@ const FLOW_DATA_WHITELIST: Record<FlowName, ReadonlyArray<string>> = {
   ],
   cancel: [
     ...SHARED_KEYS,
+    'cancelTargetKind', 'cancelTargetId',
   ],
   provider_journey: [
     ...SHARED_KEYS,

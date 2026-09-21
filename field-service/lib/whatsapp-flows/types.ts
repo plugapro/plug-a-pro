@@ -182,6 +182,12 @@ export interface ConversationData {
   rescheduleBookingId?: string
   rescheduleReason?: string
 
+  // Cancel flow (CJ-05): what the pending cancel confirmation targets.
+  // 'booking' routes through cancelBookingLifecycle (refund + both-party
+  // notify); 'job_request' is the legacy pre-booking cancel.
+  cancelTargetKind?: 'booking' | 'job_request'
+  cancelTargetId?: string
+
   // Registration
   name?: string
   /**

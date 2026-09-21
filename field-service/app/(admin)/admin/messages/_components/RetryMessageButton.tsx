@@ -27,7 +27,15 @@ export function RetryMessageButton({ messageId, disabled }: RetryMessageButtonPr
       formData.set('messageId', messageId)
       const result = await retryMessageFromFormAction(formData)
       if (result && 'ok' in result && result.ok) {
-        notify.success('Message queued for retry')
+        if ('sent' in result && result.sent) {
+          notify.success('Message re-sent')
+        } else {
+          notify.userError(
+            `Retry attempted but the send failed again${
+              'failureReason' in result && result.failureReason ? `: ${result.failureReason}` : ''
+            }`,
+          )
+        }
         router.refresh()
       } else {
         notify.userError(
@@ -52,7 +60,7 @@ export function RetryMessageButton({ messageId, disabled }: RetryMessageButtonPr
         open={open}
         onOpenChange={setOpen}
         title="Retry failed message"
-        description={`This re-queues the message for delivery. Type the message ID to confirm.`}
+        description={`This re-sends the message immediately as a new delivery attempt. Type the message ID to confirm.`}
         confirmText={shortId}
         confirmLabel="Retry"
         pendingLabel="Retrying…"
