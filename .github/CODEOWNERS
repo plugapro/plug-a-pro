@@ -1,0 +1,29 @@
+# Code owners for Plug A Pro
+#
+# How this works: every PR still needs one approving review to merge (see
+# branch protection on `main`). The paths below additionally require that
+# review to come from @IamFootprint specifically — regardless of who else
+# reviews — because a mistake here has direct production/compliance/money
+# impact. Everything not listed just needs the standard one approval.
+#
+# House rules this backs (see CLAUDE.md): additive-only migrations, no hard
+# deletes without OWNER, every admin mutation through crudAction(), features
+# ship dark behind a flag.
+
+# Database schema & migrations
+field-service/prisma/schema.prisma       @IamFootprint
+field-service/prisma/migrations/         @IamFootprint
+
+# Payments — real money, real PSPs (Peach/PayFast/Pay@)
+field-service/lib/payments.ts            @IamFootprint
+
+# WhatsApp — the primary provider channel, template/policy sends
+field-service/lib/whatsapp*.ts           @IamFootprint
+
+# Auth & the admin mutation/audit gateway
+field-service/lib/auth.ts                @IamFootprint
+field-service/lib/flags.ts               @IamFootprint
+field-service/app/(admin)/**/actions.ts  @IamFootprint
+
+# CI/CD, branch protection, and this file itself
+/.github/                                @IamFootprint
