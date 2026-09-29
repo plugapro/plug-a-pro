@@ -56,6 +56,9 @@ describe('templateForStatus', () => {
     ['RETRY_REQUIRED', 'provider_verification_resume_consent'],
     ['AWAITING_DOCUMENT', 'provider_verification_resume_document'],
     ['AWAITING_SELFIE', 'provider_verification_resume_selfie'],
+    // Didit-era hosted face-match step: the remaining action is a face capture,
+    // so it reuses the approved selfie-resume copy.
+    ['AWAITING_LIVENESS', 'provider_verification_resume_selfie'],
   ])('maps %s to %s', (status, expected) => {
     expect(templateForStatus(status as never)).toBe(expected)
   })
@@ -606,5 +609,178 @@ describe('sendInFlightRenudges', () => {
     const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
     expect(result.aborted).toBe(false)
     expect(result.sent).toBe(1)
+  })
+})
+
+// ─── AWAITING_LIVENESS coverage (2026-09-29) ─────────────────────────────────
+// The cron predated the Didit vendor, so PWA applicants parked in
+// AWAITING_LIVENESS were never selected. These tests evaluate the real Prisma
+// `where` the module builds against in-memory fixture rows, so a status or
+// window regression surfaces as a selection change, not just a shape change.
+
+type FixtureRow = ReturnType<typeof verification>
+type Range = { gte?: Date; lte?: Date; gt?: Date }
+
+function matchesNullable(value: unknown, cond: unknown): boolean {
+  if (cond === null) return value === null
+  if (cond && typeof cond === 'object' && 'not' in cond) return value !== (cond as { not: unknown }).not
+  return value === cond
+}
+
+function matchesWhere(row: Record<string, unknown>, where: Record<string, unknown>, now: Date): boolean {
+  for (const [key, cond] of Object.entries(where)) {
+    if (key === 'OR') {
+      if (!(cond as Array<Record<string, unknown>>).some(arm => matchesWhere(row, arm, now))) return false
+      continue
+    }
+    if (key === 'status') {
+      if (!(cond as { in: string[] }).in.includes(row.status as string)) return false
+      continue
+    }
+    if (key === 'updatedAt' || key === 'expiresAt') {
+      const value = row[key] as Date | null
+      if (cond === null) {
+        if (value !== null) return false
+        continue
+      }
+      const range = cond as Range
+      if (value === null) return false
+      if (range.gte && value < range.gte) return false
+      if (range.lte && value > range.lte) return false
+      if (range.gt && value <= range.gt) return false
+      continue
+    }
+    if (key === 'provider') {
+      const provider = row.provider as { active: boolean } | null
+      if (!provider || provider.active !== (cond as { active: boolean }).active) return false
+      continue
+    }
+    if (!matchesNullable(row[key], cond)) return false
+  }
+  return true
+}
+
+function whereEvaluatingClient(rows: FixtureRow[], now: Date) {
+  const verificationFindMany = vi.fn(async (args: unknown) => {
+    const { where } = args as { where: Record<string, unknown> }
+    return rows.filter(r => matchesWhere(r as unknown as Record<string, unknown>, where, now))
+  })
+  const client: InFlightRenudgeClient = {
+    providerIdentityVerification: { findMany: verificationFindMany },
+    messageEvent: { findMany: vi.fn().mockResolvedValue([]) },
+  }
+  return { client, verificationFindMany }
+}
+
+function awaitingLivenessDraftRow(updatedHoursAgo: number, overrides: Record<string, unknown> = {}) {
+  return verification({
+    id: 'v-liveness',
+    providerId: null,
+    provider: null,
+    providerApplicationDraftId: 'draft-liveness',
+    providerApplicationDraft: { id: 'draft-liveness', phone: '+27820000077', name: 'Lindiwe Mokoena' },
+    status: 'AWAITING_LIVENESS',
+    identityBasis: 'SA_ID',
+    expiresAt: null,
+    updatedAt: updatedAtAgo(updatedHoursAgo),
+    ...overrides,
+  })
+}
+
+describe('AWAITING_LIVENESS in-flight selection', () => {
+  it('selects a draft-anchored AWAITING_LIVENESS row stalled 24h ago with the selfie-resume template', async () => {
+    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24)], NOW)
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      verificationId: 'v-liveness',
+      providerId: null,
+      draftId: 'draft-liveness',
+      phone: '+27820000077',
+      status: 'AWAITING_LIVENESS',
+      templateName: 'provider_verification_resume_selfie',
+      firstName: 'Lindiwe',
+      eligibleNow: true,
+    })
+  })
+
+  it('does NOT select the same row stalled 10 days ago under the default 20-28h window', async () => {
+    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24 * 10)], NOW)
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(rows).toEqual([])
+  })
+
+  it('DOES select the 10-day-old row when the window end is widened to 90 days (backlog sweep)', async () => {
+    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24 * 10)], NOW)
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW, windowEndHours: 24 * 90 })
+    expect(rows.map(r => r.verificationId)).toEqual(['v-liveness'])
+    expect(rows[0].templateName).toBe('provider_verification_resume_selfie')
+  })
+
+  it('still excludes AWAITING_LIVENESS rows whose expiresAt has passed', async () => {
+    const { client } = whereEvaluatingClient(
+      [awaitingLivenessDraftRow(24, { expiresAt: new Date(NOW.getTime() - HOUR_MS) })],
+      NOW,
+    )
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(rows).toEqual([])
+  })
+
+  it('still honours the 24h dedup and per-verification cap for AWAITING_LIVENESS rows', async () => {
+    const rowsIn = [
+      awaitingLivenessDraftRow(24, { id: 'v-dedup', providerApplicationDraftId: 'd-1', providerApplicationDraft: { id: 'd-1', phone: '+27820000081', name: 'A' } }),
+      awaitingLivenessDraftRow(24, { id: 'v-capped', providerApplicationDraftId: 'd-2', providerApplicationDraft: { id: 'd-2', phone: '+27820000082', name: 'B' } }),
+    ]
+    const client: InFlightRenudgeClient = {
+      providerIdentityVerification: {
+        findMany: vi.fn(async (args: unknown) =>
+          rowsIn.filter(r => matchesWhere(r as unknown as Record<string, unknown>, (args as { where: Record<string, unknown> }).where, NOW)),
+        ),
+      },
+      messageEvent: {
+        findMany: vi.fn().mockResolvedValue([
+          { to: '+27820000081', templateName: 'provider_verification_resume_selfie', createdAt: new Date(NOW.getTime() - 2 * HOUR_MS), status: 'SENT', metadata: { verificationId: 'v-other' } },
+          ...Array.from({ length: IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION }, (_, i) => ({
+            to: '+27820000082',
+            templateName: 'provider_verification_resume_selfie',
+            createdAt: new Date(NOW.getTime() - (48 + i * 24) * HOUR_MS),
+            status: 'SENT',
+            metadata: { verificationId: 'v-capped' },
+          })),
+        ]),
+      },
+    }
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    const byId = new Map(rows.map(r => [r.verificationId, r]))
+    expect(byId.get('v-dedup')?.eligibleNow).toBe(false)
+    expect(byId.get('v-capped')?.priorSendsForVerification).toBe(IN_FLIGHT_NUDGE_MAX_PER_VERIFICATION)
+    expect(byId.get('v-capped')?.eligibleNow).toBe(false)
+  })
+
+  it('sends AWAITING_LIVENESS candidates through the selfie adapter with a draft-anchored link', async () => {
+    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24)], NOW)
+    const d = {
+      issueLink: vi.fn().mockResolvedValue({ verificationUrl: 'https://app.example/provider/verify/tok' }),
+      recordAttempt: vi.fn().mockResolvedValue({ id: 'evt-1' }),
+      markAttemptFailed: vi.fn().mockResolvedValue(undefined),
+      sendConsentResume: vi.fn().mockResolvedValue('wamid.consent'),
+      sendDocumentResume: vi.fn().mockResolvedValue('wamid.doc'),
+      sendSelfieResume: vi.fn().mockResolvedValue('wamid.selfie'),
+    }
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(result.sent).toBe(1)
+    expect(d.issueLink).toHaveBeenCalledWith({ providerId: null, draftId: 'draft-liveness', verificationId: 'v-liveness' })
+    expect(d.recordAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27820000077',
+      templateName: 'provider_verification_resume_selfie',
+      metadata: expect.objectContaining({ status: 'AWAITING_LIVENESS', verificationId: 'v-liveness' }),
+    }))
+    expect(d.sendSelfieResume).toHaveBeenCalledWith(expect.objectContaining({
+      providerPhone: '+27820000077',
+      providerFirstName: 'Lindiwe',
+      verificationUrl: 'https://app.example/provider/verify/tok',
+    }))
+    expect(d.sendConsentResume).not.toHaveBeenCalled()
+    expect(d.sendDocumentResume).not.toHaveBeenCalled()
   })
 })

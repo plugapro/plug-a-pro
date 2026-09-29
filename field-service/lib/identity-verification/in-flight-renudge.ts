@@ -2,8 +2,15 @@
 //
 // Targets providers who started identity verification but stalled in a
 // mid-flow status (CONSENTED, AWAITING_IDENTIFIER, AWAITING_DOCUMENT,
-// AWAITING_SELFIE, RETRY_REQUIRED) ~24h ago. Different copy per status,
-// each landing back at a signed /provider/verify/{token} URL.
+// AWAITING_SELFIE, RETRY_REQUIRED, AWAITING_LIVENESS) ~24h ago. Different
+// copy per status, each landing back at a signed /provider/verify/{token} URL.
+//
+// AWAITING_LIVENESS is the Didit-era hosted face-match step. The nudge never
+// creates a vendor session: the link only mints a fresh access token. If the
+// stored liveness session has expired by the time the applicant opens the
+// link, /provider/verify/{token}/liveness redirects to /liveness/expired,
+// whose "Request new link" action calls submitVerificationForAutomation with
+// refreshExpiredLiveness — that is the only place a new session is created.
 //
 // Politeness invariants mirror kyc-drive (lib/kyc-drive/nudge.ts):
 //   - 24h MessageEvent dedup window per phone across ALL in-flight resume
@@ -58,11 +65,15 @@ const IN_FLIGHT_STATUSES: VerificationStatus[] = [
   'RETRY_REQUIRED',
   'AWAITING_DOCUMENT',
   'AWAITING_SELFIE',
+  'AWAITING_LIVENESS',
 ]
 
 // Map verification status → resume template. AWAITING_DOCUMENT + AWAITING_SELFIE
-// each get dedicated step copy. Other in-flight statuses funnel through the
-// generic "your verification is paused" consent-resume copy.
+// each get dedicated step copy. AWAITING_LIVENESS (Didit hosted face-match)
+// reuses the selfie copy ("one quick selfie left…") — the remaining step is a
+// face capture, so it fits without a new Meta template. Other in-flight
+// statuses funnel through the generic "your verification is paused"
+// consent-resume copy.
 export function templateForStatus(status: VerificationStatus): InFlightTemplateName | null {
   switch (status) {
     case 'CONSENTED':
@@ -72,6 +83,7 @@ export function templateForStatus(status: VerificationStatus): InFlightTemplateN
     case 'AWAITING_DOCUMENT':
       return 'provider_verification_resume_document'
     case 'AWAITING_SELFIE':
+    case 'AWAITING_LIVENESS':
       return 'provider_verification_resume_selfie'
     default:
       return null
