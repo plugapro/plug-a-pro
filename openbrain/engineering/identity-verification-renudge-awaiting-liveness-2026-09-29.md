@@ -171,3 +171,18 @@ Ruling: parked as a follow-up, not a merge blocker.
 
 Follow-up: give `issueProviderApplicationVerificationLink` an optional `verificationId` and, when given,
 issue the token only while that exact row is still an expired `AWAITING_LIVENESS`, in one guarded update.
+
+## Residual 2 (adjudicated 2026-09-29, not fixed in this PR)
+
+Codex P2 on `c475eaec`: because `AWAITING_LIVENESS` is anchored on `livenessSessionExpiresAt`, which the
+token write does not bump, the scheduled cron sees such a row only during the 20–28h band after session
+expiry. The 24h per-phone dedup then blocks the second attempt before the row leaves the band, so the
+scheduled cron sends one nudge per liveness stall, not the cap of two. Legacy statuses still get two,
+because issuing their token bumps `updatedAt` and re-enters the window a day later.
+
+Ruling: parked. One nudge per liveness stall is within the cap and the safer default at launch; a manual
+sweep repeated 24h later still delivers attempt two under the per-row cap. Revisit after the backlog sweep
+shows the tap-through rate.
+
+Follow-up: for `AWAITING_LIVENESS` rows whose session is dead, also admit `updatedAt` inside the window, so
+the token write re-enters the row for attempt two exactly as the legacy statuses do.
