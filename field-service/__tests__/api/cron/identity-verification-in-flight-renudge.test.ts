@@ -314,4 +314,35 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
       expectNoWritesOrSends()
     })
   })
+
+  describe('fix round 2: unknown query parameter names are rejected', () => {
+    it.each([
+      ['?dryrun=1', 'dryrun'],
+      ['?dry_run=1&windowStartHours=20&windowEndHours=2160', 'dry_run'],
+      ['?dryRun=1&foo=bar', 'foo'],
+      ['?windowstarthours=20', 'windowstarthours'],
+      ['?DryRun=1&windowEndHours=2160', 'DryRun'],
+    ])('%s returns 400 naming %s before any database read, even with the flag ON', async (query, name) => {
+      mockIsEnabled.mockResolvedValue(true)
+      const res = await GET(request(query))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ ok: false, error: `unknown query parameter: ${name}` })
+      expect(mockIsEnabled).not.toHaveBeenCalled()
+      expect(mockDb.providerIdentityVerification.findMany).not.toHaveBeenCalled()
+      expect(mockDb.messageEvent.findMany).not.toHaveBeenCalled()
+      expectNoWritesOrSends()
+    })
+
+    it('unknown names are still rejected behind the CRON_SECRET gate (401 first)', async () => {
+      const res = await GET(request('?dryrun=1', 'wrong'))
+      expect(res.status).toBe(401)
+    })
+
+    it('all three accepted names together are allowed', async () => {
+      const res = await GET(request('?dryRun=1&windowStartHours=20&windowEndHours=2160'))
+      expect(res.status).toBe(200)
+      expect((await res.json()).window).toEqual({ startHours: 20, endHours: 2160 })
+      expectNoWritesOrSends()
+    })
+  })
 })

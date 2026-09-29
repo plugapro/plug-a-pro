@@ -5,7 +5,8 @@
 // fresh signed verify URL.
 //
 // Operator overrides (only read AFTER the CRON_SECRET check passes; with none
-// of them present the route behaves exactly as the scheduled cron):
+// of them present the route behaves exactly as the scheduled cron). Unknown
+// parameter names (case-sensitive, e.g. dryrun, dry_run) are rejected with 400.
 //   ?dryRun=1|true       select candidates, send nothing, write nothing;
 //                        returns { dryRun: true, candidates, byStatus, ... }.
 //                        0|false behaves exactly like an absent parameter; any
@@ -90,6 +91,17 @@ function parseWindowOverride(
   return { ok: true, override }
 }
 
+const ALLOWED_QUERY_PARAMS = new Set(['dryRun', 'windowStartHours', 'windowEndHours'])
+
+// Fail closed: a misspelled parameter NAME (dryrun, dry_run, …) would otherwise
+// be ignored and, with the send flag ON, turn a read-only sweep into live sends.
+function findUnknownQueryParam(params: URLSearchParams): string | null {
+  for (const name of params.keys()) {
+    if (!ALLOWED_QUERY_PARAMS.has(name)) return name
+  }
+  return null
+}
+
 // Fail closed: an unrecognised dryRun value must never be read as "absent"
 // (which, with the send flag ON, would mean live sends).
 function parseDryRun(params: URLSearchParams): { ok: true; dryRun: boolean } | { ok: false; error: string } {
@@ -106,6 +118,10 @@ export async function GET(request: Request) {
   }
 
   const searchParams = new URL(request.url).searchParams
+  const unknownParam = findUnknownQueryParam(searchParams)
+  if (unknownParam !== null) {
+    return NextResponse.json({ ok: false, error: `unknown query parameter: ${unknownParam}` }, { status: 400 })
+  }
   const parsedDryRun = parseDryRun(searchParams)
   if (!parsedDryRun.ok) {
     return NextResponse.json({ ok: false, error: parsedDryRun.error }, { status: 400 })
