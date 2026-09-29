@@ -2,8 +2,26 @@
 //
 // Targets providers who started identity verification but stalled in a
 // mid-flow status (CONSENTED, AWAITING_IDENTIFIER, AWAITING_DOCUMENT,
-// AWAITING_SELFIE, RETRY_REQUIRED) ~24h ago. Different copy per status,
-// each landing back at a signed /provider/verify/{token} URL.
+// AWAITING_SELFIE, RETRY_REQUIRED, AWAITING_LIVENESS) ~24h ago. Different
+// copy per status, each landing back at a signed /provider/verify/{token} URL.
+//
+// AWAITING_LIVENESS is the Didit-era hosted face-match step, and it is only
+// nudged once its Didit session is DEAD. Issuing the resume link rotates the
+// row's single accessTokenHash, but a live Didit session's return URL was
+// built with the previous token at session creation (orchestrator.ts), and
+// the token (72h) dies long before the session (168h). Rotating the token
+// while the session is live would break the return page for anyone who then
+// finishes it. So for AWAITING_LIVENESS the window is anchored on
+// livenessSessionExpiresAt (not updatedAt), and a null
+// livenessSessionExpiresAt is never a candidate — we cannot prove the session
+// is dead. With the default 20-28h window a stall is nudged ~1 day after its
+// session expires; the link lands on /provider/verify/{token}/liveness →
+// /liveness/expired, whose "Request new link" action calls
+// submitVerificationForAutomation with refreshExpiredLiveness — the only
+// place a new vendor session is created. The nudge itself never creates one.
+// Because the applicant can refresh the session between selection and send,
+// sendInFlightRenudges re-reads each AWAITING_LIVENESS row immediately before
+// issuing its link and skips it unless the session is still expired.
 //
 // Politeness invariants mirror kyc-drive (lib/kyc-drive/nudge.ts):
 //   - 24h MessageEvent dedup window per phone across ALL in-flight resume
@@ -52,7 +70,8 @@ export function resolveBatchCap(raw: string | undefined): number {
   return resolveBatchCapShared(raw, DEFAULT_IN_FLIGHT_BATCH_CAP)
 }
 
-const IN_FLIGHT_STATUSES: VerificationStatus[] = [
+// Pre-Didit PWA steps: stall window anchored on updatedAt.
+const UPDATED_AT_ANCHORED_STATUSES: VerificationStatus[] = [
   'CONSENTED',
   'AWAITING_IDENTIFIER',
   'RETRY_REQUIRED',
@@ -60,9 +79,23 @@ const IN_FLIGHT_STATUSES: VerificationStatus[] = [
   'AWAITING_SELFIE',
 ]
 
+// Didit hosted face-match: stall window anchored on livenessSessionExpiresAt
+// so a live session's callback token is never rotated (see header).
+const LIVENESS_SESSION_ANCHORED_STATUS: VerificationStatus = 'AWAITING_LIVENESS'
+
+// Every status this cron can nudge. Callers (e.g. the cron route's ?status=
+// override) validate against this list.
+export const IN_FLIGHT_STATUSES: readonly VerificationStatus[] = [
+  ...UPDATED_AT_ANCHORED_STATUSES,
+  LIVENESS_SESSION_ANCHORED_STATUS,
+]
+
 // Map verification status → resume template. AWAITING_DOCUMENT + AWAITING_SELFIE
-// each get dedicated step copy. Other in-flight statuses funnel through the
-// generic "your verification is paused" consent-resume copy.
+// each get dedicated step copy. AWAITING_LIVENESS (Didit hosted face-match)
+// reuses the selfie copy ("one quick selfie left…") — the remaining step is a
+// face capture, so it fits without a new Meta template. Other in-flight
+// statuses funnel through the generic "your verification is paused"
+// consent-resume copy.
 export function templateForStatus(status: VerificationStatus): InFlightTemplateName | null {
   switch (status) {
     case 'CONSENTED':
@@ -72,6 +105,7 @@ export function templateForStatus(status: VerificationStatus): InFlightTemplateN
     case 'AWAITING_DOCUMENT':
       return 'provider_verification_resume_document'
     case 'AWAITING_SELFIE':
+    case 'AWAITING_LIVENESS':
       return 'provider_verification_resume_selfie'
     default:
       return null
@@ -128,6 +162,23 @@ export type InFlightRenudgeClient = {
   }
 }
 
+// The send path also re-reads AWAITING_LIVENESS rows right before token
+// issuance (see sendInFlightRenudges), so it needs findUnique.
+export type InFlightRenudgeSendClient = InFlightRenudgeClient & {
+  providerIdentityVerification: {
+    findUnique(args: unknown): Promise<unknown>
+  }
+}
+
+export type InFlightRenudgeSelectionOptions = {
+  now?: Date
+  windowStartHours?: number
+  windowEndHours?: number
+  // Narrows selection to these statuses (both status groups). Omitted = every
+  // in-flight status, exactly as the scheduled cron has always selected.
+  statuses?: VerificationStatus[]
+}
+
 function firstNameFrom(firstName: string | null, name: string | null): string {
   const candidate = firstName?.trim() || name?.trim().split(/\s+/)[0] || ''
   return candidate || 'there'
@@ -135,22 +186,48 @@ function firstNameFrom(firstName: string | null, name: string | null): string {
 
 export async function listInFlightRenudgeCandidates(
   client: InFlightRenudgeClient,
-  opts: { now?: Date; windowStartHours?: number; windowEndHours?: number } = {},
+  opts: InFlightRenudgeSelectionOptions = {},
 ): Promise<InFlightRenudgeCandidate[]> {
   const now = opts.now ?? new Date()
   const windowStart = opts.windowStartHours ?? IN_FLIGHT_NUDGE_WINDOW_START_HOURS
   const windowEnd = opts.windowEndHours ?? IN_FLIGHT_NUDGE_WINDOW_END_HOURS
   const HOUR_MS = 60 * 60 * 1000
-  const updatedAtFrom = new Date(now.getTime() - windowEnd * HOUR_MS)
-  const updatedAtTo = new Date(now.getTime() - windowStart * HOUR_MS)
+  const windowFrom = new Date(now.getTime() - windowEnd * HOUR_MS)
+  const windowTo = new Date(now.getTime() - windowStart * HOUR_MS)
+
+  // Optional status narrowing. With no `statuses` both groups are exactly the
+  // unfiltered ones, so the scheduled query is unchanged.
+  const updatedAtStatuses = opts.statuses
+    ? UPDATED_AT_ANCHORED_STATUSES.filter(s => opts.statuses!.includes(s))
+    : UPDATED_AT_ANCHORED_STATUSES
+  const includeLiveness = opts.statuses ? opts.statuses.includes(LIVENESS_SESSION_ANCHORED_STATUS) : true
+  const statusGroups: Array<Record<string, unknown>> = []
+  if (updatedAtStatuses.length > 0) {
+    statusGroups.push({
+      status: { in: updatedAtStatuses },
+      updatedAt: { gte: windowFrom, lte: windowTo },
+    })
+  }
+  if (includeLiveness) {
+    statusGroups.push({
+      status: LIVENESS_SESSION_ANCHORED_STATUS,
+      livenessSessionExpiresAt: { not: null, gte: windowFrom, lte: windowTo },
+    })
+  }
+  if (statusGroups.length === 0) return []
 
   // Fix D: include draft-anchored (PWA gate-ON) verifications that have no
   // Provider row yet. These applicants also need re-nudging if they stall mid-flow.
   // The OR allows rows where either providerId OR providerApplicationDraftId is set.
+  //
+  // Status/time selection is an OR of two status groups (inside AND so it can
+  // sit beside the anchoring OR):
+  //   - pre-Didit steps: updatedAt inside the window (unchanged);
+  //   - AWAITING_LIVENESS: the Didit session expired inside the window
+  //     (null expiry never matches — see header).
   const rows = (await client.providerIdentityVerification.findMany({
     where: {
-      status: { in: IN_FLIGHT_STATUSES },
-      updatedAt: { gte: updatedAtFrom, lte: updatedAtTo },
+      AND: [{ OR: statusGroups }],
       OR: [
         {
           providerId: { not: null },
@@ -315,19 +392,21 @@ export type SendInFlightRenudgesDeps = {
 }
 
 export async function sendInFlightRenudges(
-  client: InFlightRenudgeClient,
+  client: InFlightRenudgeSendClient,
   opts: {
     batchCap: number
     deps: SendInFlightRenudgesDeps
     now?: Date
     windowStartHours?: number
     windowEndHours?: number
+    statuses?: VerificationStatus[]
   },
 ): Promise<{ rows: InFlightRenudgeCandidate[]; sent: number; skipped: number; errors: number; aborted: boolean }> {
   const rows = await listInFlightRenudgeCandidates(client, {
     now: opts.now,
     windowStartHours: opts.windowStartHours,
     windowEndHours: opts.windowEndHours,
+    statuses: opts.statuses,
   })
   const eligible = rows.filter(r => r.eligibleNow)
   const batch = eligible.slice(0, Math.max(0, opts.batchCap))
@@ -348,6 +427,31 @@ export async function sendInFlightRenudges(
     }
     let attemptEventId: string | null = null
     try {
+      // Liveness race guard: selection proved the Didit session was dead, but
+      // the applicant may have refreshed it since. Issuing a link rotates the
+      // row's only access token, which would break a LIVE session's return URL
+      // — so re-read the row right before issuance and skip (not an error, no
+      // MessageEvent) unless it is still AWAITING_LIVENESS with an expired session.
+      if (candidate.status === LIVENESS_SESSION_ANCHORED_STATUS) {
+        const fresh = (await client.providerIdentityVerification.findUnique({
+          where: { id: candidate.verificationId },
+          select: { status: true, livenessSessionExpiresAt: true },
+        })) as { status: VerificationStatus; livenessSessionExpiresAt: Date | null } | null
+        const recheckNow = opts.now ?? new Date()
+        const stillDead =
+          fresh?.status === LIVENESS_SESSION_ANCHORED_STATUS &&
+          fresh.livenessSessionExpiresAt !== null &&
+          fresh.livenessSessionExpiresAt <= recheckNow
+        if (!stillDead) {
+          skipped += 1
+          console.log('[identity-verification-in-flight-renudge] liveness recheck failed — skipping', {
+            verificationId: candidate.verificationId,
+            status: fresh?.status ?? null,
+            livenessSessionExpiresAt: fresh?.livenessSessionExpiresAt ?? null,
+          })
+          continue
+        }
+      }
       const { verificationUrl } = await opts.deps.issueLink({
         providerId: candidate.providerId,
         draftId: candidate.draftId,
