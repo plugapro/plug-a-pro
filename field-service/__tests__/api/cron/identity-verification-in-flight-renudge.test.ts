@@ -170,13 +170,14 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
 
   it('dryRun honours the window override for the backlog sweep', async () => {
     const before = Date.now()
-    const res = await GET(request('?dryRun=1&windowStartHours=0&windowEndHours=2160'))
+    const res = await GET(request('?dryRun=1&windowStartHours=20&windowEndHours=2160'))
+    expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.window).toEqual({ startHours: 0, endHours: 2160 })
+    expect(body.window).toEqual({ startHours: 20, endHours: 2160 })
     const where = verificationWhere()
     const spanHours = (where.updatedAt.lte.getTime() - where.updatedAt.gte.getTime()) / HOUR_MS
-    expect(spanHours).toBe(2160)
-    expect(where.updatedAt.lte.getTime()).toBeGreaterThanOrEqual(before)
+    expect(spanHours).toBe(2160 - 20)
+    expect(where.updatedAt.lte.getTime()).toBeLessThanOrEqual(before - 20 * HOUR_MS + 1000)
     expectNoWritesOrSends()
   })
 
@@ -195,6 +196,8 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
     ['?windowStartHours=1.5'],
     ['?windowStartHours=48&windowEndHours=24'],
     ['?windowStartHours=30'],
+    ['?windowStartHours=0&windowEndHours=2160'],
+    ['?windowStartHours=19&windowEndHours=2160'],
   ])('rejects invalid window override %s with 400 and touches nothing', async (query) => {
     const res = await GET(request(query))
     expect(res.status).toBe(400)
@@ -232,11 +235,83 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
 
   it('flag ON + window override (no dryRun): sends using the overridden window', async () => {
     mockIsEnabled.mockResolvedValue(true)
-    const res = await GET(request('?windowStartHours=0&windowEndHours=2160'))
+    const res = await GET(request('?windowStartHours=20&windowEndHours=2160'))
     const body = await res.json()
-    expect(body).toMatchObject({ mode: 'auto_nudge', window: { startHours: 0, endHours: 2160 } })
+    expect(body).toMatchObject({ mode: 'auto_nudge', window: { startHours: 20, endHours: 2160 } })
     const where = verificationWhere()
-    expect((where.updatedAt.lte.getTime() - where.updatedAt.gte.getTime()) / HOUR_MS).toBe(2160)
+    expect((where.updatedAt.lte.getTime() - where.updatedAt.gte.getTime()) / HOUR_MS).toBe(2160 - 20)
     expect(mockLogOutbound).toHaveBeenCalled()
+  })
+
+  describe('fix round 1: fail-closed dryRun and minimum windowStartHours', () => {
+    it.each(['True', 'yes', 'tru', 'TRUE', '', '2'])(
+      'dryRun=%j returns 400 before any database read and never sends, even with the flag ON',
+      async (value) => {
+        mockIsEnabled.mockResolvedValue(true)
+        const res = await GET(request(`?dryRun=${value}`))
+        expect(res.status).toBe(400)
+        expect(await res.json()).toEqual({ ok: false, error: 'dryRun must be 1, true, 0 or false' })
+        expect(mockIsEnabled).not.toHaveBeenCalled()
+        expect(mockDb.providerIdentityVerification.findMany).not.toHaveBeenCalled()
+        expect(mockDb.messageEvent.findMany).not.toHaveBeenCalled()
+        expectNoWritesOrSends()
+      },
+    )
+
+    it.each(['0', 'false'])('dryRun=%s proceeds exactly like no parameter (flag OFF: report_only)', async (value) => {
+      const baseline = await (await GET(request())).json()
+      const baselineArgs = mockDb.providerIdentityVerification.findMany.mock.calls[0][0]
+      vi.clearAllMocks()
+      const res = await GET(request(`?dryRun=${value}`))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(Object.keys(body)).toEqual(Object.keys(baseline))
+      expect({ ...body, durationMs: 0 }).toEqual({ ...baseline, durationMs: 0 })
+      const args = mockDb.providerIdentityVerification.findMany.mock.calls[0][0] as {
+        where: { updatedAt: { gte: Date; lte: Date } }
+      }
+      const base = baselineArgs as typeof args
+      expect(args.where.updatedAt.lte.getTime() - args.where.updatedAt.gte.getTime())
+        .toBe(base.where.updatedAt.lte.getTime() - base.where.updatedAt.gte.getTime())
+      expectNoWritesOrSends()
+    })
+
+    it.each(['0', 'false'])('dryRun=%s with the flag ON sends exactly like no parameter (auto_nudge)', async (value) => {
+      mockIsEnabled.mockResolvedValue(true)
+      const res = await GET(request(`?dryRun=${value}`))
+      const body = await res.json()
+      expect(Object.keys(body)).toEqual([
+        'ok', 'mode', 'durationMs', 'sent', 'skipped', 'errors', 'aborted', 'candidates', 'eligibleNow', 'exhausted',
+      ])
+      expect(body).toMatchObject({ mode: 'auto_nudge', sent: 2 })
+    })
+
+    it.each([
+      ['?windowStartHours=0&windowEndHours=2160'],
+      ['?windowStartHours=0'],
+      ['?dryRun=1&windowStartHours=0&windowEndHours=2160'],
+    ])('%s returns 400 "at least 20" with no library call', async (query) => {
+      const res = await GET(request(query))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ ok: false, error: 'windowStartHours must be at least 20' })
+      expect(mockDb.providerIdentityVerification.findMany).not.toHaveBeenCalled()
+      expectNoWritesOrSends()
+    })
+
+    it('windowStartHours=19 returns 400', async () => {
+      const res = await GET(request('?windowStartHours=19&windowEndHours=2160'))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ ok: false, error: 'windowStartHours must be at least 20' })
+      expect(mockDb.providerIdentityVerification.findMany).not.toHaveBeenCalled()
+    })
+
+    it('windowStartHours=20&windowEndHours=2160 is accepted with window {20, 2160}', async () => {
+      const res = await GET(request('?dryRun=1&windowStartHours=20&windowEndHours=2160'))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.window).toEqual({ startHours: 20, endHours: 2160 })
+      expect(mockDb.providerIdentityVerification.findMany).toHaveBeenCalledTimes(1)
+      expectNoWritesOrSends()
+    })
   })
 })

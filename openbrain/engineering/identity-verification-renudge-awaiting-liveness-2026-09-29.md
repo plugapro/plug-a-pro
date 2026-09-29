@@ -26,12 +26,17 @@ resume message. Production had 50 such rows: PWA channel, draft-anchored (`provi
    "one quick selfie left to complete your Plug A Pro identity verification", which fits Didit's
    face-match step. The template is already APPROVED at Meta, so no new template was needed.
 3. The cron route has two new query-param overrides. They are read only after the `CRON_SECRET` check passes:
-   - `?dryRun=1`: selects candidates and does nothing else. It issues no links, writes no MessageEvents and sends
-     nothing, whatever the flag state. It returns
+   - `?dryRun=1` (or `true`): selects candidates and does nothing else. It issues no links, writes no MessageEvents
+     and sends nothing, whatever the flag state. It returns
      `{ ok, mode: 'dry_run', dryRun: true, window, candidates, eligibleNow, exhausted, byStatus, eligibleByStatus }`.
+     `dryRun=0` and `dryRun=false` behave exactly like an absent parameter. Any other value (`True`, `yes`, `tru`,
+     empty) returns 400 `dryRun must be 1, true, 0 or false` before any database read. This fails closed, so a typo
+     can never fall through into live sends.
    - `?windowStartHours=N&windowEndHours=N`: both must be non-negative integers, and start must be less than end
-     (otherwise the route returns 400). `windowEndHours` is capped at `24*120` (120 days). The override applies
-     in report-only mode, in send mode, and in a dry run.
+     (otherwise the route returns 400). `windowStartHours` below 20 (the default lower bound) is rejected with 400
+     `windowStartHours must be at least 20`, not clamped, so a sweep never reaches applicants who are still
+     mid-flow. `windowEndHours` is capped at `24*120` (120 days). The override applies in report-only mode, in
+     send mode, and in a dry run.
    - With no params, the route makes the same library calls with the same arguments and returns the same
      response keys as before. A test checks this, and the default-path tests also pass against the old route.
 4. Caps, dedup and expiry are unchanged: the 24h per-phone dedup, 2 sends per verification, 6 per phone,
@@ -55,8 +60,9 @@ resume message. Production had 50 such rows: PWA channel, draft-anchored (`provi
 
 The feature flag `provider.identity.verification.in_flight_renudge` must be ON for sends. Steps for the sweep:
 
-1. `GET /api/cron/identity-verification-in-flight-renudge?dryRun=1&windowStartHours=0&windowEndHours=2160`
-   with the cron bearer. Check that `byStatus.AWAITING_LIVENESS` ≈ 50.
+1. `GET /api/cron/identity-verification-in-flight-renudge?dryRun=1&windowStartHours=20&windowEndHours=2160`
+   with the cron bearer. Check that `byStatus.AWAITING_LIVENESS` ≈ 50. Every backlog row is weeks old, so the
+   20h lower bound loses nothing.
 2. After the owner approves, run the same URL without `dryRun`. The batch cap
    (`IDENTITY_RENUDGE_BATCH_CAP`, default 100) and all politeness caps still apply.
 
@@ -68,3 +74,15 @@ The feature flag `provider.identity.verification.in_flight_renudge` must be ON f
   against the old library.
 - `pnpm lint` is clean. `tsc --noEmit` reports no errors in the touched files.
 - No messages sent, no flags flipped, no production queries.
+
+## 2026-09-29 fix round 1 (Codex review on PR #210)
+
+1. **`dryRun` now fails closed.** Before, `isDryRun` treated any value other than `1` or `true` as absent. With
+   the send flag ON, `dryRun=True` or `dryRun=yes` would have sent live messages. Now only `1`, `true`, `0` and
+   `false` are accepted; anything else returns 400 before any database read.
+2. **`windowStartHours` has a floor of 20.** A value of 0 would have selected applicants who updated seconds ago
+   and are still mid-flow. Anything below 20 now returns 400, and the documented sweep uses
+   `windowStartHours=20`.
+3. Route tests cover each case: bad `dryRun` values, `dryRun=0`/`false` matching no parameter (flag OFF and ON),
+   `windowStartHours` of 0 and 19 rejected, and `20` with `2160` accepted.
+

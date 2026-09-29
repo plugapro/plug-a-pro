@@ -6,14 +6,21 @@
 //
 // Operator overrides (only read AFTER the CRON_SECRET check passes; with none
 // of them present the route behaves exactly as the scheduled cron):
-//   ?dryRun=1            select candidates, send nothing, write nothing;
-//                        returns { dryRun: true, candidates, byStatus, ... }
-//   ?windowStartHours=N  integer hours; replaces the default 20h lower bound
+//   ?dryRun=1|true       select candidates, send nothing, write nothing;
+//                        returns { dryRun: true, candidates, byStatus, ... }.
+//                        0|false behaves exactly like an absent parameter; any
+//                        other value is rejected with 400 (fail closed — a
+//                        typo must never fall through into live sends).
+//   ?windowStartHours=N  integer hours >= 20 (the default lower bound); lower
+//                        values are rejected with 400 so a sweep can never
+//                        reach applicants who are still mid-flow
 //   ?windowEndHours=N    integer hours; replaces the default 28h upper bound,
 //                        capped at WINDOW_END_HOURS_MAX (120 days) so a typo
 //                        cannot sweep years of rows
 // Used for a deliberate one-off backlog sweep (e.g. the AWAITING_LIVENESS
-// cohort the cron never covered). Politeness caps are unchanged by overrides.
+// cohort the cron never covered):
+//   ?dryRun=1&windowStartHours=20&windowEndHours=2160
+// Politeness caps are unchanged by overrides.
 //
 // Report-only unless provider.identity.verification.in_flight_renudge is ON.
 // Politeness invariants are enforced by lib/identity-verification/in-flight-renudge.ts
@@ -65,7 +72,13 @@ function parseWindowOverride(
   const override: WindowOverride = {}
   if (rawStart !== null) {
     if (!/^\d+$/.test(rawStart)) return { ok: false, error: 'windowStartHours must be a non-negative integer' }
-    override.windowStartHours = Number.parseInt(rawStart, 10)
+    const start = Number.parseInt(rawStart, 10)
+    // Rows younger than the default lower bound may be mid-flow right now;
+    // never nudge them. Reject rather than clamp so the operator sees it.
+    if (start < IN_FLIGHT_NUDGE_WINDOW_START_HOURS) {
+      return { ok: false, error: `windowStartHours must be at least ${IN_FLIGHT_NUDGE_WINDOW_START_HOURS}` }
+    }
+    override.windowStartHours = start
   }
   if (rawEnd !== null) {
     if (!/^\d+$/.test(rawEnd)) return { ok: false, error: 'windowEndHours must be a non-negative integer' }
@@ -77,9 +90,13 @@ function parseWindowOverride(
   return { ok: true, override }
 }
 
-function isDryRun(params: URLSearchParams): boolean {
+// Fail closed: an unrecognised dryRun value must never be read as "absent"
+// (which, with the send flag ON, would mean live sends).
+function parseDryRun(params: URLSearchParams): { ok: true; dryRun: boolean } | { ok: false; error: string } {
   const raw = params.get('dryRun')
-  return raw === '1' || raw === 'true'
+  if (raw === null || raw === '0' || raw === 'false') return { ok: true, dryRun: false }
+  if (raw === '1' || raw === 'true') return { ok: true, dryRun: true }
+  return { ok: false, error: 'dryRun must be 1, true, 0 or false' }
 }
 
 export async function GET(request: Request) {
@@ -89,6 +106,11 @@ export async function GET(request: Request) {
   }
 
   const searchParams = new URL(request.url).searchParams
+  const parsedDryRun = parseDryRun(searchParams)
+  if (!parsedDryRun.ok) {
+    return NextResponse.json({ ok: false, error: parsedDryRun.error }, { status: 400 })
+  }
+  const dryRun = parsedDryRun.dryRun
   const parsedWindow = parseWindowOverride(searchParams)
   if (!parsedWindow.ok) {
     return NextResponse.json({ ok: false, error: parsedWindow.error }, { status: 400 })
@@ -99,7 +121,6 @@ export async function GET(request: Request) {
     startHours: windowOverride.windowStartHours ?? IN_FLIGHT_NUDGE_WINDOW_START_HOURS,
     endHours: windowOverride.windowEndHours ?? IN_FLIGHT_NUDGE_WINDOW_END_HOURS,
   }
-  const dryRun = isDryRun(searchParams)
 
   const cronStart = Date.now()
   const cronName = 'identity-verification-in-flight-renudge'
