@@ -154,3 +154,20 @@ duplicated parameter could turn a sweep meant to be read-only into live sends.
      counted as skipped, not as an error, and writes no MessageEvent.
    - Rows in other statuses are not rechecked.
 
+
+## Residual (adjudicated 2026-09-29, not fixed in this PR)
+
+Codex P2 on `e33d53e2`: `issueProviderApplicationVerificationLink` ignores the candidate `verificationId`
+and re-selects the newest non-terminal row for the draft, so the pre-send recheck guards the candidate row
+while the token rotation may land on a different row if the draft has a newer open verification, or on a
+row refreshed in the milliseconds between recheck and issuance.
+
+Ruling: parked as a follow-up, not a merge blocker.
+- Pre-existing behaviour of the draft link helper, unchanged by this PR.
+- Zero exposure in production data on 2026-09-29: 0 of 72 draft-anchored `AWAITING_LIVENESS` rows share a
+  draft with another open verification.
+- Bounded harm: at worst a broken browser return page after liveness; the vendor webhook still lands the
+  verdict. Sends stay capped at 2 per row and 6 per phone.
+
+Follow-up: give `issueProviderApplicationVerificationLink` an optional `verificationId` and, when given,
+issue the token only while that exact row is still an expired `AWAITING_LIVENESS`, in one guarded update.
