@@ -7,6 +7,7 @@
 // Operator overrides (only read AFTER the CRON_SECRET check passes; with none
 // of them present the route behaves exactly as the scheduled cron). Unknown
 // parameter names (case-sensitive, e.g. dryrun, dry_run) are rejected with 400.
+// A repeated parameter name (e.g. dryRun=0&dryRun=1) is rejected with 400.
 //   ?dryRun=1|true       select candidates, send nothing, write nothing;
 //                        returns { dryRun: true, candidates, byStatus, ... }.
 //                        0|false behaves exactly like an absent parameter; any
@@ -93,11 +94,15 @@ function parseWindowOverride(
 
 const ALLOWED_QUERY_PARAMS = new Set(['dryRun', 'windowStartHours', 'windowEndHours'])
 
-// Fail closed: a misspelled parameter NAME (dryrun, dry_run, …) would otherwise
-// be ignored and, with the send flag ON, turn a read-only sweep into live sends.
-function findUnknownQueryParam(params: URLSearchParams): string | null {
+// Fail closed, in one pre-parse pass:
+// - a misspelled parameter NAME (dryrun, dry_run, …) would otherwise be
+//   ignored and, with the send flag ON, turn a read-only sweep into live sends;
+// - a REPEATED name is ambiguous — URLSearchParams.get() reads only the first
+//   value, so dryRun=0&dryRun=1 would silently run live.
+function validateQueryParamNames(params: URLSearchParams): string | null {
   for (const name of params.keys()) {
-    if (!ALLOWED_QUERY_PARAMS.has(name)) return name
+    if (!ALLOWED_QUERY_PARAMS.has(name)) return `unknown query parameter: ${name}`
+    if (params.getAll(name).length > 1) return `duplicate query parameter: ${name}`
   }
   return null
 }
@@ -118,9 +123,9 @@ export async function GET(request: Request) {
   }
 
   const searchParams = new URL(request.url).searchParams
-  const unknownParam = findUnknownQueryParam(searchParams)
-  if (unknownParam !== null) {
-    return NextResponse.json({ ok: false, error: `unknown query parameter: ${unknownParam}` }, { status: 400 })
+  const paramNameError = validateQueryParamNames(searchParams)
+  if (paramNameError !== null) {
+    return NextResponse.json({ ok: false, error: paramNameError }, { status: 400 })
   }
   const parsedDryRun = parseDryRun(searchParams)
   if (!parsedDryRun.ok) {

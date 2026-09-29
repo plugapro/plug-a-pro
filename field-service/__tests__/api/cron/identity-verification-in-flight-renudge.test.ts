@@ -345,4 +345,22 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
       expectNoWritesOrSends()
     })
   })
+
+  describe('fix round 3: duplicate query parameter names are rejected', () => {
+    it.each([
+      ['?dryRun=0&dryRun=1&windowEndHours=2160', 'dryRun'],
+      ['?dryRun=1&dryRun=1', 'dryRun'],
+      ['?windowStartHours=20&windowStartHours=30&windowEndHours=2160', 'windowStartHours'],
+      ['?dryRun=1&windowEndHours=2160&windowEndHours=48', 'windowEndHours'],
+    ])('%s returns 400 naming %s before any database read, even with the flag ON', async (query, name) => {
+      mockIsEnabled.mockResolvedValue(true)
+      const res = await GET(request(query))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ ok: false, error: `duplicate query parameter: ${name}` })
+      expect(mockIsEnabled).not.toHaveBeenCalled()
+      expect(mockDb.providerIdentityVerification.findMany).not.toHaveBeenCalled()
+      expect(mockDb.messageEvent.findMany).not.toHaveBeenCalled()
+      expectNoWritesOrSends()
+    })
+  })
 })
