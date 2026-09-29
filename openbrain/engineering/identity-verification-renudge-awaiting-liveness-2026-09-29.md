@@ -21,7 +21,10 @@ resume message. Production had 50 such rows: PWA channel, draft-anchored (`provi
 
 ## Fix applied
 
-1. `AWAITING_LIVENESS` added to `IN_FLIGHT_STATUSES`.
+1. `AWAITING_LIVENESS` is now an in-flight status, but its stall window is anchored on the Didit session
+   expiry (`livenessSessionExpiresAt`), not on `updatedAt`. It is a separate status group in the selection
+   `where`; the pre-Didit statuses keep `updatedAt` anchoring unchanged. See "Why a live Didit session is
+   never nudged" below.
 2. `templateForStatus('AWAITING_LIVENESS')` returns `provider_verification_resume_selfie`. Its body is
    "one quick selfie left to complete your Plug A Pro identity verification", which fits Didit's
    face-match step. The template is already APPROVED at Meta, so no new template was needed.
@@ -42,6 +45,25 @@ resume message. Production had 50 such rows: PWA channel, draft-anchored (`provi
 4. Caps, dedup and expiry are unchanged: the 24h per-phone dedup, 2 sends per verification, 6 per phone,
    and `expiresAt` exclusion.
 
+## Why a live Didit session is never nudged
+
+The Didit return URL is built with the row's access token when the session is created
+(`orchestrator.ts:163-178`). The row stores only one `accessTokenHash`. The token lives 72h and the Didit
+session 168h; in production, all 72 draft-anchored `AWAITING_LIVENESS` rows have the token expiring before
+the session. Issuing a resume link mints a new token and overwrites the hash. If that happened while the
+session was still live, the return page would break for anyone who then finished the session.
+
+So an `AWAITING_LIVENESS` row is a candidate only when all three hold:
+
+- `livenessSessionExpiresAt` is not null;
+- `livenessSessionExpiresAt <= now - windowStart`;
+- `livenessSessionExpiresAt >= now - windowEnd`.
+
+A null `livenessSessionExpiresAt` is never a candidate, because nothing proves the session is dead. With the
+default 20-28h window, a new liveness stall is nudged about one day after its session expires. The link then
+lands on the expired page, where "Request new link" mints a fresh session. All downstream rules (selfie
+template, `expiresAt` exclusion, 24h dedup, per-row and per-phone caps, provider/draft anchoring) are unchanged.
+
 ## Why sending the nudge does not create a Didit session
 
 - The draft-anchored link comes from `issueProviderApplicationVerificationLink`. It reuses the existing
@@ -61,8 +83,9 @@ resume message. Production had 50 such rows: PWA channel, draft-anchored (`provi
 The feature flag `provider.identity.verification.in_flight_renudge` must be ON for sends. Steps for the sweep:
 
 1. `GET /api/cron/identity-verification-in-flight-renudge?dryRun=1&windowStartHours=20&windowEndHours=2160`
-   with the cron bearer. Check that `byStatus.AWAITING_LIVENESS` ≈ 50. Every backlog row is weeks old, so the
-   20h lower bound loses nothing.
+   with the cron bearer. For `AWAITING_LIVENESS`, this selects rows whose Didit session expired within the last
+   90 days (and at least 20h ago). Check that `byStatus.AWAITING_LIVENESS` ≈ 50 (the number of backlog rows
+   with a non-null, already-expired session). Every backlog row is weeks old, so the 20h lower bound loses nothing.
 2. After the owner approves, run the same URL without `dryRun`. The batch cap
    (`IDENTITY_RENUDGE_BATCH_CAP`, default 100) and all politeness caps still apply.
 
@@ -85,4 +108,26 @@ The feature flag `provider.identity.verification.in_flight_renudge` must be ON f
    `windowStartHours=20`.
 3. Route tests cover each case: bad `dryRun` values, `dryRun=0`/`false` matching no parameter (flag OFF and ON),
    `windowStartHours` of 0 and 19 rejected, and `20` with `2160` accepted.
+
+## 2026-09-29 fix rounds 2-3 (Codex review on PR #210)
+
+The route accepts only the query parameter names `dryRun`, `windowStartHours` and `windowEndHours`
+(case-sensitive). An unknown name (`dryrun`, `dry_run`, …) or a repeated name (`dryRun=0&dryRun=1`) returns
+400 right after the `CRON_SECRET` check and before any database read. Without this, a misspelled or
+duplicated parameter could turn a sweep meant to be read-only into live sends.
+
+## 2026-09-29 fix round 4 (Codex review on PR #210, design change)
+
+1. **Problem.** With `AWAITING_LIVENESS` anchored on `updatedAt`, the default 20-28h window nudged rows whose
+   Didit session was still live. The nudge rotated the single access token, which broke the session's return
+   URL.
+2. **Fix.** Selection is now an OR of two status groups, placed inside `AND` beside the existing
+   provider/draft anchoring OR:
+   - the pre-Didit statuses, on `updatedAt` (unchanged);
+   - `AWAITING_LIVENESS`, on `livenessSessionExpiresAt` (not null and inside the window).
+3. **Tests.** A live session with `updatedAt` 24h ago is not selected. A session that expired 24h ago
+   (`updatedAt` 8 days ago) is selected with the selfie template. A session that expired 60 days ago is
+   selected only with `windowEndHours=24*90`. A null session expiry is never selected, in any window. An
+   `AWAITING_SELFIE` row with `updatedAt` 24h ago is still selected as before. Against the pre-round-4 library,
+   9 of the updated tests fail.
 

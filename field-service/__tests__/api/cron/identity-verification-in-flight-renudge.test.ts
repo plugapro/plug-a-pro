@@ -74,7 +74,9 @@ function livenessDraftRow(id: string, phone: string) {
     providerApplicationDraft: { id: `draft-${id}`, phone, name: 'Sipho Dlamini' },
     status: 'AWAITING_LIVENESS',
     identityBasis: 'SA_ID',
-    updatedAt: new Date(Date.now() - 24 * HOUR_MS),
+    updatedAt: new Date(Date.now() - 8 * 24 * HOUR_MS),
+    // Didit session died 24h ago — the only kind of liveness row selectable.
+    livenessSessionExpiresAt: new Date(Date.now() - 24 * HOUR_MS),
     expiresAt: null,
   }
 }
@@ -93,10 +95,20 @@ function selfieProviderRow(id: string, phone: string) {
   }
 }
 
-function verificationWhere() {
-  return (mockDb.providerIdentityVerification.findMany.mock.calls[0][0] as {
-    where: { updatedAt: { gte: Date; lte: Date } }
-  }).where
+type WindowRange = { gte: Date; lte: Date }
+type SelectionWhere = {
+  AND: Array<{ OR: [{ updatedAt: WindowRange }, { livenessSessionExpiresAt: WindowRange }] }>
+}
+
+// Returns the time window the library queried. The two status groups
+// (pre-Didit on updatedAt, AWAITING_LIVENESS on livenessSessionExpiresAt)
+// must always share one window; assert that here so every caller checks it.
+function verificationWhere(callIndex = 0): { updatedAt: WindowRange } {
+  const { where } = mockDb.providerIdentityVerification.findMany.mock.calls[callIndex][0] as { where: SelectionWhere }
+  const [legacy, liveness] = where.AND[0].OR
+  expect(liveness.livenessSessionExpiresAt.gte.getTime()).toBe(legacy.updatedAt.gte.getTime())
+  expect(liveness.livenessSessionExpiresAt.lte.getTime()).toBe(legacy.updatedAt.lte.getTime())
+  return { updatedAt: legacy.updatedAt }
 }
 
 function expectNoWritesOrSends() {
@@ -260,19 +272,16 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
 
     it.each(['0', 'false'])('dryRun=%s proceeds exactly like no parameter (flag OFF: report_only)', async (value) => {
       const baseline = await (await GET(request())).json()
-      const baselineArgs = mockDb.providerIdentityVerification.findMany.mock.calls[0][0]
+      const base = verificationWhere()
       vi.clearAllMocks()
       const res = await GET(request(`?dryRun=${value}`))
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(Object.keys(body)).toEqual(Object.keys(baseline))
       expect({ ...body, durationMs: 0 }).toEqual({ ...baseline, durationMs: 0 })
-      const args = mockDb.providerIdentityVerification.findMany.mock.calls[0][0] as {
-        where: { updatedAt: { gte: Date; lte: Date } }
-      }
-      const base = baselineArgs as typeof args
-      expect(args.where.updatedAt.lte.getTime() - args.where.updatedAt.gte.getTime())
-        .toBe(base.where.updatedAt.lte.getTime() - base.where.updatedAt.gte.getTime())
+      const args = verificationWhere()
+      expect(args.updatedAt.lte.getTime() - args.updatedAt.gte.getTime())
+        .toBe(base.updatedAt.lte.getTime() - base.updatedAt.gte.getTime())
       expectNoWritesOrSends()
     })
 

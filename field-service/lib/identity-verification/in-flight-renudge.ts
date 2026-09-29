@@ -5,12 +5,20 @@
 // AWAITING_SELFIE, RETRY_REQUIRED, AWAITING_LIVENESS) ~24h ago. Different
 // copy per status, each landing back at a signed /provider/verify/{token} URL.
 //
-// AWAITING_LIVENESS is the Didit-era hosted face-match step. The nudge never
-// creates a vendor session: the link only mints a fresh access token. If the
-// stored liveness session has expired by the time the applicant opens the
-// link, /provider/verify/{token}/liveness redirects to /liveness/expired,
-// whose "Request new link" action calls submitVerificationForAutomation with
-// refreshExpiredLiveness — that is the only place a new session is created.
+// AWAITING_LIVENESS is the Didit-era hosted face-match step, and it is only
+// nudged once its Didit session is DEAD. Issuing the resume link rotates the
+// row's single accessTokenHash, but a live Didit session's return URL was
+// built with the previous token at session creation (orchestrator.ts), and
+// the token (72h) dies long before the session (168h). Rotating the token
+// while the session is live would break the return page for anyone who then
+// finishes it. So for AWAITING_LIVENESS the window is anchored on
+// livenessSessionExpiresAt (not updatedAt), and a null
+// livenessSessionExpiresAt is never a candidate — we cannot prove the session
+// is dead. With the default 20-28h window a stall is nudged ~1 day after its
+// session expires; the link lands on /provider/verify/{token}/liveness →
+// /liveness/expired, whose "Request new link" action calls
+// submitVerificationForAutomation with refreshExpiredLiveness — the only
+// place a new vendor session is created. The nudge itself never creates one.
 //
 // Politeness invariants mirror kyc-drive (lib/kyc-drive/nudge.ts):
 //   - 24h MessageEvent dedup window per phone across ALL in-flight resume
@@ -59,14 +67,18 @@ export function resolveBatchCap(raw: string | undefined): number {
   return resolveBatchCapShared(raw, DEFAULT_IN_FLIGHT_BATCH_CAP)
 }
 
-const IN_FLIGHT_STATUSES: VerificationStatus[] = [
+// Pre-Didit PWA steps: stall window anchored on updatedAt.
+const UPDATED_AT_ANCHORED_STATUSES: VerificationStatus[] = [
   'CONSENTED',
   'AWAITING_IDENTIFIER',
   'RETRY_REQUIRED',
   'AWAITING_DOCUMENT',
   'AWAITING_SELFIE',
-  'AWAITING_LIVENESS',
 ]
+
+// Didit hosted face-match: stall window anchored on livenessSessionExpiresAt
+// so a live session's callback token is never rotated (see header).
+const LIVENESS_SESSION_ANCHORED_STATUS: VerificationStatus = 'AWAITING_LIVENESS'
 
 // Map verification status → resume template. AWAITING_DOCUMENT + AWAITING_SELFIE
 // each get dedicated step copy. AWAITING_LIVENESS (Didit hosted face-match)
@@ -153,16 +165,34 @@ export async function listInFlightRenudgeCandidates(
   const windowStart = opts.windowStartHours ?? IN_FLIGHT_NUDGE_WINDOW_START_HOURS
   const windowEnd = opts.windowEndHours ?? IN_FLIGHT_NUDGE_WINDOW_END_HOURS
   const HOUR_MS = 60 * 60 * 1000
-  const updatedAtFrom = new Date(now.getTime() - windowEnd * HOUR_MS)
-  const updatedAtTo = new Date(now.getTime() - windowStart * HOUR_MS)
+  const windowFrom = new Date(now.getTime() - windowEnd * HOUR_MS)
+  const windowTo = new Date(now.getTime() - windowStart * HOUR_MS)
 
   // Fix D: include draft-anchored (PWA gate-ON) verifications that have no
   // Provider row yet. These applicants also need re-nudging if they stall mid-flow.
   // The OR allows rows where either providerId OR providerApplicationDraftId is set.
+  //
+  // Status/time selection is an OR of two status groups (inside AND so it can
+  // sit beside the anchoring OR):
+  //   - pre-Didit steps: updatedAt inside the window (unchanged);
+  //   - AWAITING_LIVENESS: the Didit session expired inside the window
+  //     (null expiry never matches — see header).
   const rows = (await client.providerIdentityVerification.findMany({
     where: {
-      status: { in: IN_FLIGHT_STATUSES },
-      updatedAt: { gte: updatedAtFrom, lte: updatedAtTo },
+      AND: [
+        {
+          OR: [
+            {
+              status: { in: UPDATED_AT_ANCHORED_STATUSES },
+              updatedAt: { gte: windowFrom, lte: windowTo },
+            },
+            {
+              status: LIVENESS_SESSION_ANCHORED_STATUS,
+              livenessSessionExpiresAt: { not: null, gte: windowFrom, lte: windowTo },
+            },
+          ],
+        },
+      ],
       OR: [
         {
           providerId: { not: null },

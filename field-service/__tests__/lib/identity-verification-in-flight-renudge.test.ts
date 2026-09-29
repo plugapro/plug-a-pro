@@ -31,6 +31,7 @@ function verification(overrides: Record<string, unknown> = {}) {
     identityBasis: 'SA_ID',
     updatedAt: updatedAtAgo(24),
     expiresAt: null,
+    livenessSessionExpiresAt: null,
     provider: {
       id: 'p1',
       firstName: 'Thabo',
@@ -40,6 +41,19 @@ function verification(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   }
+}
+
+type TimeRange = { gte: Date; lte: Date; not?: null }
+type StatusGroup = {
+  status: unknown
+  updatedAt: TimeRange
+  livenessSessionExpiresAt: TimeRange
+}
+
+// The selection where is { AND: [{ OR: [preDiditGroup, livenessGroup] }], OR: [anchoring arms] }.
+function statusGroups(findMany: { mock: { calls: unknown[][] } }): [StatusGroup, StatusGroup] {
+  const { where } = findMany.mock.calls[0][0] as { where: { AND: Array<{ OR: [StatusGroup, StatusGroup] }> } }
+  return where.AND[0].OR
 }
 
 function clientWith(rows: unknown[], events: unknown[] = []): InFlightRenudgeClient {
@@ -112,9 +126,16 @@ describe('listInFlightRenudgeCandidates', () => {
       messageEvent: { findMany: vi.fn().mockResolvedValue([]) },
     }
     await listInFlightRenudgeCandidates(client, { now: NOW })
-    const where = (findMany.mock.calls[0][0] as { where: { updatedAt: { gte: Date; lte: Date } } }).where
-    expect(where.updatedAt.gte.getTime()).toBe(NOW.getTime() - IN_FLIGHT_NUDGE_WINDOW_END_HOURS * HOUR_MS)
-    expect(where.updatedAt.lte.getTime()).toBe(NOW.getTime() - IN_FLIGHT_NUDGE_WINDOW_START_HOURS * HOUR_MS)
+    const [legacy, liveness] = statusGroups(findMany)
+    expect(legacy.status).toEqual({ in: ['CONSENTED', 'AWAITING_IDENTIFIER', 'RETRY_REQUIRED', 'AWAITING_DOCUMENT', 'AWAITING_SELFIE'] })
+    expect(legacy.updatedAt.gte.getTime()).toBe(NOW.getTime() - IN_FLIGHT_NUDGE_WINDOW_END_HOURS * HOUR_MS)
+    expect(legacy.updatedAt.lte.getTime()).toBe(NOW.getTime() - IN_FLIGHT_NUDGE_WINDOW_START_HOURS * HOUR_MS)
+    // AWAITING_LIVENESS is anchored on the Didit session expiry, same window, never null.
+    expect(liveness.status).toBe('AWAITING_LIVENESS')
+    expect(liveness.updatedAt).toBeUndefined()
+    expect(liveness.livenessSessionExpiresAt.not).toBeNull()
+    expect(liveness.livenessSessionExpiresAt.gte.getTime()).toBe(NOW.getTime() - IN_FLIGHT_NUDGE_WINDOW_END_HOURS * HOUR_MS)
+    expect(liveness.livenessSessionExpiresAt.lte.getTime()).toBe(NOW.getTime() - IN_FLIGHT_NUDGE_WINDOW_START_HOURS * HOUR_MS)
   })
 
   it('honours custom window overrides', async () => {
@@ -124,9 +145,11 @@ describe('listInFlightRenudgeCandidates', () => {
       messageEvent: { findMany: vi.fn().mockResolvedValue([]) },
     }
     await listInFlightRenudgeCandidates(client, { now: NOW, windowStartHours: 6, windowEndHours: 12 })
-    const where = (findMany.mock.calls[0][0] as { where: { updatedAt: { gte: Date; lte: Date } } }).where
-    expect(where.updatedAt.gte.getTime()).toBe(NOW.getTime() - 12 * HOUR_MS)
-    expect(where.updatedAt.lte.getTime()).toBe(NOW.getTime() - 6 * HOUR_MS)
+    const [legacy, liveness] = statusGroups(findMany)
+    expect(legacy.updatedAt.gte.getTime()).toBe(NOW.getTime() - 12 * HOUR_MS)
+    expect(legacy.updatedAt.lte.getTime()).toBe(NOW.getTime() - 6 * HOUR_MS)
+    expect(liveness.livenessSessionExpiresAt.gte.getTime()).toBe(NOW.getTime() - 12 * HOUR_MS)
+    expect(liveness.livenessSessionExpiresAt.lte.getTime()).toBe(NOW.getTime() - 6 * HOUR_MS)
   })
 
   it('query uses OR to include both provider-anchored and draft-anchored rows, with active filter in the provider OR arm (Fix D)', async () => {
@@ -633,17 +656,26 @@ function matchesWhere(row: Record<string, unknown>, where: Record<string, unknow
       if (!(cond as Array<Record<string, unknown>>).some(arm => matchesWhere(row, arm, now))) return false
       continue
     }
-    if (key === 'status') {
-      if (!(cond as { in: string[] }).in.includes(row.status as string)) return false
+    if (key === 'AND') {
+      if (!(cond as Array<Record<string, unknown>>).every(arm => matchesWhere(row, arm, now))) return false
       continue
     }
-    if (key === 'updatedAt' || key === 'expiresAt') {
-      const value = row[key] as Date | null
+    if (key === 'status') {
+      if (typeof cond === 'string') {
+        if (row.status !== cond) return false
+      } else if (!(cond as { in: string[] }).in.includes(row.status as string)) {
+        return false
+      }
+      continue
+    }
+    if (key === 'updatedAt' || key === 'expiresAt' || key === 'livenessSessionExpiresAt') {
+      const value = (row[key] ?? null) as Date | null
       if (cond === null) {
         if (value !== null) return false
         continue
       }
-      const range = cond as Range
+      const range = cond as Range & { not?: null }
+      // SQL semantics: a NULL column never satisfies a range or `not: null`.
       if (value === null) return false
       if (range.gte && value < range.gte) return false
       if (range.lte && value > range.lte) return false
@@ -672,7 +704,13 @@ function whereEvaluatingClient(rows: FixtureRow[], now: Date) {
   return { client, verificationFindMany }
 }
 
-function awaitingLivenessDraftRow(updatedHoursAgo: number, overrides: Record<string, unknown> = {}) {
+const DAY_HOURS = 24
+
+function awaitingLivenessDraftRow(opts: {
+  sessionExpiresHoursAgo: number | null
+  updatedHoursAgo?: number
+  overrides?: Record<string, unknown>
+}) {
   return verification({
     id: 'v-liveness',
     providerId: null,
@@ -682,14 +720,31 @@ function awaitingLivenessDraftRow(updatedHoursAgo: number, overrides: Record<str
     status: 'AWAITING_LIVENESS',
     identityBasis: 'SA_ID',
     expiresAt: null,
-    updatedAt: updatedAtAgo(updatedHoursAgo),
-    ...overrides,
+    updatedAt: updatedAtAgo(opts.updatedHoursAgo ?? 8 * DAY_HOURS),
+    // Negative "hours ago" = the Didit session is still live in the future.
+    livenessSessionExpiresAt:
+      opts.sessionExpiresHoursAgo === null ? null : updatedAtAgo(opts.sessionExpiresHoursAgo),
+    ...opts.overrides,
   })
 }
 
-describe('AWAITING_LIVENESS in-flight selection', () => {
-  it('selects a draft-anchored AWAITING_LIVENESS row stalled 24h ago with the selfie-resume template', async () => {
-    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24)], NOW)
+describe('AWAITING_LIVENESS in-flight selection (anchored on livenessSessionExpiresAt)', () => {
+  // Rotating the access token while a Didit session is live breaks that
+  // session's return URL (built with the old token). Only dead sessions are nudged.
+  it('does NOT select a row whose Didit session is still LIVE, even though updatedAt is 24h ago', async () => {
+    const { client } = whereEvaluatingClient(
+      [awaitingLivenessDraftRow({ sessionExpiresHoursAgo: -5 * DAY_HOURS, updatedHoursAgo: 24 })],
+      NOW,
+    )
+    expect(await listInFlightRenudgeCandidates(client, { now: NOW })).toEqual([])
+    expect(await listInFlightRenudgeCandidates(client, { now: NOW, windowEndHours: 90 * DAY_HOURS })).toEqual([])
+  })
+
+  it('selects a draft-anchored row whose session expired 24h ago (updatedAt 8 days ago) with the selfie template', async () => {
+    const { client } = whereEvaluatingClient(
+      [awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24, updatedHoursAgo: 8 * DAY_HOURS })],
+      NOW,
+    )
     const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
@@ -704,39 +759,60 @@ describe('AWAITING_LIVENESS in-flight selection', () => {
     })
   })
 
-  it('does NOT select the same row stalled 10 days ago under the default 20-28h window', async () => {
-    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24 * 10)], NOW)
-    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
-    expect(rows).toEqual([])
+  it('a session that expired 60 days ago is NOT selected by default but IS with windowEndHours 24*90', async () => {
+    const { client } = whereEvaluatingClient(
+      [awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 60 * DAY_HOURS, updatedHoursAgo: 67 * DAY_HOURS })],
+      NOW,
+    )
+    expect(await listInFlightRenudgeCandidates(client, { now: NOW })).toEqual([])
+    const swept = await listInFlightRenudgeCandidates(client, { now: NOW, windowStartHours: 20, windowEndHours: 24 * 90 })
+    expect(swept.map(r => r.verificationId)).toEqual(['v-liveness'])
+    expect(swept[0].templateName).toBe('provider_verification_resume_selfie')
   })
 
-  it('DOES select the 10-day-old row when the window end is widened to 90 days (backlog sweep)', async () => {
-    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24 * 10)], NOW)
-    const rows = await listInFlightRenudgeCandidates(client, { now: NOW, windowEndHours: 24 * 90 })
-    expect(rows.map(r => r.verificationId)).toEqual(['v-liveness'])
+  it.each([
+    ['default window', {}],
+    ['90-day sweep', { windowStartHours: 20, windowEndHours: 24 * 90 }],
+    ['120-day window from 0h', { windowStartHours: 0, windowEndHours: 24 * 120 }],
+  ])('never selects a row with a null livenessSessionExpiresAt (%s)', async (_label, window) => {
+    const { client } = whereEvaluatingClient(
+      [awaitingLivenessDraftRow({ sessionExpiresHoursAgo: null, updatedHoursAgo: 24 })],
+      NOW,
+    )
+    expect(await listInFlightRenudgeCandidates(client, { now: NOW, ...window })).toEqual([])
+  })
+
+  it('an AWAITING_SELFIE row with updatedAt 24h ago is still selected exactly as before (updatedAt anchoring)', async () => {
+    const selfie = verification({ id: 'v-selfie', status: 'AWAITING_SELFIE', updatedAt: updatedAtAgo(24) })
+    const staleSelfie = verification({
+      id: 'v-selfie-old',
+      providerId: 'p2',
+      provider: { id: 'p2', firstName: 'Old', name: null, phone: '+27820000002', active: true },
+      status: 'AWAITING_SELFIE',
+      updatedAt: updatedAtAgo(10 * DAY_HOURS),
+    })
+    const { client } = whereEvaluatingClient([selfie, staleSelfie], NOW)
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(rows.map(r => r.verificationId)).toEqual(['v-selfie'])
     expect(rows[0].templateName).toBe('provider_verification_resume_selfie')
   })
 
   it('still excludes AWAITING_LIVENESS rows whose expiresAt has passed', async () => {
     const { client } = whereEvaluatingClient(
-      [awaitingLivenessDraftRow(24, { expiresAt: new Date(NOW.getTime() - HOUR_MS) })],
+      [awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24, overrides: { expiresAt: new Date(NOW.getTime() - HOUR_MS) } })],
       NOW,
     )
-    const rows = await listInFlightRenudgeCandidates(client, { now: NOW })
-    expect(rows).toEqual([])
+    expect(await listInFlightRenudgeCandidates(client, { now: NOW })).toEqual([])
   })
 
   it('still honours the 24h dedup and per-verification cap for AWAITING_LIVENESS rows', async () => {
     const rowsIn = [
-      awaitingLivenessDraftRow(24, { id: 'v-dedup', providerApplicationDraftId: 'd-1', providerApplicationDraft: { id: 'd-1', phone: '+27820000081', name: 'A' } }),
-      awaitingLivenessDraftRow(24, { id: 'v-capped', providerApplicationDraftId: 'd-2', providerApplicationDraft: { id: 'd-2', phone: '+27820000082', name: 'B' } }),
+      awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24, overrides: { id: 'v-dedup', providerApplicationDraftId: 'd-1', providerApplicationDraft: { id: 'd-1', phone: '+27820000081', name: 'A' } } }),
+      awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24, overrides: { id: 'v-capped', providerApplicationDraftId: 'd-2', providerApplicationDraft: { id: 'd-2', phone: '+27820000082', name: 'B' } } }),
     ]
+    const { client: base } = whereEvaluatingClient(rowsIn, NOW)
     const client: InFlightRenudgeClient = {
-      providerIdentityVerification: {
-        findMany: vi.fn(async (args: unknown) =>
-          rowsIn.filter(r => matchesWhere(r as unknown as Record<string, unknown>, (args as { where: Record<string, unknown> }).where, NOW)),
-        ),
-      },
+      providerIdentityVerification: base.providerIdentityVerification,
       messageEvent: {
         findMany: vi.fn().mockResolvedValue([
           { to: '+27820000081', templateName: 'provider_verification_resume_selfie', createdAt: new Date(NOW.getTime() - 2 * HOUR_MS), status: 'SENT', metadata: { verificationId: 'v-other' } },
@@ -758,7 +834,7 @@ describe('AWAITING_LIVENESS in-flight selection', () => {
   })
 
   it('sends AWAITING_LIVENESS candidates through the selfie adapter with a draft-anchored link', async () => {
-    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow(24)], NOW)
+    const { client } = whereEvaluatingClient([awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24 })], NOW)
     const d = {
       issueLink: vi.fn().mockResolvedValue({ verificationUrl: 'https://app.example/provider/verify/tok' }),
       recordAttempt: vi.fn().mockResolvedValue({ id: 'evt-1' }),
