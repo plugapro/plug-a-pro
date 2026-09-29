@@ -82,8 +82,8 @@ template, `expiresAt` exclusion, 24h dedup, per-row and per-phone caps, provider
 
 The feature flag `provider.identity.verification.in_flight_renudge` must be ON for sends. Steps for the sweep:
 
-1. `GET /api/cron/identity-verification-in-flight-renudge?dryRun=1&windowStartHours=20&windowEndHours=2160`
-   with the cron bearer. For `AWAITING_LIVENESS`, this selects rows whose Didit session expired within the last
+1. `GET /api/cron/identity-verification-in-flight-renudge?dryRun=1&status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160`
+   with the cron bearer. `status` is mandatory with a window override, so the sweep touches only this status. It selects rows whose Didit session expired within the last
    90 days (and at least 20h ago). Check that `byStatus.AWAITING_LIVENESS` ≈ 50 (the number of backlog rows
    with a non-null, already-expired session). Every backlog row is weeks old, so the 20h lower bound loses nothing.
 2. After the owner approves, run the same URL without `dryRun`. The batch cap
@@ -130,4 +130,27 @@ duplicated parameter could turn a sweep meant to be read-only into live sends.
    selected only with `windowEndHours=24*90`. A null session expiry is never selected, in any window. An
    `AWAITING_SELFIE` row with `updatedAt` 24h ago is still selected as before. Against the pre-round-4 library,
    9 of the updated tests fail.
+
+## 2026-09-29 fix round 5 (Codex review on PR #210)
+
+1. **Restrict the backlog override to one status (P1).** A widened window used to apply to every status group,
+   so the documented sweep would also have re-nudged months-old `CONSENTED`, `RETRY_REQUIRED`,
+   `AWAITING_DOCUMENT` and `AWAITING_SELFIE` rows. The route now accepts `?status=`, which must be exactly one
+   in-flight status (case-sensitive, and covered by the unknown- and duplicate-name checks).
+   - `status` is required whenever `windowStartHours` or `windowEndHours` is given. Without it the route returns
+     400 `status is required when a window override is given`.
+   - An unknown value returns 400 `unknown status: <value>`.
+   - `status` on its own narrows the default 20-28h window.
+   - The library functions `listInFlightRenudgeCandidates` and `sendInFlightRenudges` gain an optional
+     `statuses` option that narrows both status groups.
+   - With no parameters, the scheduled query is unchanged.
+
+   The documented sweep is now `?dryRun=1&status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160`.
+2. **Recheck liveness expiry before rotating the token (P2).** The expiry test used to run only in the candidate
+   query, and an applicant could refresh the session between selection and `issueLink`.
+   - `sendInFlightRenudges` now re-reads each `AWAITING_LIVENESS` row's `status` and `livenessSessionExpiresAt`
+     immediately before issuing the link.
+   - The row is skipped unless it is still `AWAITING_LIVENESS` with a non-null expiry at or before `now`. A skip is
+     counted as skipped, not as an error, and writes no MessageEvent.
+   - Rows in other statuses are not rechecked.
 

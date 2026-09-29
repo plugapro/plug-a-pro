@@ -11,6 +11,7 @@ import {
   summarizeInFlightRenudgeRows,
   templateForStatus,
   type InFlightRenudgeClient,
+  type InFlightRenudgeSendClient,
 } from '@/lib/identity-verification/in-flight-renudge'
 
 const NOW = new Date('2026-06-28T12:00:00.000Z')
@@ -56,9 +57,18 @@ function statusGroups(findMany: { mock: { calls: unknown[][] } }): [StatusGroup,
   return where.AND[0].OR
 }
 
-function clientWith(rows: unknown[], events: unknown[] = []): InFlightRenudgeClient {
+// findUnique serves the send path's pre-link liveness recheck from the same
+// fixture rows, so a row's recheck state is whatever the fixture says.
+function findUniqueFrom(rows: unknown[]) {
+  return vi.fn(async (args: unknown): Promise<unknown> => {
+    const id = (args as { where: { id: string } }).where.id
+    return (rows as Array<{ id: string }>).find(r => r.id === id) ?? null
+  })
+}
+
+function clientWith(rows: unknown[], events: unknown[] = []): InFlightRenudgeSendClient {
   return {
-    providerIdentityVerification: { findMany: vi.fn().mockResolvedValue(rows) },
+    providerIdentityVerification: { findMany: vi.fn().mockResolvedValue(rows), findUnique: findUniqueFrom(rows) },
     messageEvent: { findMany: vi.fn().mockResolvedValue(events) },
   }
 }
@@ -697,11 +707,12 @@ function whereEvaluatingClient(rows: FixtureRow[], now: Date) {
     const { where } = args as { where: Record<string, unknown> }
     return rows.filter(r => matchesWhere(r as unknown as Record<string, unknown>, where, now))
   })
-  const client: InFlightRenudgeClient = {
-    providerIdentityVerification: { findMany: verificationFindMany },
+  const verificationFindUnique = findUniqueFrom(rows)
+  const client: InFlightRenudgeSendClient = {
+    providerIdentityVerification: { findMany: verificationFindMany, findUnique: verificationFindUnique },
     messageEvent: { findMany: vi.fn().mockResolvedValue([]) },
   }
-  return { client, verificationFindMany }
+  return { client, verificationFindMany, verificationFindUnique }
 }
 
 const DAY_HOURS = 24
@@ -860,3 +871,117 @@ describe('AWAITING_LIVENESS in-flight selection (anchored on livenessSessionExpi
     expect(d.sendDocumentResume).not.toHaveBeenCalled()
   })
 })
+
+// ─── Fix round 5: status narrowing + pre-link liveness recheck ───────────────
+
+describe('statuses option narrows both status groups', () => {
+  it('with statuses: [AWAITING_LIVENESS] an in-window AWAITING_SELFIE row is NOT selected', async () => {
+    const selfie = verification({ id: 'v-selfie', status: 'AWAITING_SELFIE', updatedAt: updatedAtAgo(24) })
+    const liveness = awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24 })
+    const { client, verificationFindMany } = whereEvaluatingClient([selfie, liveness], NOW)
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW, statuses: ['AWAITING_LIVENESS'] })
+    expect(rows.map(r => r.verificationId)).toEqual(['v-liveness'])
+    const groups = (verificationFindMany.mock.calls[0][0] as { where: { AND: Array<{ OR: Array<{ status: unknown }> }> } })
+      .where.AND[0].OR
+    expect(groups.map(g => g.status)).toEqual(['AWAITING_LIVENESS'])
+    // Without the option both rows are selected, exactly as before.
+    const all = await listInFlightRenudgeCandidates(client, { now: NOW })
+    expect(all.map(r => r.verificationId).sort()).toEqual(['v-liveness', 'v-selfie'])
+  })
+
+  it('with statuses: [AWAITING_SELFIE] the liveness group is dropped and the pre-Didit group narrowed', async () => {
+    const selfie = verification({ id: 'v-selfie', status: 'AWAITING_SELFIE', updatedAt: updatedAtAgo(24) })
+    const doc = verification({
+      id: 'v-doc',
+      providerId: 'p2',
+      provider: { id: 'p2', firstName: 'D', name: null, phone: '+27820000002', active: true },
+      status: 'AWAITING_DOCUMENT',
+      updatedAt: updatedAtAgo(24),
+    })
+    const liveness = awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24 })
+    const { client, verificationFindMany } = whereEvaluatingClient([selfie, doc, liveness], NOW)
+    const rows = await listInFlightRenudgeCandidates(client, { now: NOW, statuses: ['AWAITING_SELFIE'] })
+    expect(rows.map(r => r.verificationId)).toEqual(['v-selfie'])
+    const groups = (verificationFindMany.mock.calls[0][0] as { where: { AND: Array<{ OR: Array<{ status: unknown }> }> } })
+      .where.AND[0].OR
+    expect(groups).toHaveLength(1)
+    expect(groups[0].status).toEqual({ in: ['AWAITING_SELFIE'] })
+  })
+
+  it('sendInFlightRenudges forwards statuses to selection', async () => {
+    const selfie = verification({ id: 'v-selfie', status: 'AWAITING_SELFIE', updatedAt: updatedAtAgo(24) })
+    const { client } = whereEvaluatingClient([selfie, awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24 })], NOW)
+    const d = sendDeps()
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW, statuses: ['AWAITING_LIVENESS'] })
+    expect(result.rows.map(r => r.verificationId)).toEqual(['v-liveness'])
+    expect(d.sendSelfieResume).toHaveBeenCalledTimes(1)
+    expect(d.sendSelfieResume).toHaveBeenCalledWith(expect.objectContaining({ providerPhone: '+27820000077' }))
+  })
+})
+
+function sendDeps() {
+  return {
+    issueLink: vi.fn().mockResolvedValue({ verificationUrl: 'https://app.example/provider/verify/tok' }),
+    recordAttempt: vi.fn().mockResolvedValue({ id: 'evt-1' }),
+    markAttemptFailed: vi.fn().mockResolvedValue(undefined),
+    sendConsentResume: vi.fn().mockResolvedValue('wamid.consent'),
+    sendDocumentResume: vi.fn().mockResolvedValue('wamid.doc'),
+    sendSelfieResume: vi.fn().mockResolvedValue('wamid.selfie'),
+  }
+}
+
+describe('pre-link liveness recheck in sendInFlightRenudges', () => {
+  // Selection sees an expired session; findUnique returns the row's state at
+  // send time. Only a still-AWAITING_LIVENESS row with an expired session may
+  // have its token rotated.
+  function clientWithRecheck(freshState: Record<string, unknown> | null) {
+    const selected = awaitingLivenessDraftRow({ sessionExpiresHoursAgo: 24 })
+    const { client, verificationFindUnique } = whereEvaluatingClient([selected], NOW)
+    verificationFindUnique.mockResolvedValue(freshState)
+    return { client, verificationFindUnique }
+  }
+
+  it.each([
+    ['session refreshed (now LIVE)', { status: 'AWAITING_LIVENESS', livenessSessionExpiresAt: new Date(NOW.getTime() + 7 * 24 * HOUR_MS) }],
+    ['status moved on to PROCESSING', { status: 'PROCESSING', livenessSessionExpiresAt: null }],
+    ['status moved to RETRY_REQUIRED (refresh in flight)', { status: 'RETRY_REQUIRED', livenessSessionExpiresAt: null }],
+    ['session expiry cleared', { status: 'AWAITING_LIVENESS', livenessSessionExpiresAt: null }],
+    ['row gone', null],
+  ])('skips the row when %s: no link, no MessageEvent, no send, counted as skipped', async (_label, fresh) => {
+    const { client, verificationFindUnique } = clientWithRecheck(fresh as Record<string, unknown> | null)
+    const d = sendDeps()
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(verificationFindUnique).toHaveBeenCalledWith({
+      where: { id: 'v-liveness' },
+      select: { status: true, livenessSessionExpiresAt: true },
+    })
+    expect(d.issueLink).not.toHaveBeenCalled()
+    expect(d.recordAttempt).not.toHaveBeenCalled()
+    expect(d.sendSelfieResume).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ sent: 0, skipped: 1, errors: 0, aborted: false })
+  })
+
+  it('passes a still-expired AWAITING_LIVENESS row through unchanged', async () => {
+    const { client, verificationFindUnique } = clientWithRecheck({
+      status: 'AWAITING_LIVENESS',
+      livenessSessionExpiresAt: new Date(NOW.getTime() - 24 * HOUR_MS),
+    })
+    const d = sendDeps()
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(verificationFindUnique).toHaveBeenCalledTimes(1)
+    expect(d.issueLink).toHaveBeenCalledWith({ providerId: null, draftId: 'draft-liveness', verificationId: 'v-liveness' })
+    expect(d.recordAttempt).toHaveBeenCalledTimes(1)
+    expect(d.sendSelfieResume).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ sent: 1, skipped: 0, errors: 0 })
+  })
+
+  it('does not recheck non-liveness statuses', async () => {
+    const selfie = verification({ id: 'v-selfie', status: 'AWAITING_SELFIE', updatedAt: updatedAtAgo(24) })
+    const { client, verificationFindUnique } = whereEvaluatingClient([selfie], NOW)
+    const d = sendDeps()
+    const result = await sendInFlightRenudges(client, { batchCap: 10, deps: d, now: NOW })
+    expect(verificationFindUnique).not.toHaveBeenCalled()
+    expect(result.sent).toBe(1)
+  })
+})
+

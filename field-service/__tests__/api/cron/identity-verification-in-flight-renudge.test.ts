@@ -11,6 +11,7 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     providerIdentityVerification: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -39,6 +40,18 @@ const { mockSendConsent, mockSendDocument, mockSendSelfie } = vi.hoisted(() => (
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+// Real selection/send logic, wrapped in spies so tests can assert exactly
+// which options the route passed (and that no library call happened on 400s).
+vi.mock('@/lib/identity-verification/in-flight-renudge', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/identity-verification/in-flight-renudge')>(
+    '@/lib/identity-verification/in-flight-renudge',
+  )
+  return {
+    ...actual,
+    listInFlightRenudgeCandidates: vi.fn(actual.listInFlightRenudgeCandidates),
+    sendInFlightRenudges: vi.fn(actual.sendInFlightRenudges),
+  }
+})
 vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
 vi.mock('@/lib/identity-verification/link', () => ({
   issueProviderIdentityVerificationLink: mockIssueProviderLink,
@@ -57,6 +70,13 @@ vi.mock('@/lib/whatsapp', () => ({
 }))
 
 import { GET } from '@/app/api/cron/identity-verification-in-flight-renudge/route'
+import {
+  listInFlightRenudgeCandidates,
+  sendInFlightRenudges,
+} from '@/lib/identity-verification/in-flight-renudge'
+
+const listSpy = vi.mocked(listInFlightRenudgeCandidates)
+const sendSpy = vi.mocked(sendInFlightRenudges)
 
 const CRON_SECRET = 'cron-secret'
 const BASE = 'http://localhost/api/cron/identity-verification-in-flight-renudge'
@@ -96,19 +116,24 @@ function selfieProviderRow(id: string, phone: string) {
 }
 
 type WindowRange = { gte: Date; lte: Date }
-type SelectionWhere = {
-  AND: Array<{ OR: [{ updatedAt: WindowRange }, { livenessSessionExpiresAt: WindowRange }] }>
+type StatusGroup = { status: unknown; updatedAt?: WindowRange; livenessSessionExpiresAt?: WindowRange }
+type SelectionWhere = { AND: Array<{ OR: StatusGroup[] }> }
+
+function statusGroupsQueried(callIndex = 0): StatusGroup[] {
+  const { where } = mockDb.providerIdentityVerification.findMany.mock.calls[callIndex][0] as { where: SelectionWhere }
+  return where.AND[0].OR
 }
 
-// Returns the time window the library queried. The two status groups
-// (pre-Didit on updatedAt, AWAITING_LIVENESS on livenessSessionExpiresAt)
-// must always share one window; assert that here so every caller checks it.
+// Returns the time window the library queried. Every status group (pre-Didit
+// on updatedAt, AWAITING_LIVENESS on livenessSessionExpiresAt) must share one
+// window; assert that here so every caller checks it.
 function verificationWhere(callIndex = 0): { updatedAt: WindowRange } {
-  const { where } = mockDb.providerIdentityVerification.findMany.mock.calls[callIndex][0] as { where: SelectionWhere }
-  const [legacy, liveness] = where.AND[0].OR
-  expect(liveness.livenessSessionExpiresAt.gte.getTime()).toBe(legacy.updatedAt.gte.getTime())
-  expect(liveness.livenessSessionExpiresAt.lte.getTime()).toBe(legacy.updatedAt.lte.getTime())
-  return { updatedAt: legacy.updatedAt }
+  const ranges = statusGroupsQueried(callIndex).map(g => (g.updatedAt ?? g.livenessSessionExpiresAt)!)
+  for (const r of ranges) {
+    expect(r.gte.getTime()).toBe(ranges[0].gte.getTime())
+    expect(r.lte.getTime()).toBe(ranges[0].lte.getTime())
+  }
+  return { updatedAt: ranges[0] }
 }
 
 function expectNoWritesOrSends() {
@@ -132,11 +157,15 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
     process.env.CRON_SECRET = CRON_SECRET
     delete process.env.IDENTITY_RENUDGE_BATCH_CAP
     mockIsEnabled.mockResolvedValue(false)
-    mockDb.providerIdentityVerification.findMany.mockResolvedValue([
+    const fixtureRows = [
       livenessDraftRow('v-l1', '+27820000101'),
       livenessDraftRow('v-l2', '+27820000102'),
       selfieProviderRow('v-s1', '+27820000103'),
-    ])
+    ]
+    mockDb.providerIdentityVerification.findMany.mockResolvedValue(fixtureRows)
+    // Pre-link liveness recheck reads the same (expired-session) fixture rows.
+    mockDb.providerIdentityVerification.findUnique.mockImplementation(async (args: { where: { id: string } }) =>
+      fixtureRows.find(r => r.id === args.where.id) ?? null)
     mockDb.messageEvent.findMany.mockResolvedValue([
       // v-l2's phone was messaged 2h ago → selected but not eligible now.
       {
@@ -182,7 +211,7 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
 
   it('dryRun honours the window override for the backlog sweep', async () => {
     const before = Date.now()
-    const res = await GET(request('?dryRun=1&windowStartHours=20&windowEndHours=2160'))
+    const res = await GET(request('?dryRun=1&status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.window).toEqual({ startHours: 20, endHours: 2160 })
@@ -194,7 +223,7 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
   })
 
   it('caps windowEndHours at 120 days so a typo cannot sweep years', async () => {
-    const res = await GET(request('?dryRun=1&windowEndHours=999999'))
+    const res = await GET(request('?dryRun=1&status=AWAITING_LIVENESS&windowEndHours=999999'))
     const body = await res.json()
     expect(body.window).toEqual({ startHours: 20, endHours: 24 * 120 })
     const where = verificationWhere()
@@ -247,9 +276,14 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
 
   it('flag ON + window override (no dryRun): sends using the overridden window', async () => {
     mockIsEnabled.mockResolvedValue(true)
-    const res = await GET(request('?windowStartHours=20&windowEndHours=2160'))
+    const res = await GET(request('?status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160'))
     const body = await res.json()
-    expect(body).toMatchObject({ mode: 'auto_nudge', window: { startHours: 20, endHours: 2160 } })
+    expect(body).toMatchObject({ mode: 'auto_nudge', window: { startHours: 20, endHours: 2160 }, status: 'AWAITING_LIVENESS' })
+    expect(sendSpy).toHaveBeenCalledWith(mockDb, expect.objectContaining({
+      windowStartHours: 20,
+      windowEndHours: 2160,
+      statuses: ['AWAITING_LIVENESS'],
+    }))
     const where = verificationWhere()
     expect((where.updatedAt.lte.getTime() - where.updatedAt.gte.getTime()) / HOUR_MS).toBe(2160 - 20)
     expect(mockLogOutbound).toHaveBeenCalled()
@@ -315,7 +349,7 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
     })
 
     it('windowStartHours=20&windowEndHours=2160 is accepted with window {20, 2160}', async () => {
-      const res = await GET(request('?dryRun=1&windowStartHours=20&windowEndHours=2160'))
+      const res = await GET(request('?dryRun=1&status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160'))
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body.window).toEqual({ startHours: 20, endHours: 2160 })
@@ -347,8 +381,8 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
       expect(res.status).toBe(401)
     })
 
-    it('all three accepted names together are allowed', async () => {
-      const res = await GET(request('?dryRun=1&windowStartHours=20&windowEndHours=2160'))
+    it('all four accepted names together are allowed', async () => {
+      const res = await GET(request('?dryRun=1&status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160'))
       expect(res.status).toBe(200)
       expect((await res.json()).window).toEqual({ startHours: 20, endHours: 2160 })
       expectNoWritesOrSends()
@@ -372,4 +406,103 @@ describe('GET /api/cron/identity-verification-in-flight-renudge', () => {
       expectNoWritesOrSends()
     })
   })
+
+  describe('fix round 5: ?status= restricts selection and is required with a window override', () => {
+    it.each([
+      ['?windowStartHours=20&windowEndHours=2160'],
+      ['?windowEndHours=2160'],
+      ['?dryRun=1&windowStartHours=20&windowEndHours=2160'],
+      ['?windowStartHours=20'],
+    ])('%s (window override without status) returns 400 with no library call', async (query) => {
+      mockIsEnabled.mockResolvedValue(true)
+      const res = await GET(request(query))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ ok: false, error: 'status is required when a window override is given' })
+      expect(listSpy).not.toHaveBeenCalled()
+      expect(sendSpy).not.toHaveBeenCalled()
+      expect(mockDb.providerIdentityVerification.findMany).not.toHaveBeenCalled()
+      expectNoWritesOrSends()
+    })
+
+    it.each([
+      ['awaiting_liveness'],
+      ['AWAITING_Liveness'],
+      ['PASSED'],
+      ['SUBMITTED'],
+      [''],
+    ])('status=%j returns 400 naming the value, with no library call', async (value) => {
+      const res = await GET(request(`?status=${value}`))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ ok: false, error: `unknown status: ${value}` })
+      expect(listSpy).not.toHaveBeenCalled()
+      expect(mockDb.providerIdentityVerification.findMany).not.toHaveBeenCalled()
+    })
+
+    it('status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160&dryRun=1 is accepted; library gets statuses [AWAITING_LIVENESS]', async () => {
+      const res = await GET(request('?status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160&dryRun=1'))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toMatchObject({ dryRun: true, status: 'AWAITING_LIVENESS', window: { startHours: 20, endHours: 2160 } })
+      expect(listSpy).toHaveBeenCalledTimes(1)
+      expect(listSpy).toHaveBeenCalledWith(mockDb, expect.objectContaining({
+        windowStartHours: 20,
+        windowEndHours: 2160,
+        statuses: ['AWAITING_LIVENESS'],
+      }))
+      // Only the liveness group reaches the query.
+      expect(statusGroupsQueried().map(g => g.status)).toEqual(['AWAITING_LIVENESS'])
+      expectNoWritesOrSends()
+    })
+
+    it('status=AWAITING_SELFIE alone is accepted and narrows the default 20-28h window', async () => {
+      const res = await GET(request('?status=AWAITING_SELFIE&dryRun=1'))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toMatchObject({ status: 'AWAITING_SELFIE', window: { startHours: 20, endHours: 28 } })
+      const opts = listSpy.mock.calls[0][1]!
+      expect(opts.statuses).toEqual(['AWAITING_SELFIE'])
+      expect(opts.windowStartHours).toBeUndefined()
+      expect(opts.windowEndHours).toBeUndefined()
+      const groups = statusGroupsQueried()
+      expect(groups).toHaveLength(1)
+      expect(groups[0].status).toEqual({ in: ['AWAITING_SELFIE'] })
+      const where = verificationWhere()
+      expect((where.updatedAt.lte.getTime() - where.updatedAt.gte.getTime()) / HOUR_MS).toBe(8)
+    })
+
+    it('status alone on the report-only path is forwarded and echoed', async () => {
+      const res = await GET(request('?status=AWAITING_SELFIE'))
+      const body = await res.json()
+      expect(body).toMatchObject({ mode: 'report_only', status: 'AWAITING_SELFIE' })
+      expect(body.window).toBeUndefined()
+      expect(listSpy).toHaveBeenCalledWith(mockDb, expect.objectContaining({ statuses: ['AWAITING_SELFIE'] }))
+    })
+
+    it('status=AWAITING_LIVENESS&status=AWAITING_SELFIE returns 400 duplicate', async () => {
+      const res = await GET(request('?status=AWAITING_LIVENESS&status=AWAITING_SELFIE'))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ ok: false, error: 'duplicate query parameter: status' })
+      expect(listSpy).not.toHaveBeenCalled()
+    })
+
+    it('no params: library called with no statuses and no window keys (scheduled path unchanged)', async () => {
+      await GET(request())
+      expect(listSpy).toHaveBeenCalledTimes(1)
+      expect(Object.keys(listSpy.mock.calls[0][1]!)).toEqual(['now'])
+      expect(statusGroupsQueried()).toHaveLength(2)
+    })
+
+    it('live run: the pre-link recheck reads each liveness row before its link is issued', async () => {
+      mockIsEnabled.mockResolvedValue(true)
+      await GET(request())
+      expect(mockDb.providerIdentityVerification.findUnique).toHaveBeenCalledWith({
+        where: { id: 'v-l1' },
+        select: { status: true, livenessSessionExpiresAt: true },
+      })
+      const recheckOrder = mockDb.providerIdentityVerification.findUnique.mock.invocationCallOrder[0]
+      const linkOrder = mockIssueDraftLink.mock.invocationCallOrder[0]
+      expect(recheckOrder).toBeLessThan(linkOrder)
+    })
+  })
 })
+

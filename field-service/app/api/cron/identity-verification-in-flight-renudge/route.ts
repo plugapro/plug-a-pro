@@ -19,9 +19,14 @@
 //   ?windowEndHours=N    integer hours; replaces the default 28h upper bound,
 //                        capped at WINDOW_END_HOURS_MAX (120 days) so a typo
 //                        cannot sweep years of rows
+//   ?status=S            exactly one in-flight status (case-sensitive);
+//                        restricts selection (dry-run, report-only and live)
+//                        to that status. REQUIRED whenever a window override
+//                        is given, so a widened window can never sweep every
+//                        status. Alone, it narrows the default window.
 // Used for a deliberate one-off backlog sweep (e.g. the AWAITING_LIVENESS
 // cohort the cron never covered):
-//   ?dryRun=1&windowStartHours=20&windowEndHours=2160
+//   ?dryRun=1&status=AWAITING_LIVENESS&windowStartHours=20&windowEndHours=2160
 // Politeness caps are unchanged by overrides.
 //
 // Report-only unless provider.identity.verification.in_flight_renudge is ON.
@@ -41,9 +46,12 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { issueProviderIdentityVerificationLink } from '@/lib/identity-verification/link'
 import { issueProviderApplicationVerificationLink } from '@/lib/identity-verification/application-link'
+import type { VerificationStatus } from '@prisma/client'
+
 import {
   IN_FLIGHT_NUDGE_WINDOW_END_HOURS,
   IN_FLIGHT_NUDGE_WINDOW_START_HOURS,
+  IN_FLIGHT_STATUSES,
   listInFlightRenudgeCandidates,
   resolveBatchCap,
   sendInFlightRenudges,
@@ -92,7 +100,25 @@ function parseWindowOverride(
   return { ok: true, override }
 }
 
-const ALLOWED_QUERY_PARAMS = new Set(['dryRun', 'windowStartHours', 'windowEndHours'])
+const ALLOWED_QUERY_PARAMS = new Set(['dryRun', 'windowStartHours', 'windowEndHours', 'status'])
+
+// ?status= must be exactly one in-flight status, and is mandatory with any
+// window override (a 90-day window across every status would re-nudge
+// months-old CONSENTED / AWAITING_DOCUMENT / … rows).
+function parseStatusFilter(
+  params: URLSearchParams,
+  hasWindowOverride: boolean,
+): { ok: true; status: VerificationStatus | null } | { ok: false; error: string } {
+  const raw = params.get('status')
+  if (raw === null) {
+    if (hasWindowOverride) return { ok: false, error: 'status is required when a window override is given' }
+    return { ok: true, status: null }
+  }
+  if (!(IN_FLIGHT_STATUSES as readonly string[]).includes(raw)) {
+    return { ok: false, error: `unknown status: ${raw}` }
+  }
+  return { ok: true, status: raw as VerificationStatus }
+}
 
 // Fail closed, in one pre-parse pass:
 // - a misspelled parameter NAME (dryrun, dry_run, …) would otherwise be
@@ -138,9 +164,26 @@ export async function GET(request: Request) {
   }
   const windowOverride = parsedWindow.override
   const hasWindowOverride = Object.keys(windowOverride).length > 0
+  const parsedStatus = parseStatusFilter(searchParams, hasWindowOverride)
+  if (!parsedStatus.ok) {
+    return NextResponse.json({ ok: false, error: parsedStatus.error }, { status: 400 })
+  }
+  const statusFilter = parsedStatus.status
+  // Spread into every library call; {} when no override is present, so the
+  // scheduled call shape is unchanged.
+  const selectionOverride = {
+    ...windowOverride,
+    ...(statusFilter ? { statuses: [statusFilter] } : {}),
+  }
   const effectiveWindow = {
     startHours: windowOverride.windowStartHours ?? IN_FLIGHT_NUDGE_WINDOW_START_HOURS,
     endHours: windowOverride.windowEndHours ?? IN_FLIGHT_NUDGE_WINDOW_END_HOURS,
+  }
+  // Echoed in report-only / live responses only when an override is present,
+  // so the scheduled response shape is unchanged.
+  const overrideEcho = {
+    ...(hasWindowOverride ? { window: effectiveWindow } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
   }
 
   const cronStart = Date.now()
@@ -153,7 +196,7 @@ export async function GET(request: Request) {
     // Dry run: read-only candidate selection, independent of the flag. No
     // link issuance, no MessageEvent writes, no sends.
     if (dryRun) {
-      const rows = await listInFlightRenudgeCandidates(db, { now, ...windowOverride })
+      const rows = await listInFlightRenudgeCandidates(db, { now, ...selectionOverride })
       const summary = summarizeInFlightRenudgeRows(rows)
       const byStatus: Record<string, number> = {}
       const eligibleByStatus: Record<string, number> = {}
@@ -168,6 +211,7 @@ export async function GET(request: Request) {
         mode: 'dry_run',
         durationMs,
         window: effectiveWindow,
+        ...(statusFilter ? { status: statusFilter } : {}),
         ...summary,
         byStatus,
         eligibleByStatus,
@@ -179,6 +223,7 @@ export async function GET(request: Request) {
         dryRun: true,
         durationMs,
         window: effectiveWindow,
+        ...(statusFilter ? { status: statusFilter } : {}),
         ...summary,
         byStatus,
         eligibleByStatus,
@@ -191,7 +236,7 @@ export async function GET(request: Request) {
     // mode lets ops watch the queue size without sending any messages.
     const renudgeEnabled = await isEnabled(FLAG_KEY)
     if (!renudgeEnabled) {
-      const rows = await listInFlightRenudgeCandidates(db, { now, ...windowOverride })
+      const rows = await listInFlightRenudgeCandidates(db, { now, ...selectionOverride })
       const summary = summarizeInFlightRenudgeRows(rows)
       const durationMs = Date.now() - cronStart
       console.log(JSON.stringify({
@@ -203,7 +248,7 @@ export async function GET(request: Request) {
         skipped: 0,
         errors: 0,
         ...summary,
-        ...(hasWindowOverride ? { window: effectiveWindow } : {}),
+        ...overrideEcho,
         timestamp: new Date().toISOString(),
       }))
       return NextResponse.json({
@@ -214,14 +259,14 @@ export async function GET(request: Request) {
         skipped: 0,
         errors: 0,
         ...summary,
-        ...(hasWindowOverride ? { window: effectiveWindow } : {}),
+        ...overrideEcho,
       })
     }
 
     const batchCap = resolveBatchCap(process.env.IDENTITY_RENUDGE_BATCH_CAP)
     const result = await sendInFlightRenudges(db, {
       now,
-      ...windowOverride,
+      ...selectionOverride,
       batchCap,
       deps: {
         // Fix D: route link issuance based on whether the candidate is provider-
@@ -253,7 +298,7 @@ export async function GET(request: Request) {
       errors: result.errors,
       aborted: result.aborted,
       ...summary,
-      ...(hasWindowOverride ? { window: effectiveWindow } : {}),
+      ...overrideEcho,
       timestamp: new Date().toISOString(),
     }))
     return NextResponse.json({
@@ -265,7 +310,7 @@ export async function GET(request: Request) {
       errors: result.errors,
       aborted: result.aborted,
       ...summary,
-      ...(hasWindowOverride ? { window: effectiveWindow } : {}),
+      ...overrideEcho,
     })
   } catch (error) {
     const durationMs = Date.now() - cronStart
