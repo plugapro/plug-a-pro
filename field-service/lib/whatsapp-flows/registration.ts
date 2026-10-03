@@ -1659,7 +1659,9 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
       ctx.phone,
       `❌ None of those numbers match suburbs on the list (${invalidNums.join(', ')}).\n\nPlease try again, e.g. *1,3,5*`
     )
-    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], suburbPage)
+    // Keep a whole-region choice made earlier; baseIds is empty here, so for
+    // suburb selections existingIds is empty too and nothing else changes.
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, suburbPage)
   }
 
   const mergedIds = [...baseIds, ...newIds]

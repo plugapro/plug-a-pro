@@ -1858,6 +1858,50 @@ describe('registration flow - numbered bulk suburb selection', () => {
     expect(result.nextData?.selectedSuburbLabels).toEqual(['Suburb 2', 'Suburb 4'])
   })
 
+  it('only out-of-range numbers after "all" keep the whole-region selection', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, '99', {
+        ...suburbBaseData,
+        locationNodeIds: ['rgn_test'],
+        selectedSuburbLabels: [],
+        selectedRegionLabels: ['Sandton'],
+      })
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('None of those numbers'))
+    expect(result.nextStep).toBe('reg_collect_suburb_select')
+    expect(result.nextData?.locationNodeIds).toEqual(['rgn_test'])
+    expect(result.nextData?.selectedSuburbLabels).toEqual([])
+  })
+
+  it('"all" after picking suburbs replaces them with the REGION node id', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, 'all', {
+        ...suburbBaseData,
+        locationNodeIds: ['sub_0', 'sub_2'],
+        selectedSuburbLabels: ['Suburb 1', 'Suburb 3'],
+      })
+    )
+
+    expect(result.nextData?.locationNodeIds).toEqual(['rgn_test'])
+    expect(result.nextData?.selectedSuburbLabels).toEqual([])
+  })
+
+  it('suburb_change after "all" clears the whole-region selection', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', 'suburb_change', undefined, {
+        ...suburbBaseData,
+        locationNodeIds: ['rgn_test'],
+        selectedSuburbLabels: [],
+        selectedRegionLabels: ['Sandton'],
+      })
+    )
+
+    expect(result.nextStep).toBe('reg_collect_suburb_select')
+    expect(result.nextData?.locationNodeIds).toEqual([])
+    expect(result.nextData?.selectedSuburbLabels).toEqual([])
+  })
+
   it('the numbered prompt tells providers to reply "all" when their suburb is not listed', async () => {
     await handleRegistrationFlow(
       makeCtx('reg_collect_region', 'region_rgn_test', undefined, { cityId: 'city_jhb' })
