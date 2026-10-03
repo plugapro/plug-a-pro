@@ -13,11 +13,9 @@
 //   provider has either an APPROVED ProviderCategory for the slug,
 //   or (legacy) Provider.skills contains the slug.
 //
-// Area → provider matching uses the structured TechnicianServiceArea FK first
-// (locationNodeId match for SUBURB-scope nodes; provinceKey for broader scopes)
-// and the legacy free-text Provider.serviceAreas slug match as a fallback. The
-// /providers route currently only honours the legacy match — this module is
-// purposely additive: structured + legacy together never reduce coverage.
+// Area → provider matching mirrors matching coverage (providerCoversAddress in
+// lib/matching/filter.ts), so a count of zero means matching would find no one.
+// Only structured TechnicianServiceArea rows count; see buildAreaProviderWhere.
 //
 // All public functions are pure reads. No writes, no side effects.
 
@@ -102,45 +100,40 @@ export async function resolveAreaScopeByNodeId(nodeId: string | null | undefined
 // Predicate that matches providers serving the given area. Combined with the
 // "active provider" predicate via Prisma AND in the count/list queries below.
 //
-// Strategy (additive, matches /providers route widening):
-//   - if node is SUBURB: match TechnicianServiceArea.locationNodeId = node.id
-//                        OR legacy Provider.serviceAreas contains node.label
-//                        OR (denormalised) TechnicianServiceArea matches the
-//                           regionKey / cityKey / provinceKey upward chain so
-//                           a suburb-coverage selection still surfaces providers
-//                           who only listed the region/city
-//   - if node is REGION/CITY/PROVINCE: match via the appropriate *Key column
-//     on TechnicianServiceArea + legacy Provider.serviceAreas free-text.
+// Mirrors matching coverage (providerCoversAddress in lib/matching/filter.ts)
+// so that a count of zero means matching would find no one. Every AreaScope
+// comes from a resolved LocationNode, and matching only falls back to legacy
+// strings when the address has no locationNodeId, so legacy
+// Provider.serviceAreas strings never count here. A provider counts when they
+// have an active TechnicianServiceArea row that is:
+//   (a) the exact node (locationNodeId)                    -> SUBURB_EXACT
+//   (b) a REGION row for the node's regionKey              -> REGION_FALLBACK
+//       (a SUBURB/CITY row that merely carries the same denormalised regionKey
+//       does NOT confer region-wide coverage in matching, so it must not count)
+//   (c) a RADIUS row in the node's province                -> conservative
+//       stand-in for the RADIUS haversine tier, which cannot be expressed in a
+//       Prisma where. It may over-count (the radius may not reach the address)
+//       but never under-counts.
 export function buildAreaProviderWhere(area: AreaScope): Prisma.ProviderWhereInput {
   const { node } = area
-  const orConditions: Prisma.ProviderWhereInput[] = []
+  const orConditions: Prisma.ProviderWhereInput[] = [
+    { technicianServiceAreas: { some: { active: true, locationNodeId: node.id } } },
+  ]
 
-  // Always honour the structured FK if we have one.
-  orConditions.push({
-    technicianServiceAreas: { some: { active: true, locationNodeId: node.id } },
-  })
-
-  // Denormalised key match — covers the case where a provider listed a parent
-  // (e.g. they cover the whole region) and the customer picked a child suburb.
   if (node.regionKey) {
     orConditions.push({
-      technicianServiceAreas: { some: { active: true, regionKey: node.regionKey } },
-    })
-  }
-  if (node.cityKey) {
-    orConditions.push({
-      technicianServiceAreas: { some: { active: true, cityKey: node.cityKey } },
+      technicianServiceAreas: {
+        some: { active: true, areaType: 'REGION', regionKey: node.regionKey },
+      },
     })
   }
   if (node.provinceKey) {
     orConditions.push({
-      technicianServiceAreas: { some: { active: true, provinceKey: node.provinceKey } },
+      technicianServiceAreas: {
+        some: { active: true, areaType: 'RADIUS', provinceKey: node.provinceKey },
+      },
     })
   }
-
-  // Legacy free-text — keep parity with /providers route's existing filter.
-  orConditions.push({ serviceAreas: { has: node.label } })
-  orConditions.push({ serviceAreas: { has: node.slug } })
 
   return { OR: orConditions }
 }
