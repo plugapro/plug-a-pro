@@ -12,6 +12,7 @@ import { notifyPostMatchAcceptance } from './post-match-communications'
 import { runAfterResponse } from './run-after-response'
 import { notifyLeadUnlocked } from './provider-wallet-notifications'
 import { materializeFulfilmentArtifacts } from './post-lock-fulfilment'
+import { isFreeLeadUnlock } from './free-leads'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
@@ -48,7 +49,8 @@ export type AcceptedLeadLockResult = {
   serviceRequestId: string
   leadStatus: 'ACCEPTED_LOCKED'
   serviceRequestStatus: 'ACCEPTED_LOCKED'
-  creditTransactionId: string
+  // null only for a free-leads unlock (creditsCharged 0), which has no debit.
+  creditTransactionId: string | null
   alreadyLocked: boolean
   matchId: string
   quoteId: string
@@ -310,6 +312,16 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     orderBy: { createdAt: 'desc' },
   })
 
+  // Free leads mode: a LeadUnlock persisted with creditsCharged 0 for this
+  // provider stands in for the debit ledger row. Decided from the persisted
+  // unlock, never the live flag, so a lead unlocked free still locks if the
+  // flag flips mid-flow and a paid unlock still requires its debit.
+  const freeUnlock = Boolean(
+    lead.unlock &&
+      lead.unlock.providerId === params.providerId &&
+      isFreeLeadUnlock(lead.unlock),
+  )
+
   const leadAlreadyLocked = lead.status === 'ACCEPTED_LOCKED'
   const requestAlreadyLocked = lead.jobRequest.status === 'ACCEPTED_LOCKED'
 
@@ -339,7 +351,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
         result: 'inconsistent_state',
       })
     }
-    if (!creditTransaction) {
+    if (!creditTransaction && !freeUnlock) {
       failAcceptedLock({
         code: 'CREDIT_TRANSACTION_MISSING',
         message: 'Accepted lock is missing the credit transaction.',
@@ -374,7 +386,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
       serviceRequestId: lead.jobRequestId,
       leadStatus: 'ACCEPTED_LOCKED',
       serviceRequestStatus: 'ACCEPTED_LOCKED',
-      creditTransactionId: creditTransaction.id,
+      creditTransactionId: creditTransaction?.id ?? null,
       alreadyLocked: true,
       matchId: backfillArtifacts.matchId,
       quoteId: backfillArtifacts.quoteId,
@@ -432,7 +444,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
       traceId: params.traceId,
     })
   }
-  if (!creditTransaction) {
+  if (!creditTransaction && !freeUnlock) {
     failAcceptedLock({
       code: 'CREDIT_TRANSACTION_MISSING',
       message: 'Provider credit transaction is required before accepted lock.',
@@ -533,8 +545,9 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
         leadStatus: 'ACCEPTED_LOCKED',
         serviceRequestStatus: 'ACCEPTED_LOCKED',
         leadUnlockId: lead.unlock.id,
-        creditTransactionId: creditTransaction.id,
+        creditTransactionId: creditTransaction?.id ?? null,
         source: params.source ?? 'api',
+        ...(freeUnlock ? { free: true } : {}),
       } as Prisma.InputJsonValue,
     },
   })
@@ -564,7 +577,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     serviceRequestId: lead.jobRequestId,
     leadStatus: 'ACCEPTED_LOCKED',
     serviceRequestStatus: 'ACCEPTED_LOCKED',
-    creditTransactionId: creditTransaction.id,
+    creditTransactionId: creditTransaction?.id ?? null,
     alreadyLocked: false,
     matchId: artifacts.matchId,
     quoteId: artifacts.quoteId,

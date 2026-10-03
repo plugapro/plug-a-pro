@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { db } from './db'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import { buildInsufficientCreditsMessage, creditCountLabel } from './provider-credit-copy'
+import { FREE_LEADS_COPY_LINE, isFreeLeadsEnabled } from './free-leads'
 
 type CreditCheckTx = Prisma.TransactionClient
 
@@ -77,6 +78,15 @@ function creditCheckPassedMessage(requiredCredits: number) {
   ].join('\n')
 }
 
+function freeLeadCheckPassedMessage() {
+  return [
+    'Accepted.',
+    '',
+    FREE_LEADS_COPY_LINE,
+    'Customer direct contact details are still locked.',
+  ].join('\n')
+}
+
 function blockedMessage(reason: string) {
   switch (reason) {
     case 'NOT_FOUND':
@@ -113,6 +123,7 @@ async function writeAudit(
     requiredCredits?: number
     currentCreditBalance?: number
     source?: string
+    free?: boolean
   },
 ) {
   await tx.auditLog.create({
@@ -128,6 +139,7 @@ async function writeAudit(
         requiredCredits: params.requiredCredits ?? null,
         currentCreditBalance: params.currentCreditBalance ?? null,
         source: params.source ?? 'api',
+        ...(params.free ? { free: true } : {}),
       } as Prisma.InputJsonValue,
     },
   })
@@ -139,7 +151,8 @@ export async function checkProviderLeadCreditBalance(params: {
   source?: 'whatsapp' | 'pwa' | 'api'
   traceId?: string
 }): Promise<ProviderLeadCreditCheckResult> {
-  return db.$transaction((tx) => checkProviderLeadCreditBalanceInTransaction(tx, params))
+  const freeLeads = await isFreeLeadsEnabled()
+  return db.$transaction((tx) => checkProviderLeadCreditBalanceInTransaction(tx, { ...params, freeLeads }))
 }
 
 export async function checkProviderLeadCreditBalanceInTransaction(
@@ -149,6 +162,9 @@ export async function checkProviderLeadCreditBalanceInTransaction(
     providerId: string
     source?: 'whatsapp' | 'pwa' | 'api'
     traceId?: string
+    // Free leads mode (provider.leads.free). Callers that already read the
+    // flag pass it down; otherwise it is read here (fails closed to paid).
+    freeLeads?: boolean
   },
 ): Promise<ProviderLeadCreditCheckResult> {
   logCreditCheck({
@@ -263,6 +279,60 @@ export async function checkProviderLeadCreditBalanceInTransaction(
       reason: 'LEAD_NOT_ACCEPTED',
       leadStatus: lead.status,
       providerMessage: blockedMessage('LEAD_NOT_ACCEPTED'),
+    }
+  }
+
+  const freeLeads = params.freeLeads ?? (await isFreeLeadsEnabled())
+  if (freeLeads) {
+    // Free leads mode: no wallet requirement, no balance gate, and the lead is
+    // never moved to CREDIT_REQUIRED. The wallet is read only so the result
+    // still reports the provider's (untouched) balance.
+    const freeWallet = await tx.providerWallet.findUnique({
+      where: { providerId: params.providerId },
+      select: { paidCreditBalance: true, promoCreditBalance: true },
+    })
+    const paidCreditBalance = Math.max(0, freeWallet?.paidCreditBalance ?? 0)
+    const promoCreditBalance = Math.max(0, freeWallet?.promoCreditBalance ?? 0)
+
+    if (lead.status === 'CREDIT_REQUIRED') {
+      await tx.lead.updateMany({
+        where: { id: lead.id, status: 'CREDIT_REQUIRED' },
+        data: { status: 'PROVIDER_ACCEPTED', providerAcceptedAt: new Date(), respondedAt: new Date() },
+      })
+    }
+
+    await writeAudit(tx, {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'lead.provider_credit_check_passed',
+      beforeStatus: lead.status,
+      afterStatus: 'PROVIDER_ACCEPTED',
+      requiredCredits: 0,
+      currentCreditBalance: paidCreditBalance + promoCreditBalance,
+      source: params.source,
+      free: true,
+    })
+
+    logCreditCheck({
+      leadId: lead.id,
+      providerId: params.providerId,
+      result: 'sufficient',
+      source: params.source,
+      traceId: params.traceId,
+      reason: 'FREE_LEADS',
+    })
+
+    return {
+      ok: true,
+      leadId: lead.id,
+      providerId: params.providerId,
+      result: 'SUFFICIENT_CREDITS',
+      requiredCredits: 0,
+      currentCreditBalance: paidCreditBalance + promoCreditBalance,
+      paidCreditBalance,
+      promoCreditBalance,
+      leadStatus: 'PROVIDER_ACCEPTED',
+      providerMessage: freeLeadCheckPassedMessage(),
     }
   }
 

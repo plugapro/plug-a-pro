@@ -22,6 +22,7 @@ import {
   assertIdentityVerifiedForCredits,
 } from './identity-verification/credit-gate'
 import { recordWorkflowEvent } from './workflow-events/record'
+import { isFreeLeadsEnabled } from './free-leads'
 
 const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_TIMEOUT_MS = 20_000
 const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_MAX_WAIT_MS = 10_000
@@ -105,6 +106,10 @@ export async function acceptSelectedProviderJob(params: {
   })
 
   try {
+    // Free leads mode (provider.leads.free): read once per accept, outside the
+    // transaction, and pass it down. Fails closed (paid) on error.
+    const freeLeads = await isFreeLeadsEnabled()
+
     // Box the payload to prevent TypeScript from narrowing the `let` to `never`
     // after it is mutated inside the async $transaction callback.
     const notificationPayloadBox: { value: { leadId: string; providerId: string } | null } = { value: null }
@@ -171,6 +176,7 @@ export async function acceptSelectedProviderJob(params: {
           source: params.source,
           idempotencyKey: params.idempotencyKey,
           traceId: params.traceId,
+          freeLeads,
         })
         const acceptedLock = await lockAcceptedLeadAfterCreditInTransaction(tx, {
           leadId: lead.id,
@@ -191,7 +197,8 @@ export async function acceptSelectedProviderJob(params: {
             leadId: lead.id,
             providerId: params.providerId,
             result: 'SUFFICIENT_CREDITS' as const,
-            requiredCredits: LEAD_UNLOCK_COST_CREDITS,
+            // 1 for a paid unlock, 0 for a free-leads unlock.
+            requiredCredits: creditApplication.requiredCredits,
             currentCreditBalance: creditApplication.currentCreditBalance,
             paidCreditBalance: creditApplication.paidCreditBalance,
             promoCreditBalance: creditApplication.promoCreditBalance,
@@ -234,7 +241,9 @@ export async function acceptSelectedProviderJob(params: {
       // provider can actually pay. Without this check the lead transitions to
       // PROVIDER_ACCEPTED/CREDIT_REQUIRED and gets stuck because decline is
       // blocked at customer-shortlists.ts and no Match/Quote/LeadUnlock exists.
-      if (lead.status === 'CUSTOMER_SELECTED') {
+      // Skipped in free leads mode: no wallet or balance is required. The
+      // identity gate above stays enforced either way.
+      if (lead.status === 'CUSTOMER_SELECTED' && !freeLeads) {
         const wallet = await tx.providerWallet.findUnique({
           where: { providerId: params.providerId },
           select: { paidCreditBalance: true, promoCreditBalance: true, status: true },
@@ -313,6 +322,7 @@ export async function acceptSelectedProviderJob(params: {
         providerId: params.providerId,
         source: params.source,
         traceId: params.traceId,
+        freeLeads,
       })
 
       if (!creditCheck.ok) {
@@ -344,6 +354,7 @@ export async function acceptSelectedProviderJob(params: {
         source: params.source,
         idempotencyKey: params.idempotencyKey,
         traceId: params.traceId,
+        freeLeads,
       })
       const acceptedLock = await lockAcceptedLeadAfterCreditInTransaction(tx, {
         leadId: lead.id,
