@@ -27,6 +27,10 @@ describe('registration area step — whole-region option', () => {
     expect(source).toContain('aria-pressed={wholeRegion}')
   })
 
+  it('hides the whole-region option when the location fetch failed', () => {
+    expect(source).toContain('{form.selectedRegionId && !locationLoading.suburbs && !locationLoadError && (() => {')
+  })
+
   it('validation accepts a region id and says so', () => {
     expect(source).toContain("if (currentStep === 'area' && !hasAnyServiceArea(form)) {")
     expect(source).toContain("setError('Select at least one suburb from the list, or cover the whole region.')")

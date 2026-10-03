@@ -64,4 +64,18 @@ describe('service-area-selection (registration area step)', () => {
   it('isWholeRegionSelected is false for an empty region id', () => {
     expect(isWholeRegionSelected(applyWholeRegion(EMPTY, REGION), '')).toBe(false)
   })
+
+  it('recognises a re-hydrated draft selection holding the region id', () => {
+    const draft: ServiceAreaSelection = { serviceAreas: [REGION.label], locationNodeIds: [REGION.id] }
+    expect(isWholeRegionSelected(draft, REGION.id)).toBe(true)
+    expect(removeServiceArea(draft, REGION.id)).toEqual(EMPTY)
+  })
+
+  it('empty results do not share array identity', () => {
+    const on = applyWholeRegion(EMPTY, REGION)
+    const a = applyWholeRegion(on, REGION)
+    const b = applyWholeRegion(on, REGION)
+    expect(a.serviceAreas).not.toBe(b.serviceAreas)
+    expect(a.locationNodeIds).not.toBe(b.locationNodeIds)
+  })
 })

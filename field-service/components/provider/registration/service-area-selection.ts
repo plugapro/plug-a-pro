@@ -12,7 +12,10 @@ export type ServiceAreaSelection = {
 
 export type AreaNode = { id: string; label: string }
 
-const EMPTY: ServiceAreaSelection = { serviceAreas: [], locationNodeIds: [] }
+// Fresh arrays per call so callers never share (or mutate) a module-level selection.
+function emptySelection(): ServiceAreaSelection {
+  return { serviceAreas: [], locationNodeIds: [] }
+}
 
 export function isWholeRegionSelected(selection: ServiceAreaSelection, regionId: string): boolean {
   return regionId !== '' && selection.locationNodeIds.includes(regionId)
@@ -33,7 +36,7 @@ export function removeServiceArea(selection: ServiceAreaSelection, nodeId: strin
 
 /** Toggle whole-region coverage. On: the region replaces every suburb. Off: empty. */
 export function applyWholeRegion(selection: ServiceAreaSelection, region: AreaNode): ServiceAreaSelection {
-  if (isWholeRegionSelected(selection, region.id)) return EMPTY
+  if (isWholeRegionSelected(selection, region.id)) return emptySelection()
   return { serviceAreas: [region.label], locationNodeIds: [region.id] }
 }
 

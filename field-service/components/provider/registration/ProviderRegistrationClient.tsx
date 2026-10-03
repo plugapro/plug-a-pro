@@ -1281,7 +1281,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                       })}
                     </div>
                   )}
-                  {form.selectedRegionId && !locationLoading.suburbs && (() => {
+                  {form.selectedRegionId && !locationLoading.suburbs && !locationLoadError && (() => {
                     const region = regions.find((r) => r.id === form.selectedRegionId)
                     if (!region) return null
                     const wholeRegion = isWholeRegionSelected(form, region.id)
