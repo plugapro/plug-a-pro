@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   LeadUnlockError,
   unlockLeadForProvider,
+  unlockLeadForProviderInTransaction,
 } from '../../lib/lead-unlocks'
 
-const { mockDb, mockNotifyLeadUnlocked, mockNotifyLowBalance, state } = vi.hoisted(() => {
+const { mockDb, mockNotifyLeadUnlocked, mockNotifyLowBalance, mockIsFreeLeadsEnabled, state } = vi.hoisted(() => {
   const state: {
     lead: any
     unlock: any
@@ -42,9 +43,15 @@ const { mockDb, mockNotifyLeadUnlocked, mockNotifyLowBalance, state } = vi.hoist
 
   const mockNotifyLeadUnlocked = vi.fn()
   const mockNotifyLowBalance = vi.fn()
+  const mockIsFreeLeadsEnabled = vi.fn()
 
-  return { mockDb, mockNotifyLeadUnlocked, mockNotifyLowBalance, state }
+  return { mockDb, mockNotifyLeadUnlocked, mockNotifyLowBalance, mockIsFreeLeadsEnabled, state }
 })
+
+vi.mock('../../lib/free-leads', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/free-leads')>()),
+  isFreeLeadsEnabled: mockIsFreeLeadsEnabled,
+}))
 
 vi.mock('../../lib/db', () => ({
   db: mockDb,
@@ -105,6 +112,7 @@ describe('lead unlock service', () => {
     state.ledgerEntries = []
     mockNotifyLeadUnlocked.mockResolvedValue(undefined)
     mockNotifyLowBalance.mockResolvedValue(undefined)
+    mockIsFreeLeadsEnabled.mockResolvedValue(false)
 
     mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) =>
       callback(mockDb as any)
@@ -419,5 +427,105 @@ describe('lead unlock service', () => {
     } satisfies Partial<LeadUnlockError>)
 
     expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+  })
+
+  describe('free leads mode (provider.leads.free)', () => {
+    it('flag ON: unlocks with a zero-balance wallet, writes creditsCharged 0 and never debits', async () => {
+      mockIsFreeLeadsEnabled.mockResolvedValue(true)
+      state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 0 })
+
+      const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
+
+      expect(result.alreadyUnlocked).toBe(false)
+      expect(result.ledgerEntries).toEqual([])
+      expect(result.unlock).toMatchObject({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        creditsCharged: 0,
+        creditTypeBreakdown: { free: true },
+        status: 'UNLOCKED',
+      })
+      expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+      expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+      expect(state.wallet).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 0 })
+      expect(mockNotifyLeadUnlocked).toHaveBeenCalledWith('unlock-1')
+      expect(mockNotifyLowBalance).not.toHaveBeenCalled()
+    })
+
+    it('flag ON: unlocks when the provider has no wallet at all', async () => {
+      mockIsFreeLeadsEnabled.mockResolvedValue(true)
+      state.wallet = null
+
+      const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
+
+      expect(result.unlock).toMatchObject({ creditsCharged: 0 })
+      expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+    })
+
+    it('flag ON: KYC/approval gates still apply', async () => {
+      mockIsFreeLeadsEnabled.mockResolvedValue(true)
+      state.lead = makeLead({
+        provider: {
+          id: 'provider-1',
+          active: true,
+          verified: false,
+          status: 'PENDING',
+          kycStatus: 'VERIFIED',
+          isTestUser: false,
+        },
+      })
+
+      await expect(unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })).rejects.toMatchObject({
+        code: 'PROVIDER_NOT_APPROVED',
+      })
+      expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    })
+
+    it('flag OFF: zero balance is still rejected with INSUFFICIENT_CREDITS', async () => {
+      mockIsFreeLeadsEnabled.mockResolvedValue(false)
+      state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 0 })
+
+      await expect(unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })).rejects.toMatchObject({
+        code: 'INSUFFICIENT_CREDITS',
+      })
+      expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    })
+
+    it('in-transaction variant, flag ON: no balance error at 0, no debit, creditsCharged 0', async () => {
+      mockIsFreeLeadsEnabled.mockResolvedValue(true)
+      state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 0 })
+      state.lead = makeLead({ status: 'SENT' })
+
+      const result = await unlockLeadForProviderInTransaction(mockDb as any, 'lead-1', 'provider-1', {
+        confirmed: true,
+      })
+
+      expect(result.unlock).toMatchObject({ creditsCharged: 0, creditTypeBreakdown: { free: true } })
+      expect(result.ledgerEntries).toEqual([])
+      expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+      expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+      expect(mockDb.lead.update).toHaveBeenCalledWith({ where: { id: 'lead-1' }, data: { status: 'VIEWED' } })
+    })
+
+    it('in-transaction variant, flag OFF: charges 1 credit exactly as before', async () => {
+      mockIsFreeLeadsEnabled.mockResolvedValue(false)
+
+      const result = await unlockLeadForProviderInTransaction(mockDb as any, 'lead-1', 'provider-1', {
+        confirmed: true,
+      })
+
+      expect(result.unlock).toMatchObject({ creditsCharged: 1, creditTypeBreakdown: { promo: 1 } })
+      expect(result.ledgerEntries).toHaveLength(1)
+      expect(state.wallet).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 0 })
+    })
+
+    it('in-transaction variant, flag OFF: zero balance rejected', async () => {
+      mockIsFreeLeadsEnabled.mockResolvedValue(false)
+      state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 0 })
+
+      await expect(
+        unlockLeadForProviderInTransaction(mockDb as any, 'lead-1', 'provider-1', { confirmed: true }),
+      ).rejects.toMatchObject({ code: 'INSUFFICIENT_CREDITS' })
+    })
   })
 })
