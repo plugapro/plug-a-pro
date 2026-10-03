@@ -542,4 +542,49 @@ describe('POST /api/customer/bookings', () => {
     expect(response.status).toBe(200)
     expect(mockCreateJobRequest).toHaveBeenCalledTimes(1)
   })
+
+  it('fails open when the location node does not resolve and serviceability_v2 is OFF', async () => {
+    mockIsEnabled.mockResolvedValue(false)
+    mockResolveAreaScopeByNodeId.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockCountActiveProvidersFor).not.toHaveBeenCalled()
+    expect(mockCreateJobRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns AREA_UNAVAILABLE when the location node does not resolve and serviceability_v2 is ON', async () => {
+    mockIsEnabled.mockResolvedValue(true)
+    mockResolveAreaScopeByNodeId.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'AREA_UNAVAILABLE',
+      locationNodeId: 'node-1',
+    })
+    expect(mockCreateJobRequest).not.toHaveBeenCalled()
+  })
 })

@@ -156,6 +156,41 @@ describe('buildAreaProviderWhere (mirrors matching coverage)', () => {
     expect(noProvince.some((b) => b?.areaType === 'RADIUS')).toBe(false)
     expect(noProvince.some((b) => b?.areaType === 'REGION')).toBe(true)
   })
+
+  describe('non-SUBURB scopes (home AreaSelector can pick REGION / CITY / PROVINCE)', () => {
+    const REGION_NODE = { ...BROMHOF, id: 'node_jhb_north', slug: 'gauteng__johannesburg__jhb_north', label: 'JHB North', nodeType: 'REGION' as const }
+    const CITY_NODE = { ...BROMHOF, id: 'node_jhb', slug: 'gauteng__johannesburg', label: 'Johannesburg', nodeType: 'CITY' as const, regionKey: null }
+    const PROVINCE_NODE = { ...BROMHOF, id: 'node_gp', slug: 'gauteng', label: 'Gauteng', nodeType: 'PROVINCE' as const, regionKey: null, cityKey: null }
+
+    it('REGION node: exact node + any-areaType regionKey row, nothing at city/province level', () => {
+      expect(buildAreaProviderWhere({ node: REGION_NODE })).toEqual({
+        OR: [
+          { technicianServiceAreas: { some: { active: true, locationNodeId: REGION_NODE.id } } },
+          { technicianServiceAreas: { some: { active: true, regionKey: 'jhb_north' } } },
+        ],
+      })
+    })
+
+    it('CITY node: exact node + any-areaType cityKey row, nothing at region/province level', () => {
+      expect(buildAreaProviderWhere({ node: CITY_NODE })).toEqual({
+        OR: [
+          { technicianServiceAreas: { some: { active: true, locationNodeId: CITY_NODE.id } } },
+          { technicianServiceAreas: { some: { active: true, cityKey: 'johannesburg' } } },
+        ],
+      })
+    })
+
+    it('PROVINCE node: exact node + any-areaType provinceKey row, no legacy strings', () => {
+      const where = buildAreaProviderWhere({ node: PROVINCE_NODE })
+      expect(where).toEqual({
+        OR: [
+          { technicianServiceAreas: { some: { active: true, locationNodeId: PROVINCE_NODE.id } } },
+          { technicianServiceAreas: { some: { active: true, provinceKey: 'gauteng' } } },
+        ],
+      })
+      expect(JSON.stringify(where)).not.toContain('"serviceAreas"')
+    })
+  })
 })
 
 describe('listServiceableCategoriesForArea', () => {

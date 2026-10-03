@@ -100,39 +100,57 @@ export async function resolveAreaScopeByNodeId(nodeId: string | null | undefined
 // Predicate that matches providers serving the given area. Combined with the
 // "active provider" predicate via Prisma AND in the count/list queries below.
 //
-// Mirrors matching coverage (providerCoversAddress in lib/matching/filter.ts)
-// so that a count of zero means matching would find no one. Every AreaScope
-// comes from a resolved LocationNode, and matching only falls back to legacy
-// strings when the address has no locationNodeId, so legacy
-// Provider.serviceAreas strings never count here. A provider counts when they
-// have an active TechnicianServiceArea row that is:
+// SUBURB scope mirrors matching coverage (providerCoversAddress in
+// lib/matching/filter.ts), so a count of zero means matching would find no one.
+// Matching only falls back to legacy strings when the address has no
+// locationNodeId, and every AreaScope comes from a resolved LocationNode, so
+// legacy Provider.serviceAreas strings never count here. A provider counts when
+// they have an active TechnicianServiceArea row that is:
 //   (a) the exact node (locationNodeId)                    -> SUBURB_EXACT
 //   (b) a REGION row for the node's regionKey              -> REGION_FALLBACK
 //       (a SUBURB/CITY row that merely carries the same denormalised regionKey
 //       does NOT confer region-wide coverage in matching, so it must not count)
-//   (c) a RADIUS row in the node's province                -> conservative
+//   (c) a RADIUS row with the node's provinceKey           -> conservative
 //       stand-in for the RADIUS haversine tier, which cannot be expressed in a
-//       Prisma where. It may over-count (the radius may not reach the address)
-//       but never under-counts.
+//       Prisma where. It over-counts when the radius does not reach the
+//       address, and under-counts RADIUS rows that lack provinceKey or whose
+//       radius crosses a province border. Nothing writes RADIUS rows today, so
+//       this is no regression.
+//
+// REGION / CITY / PROVINCE scope (the home AreaSelector resolves any node
+// type): "is anyone serving somewhere inside this area?" Descendant coverage
+// counts, so match any active row (any areaType) carrying the node's own
+// level key, plus the exact node row.
 export function buildAreaProviderWhere(area: AreaScope): Prisma.ProviderWhereInput {
   const { node } = area
   const orConditions: Prisma.ProviderWhereInput[] = [
     { technicianServiceAreas: { some: { active: true, locationNodeId: node.id } } },
   ]
 
-  if (node.regionKey) {
-    orConditions.push({
-      technicianServiceAreas: {
-        some: { active: true, areaType: 'REGION', regionKey: node.regionKey },
-      },
-    })
+  if (node.nodeType === 'SUBURB') {
+    if (node.regionKey) {
+      orConditions.push({
+        technicianServiceAreas: {
+          some: { active: true, areaType: 'REGION', regionKey: node.regionKey },
+        },
+      })
+    }
+    if (node.provinceKey) {
+      orConditions.push({
+        technicianServiceAreas: {
+          some: { active: true, areaType: 'RADIUS', provinceKey: node.provinceKey },
+        },
+      })
+    }
+    return { OR: orConditions }
   }
-  if (node.provinceKey) {
-    orConditions.push({
-      technicianServiceAreas: {
-        some: { active: true, areaType: 'RADIUS', provinceKey: node.provinceKey },
-      },
-    })
+
+  if (node.nodeType === 'REGION' && node.regionKey) {
+    orConditions.push({ technicianServiceAreas: { some: { active: true, regionKey: node.regionKey } } })
+  } else if (node.nodeType === 'CITY' && node.cityKey) {
+    orConditions.push({ technicianServiceAreas: { some: { active: true, cityKey: node.cityKey } } })
+  } else if (node.nodeType === 'PROVINCE' && node.provinceKey) {
+    orConditions.push({ technicianServiceAreas: { some: { active: true, provinceKey: node.provinceKey } } })
   }
 
   return { OR: orConditions }
