@@ -65,8 +65,10 @@ joins them. "National registration only" would be a no-op for them.
    never written to new service-area rows.
 2. Knows that pausing does **not** retroactively deactivate existing rows;
    matching reads `TechnicianServiceArea.active`, not `LocationNode.active`.
-   Re-running the resync script for affected providers is the documented way to
-   do that (same script, `--providers`).
+   To pause existing rows, run the resync script in its pause mode:
+   `--deactivate-inactive-nodes` (dry run by default), then the same with
+   `--commit --admin-email <admin>`. The default reactivation mode skips rows
+   whose node is inactive, so a later resync cannot undo a pause.
 
 ## Architecture
 
@@ -382,6 +384,7 @@ Risks and mitigations:
   to today's `jhb_west` legacy cohort.
 - **Rollback.** Reverting the PR restores the old gate for *new* writes only;
   already re-activated rows stay active (they are vetted providers). To pause a
-  specific region, deactivate its node and run the resync for its providers.
+  specific region, deactivate its node and run the resync with
+  `--deactivate-inactive-nodes` (dry run, then `--commit --admin-email <admin>`).
 - **Branch hygiene.** All work in `worktrees/feat-national-rollout`; stage by
   explicit path; no touching the main checkout.
