@@ -40,7 +40,6 @@ describe('repo-wide WhatsApp body-text lint - no raw URLs in customer-facing cop
         return m.buildProviderApplicationSubmittedMessage({
           providerName: 'Lovemore',
           applicationRef: 'APP123',
-          isComingSoonRegion: false,
           // Even when callers pass a termsUrl it must NOT appear in the body.
           termsUrl: 'https://app.plugapro.co.za/provider/terms/credits',
         })

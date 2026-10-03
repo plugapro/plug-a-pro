@@ -30,7 +30,7 @@ const FLOW_DATA_WHITELIST: Record<FlowName, ReadonlyArray<string>> = {
     ...SHARED_KEYS,
     'name', 'proposedName',
     'skills', 'serviceAreas', 'province', 'provinceKey', 'regionId', 'regionLabel',
-    'selectedRegionLabels', 'selectedRegionStatus', 'selectedSuburbLabels', 'locationNodeIds',
+    'selectedRegionLabels', 'selectedSuburbLabels', 'locationNodeIds',
     'city', 'cityId', 'suburbPage', 'suburbPageTotal', 'suburbOptions',
     'verificationMethod', 'providerIdNumber',
     'verificationDocAttachmentId', 'verificationDocMediaId',

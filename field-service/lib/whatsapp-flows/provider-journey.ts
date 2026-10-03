@@ -762,10 +762,12 @@ async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  const structuredAreas = provider.technicianServiceAreas.map(
-    (area) => `${area.label} - ${area.active ? 'Active pilot' : 'Coming soon'}`,
-  )
-  const legacyAreas = provider.serviceAreas.map((area) => `${area} - status saved`)
+  // Every active row receives leads; inactive rows are areas the provider or
+  // an admin removed, so they are not shown.
+  const structuredAreas = provider.technicianServiceAreas
+    .filter((area) => area.active)
+    .map((area) => area.label)
+  const legacyAreas = provider.serviceAreas
   const areas = structuredAreas.length ? structuredAreas : legacyAreas
 
   await sendButtons(

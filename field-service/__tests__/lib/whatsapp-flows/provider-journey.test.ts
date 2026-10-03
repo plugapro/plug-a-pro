@@ -162,6 +162,57 @@ describe('handleProviderJourneyFlow', () => {
     })
   })
 
+  describe('pj_service_areas step', () => {
+    it('lists active structured areas plainly, hides inactive rows, no pilot tags', async () => {
+      ;(db.provider.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        serviceAreas: ['Sandton', 'Florida'],
+        technicianServiceAreas: [
+          { label: 'Sandton', active: true },
+          { label: 'Florida', active: false },
+          { label: 'JHB North / Sandton', active: true },
+        ],
+      })
+
+      const result = await handleProviderJourneyFlow(mockCtx('pj_service_areas'))
+
+      const body: string = (wa.sendButtons as any).mock.calls[0][1]
+      expect(body).toContain('📍 *Service Areas*')
+      expect(body).toContain('Sandton')
+      expect(body).toContain('JHB North / Sandton')
+      expect(body).not.toContain('Florida')
+      expect(body).not.toContain('Active pilot')
+      expect(body).not.toContain('Coming soon')
+      expect(body).not.toContain('status saved')
+      expect(result.nextStep).toBe('pj_toggle_available')
+    })
+
+    it('falls back to legacy serviceAreas labels when no structured rows exist', async () => {
+      ;(db.provider.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        serviceAreas: ['Rondebosch', 'Claremont'],
+        technicianServiceAreas: [],
+      })
+
+      await handleProviderJourneyFlow(mockCtx('pj_service_areas'))
+
+      const body: string = (wa.sendButtons as any).mock.calls[0][1]
+      expect(body).toContain('Rondebosch\nClaremont')
+      expect(body).not.toContain('status saved')
+    })
+
+    it('shows the empty-state line when the provider has no areas at all', async () => {
+      ;(db.provider.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        serviceAreas: [],
+        technicianServiceAreas: [{ label: 'Removed Area', active: false }],
+      })
+
+      await handleProviderJourneyFlow(mockCtx('pj_service_areas'))
+
+      const body: string = (wa.sendButtons as any).mock.calls[0][1]
+      expect(body).toContain('No service areas saved yet.')
+      expect(body).not.toContain('Removed Area')
+    })
+  })
+
   describe('pj_toggle_available step', () => {
     it('asks for confirmation when provider is online and taps toggle', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({

@@ -2687,7 +2687,6 @@ function buildQgv2SubmitPayload(ctx: FlowContext) {
       verificationDocAttachmentId: ctx.data.verificationDocAttachmentId ?? null,
       verificationSelfieAttachmentId: ctx.data.verificationSelfieAttachmentId ?? null,
       locationNodeIds: submitData.locationNodeIds,
-      selectedRegionStatus: ctx.data.selectedRegionStatus ?? null,
     },
   }
 }
@@ -3377,14 +3376,12 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       }
     }
 
-    const isComingSoonRegion = ctx.data.selectedRegionStatus === 'coming_soon'
     try {
       await sendButtons(
         ctx.phone,
         buildProviderApplicationSubmittedMessage({
           providerName: ctx.data.name,
           applicationRef: submitResult.ref,
-          isComingSoonRegion,
         }),
         [
           { id: 'provider_application_status', title: WHATSAPP_COPY.checkStatusButton },

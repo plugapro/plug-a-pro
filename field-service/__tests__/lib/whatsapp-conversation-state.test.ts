@@ -72,6 +72,29 @@ describe('clearIncompatibleFlowData', () => {
   })
 })
 
+describe('legacy selectedRegionStatus in stored session data', () => {
+  // selectedRegionStatus was removed from ConversationData and the registration
+  // whitelist. Sessions saved before the deploy may still carry it in their JSON.
+  const legacy = { name: 'Lebo', selectedRegionStatus: 'coming_soon' } as unknown as Parameters<
+    typeof clearIncompatibleFlowData
+  >[2]
+
+  it('loads without error and is left untouched while the flow is unchanged', () => {
+    expect(() => clearIncompatibleFlowData('registration', 'registration', legacy)).not.toThrow()
+    expect(clearIncompatibleFlowData('registration', 'registration', legacy)).toEqual(legacy)
+  })
+
+  it('is stripped (not rejected) when the registration whitelist is applied on a flow change', () => {
+    const out = clearIncompatibleFlowData('job_request', 'registration', legacy)
+    expect(out).toEqual({ name: 'Lebo' })
+    expect(out).not.toHaveProperty('selectedRegionStatus')
+  })
+
+  it('is dropped by a session reset', () => {
+    expect(resetConversationData(legacy)).toEqual({})
+  })
+})
+
 describe('resetConversationData', () => {
   const ctwaReferral = {
     sourceType: 'ad',

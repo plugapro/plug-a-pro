@@ -238,7 +238,6 @@ function buildPayload(overrides?: Record<string, unknown>) {
       verificationDocAttachmentId: null,
       verificationSelfieAttachmentId: null,
       locationNodeIds: [],
-      selectedRegionStatus: null,
     },
     ...overrides,
   }
@@ -1647,7 +1646,6 @@ describe('Fix C: providerRate rows replayed on PASS', () => {
           verificationDocAttachmentId: null,
           verificationSelfieAttachmentId: null,
           locationNodeIds: [],
-          selectedRegionStatus: null,
         },
       }),
       phone: '+27821234567',

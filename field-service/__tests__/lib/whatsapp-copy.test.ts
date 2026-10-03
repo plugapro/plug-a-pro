@@ -180,7 +180,6 @@ describe('regression: provider-credit-copy producers must not embed raw URLs', (
     const body = buildProviderApplicationSubmittedMessage({
       providerName: 'Lovemore',
       applicationRef: 'ABC12345',
-      isComingSoonRegion: false,
       // Even when callers pass a termsUrl param, body must not include it.
       termsUrl: 'https://app.plugapro.co.za/provider/terms/credits',
     })
