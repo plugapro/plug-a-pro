@@ -20,6 +20,53 @@
  *     --commit
  */
 import { db } from '../lib/db'
+import { getRegionKeyFromSlug } from '../lib/service-area-guard'
+
+export type BackfillNode = {
+  id: string
+  nodeType: string
+  label: string
+  slug: string
+  regionKey: string | null
+  provinceKey: string | null
+  cityKey: string | null
+}
+
+/** Upsert args for one provider/node pair. areaType, suburbKey and regionKey
+ *  follow upsertStructuredServiceAreas (lib/provider-record.ts): a REGION node
+ *  becomes a REGION row (suburbKey null, regionKey from the slug if absent),
+ *  so matching treats it as whole-region coverage; a SUBURB node keeps the
+ *  last slug segment as its suburbKey. */
+export function buildServiceAreaUpsert(providerId: string, node: BackfillNode) {
+  const isRegion = node.nodeType === 'REGION'
+  const areaType = isRegion ? ('REGION' as const) : ('SUBURB' as const)
+  const suburbKey = isRegion ? null : (node.slug.split('__').at(-1) ?? node.slug)
+  const regionKey = node.regionKey ?? (isRegion ? getRegionKeyFromSlug(node.slug) : null)
+  // National liveness (spec 2026-10-03): every active node → active row.
+  return {
+    where: { providerId_locationNodeId: { providerId, locationNodeId: node.id } },
+    update: {
+      active: true,
+      areaType,
+      label: node.label,
+      regionKey,
+      suburbKey,
+      provinceKey: node.provinceKey,
+      cityKey: node.cityKey,
+    },
+    create: {
+      providerId,
+      areaType,
+      label: node.label,
+      locationNodeId: node.id,
+      regionKey,
+      suburbKey,
+      provinceKey: node.provinceKey,
+      cityKey: node.cityKey,
+      active: true,
+    },
+  }
+}
 
 type Args = {
   commit: boolean
@@ -83,6 +130,7 @@ async function main() {
     where: { active: true, nodeType: args.nodeType as never },
     select: {
       id: true,
+      nodeType: true,
       label: true,
       slug: true,
       regionKey: true,
@@ -187,21 +235,7 @@ async function main() {
       }
 
       if (args.commit) {
-        // National liveness (spec 2026-10-03): every active node → active row.
-        await db.technicianServiceArea.upsert({
-          where: { providerId_locationNodeId: { providerId, locationNodeId: node.id } },
-          update: { active: true, label: node.label, regionKey: node.regionKey, provinceKey: node.provinceKey, cityKey: node.cityKey },
-          create: {
-            providerId,
-            areaType: 'SUBURB',
-            label: node.label,
-            locationNodeId: node.id,
-            regionKey: node.regionKey,
-            provinceKey: node.provinceKey,
-            cityKey: node.cityKey,
-            active: true,
-          },
-        })
+        await db.technicianServiceArea.upsert(buildServiceAreaUpsert(providerId, node))
       }
       existingNodeIds.add(node.id)
       outcomes.push({ kind: 'created', label: raw, nodeId: node.id, nodeLabel: node.label })
@@ -239,11 +273,13 @@ async function main() {
   if (!args.commit) console.log('\n(dry-run; pass --commit to apply)')
 }
 
-main()
-  .catch((e) => {
-    console.error(e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await db.$disconnect()
-  })
+if (require.main === module) {
+  main()
+    .catch((e) => {
+      console.error(e)
+      process.exit(1)
+    })
+    .finally(async () => {
+      await db.$disconnect()
+    })
+}
