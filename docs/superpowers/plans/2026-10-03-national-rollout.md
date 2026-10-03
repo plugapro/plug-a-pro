@@ -4,13 +4,11 @@
 
 **Goal:** Open Plug A Pro nationally — provider registration, matching and customer intake work in every active location node — by deleting the hardcoded Johannesburg fence and making `LocationNode.active` the only definition of "live".
 
-**Architecture:** The fence lives in three places today: hardcoded region/province/city sets in `lib/service-area-guard.ts`, `TechnicianServiceArea.active` being written `false` outside `jhb_west` in `lib/provider-record.ts`, and waitlist branches in the customer web and WhatsApp intake. The plan removes each consumer's dependency on the sets first (tasks 1–20, each leaving typecheck green), then deletes the sets (task 21). Thinly mapped regions get a `REGION`-type service-area fallback, and two scripts handle data: a postcode backfill for 44 hidden suburbs (ships in the PR) and a dry-run-first resync that re-activates existing fence-inactive rows (runs after merge with owner approval).
+**Architecture:** The fence lives in three places today: hardcoded region/province/city sets in `lib/service-area-guard.ts`, `TechnicianServiceArea.active` being written `false` outside `jhb_west` in `lib/provider-record.ts`, and waitlist branches in the customer web and WhatsApp intake. The plan removes each consumer's dependency on the sets first (tasks 1–20, each leaving typecheck green), then deletes the sets (task 21). Thinly mapped regions get a `REGION`-type service-area fallback, and two scripts handle data: a postcode backfill for 42 hidden taxonomy suburbs (ships in the PR) and a dry-run-first resync that re-activates existing fence-inactive rows (runs after merge with owner approval).
 
 **Tech Stack:** Next.js 16 App Router, TypeScript, Prisma (Postgres/Supabase), Vitest (node env, globals), WhatsApp Cloud API flows, Nominatim reverse geocoding (`lib/geocoding.ts`), pnpm.
 
 **Spec:** `docs/superpowers/specs/2026-10-03-national-rollout-design.md`
-
-> **DRAFT — assembled 2026-10-03.** Parts A, B and D are final. Part C's review-focus edits were still being written when the session stopped; before execution, re-assemble from the updated `plan-part-C.md` or apply by hand: Task 14 adds `lib/whatsapp-flows/list-row-title.ts#listRowTitle(label, max = 24)` (Task 17 already consumes it) and the ≤10-row paging rule; Task 13 un-gates the zero-provider rejection from `customer.home.serviceability_v2`; Task 16 fails open for an uncanonicalisable category label. The Review Focus section below describes each.
 
 ## Global Constraints
 
@@ -3460,13 +3458,13 @@ Claude-Session: https://claude.ai/code/session_01NpHGuToaFrZY3BNZELgdGG"
 ### Task 13: Customer web bookings route stops waitlisting by geography
 
 **Files:**
-- Modify: `field-service/app/api/customer/bookings/route.ts:23` (guard import) and `:258-293` (two waitlist branches)
+- Modify: `field-service/app/api/customer/bookings/route.ts:23` (guard import), `:258-293` (two waitlist branches), `:326-369` (serviceability_v2 block)
 - Test: `field-service/__tests__/api/customer-bookings.test.ts`
 - Test: `field-service/__tests__/api/customer-bookings-preferred-provider-kyc.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveAreaScopeByNodeId(nodeId): Promise<AreaScope | null>` and `checkPilotGate(...)` from `@/lib/customer-serviceability` (unchanged); `resolveStructuredAddressCapture(...)` from `@/lib/structured-address` (unchanged).
-- Produces: `POST /api/customer/bookings` never returns `{ waitlisted: true, city }`. The route no longer imports anything from `@/lib/service-area-guard`. `components/customer/BookingFlow.tsx` still reads `data.waitlisted` until Part B removes that state; that is dead client code after this task, not a runtime error.
+- Consumes: `resolveAreaScopeByNodeId(nodeId): Promise<AreaScope | null>`, `countActiveProvidersFor(params: { area?: AreaScope | null; categoryTag?: string | null }): Promise<number>` and `checkPilotGate(params): Promise<{ ok: true } | { ok: false; code: 'pilot.suburb_not_supported' | 'pilot.category_not_supported' | 'pilot.electrical_disabled' }>` from `@/lib/customer-serviceability` (unchanged); `isEnabled(key, ctx?): Promise<boolean>` from `@/lib/flags`; `resolveStructuredAddressCapture(...)` from `@/lib/structured-address` (unchanged).
+- Produces: `POST /api/customer/bookings` never returns `{ waitlisted: true, city }`. The route no longer imports anything from `@/lib/service-area-guard`. The zero-provider rejection (`422`, `error: 'CATEGORY_UNAVAILABLE_IN_AREA'`) now runs **regardless of** `customer.home.serviceability_v2`; the flag keeps gating only the home UI and the two other checks (`CATEGORY_UNAVAILABLE` for non-pilot tags, `AREA_UNAVAILABLE` for an unresolvable node). `components/customer/BookingFlow.tsx` still reads `data.waitlisted` until Part B removes that state; that is dead client code after this task, not a runtime error.
 
 - [ ] **Step 1: Rewrite the guard mock and add the failing test in `__tests__/api/customer-bookings.test.ts`**
 
@@ -3548,8 +3546,8 @@ Replace the block from the comment `// Service area gate - capture out-of-area c
 ```ts
     // National rollout (spec 2026-10-03): there is no geographic fence here any
     // more. Any suburb in the location tree is accepted; the pilot gate below is
-    // flag-gated (OFF) and the serviceability_v2 guard still rejects an
-    // area/category pair with zero active providers.
+    // flag-gated (OFF) and the zero-provider guard further down still rejects an
+    // area/category pair nobody serves.
     const areaScope = await resolveAreaScopeByNodeId(resolvedAddress.locationNodeId).catch(() => null)
 ```
 
@@ -3568,7 +3566,163 @@ Expected: no output.
 Run: `pnpm vitest run __tests__/api/customer-bookings.test.ts`
 Expected: PASS, 13 tests.
 
-- [ ] **Step 6: Update the preferred-provider KYC test's guard mock**
+- [ ] **Step 6: Write the failing tests for the flag-independent zero-provider guard**
+
+Still in `__tests__/api/customer-bookings.test.ts`, add three hoisted mocks. In the `vi.hoisted` destructuring add `mockIsEnabled,`, `mockCountActiveProvidersFor,`, `mockResolveAreaScopeByNodeId,` and in the returned object add:
+
+```ts
+  mockIsEnabled: vi.fn(),
+  mockCountActiveProvidersFor: vi.fn(),
+  mockResolveAreaScopeByNodeId: vi.fn(),
+```
+
+Add these two mock blocks after the `vi.mock('@/lib/storage', ...)` line (the plain-object shape mirrors `customer-bookings-preferred-provider-kyc.test.ts`, which already mocks `@/lib/flags` this way):
+
+```ts
+vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
+vi.mock('@/lib/customer-serviceability', () => ({
+  checkPilotGate: vi.fn().mockResolvedValue({ ok: true }),
+  countActiveProvidersFor: mockCountActiveProvidersFor,
+  resolveAreaScopeByNodeId: mockResolveAreaScopeByNodeId,
+}))
+```
+
+Add to `beforeEach` (after `mockResolveCustomerForSession.mockResolvedValue(...)`):
+
+```ts
+    // Flag OFF by default: the national rollout makes the zero-provider guard
+    // independent of customer.home.serviceability_v2.
+    mockIsEnabled.mockResolvedValue(false)
+    mockResolveAreaScopeByNodeId.mockResolvedValue({
+      node: { id: 'node-1', slug: 'gauteng__johannesburg__jhb_north__sandton', label: 'Sandton', nodeType: 'SUBURB', provinceKey: 'gauteng', cityKey: 'johannesburg', regionKey: 'jhb_north' },
+    })
+    mockCountActiveProvidersFor.mockResolvedValue(3)
+```
+
+Add these two tests as the LAST tests inside `describe('POST /api/customer/bookings', ...)`:
+
+```ts
+  it('refuses a zero-provider area/category even when serviceability_v2 is OFF (national rollout)', async () => {
+    mockIsEnabled.mockResolvedValue(false)
+    mockCountActiveProvidersFor.mockResolvedValue(0)
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'CATEGORY_UNAVAILABLE_IN_AREA',
+      category: 'plumbing',
+      areaLabel: 'Sandton',
+    })
+    expect(mockCountActiveProvidersFor).toHaveBeenCalledWith({
+      area: expect.objectContaining({ node: expect.objectContaining({ id: 'node-1' }) }),
+      categoryTag: 'plumbing',
+    })
+    expect(mockCreateJobRequest).not.toHaveBeenCalled()
+  })
+
+  it('creates the request when at least one provider serves the area with serviceability_v2 OFF', async () => {
+    mockIsEnabled.mockResolvedValue(false)
+    mockCountActiveProvidersFor.mockResolvedValue(1)
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockCreateJobRequest).toHaveBeenCalledTimes(1)
+  })
+```
+
+- [ ] **Step 7: Run the test file to verify the zero-provider test fails**
+
+Run: `pnpm vitest run __tests__/api/customer-bookings.test.ts`
+Expected: FAIL on exactly one test — `refuses a zero-provider area/category even when serviceability_v2 is OFF`: `expected 200 to be 422` (today the whole provider-count check sits inside `if (serviceabilityV2Enabled)`, so with the flag OFF the request is created). The other 14 pass.
+
+- [ ] **Step 8: Un-gate the zero-provider check in the route**
+
+In `app/api/customer/bookings/route.ts` replace the block that starts at the comment `// Serviceability v2 backend guard (customer.home.serviceability_v2):` and ends with the closing `}` of `if (serviceabilityV2Enabled) { … }` (the one that contains the `CATEGORY_UNAVAILABLE_IN_AREA` response) with:
+
+```ts
+    // Serviceability v2 backend guard (customer.home.serviceability_v2):
+    // Reject unsupported (area, category) tuples here so a client bypassing the
+    // home-page constrained input still cannot create a request for a service
+    // we cannot fulfil. The PILOT_SKILL_TAGS check covers regulated categories
+    // and stays behind the flag together with the home UI.
+    const serviceabilityV2Enabled = await isEnabled('customer.home.serviceability_v2', {
+      userId: session.id,
+    })
+    if (serviceabilityV2Enabled) {
+      if (!PILOT_SKILL_TAGS.has(canonicalCategory)) {
+        return NextResponse.json(
+          {
+            error: 'CATEGORY_UNAVAILABLE',
+            message: 'We do not have this service active yet.',
+            category: canonicalCategory,
+          },
+          { status: 422 },
+        )
+      }
+      if (!areaScope) {
+        return NextResponse.json(
+          {
+            error: 'AREA_UNAVAILABLE',
+            message: 'We are not active in this area yet.',
+            locationNodeId: resolvedAddress.locationNodeId,
+          },
+          { status: 422 },
+        )
+      }
+    }
+
+    // Zero-provider guard — NOT flag-gated (national rollout, spec 2026-10-03):
+    // with the geographic fence gone this is the only thing standing between a
+    // customer and a request that matching would expire on the spot. When the
+    // node did not resolve (db error swallowed above) we cannot count, so we
+    // fail open exactly as the pre-rollout flag-OFF path did.
+    if (areaScope) {
+      const activeCount = await countActiveProvidersFor({
+        area: areaScope,
+        categoryTag: canonicalCategory,
+      })
+      if (activeCount <= 0) {
+        return NextResponse.json(
+          {
+            error: 'CATEGORY_UNAVAILABLE_IN_AREA',
+            message: 'We do not have this service active in your selected area yet.',
+            category: canonicalCategory,
+            areaLabel: areaScope.node.label,
+          },
+          { status: 422 },
+        )
+      }
+    }
+```
+
+- [ ] **Step 9: Run the test file to verify it passes**
+
+Run: `pnpm vitest run __tests__/api/customer-bookings.test.ts`
+Expected: PASS, 15 tests.
+
+- [ ] **Step 10: Update the preferred-provider KYC test's guard mock**
 
 In `__tests__/api/customer-bookings-preferred-provider-kyc.test.ts` delete `mockIsInActiveServiceArea,` / `mockIsActiveRegion,` / `mockAddToServiceAreaWaitlist,` from the `vi.hoisted` destructuring and their three `vi.fn()` entries; delete the block
 
@@ -3587,24 +3741,29 @@ and delete the two `beforeEach` lines:
     mockIsActiveRegion.mockReturnValue(true)
 ```
 
+That file does not mock `@/lib/customer-serviceability`, so the real `resolveAreaScopeByNodeId` hits the test's `db` mock (no `locationNode`), throws, is swallowed by `.catch(() => null)`, and the new zero-provider guard is skipped — identical to today's flag-OFF behaviour, so its tests need no other change.
+
 Run: `pnpm vitest run __tests__/api/customer-bookings-preferred-provider-kyc.test.ts`
 Expected: PASS (same test count as before the edit).
 
-- [ ] **Step 7: Typecheck and lint**
+- [ ] **Step 11: Typecheck and lint**
 
 Run: `pnpm typecheck && pnpm lint`
 Expected: both exit 0 (no unused-import error for `channel`; it is still used).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add app/api/customer/bookings/route.ts __tests__/api/customer-bookings.test.ts __tests__/api/customer-bookings-preferred-provider-kyc.test.ts
-git commit -m "feat(bookings): accept any suburb in the location tree — drop the JHB waitlist branches
+git commit -m "feat(bookings): accept any suburb in the location tree; zero-provider guard runs flag-free
 
 National rollout (spec 2026-10-03 §G). The web bookings route no longer
 waitlists an address for being outside Johannesburg or outside jhb_west;
-the response shape loses waitlisted. checkPilotGate (flag OFF) and the
-serviceability_v2 zero-provider rejection are unchanged.
+the response shape loses waitlisted. The CATEGORY_UNAVAILABLE_IN_AREA
+rejection now runs regardless of customer.home.serviceability_v2 so an
+empty area never gets a request that expires on creation. checkPilotGate
+(flag OFF) and the flag-gated CATEGORY_UNAVAILABLE / AREA_UNAVAILABLE
+checks are unchanged.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01NpHGuToaFrZY3BNZELgdGG"
@@ -3615,12 +3774,17 @@ Claude-Session: https://claude.ai/code/session_01NpHGuToaFrZY3BNZELgdGG"
 ### Task 14: WhatsApp request flow lists every active province, city and region
 
 **Files:**
-- Modify: `field-service/lib/whatsapp-flows/job-request.ts:20-26` (guard import), `:258-316` (`renderProvinceList`, `renderCityList`, `renderRegionList`)
+- Create: `field-service/lib/whatsapp-flows/list-row-title.ts`
+- Modify: `field-service/lib/whatsapp-flows/job-request.ts:20-26` (guard import), `:82` (list constants), `:224-250` (`buildPagedRows`), `:258-316` (`renderProvinceList`, `renderCityList`, `renderRegionList`)
+- Test: `field-service/__tests__/lib/whatsapp-flows/list-row-title.test.ts`
 - Test: `field-service/__tests__/lib/whatsapp-flows/job-request.test.ts`
 
 **Interfaces:**
-- Consumes: `getProvinces(): Promise<ProvinceOption[]>`, `getCities(provinceKey?): Promise<CityOption[]>`, `getRegions(cityId): Promise<RegionOption[]>` from `@/lib/location-nodes` (unchanged); `sendList(to, body, sections: ListSection[], options)` from `@/lib/whatsapp-interactive` where `ListSection = { title?: string; rows: ListRow[] }`.
-- Produces: each list is ONE section (`'Provinces'` / `'Cities'` / `'Areas'`) whose last row is `AREA_NOT_LISTED_ROW` (`{ id: 'area_not_listed', title: "🔔 My area isn't listed" }`). `isActiveProvince` and `isActiveCity` are no longer imported by this module (`isActiveRegion` and `isInActiveServiceArea` go in Task 15). WhatsApp caps a list at 10 rows total: 9 provinces + the not-listed row = 10; cities per province (max 4 seeded) and regions per city (max 5 seeded) are paged by `buildPagedRows` at `PAGE_SIZE = 8` (+2 nav rows) before the not-listed row is appended, so a province with 9 or more cities, or a city with 9 or more regions, would exceed the cap. Current data is far below that; the province test below pins the 10-row ceiling.
+- Consumes: `getProvinces(): Promise<ProvinceOption[]>`, `getCities(provinceKey?): Promise<CityOption[]>`, `getRegions(cityId): Promise<RegionOption[]>` from `@/lib/location-nodes` (unchanged); `sendList(to, body, sections: ListSection[], options)` from `@/lib/whatsapp-interactive` where `ListSection = { title?: string; rows: ListRow[] }` and `ListRow = { id: string; title: string /* ≤24 chars */; description?: string }`.
+- Produces:
+  - `export function listRowTitle(label: string, max = 24): string` in `lib/whatsapp-flows/list-row-title.ts`. Rule: a label of `max` characters or fewer is returned unchanged; otherwise the label is cut inside its first `max − 1` characters at the last space, any trailing connector (`/ & - – — , : ;`) is stripped, and `…` is appended, so the result is always `≤ max` characters, ends on a whole word and never on a dangling connector. **Part D's Task 17 imports this same helper for the registration flow's province/city/region rows.**
+  - `buildPagedRows(items, page, idPrefix, reserveRows = 0)` in `job-request.ts` (module-private): `reserveRows` is the number of trailer rows the caller appends after the returned rows. It is taken out of the 10-row budget: the unpaged threshold becomes `10 − reserveRows` items and the page size `PAGE_SIZE − reserveRows` (7 when one trailer row is reserved), so a rendered section is never longer than 10 rows (`MAX_LIST_ROWS`).
+  - Each list is ONE section (`'Provinces'` / `'Cities'` / `'Areas'`) whose last row is `AREA_NOT_LISTED_ROW` (`{ id: 'area_not_listed', title: "🔔 My area isn't listed" }`). City and region lists call `buildPagedRows(..., 1)`; the province list is unpaged (9 provinces + trailer = 10, the province handler has no `prov_prev`/`prov_next` branch). `isActiveProvince` and `isActiveCity` are no longer imported by this module (`isActiveRegion` and `isInActiveServiceArea` go in Task 15).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3777,7 +3941,7 @@ async function renderRegionList(
 }
 ```
 
-`ListRow` is already imported from `../whatsapp-interactive` in this file (it is used by `buildPagedRows`); if `pnpm typecheck` reports it missing, add `ListRow` to that import's type list.
+`ListRow` is already imported (`type ListRow` in the `../whatsapp-interactive` import at the top of the file).
 
 - [ ] **Step 4: Run the test file to verify it passes**
 
@@ -3789,15 +3953,263 @@ Expected: PASS, all tests (previous count + 3).
 Run: `pnpm typecheck && pnpm lint`
 Expected: both exit 0. (`isActiveProvince` / `isActiveCity` are no longer imported here; other importers are untouched.)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Write the failing test for the word-boundary row title helper**
+
+Create `__tests__/lib/whatsapp-flows/list-row-title.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { listRowTitle } from '@/lib/whatsapp-flows/list-row-title'
+
+describe('listRowTitle', () => {
+  it('returns a label of exactly 24 characters unchanged', () => {
+    const label = 'JHB North / Sandton Area' // 24 chars
+    expect(label).toHaveLength(24)
+    expect(listRowTitle(label)).toBe(label)
+  })
+
+  it('returns a short label unchanged', () => {
+    expect(listRowTitle('Gauteng')).toBe('Gauteng')
+  })
+
+  it('cuts at the last word boundary that fits and never leaves a dangling connector', () => {
+    // "Cape Town CBD & Atlantic Seaboard" → the 23-char head is "Cape Town CBD & Atlanti";
+    // last space → "Cape Town CBD &"; dangling "&" stripped → "Cape Town CBD…".
+    const out = listRowTitle('Cape Town CBD & Atlantic Seaboard')
+    expect(out).toBe('Cape Town CBD…')
+    expect(out.length).toBeLessThanOrEqual(24)
+  })
+
+  it('keeps an inner connector when a whole word follows it', () => {
+    const out = listRowTitle('Gqeberha / Nelson Mandela Bay')
+    expect(out).toBe('Gqeberha / Nelson…')
+    expect(out.length).toBeLessThanOrEqual(24)
+    expect(out).not.toMatch(/[\/&\-–—,:;]…$/)
+  })
+
+  it('handles the seeded long labels within the cap and on a word boundary', () => {
+    for (const label of ['East London / Buffalo City', 'Gqeberha / Nelson Mandela Bay', 'Bloemfontein / Mangaung', 'Cape Town Northern Suburbs', 'Cape Town Southern Suburbs', 'eMalahleni / Witbank', 'Mbombela / Nelspruit', 'East Rand / Ekurhuleni', 'Pretoria CBD & Central', 'JHB West / Roodepoort', 'JHB South / Soweto', 'Durban CBD & Berea']) {
+      const out = listRowTitle(label)
+      expect(out.length).toBeLessThanOrEqual(24)
+      if (out !== label) {
+        expect(out.endsWith('…')).toBe(true)
+        expect(out).not.toMatch(/\s…$/)
+        expect(out).not.toMatch(/[\/&\-–—,:;]…$/)
+        // The kept part must be a prefix of the label ending on a whole word.
+        const kept = out.slice(0, -1)
+        expect(label.startsWith(kept)).toBe(true)
+        expect(label.charAt(kept.length)).toMatch(/[\s\/&\-–—,:;]/)
+      }
+    }
+  })
+
+  it('falls back to a hard cut when a single word is longer than the cap', () => {
+    const out = listRowTitle('Supercalifragilisticexpialidocious')
+    expect(out).toBe('Supercalifragilisticexp…')
+    expect(out).toHaveLength(24)
+  })
+
+  it('honours a custom max', () => {
+    // max 20 → 19-char head "Cape Town CBD & Atl" → last space → "Cape Town CBD &" → connector stripped.
+    expect(listRowTitle('Cape Town CBD & Atlantic Seaboard', 20)).toBe('Cape Town CBD…')
+    expect(listRowTitle('Durban North', 20)).toBe('Durban North')
+  })
+})
+```
+
+- [ ] **Step 7: Run the helper test to verify it fails**
+
+Run (from `field-service/`): `pnpm vitest run __tests__/lib/whatsapp-flows/list-row-title.test.ts`
+Expected: FAIL — `Error: Failed to resolve import "@/lib/whatsapp-flows/list-row-title"` (module does not exist yet).
+
+- [ ] **Step 8: Create the helper and use it for every list row title**
+
+Create `lib/whatsapp-flows/list-row-title.ts`:
+
+```ts
+// WhatsApp list rows allow 24 characters per title. The curated location
+// labels ("Cape Town CBD & Atlantic Seaboard", "Gqeberha / Nelson Mandela Bay")
+// are longer, and a blind slice(0, 24) produces titles that end mid-word or on
+// a dangling " /" / " &". Cut on a word boundary instead and mark the cut.
+//
+// Shared by the customer request flow (job-request.ts) and the provider
+// registration flow (registration.ts).
+
+const ELLIPSIS = '…' // one UTF-16 code unit
+const DANGLING_CONNECTOR = /\s*[\/&\-–—,:;]+$/
+
+export function listRowTitle(label: string, max = 24): string {
+  if (label.length <= max) return label
+
+  const budget = Math.max(1, max - ELLIPSIS.length)
+  const head = label.slice(0, budget)
+  const lastSpace = head.lastIndexOf(' ')
+
+  let kept = lastSpace > 0 ? head.slice(0, lastSpace) : head
+  kept = kept.replace(DANGLING_CONNECTOR, '').trimEnd()
+  if (kept.length === 0) kept = head.trimEnd()
+
+  return `${kept}${ELLIPSIS}`
+}
+```
+
+In `lib/whatsapp-flows/job-request.ts` add, next to the other `./`/`../` imports:
+
+```ts
+import { listRowTitle } from './list-row-title'
+```
+
+In `renderProvinceList` (Step 3) change the row mapping to:
+
+```ts
+  const rows: ListRow[] = provinces.map((p) => ({ id: `prov__${p.slug}`, title: listRowTitle(p.label) }))
+```
+
+In `buildPagedRows`, replace both `title: item.label.slice(0, 24)` occurrences (the unpaged branch and the paged `rows` mapping) with `title: listRowTitle(item.label)`.
+
+- [ ] **Step 9: Run both test files to verify they pass**
+
+Run: `pnpm vitest run __tests__/lib/whatsapp-flows/list-row-title.test.ts __tests__/lib/whatsapp-flows/job-request.test.ts`
+Expected: PASS. (The existing pagination tests assert row ids, not titles, so the title change is behaviour-neutral for them.)
+
+- [ ] **Step 10: Write the failing test for the 10-row cap with paging**
+
+In `__tests__/lib/whatsapp-flows/job-request.test.ts`, inside `describe('addr_select_city', ...)`, add:
+
+```ts
+    it('keeps every paged city list within the 10-row WhatsApp cap with the not-listed row on every page (national rollout)', async () => {
+      const TWELVE_CITIES = Array.from({ length: 12 }, (_, i) => ({
+        id: `city_${i + 1}`,
+        slug: `gauteng__city_${i + 1}`,
+        label: `City ${i + 1}`,
+        provinceKey: 'gauteng',
+        cityKey: `city_${i + 1}`,
+      }))
+      ;(locationNodes.getCities as any).mockResolvedValue(TWELVE_CITIES)
+
+      // Page 0 is rendered by the province selection.
+      await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__gauteng'))
+      const page0 = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+
+      // Page 1 is rendered by tapping Next on the city step.
+      await handleJobRequestFlow(makeCtx('addr_select_city', 'city_next', undefined, baseData))
+      const page1 = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+
+      for (const rows of [page0, page1]) {
+        expect(rows.length).toBeLessThanOrEqual(10)
+        expect(rows.at(-1)?.id).toBe('area_not_listed')
+      }
+      // The not-listed row is part of the budget: 7 item slots per page, not 8.
+      const cityIds = (rows: Array<{ id: string }>) => rows.map((r) => r.id).filter((id) => id.startsWith('city__'))
+      expect(cityIds(page0)).toHaveLength(7)
+      expect(page0.map((r) => r.id)).toContain('city_next')
+      expect(cityIds(page1)).toHaveLength(5)
+      expect(page1.map((r) => r.id)).toContain('city_prev')
+      expect(new Set([...cityIds(page0), ...cityIds(page1)]).size).toBe(12)
+    })
+
+    it('pages a province with exactly 10 cities so the not-listed row still fits (national rollout)', async () => {
+      const TEN_CITIES = Array.from({ length: 10 }, (_, i) => ({
+        id: `city_${i + 1}`,
+        slug: `gauteng__city_${i + 1}`,
+        label: `City ${i + 1}`,
+        provinceKey: 'gauteng',
+        cityKey: `city_${i + 1}`,
+      }))
+      ;(locationNodes.getCities as any).mockResolvedValue(TEN_CITIES)
+
+      await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__gauteng'))
+      const page0 = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+
+      expect(page0.length).toBeLessThanOrEqual(10)
+      expect(page0.at(-1)?.id).toBe('area_not_listed')
+      expect(page0.map((r) => r.id)).toContain('city_next')
+    })
+```
+
+- [ ] **Step 11: Run the test file to verify the two new tests fail**
+
+Run: `pnpm vitest run __tests__/lib/whatsapp-flows/job-request.test.ts`
+Expected: FAIL on both new tests — `expected [ …8 ids… ] to have a length of 7 but got 8` for the 12-city case (page size is still 8), and `expected 11 to be less than or equal to 10` for the 10-city case (10 unpaged rows + the not-listed row).
+
+- [ ] **Step 12: Reserve the trailer row inside `buildPagedRows`**
+
+In `lib/whatsapp-flows/job-request.ts` add below `const PAGE_SIZE = 8` (line 82):
+
+```ts
+// Meta hard-caps a list message at 10 rows across all sections.
+const MAX_LIST_ROWS = 10
+```
+
+Replace the whole `buildPagedRows` function (doc comment included) with:
+
+```ts
+/**
+ * Slices an item list for one WhatsApp list page and appends navigation rows.
+ * `reserveRows` is the number of trailer rows the caller appends after these
+ * (e.g. the "My area isn't listed" row). It is taken out of the 10-row budget so
+ * the rendered section never exceeds the Meta cap: the unpaged threshold becomes
+ * MAX_LIST_ROWS - reserveRows and the page size PAGE_SIZE - reserveRows (7 item
+ * slots + up to 2 nav rows + 1 trailer = 10).
+ */
+function buildPagedRows<T extends { id: string; label: string }>(
+  items: T[],
+  page: number,
+  idPrefix: string,
+  reserveRows = 0,
+): { rows: ListRow[]; totalPages: number } {
+  const unpagedCap = MAX_LIST_ROWS - reserveRows
+  if (items.length <= unpagedCap) {
+    return {
+      rows: items.map((item) => ({ id: `${idPrefix}__${item.id}`, title: listRowTitle(item.label) })),
+      totalPages: 1,
+    }
+  }
+
+  const pageSize = PAGE_SIZE - reserveRows
+  const totalPages = Math.ceil(items.length / pageSize)
+  const clampedPage = Math.max(0, Math.min(page, totalPages - 1))
+  const start = clampedPage * pageSize
+  const pageItems = items.slice(start, start + pageSize)
+  const hasNext = start + pageSize < items.length
+  const hasPrev = clampedPage > 0
+
+  const rows: ListRow[] = pageItems.map((item) => ({
+    id: `${idPrefix}__${item.id}`,
+    title: listRowTitle(item.label),
+  }))
+
+  if (hasPrev) rows.push({ id: `${idPrefix}_prev`, title: '← Previous' })
+  if (hasNext) rows.push({ id: `${idPrefix}_next`, title: 'Next →' })
+
+  return { rows, totalPages }
+}
+```
+
+In `renderCityList` change the call to `buildPagedRows(cities, page, 'city', 1)` and in `renderRegionList` to `buildPagedRows(regions, page, 'rgn', 1)`. `renderSuburbList` keeps `buildPagedRows(suburbs, page, 'sub')` (no trailer row; the existing "8 items + Next" pagination test stays valid).
+
+- [ ] **Step 13: Run the test file to verify it passes**
+
+Run: `pnpm vitest run __tests__/lib/whatsapp-flows/job-request.test.ts`
+Expected: PASS, all tests (Step 4 count + 2).
+
+- [ ] **Step 14: Typecheck and lint**
+
+Run: `pnpm typecheck && pnpm lint`
+Expected: both exit 0.
+
+- [ ] **Step 15: Commit**
 
 ```bash
-git add lib/whatsapp-flows/job-request.ts __tests__/lib/whatsapp-flows/job-request.test.ts
+git add lib/whatsapp-flows/job-request.ts lib/whatsapp-flows/list-row-title.ts __tests__/lib/whatsapp-flows/job-request.test.ts __tests__/lib/whatsapp-flows/list-row-title.test.ts
 git commit -m "feat(whatsapp): request flow lists every active province, city and region
 
 National rollout (spec 2026-10-03 §H). The structured address picker no
 longer filters provinces/cities/regions through the JHB fence; each list is
-one neutral section with the 'My area isn't listed' row last.
+one neutral section with the 'My area isn't listed' row last. Row titles are
+cut on a word boundary (listRowTitle) instead of slice(0, 24), and the
+not-listed row is reserved inside the 10-row paging budget so a paged list
+can never exceed the Meta cap.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01NpHGuToaFrZY3BNZELgdGG"
@@ -3932,7 +4344,7 @@ Delete the test `'waitlists and does not advance when the selected region is ina
     })
 ```
 
-Inside `describe('job_request_submitted - structured path')` add (uses the existing `structuredData` and the module-level `serviceability`-free mock of `resolveAreaScopeByNodeId`):
+Inside `describe('job_request_submitted - structured path')` add (uses the existing `structuredData` and the module-level mock of `resolveAreaScopeByNodeId`):
 
 ```ts
     it('submits a Durban address to createJobRequest (any province, national rollout)', async () => {
@@ -4199,8 +4611,8 @@ Claude-Session: https://claude.ai/code/session_01NpHGuToaFrZY3BNZELgdGG"
 - Test: `field-service/__tests__/lib/whatsapp-flows/job-request.test.ts`
 
 **Interfaces:**
-- Consumes: `countActiveProvidersFor(params: { area?: AreaScope | null; categoryTag?: string | null }): Promise<number>` from `@/lib/customer-serviceability` (bounded count, 0 when nobody serves the area for that tag); `canonicalizeServiceCategoryValue(raw: string): { canonical: string | null; … }` from `@/lib/service-category-canonicalization` (`'Plumbing'` → `'plumbing'`); `sendButtons(to, body, buttons: QuickReply[])` where `QuickReply = { id: string; title: string /* ≤20 chars */ }`; `addToServiceAreaWaitlist(...)` as in Task 15; `ConversationData.addrSuburbLabel / addrCityLabel / addrProvinceLabel / selectedCategory / category / customerName`.
-- Produces: when the count is `0`, the flow sends two buttons (`notify_me`, `back_home`) and returns `{ nextStep: 'notify_me', nextData: { addrSuburbLabel, addrCityLabel, addrProvinceLabel } }`; `createJobRequest` is NOT called. On the `notify_me` reply, `handleNotifyMe` writes a `ServiceAreaWaitlist` row (suburb/city/province/category) before its existing customer upsert and confirmation. A thrown count lookup fails OPEN (request is created) so a serviceability outage never blocks intake.
+- Consumes: `countActiveProvidersFor(params: { area?: AreaScope | null; categoryTag?: string | null }): Promise<number>` from `@/lib/customer-serviceability` (bounded count, 0 when nobody serves the area for that tag); `canonicalizeServiceCategoryValue(value: string | null | undefined): { raw: string; canonical: string | null; source: 'tag' | 'label' | 'pass-through'; warning?: 'unmapped_service_category' }` from `@/lib/service-category-canonicalization` — NOTE it returns `canonical: raw` with `source: 'pass-through'` for an unmapped label, so "no canonical tag" is detected via `source === 'pass-through'`, not via `canonical == null`; `sendButtons(to, body, buttons: QuickReply[])` where `QuickReply = { id: string; title: string /* ≤20 chars */ }`; `addToServiceAreaWaitlist(...)` as in Task 15; `ConversationData.addrSuburbLabel / addrCityLabel / addrProvinceLabel / selectedCategory / category / customerName`.
+- Produces: when the category label canonicalises to a tag AND the count is `0`, the flow sends two buttons (`notify_me`, `back_home`) and returns `{ nextStep: 'notify_me', nextData: { addrSuburbLabel, addrCityLabel, addrProvinceLabel } }`; `createJobRequest` is NOT called. When the label cannot be canonicalised (`source === 'pass-through'`) the guard is skipped entirely (no count lookup) and the request is created. On the `notify_me` reply, `handleNotifyMe` writes a `ServiceAreaWaitlist` row (suburb/city/province/category) before its existing customer upsert and confirmation. A thrown count lookup fails OPEN (request is created) so a serviceability outage never blocks intake.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4274,7 +4686,7 @@ Inside `describe('job_request_submitted - structured path')` add:
     })
 ```
 
-Add a new top-level `describe` block (inside the outer `describe('WhatsApp job-request flow - structured address')`, after `describe('legacy steps')`):
+Add a new `describe` block inside the outer `describe('WhatsApp job-request flow - structured address')`, after `describe('legacy steps')`:
 
 ```ts
   describe('notify_me (empty-area capture)', () => {
@@ -4391,12 +4803,92 @@ Leave the rest of `handleNotifyMe` (customer upsert, confirmation text, `back_ho
 Run: `pnpm vitest run __tests__/lib/whatsapp-flows/job-request.test.ts`
 Expected: PASS, all tests (previous count + 5).
 
-- [ ] **Step 5: Typecheck and lint**
+- [ ] **Step 5: Write the failing test for an uncanonicalisable category label**
+
+Inside `describe('job_request_submitted - structured path')` add:
+
+```ts
+    it('skips the empty-area guard for a category label that cannot be canonicalised (never a spurious notify-me)', async () => {
+      // Even with zero providers reported, an unmapped label must not trigger the guard.
+      ;(serviceability.countActiveProvidersFor as any).mockResolvedValue(0)
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          selectedCategory: 'Chandelier polishing',
+          category: 'Chandelier polishing',
+        })
+      )
+
+      expect(serviceability.countActiveProvidersFor).not.toHaveBeenCalled()
+      expect(createJobRequestModule.createJobRequest).toHaveBeenCalledTimes(1)
+      expect(wa.sendButtons).not.toHaveBeenCalledWith(PHONE, expect.anything(), expect.arrayContaining([expect.objectContaining({ id: 'notify_me' })]))
+    })
+
+    it('still routes a mapped label with zero providers to notify_me', async () => {
+      ;(serviceability.countActiveProvidersFor as any).mockResolvedValue(0)
+
+      const result = await handleJobRequestFlow(makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData))
+
+      expect(serviceability.countActiveProvidersFor).toHaveBeenCalledWith(expect.objectContaining({ categoryTag: 'plumbing' }))
+      expect(result.nextStep).toBe('notify_me')
+      expect(createJobRequestModule.createJobRequest).not.toHaveBeenCalled()
+    })
+```
+
+- [ ] **Step 6: Run the test file to verify the unmapped-label test fails**
+
+Run: `pnpm vitest run __tests__/lib/whatsapp-flows/job-request.test.ts`
+Expected: FAIL on exactly one test — `skips the empty-area guard for a category label that cannot be canonicalised`: `expected "spy" to not be called at all, but actually been called 1 times` (`countActiveProvidersFor` was called with `categoryTag: 'Chandelier polishing'` because `canonicalizeServiceCategoryValue` passes an unmapped label through as `canonical: raw`) and `createJobRequest` was not called. The mapped-label test passes already.
+
+- [ ] **Step 7: Skip the guard when the label has no canonical tag**
+
+In `handleJobRequestSubmitted` replace the two lines
+
+```ts
+      const categoryTag = canonicalizeServiceCategoryValue(category).canonical ?? category
+      const activeProviderCount = await countActiveProvidersFor({
+        area: submitAreaScope,
+        categoryTag,
+      }).catch((err) => {
+        console.error('[job-request-flow] active provider count failed; failing open', { err })
+        return Number.POSITIVE_INFINITY
+      })
+```
+
+with
+
+```ts
+      // canonicalizeServiceCategoryValue passes an UNMAPPED label through as
+      // canonical=raw with source 'pass-through'. Counting providers for such a
+      // label would always return 0 and send a served area to notify-me, so the
+      // guard only runs for a label that resolves to a real category tag.
+      const canonicalCategory = canonicalizeServiceCategoryValue(category)
+      const categoryTag = canonicalCategory.source === 'pass-through' ? null : canonicalCategory.canonical
+      const activeProviderCount = categoryTag
+        ? await countActiveProvidersFor({
+            area: submitAreaScope,
+            categoryTag,
+          }).catch((err) => {
+            console.error('[job-request-flow] active provider count failed; failing open', { err })
+            return Number.POSITIVE_INFINITY
+          })
+        : Number.POSITIVE_INFINITY
+```
+
+The `if (activeProviderCount <= 0) { … }` block below it is unchanged.
+
+- [ ] **Step 8: Run the test file to verify it passes**
+
+Run: `pnpm vitest run __tests__/lib/whatsapp-flows/job-request.test.ts`
+Expected: PASS, all tests (Step 4 count + 2).
+
+- [ ] **Step 9: Typecheck and lint**
 
 Run: `pnpm typecheck && pnpm lint`
 Expected: both exit 0.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add lib/whatsapp-flows/job-request.ts __tests__/lib/whatsapp-flows/job-request.test.ts
@@ -4405,13 +4897,19 @@ git commit -m "feat(whatsapp): empty-area guard — offer notify-me instead of a
 National rollout (spec 2026-10-03 §H). Before createJobRequest the flow counts
 active providers for the resolved area + category; at zero it sends the
 notify-me buttons and parks the conversation on the existing notify_me step,
-which now also records the demand on the service-area waitlist. Fails open on
-lookup errors.
+which now also records the demand on the service-area waitlist. The guard
+only runs for a label that canonicalises to a real category tag and fails
+open on lookup errors, so it can never produce a spurious notify-me.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01NpHGuToaFrZY3BNZELgdGG"
 ```
 
+<!-- review-focus-candidates-C (remaining after the four items above were folded into Tasks 13/14/16):
+1. notify_me conversation state: a customer who taps Notify me after the conversation data was pruned (no addrCityLabel) writes a waitlist row with city 'Unknown'; the fallback value is untested and may pollute the waitlist report.
+2. Vodapay channel: the removed waitlist branches were the only place the route set source 'vodapay' for waitlist rows; no test asserts that a VodaPay-origin request with no providers still produces any demand record (the 422 CATEGORY_UNAVAILABLE_IN_AREA carries no capture).
+3. Web zero-provider guard when resolveAreaScopeByNodeId throws (db error): the guard is skipped and the request is created, then expired by matching; the fail-open path is documented but untested.
+-->
 
 ### Task 17: WhatsApp registration lists every province from the location tree and drops the pilot copy
 
