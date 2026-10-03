@@ -7,6 +7,7 @@ import type { WhatsAppComponent } from './whatsapp'
 import { sendCtaUrl } from './whatsapp-interactive'
 import { normaliseLocationDisplayName } from './location-format'
 import { PROVIDER_CREDITS_PRICE_LINE, getWorkerPortalUrl } from './provider-credit-copy'
+import { isFreeLeadsEnabled } from './free-leads'
 
 const SENT_OR_BETTER: MessageStatus[] = ['SENT', 'DELIVERED', 'READ']
 
@@ -377,6 +378,10 @@ async function sendCtaUrlNotification(payload: CtaUrlNotificationPayload) {
 }
 
 export async function notifyProviderLowBalance(providerId: string, sourceId?: string) {
+  // Free leads mode (provider.leads.free): balances never gate a lead, so a
+  // low-balance top-up nag would be misleading.
+  if (await isFreeLeadsEnabled()) return
+
   const provider = await db.provider.findUnique({
     where: { id: providerId },
     include: {
@@ -415,6 +420,10 @@ export async function notifyProviderZeroBalanceLeadAvailable(params: {
   jobRequestId: string
   holdId?: string
 }) {
+  // Free leads mode (provider.leads.free): a 0 balance does not block the
+  // lead, so there is nothing to top up for.
+  if (await isFreeLeadsEnabled()) return
+
   const provider = await db.provider.findUnique({
     where: { id: params.providerId },
     include: { wallet: true },
@@ -629,6 +638,12 @@ export async function notifyLeadUnlocked(unlockId: string) {
     sendNotification({
       to: context.providerPhone,
       templateName: 'lead_unlock:provider_confirmation',
+      // Free leads mode (provider.leads.free) has a credit-free twin,
+      // lead_unlock_provider_free, but it is not yet approved at Meta and the
+      // repo has no way to know a template's approval state before sending.
+      // Keep sending lead_unlock_provider (which still says "1 credit used")
+      // even for free unlocks; switch to lead_unlock_provider_free for
+      // creditsCharged 0 unlocks once Meta approves it.
       whatsappTemplate: 'lead_unlock_provider',
       templateParameters: [
         context.category,
