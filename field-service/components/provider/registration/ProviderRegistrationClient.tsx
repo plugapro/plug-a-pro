@@ -1540,9 +1540,6 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                 <InfoRow title="WhatsApp updates" body={`We will send updates to ${form.phone || 'your mobile number'}.`} />
                 <InfoRow title="Reference" body={form.submittedRef || 'Reference will show after review sync.'} />
               </div>
-              <p className="text-[12px] text-[var(--ink-mute)] leading-relaxed">
-                {"We're live in the West Rand first — your profile is saved and will be activated the moment we go live in your area."}
-              </p>
               <FooterActions>
                 <Button fullWidth asChild>
                   <Link href="/provider/register/status">View status</Link>
