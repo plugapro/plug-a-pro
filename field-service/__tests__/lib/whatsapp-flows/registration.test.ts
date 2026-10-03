@@ -1273,6 +1273,129 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect(result.nextStep).toBe('reg_collect_experience')
   })
 
+  it('a legacy single-underscore area_gauteng list_reply re-shows the province list', async () => {
+    const result = await handleRegistrationFlow({
+      phone,
+      step: 'reg_collect_experience' as any,
+      data: {} as any,
+      flow: 'registration' as const,
+      reply: { type: 'list_reply' as any, id: 'area_gauteng', title: 'Gauteng' },
+    })
+
+    expect(locationNodes.getProvinces).toHaveBeenCalledTimes(1)
+    expect(locationNodes.getCities).not.toHaveBeenCalled()
+    const rows = (wa.sendList as any).mock.calls[0][2][0].rows as Array<{ id: string }>
+    expect(rows).toHaveLength(9)
+    expect(rows[0].id).toBe('area__eastern_cape')
+    expect(result.nextStep).toBe('reg_collect_experience')
+    expect(result.nextData).toBeUndefined()
+  })
+
+  it('getProvinces rejecting falls back to free text and logs the error', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ;(locationNodes.getProvinces as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('db down'))
+
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', 'skills_confirm', undefined, { name: 'T', skills: ['Plumbing'] })
+    )
+
+    expect(wa.sendList).not.toHaveBeenCalled()
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('Which suburb or area'))
+    expect(result.nextStep).toBe('reg_collect_suburb_text')
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('getProvinces failed'),
+      expect.objectContaining({ error: expect.stringContaining('db down') }),
+    )
+    errorSpy.mockRestore()
+  })
+
+  it('an empty province list falls back to free text and logs', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ;(locationNodes.getProvinces as ReturnType<typeof vi.fn>).mockResolvedValueOnce([])
+
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', 'skills_confirm', undefined, { name: 'T', skills: ['Plumbing'] })
+    )
+
+    expect(wa.sendList).not.toHaveBeenCalled()
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('Which suburb or area'))
+    expect(result.nextStep).toBe('reg_collect_suburb_text')
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('no provinces'), expect.anything())
+    errorSpy.mockRestore()
+  })
+
+  it('a sendList failure on the province list propagates instead of silently falling back to free text', async () => {
+    ;(wa.sendList as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('meta 500'))
+
+    await expect(
+      handleRegistrationFlow(
+        makeCtx('reg_collect_skills_more', 'skills_confirm', undefined, { name: 'T', skills: ['Plumbing'] })
+      )
+    ).rejects.toThrow('meta 500')
+    expect(wa.sendText).not.toHaveBeenCalledWith(phone, expect.stringContaining('Which suburb or area'))
+  })
+
+  it('stores the full city label, not the 24-char truncated list title', async () => {
+    const full = 'Gqeberha / Nelson Mandela Bay'
+    ;(locationNodes.getCities as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'city_gq', label: full, cityKey: 'gqeberha', provinceKey: 'eastern_cape', slug: 'eastern_cape__gqeberha' },
+    ])
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'rgn_1', label: 'Central', regionKey: 'central', slug: 'eastern_cape__gqeberha__central' },
+    ])
+
+    const result = await handleRegistrationFlow({
+      phone,
+      step: 'reg_collect_city' as any,
+      data: { provinceKey: 'eastern_cape' } as any,
+      flow: 'registration' as const,
+      reply: { type: 'list_reply' as any, id: 'city_city_gq', title: listRowTitle(full) },
+    })
+
+    expect(listRowTitle(full)).not.toBe(full)
+    expect(locationNodes.getCities).toHaveBeenCalledWith('eastern_cape')
+    expect(result.nextData?.city).toBe(full)
+    expect((wa.sendList as any).mock.calls[0][1]).toContain(`*${full}*`)
+  })
+
+  it('falls back to the reply title when the city id is not in the fetched list', async () => {
+    ;(locationNodes.getCities as ReturnType<typeof vi.fn>).mockResolvedValueOnce([])
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'rgn_1', label: 'Central', regionKey: 'central', slug: 's' },
+    ])
+
+    const result = await handleRegistrationFlow({
+      phone,
+      step: 'reg_collect_city' as any,
+      data: { provinceKey: 'gauteng' } as any,
+      flow: 'registration' as const,
+      reply: { type: 'list_reply' as any, id: 'city_unknown', title: 'Some City' },
+    })
+
+    expect(result.nextData?.city).toBe('Some City')
+  })
+
+  it('stores the full region label, not the 24-char truncated list title', async () => {
+    const full = 'Cape Town CBD & Atlantic Seaboard'
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'rgn_cbd', label: full, regionKey: 'cbd', slug: 'western_cape__cape_town__cbd' },
+    ])
+
+    const result = await handleRegistrationFlow({
+      phone,
+      step: 'reg_collect_region' as any,
+      data: { cityId: 'city_cpt' } as any,
+      flow: 'registration' as const,
+      reply: { type: 'list_reply' as any, id: 'region_rgn_cbd', title: listRowTitle(full) },
+    })
+
+    expect(listRowTitle(full)).not.toBe(full)
+    expect(locationNodes.getRegions).toHaveBeenCalledWith('city_cpt')
+    expect(result.nextStep).toBe('reg_collect_suburb_select')
+    expect(result.nextData?.regionLabel).toBe(full)
+    expect((wa.sendText as any).mock.calls.at(-1)[1]).toContain(full)
+  })
+
   it('lists regions with no status descriptions and no "leads go live first" copy', async () => {
     ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
       { id: 'rgn_west', label: 'JHB West / Roodepoort', regionKey: 'jhb_west', slug: 'gauteng__johannesburg__jhb_west' },
@@ -1614,7 +1737,6 @@ describe('registration flow - numbered bulk suburb selection', () => {
     expect(body).not.toMatch(/[□☐☑]/)
     expect(body).not.toContain('☐ 1.')
     expect(body).not.toContain('✅ 1.')
-    expect(locationNodes.getRegions).not.toHaveBeenCalled()
     expect(wa.sendText).not.toHaveBeenCalledWith(phone, expect.stringContaining('Coming soon area'))
     expect(result.nextData).not.toHaveProperty('selectedRegionStatus')
     expect(result.nextStep).toBe('reg_collect_suburb_select')

@@ -1214,38 +1214,65 @@ const MAX_LIST_ROWS = 10
 const PROVINCE_ROW_PREFIX = 'area__'
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
+  // Only the location read may fall back to free text. A free-text application
+  // carries no locationNodeIds and can never be matched, so a fallback is logged,
+  // and a sendList failure propagates rather than silently degrading the provider.
+  let provinces: Awaited<ReturnType<typeof import('@/lib/location-nodes').getProvinces>>
   try {
     const { getProvinces } = await import('@/lib/location-nodes')
-    const provinces = await getProvinces()
-    if (provinces.length === 0) {
-      await sendText(ctx.phone, SUBURB_FREE_TEXT_PROMPT)
-      return { nextStep: 'reg_collect_suburb_text' }
-    }
-    // South Africa has nine provinces, so the tree fits one section. An extra
-    // active PROVINCE node would make Meta reject the whole list, so cap and log.
-    if (provinces.length > MAX_LIST_ROWS) {
-      console.error('[registration-flow] province list truncated to the WhatsApp row cap', {
-        total: provinces.length,
-        shown: MAX_LIST_ROWS,
-        dropped: provinces.slice(MAX_LIST_ROWS).map((p) => p.slug),
-      })
-    }
-    const rows = provinces.slice(0, MAX_LIST_ROWS).map((p) => ({
-      id: `${PROVINCE_ROW_PREFIX}${p.slug}`,
-      title: listRowTitle(p.label),
-    }))
-
-    await sendList(
-      ctx.phone,
-      '📍 Which province do you mainly work in?',
-      [{ title: 'Provinces', rows }],
-      { buttonLabel: 'Choose Province' }
-    )
-    return { nextStep: 'reg_collect_experience' }
-  } catch {
-    // Location tree unavailable - fall back to free text so registration never dead-ends.
+    provinces = await getProvinces()
+  } catch (err) {
+    console.error('[registration-flow] getProvinces failed; falling back to free-text area', {
+      phone_suffix: ctx.phone.slice(-4),
+      error: safeErrorMessage(err),
+    })
     await sendText(ctx.phone, SUBURB_FREE_TEXT_PROMPT)
     return { nextStep: 'reg_collect_suburb_text' }
+  }
+
+  if (provinces.length === 0) {
+    console.error('[registration-flow] location tree has no provinces; falling back to free-text area', {
+      phone_suffix: ctx.phone.slice(-4),
+    })
+    await sendText(ctx.phone, SUBURB_FREE_TEXT_PROMPT)
+    return { nextStep: 'reg_collect_suburb_text' }
+  }
+
+  // South Africa has nine provinces, so the tree fits one section. An extra
+  // active PROVINCE node would make Meta reject the whole list, so cap and log.
+  if (provinces.length > MAX_LIST_ROWS) {
+    console.error('[registration-flow] province list truncated to the WhatsApp row cap', {
+      total: provinces.length,
+      shown: MAX_LIST_ROWS,
+      dropped: provinces.slice(MAX_LIST_ROWS).map((p) => p.slug),
+    })
+  }
+  const rows = provinces.slice(0, MAX_LIST_ROWS).map((p) => ({
+    id: `${PROVINCE_ROW_PREFIX}${p.slug}`,
+    title: listRowTitle(p.label),
+  }))
+
+  await sendList(
+    ctx.phone,
+    '📍 Which province do you mainly work in?',
+    [{ title: 'Provinces', rows }],
+    { buttonLabel: 'Choose Province' }
+  )
+  return { nextStep: 'reg_collect_experience' }
+}
+
+// List row titles are capped at 24 chars, so reply.title can be truncated. Look the
+// full label up by node id in the list the provider chose from; fall back to the
+// title only when the id is absent or the lookup fails.
+async function resolveFullLabel(
+  load: () => Promise<Array<{ id: string; label: string }>>,
+  id: string,
+  fallbackTitle: string,
+): Promise<string> {
+  try {
+    return (await load()).find((n) => n.id === id)?.label ?? fallbackTitle
+  } catch {
+    return fallbackTitle
   }
 }
 
@@ -1280,7 +1307,7 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey } }
     }
 
-    const rows = cities.slice(0, 10).map(c => ({
+    const rows = cities.slice(0, MAX_LIST_ROWS).map(c => ({
       id: `city_${c.id}`,
       title: listRowTitle(c.label),
     }))
@@ -1332,7 +1359,7 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
     // Re-show city list using stored provinceKey
     const { getCities } = await import('@/lib/location-nodes')
     const cities = await getCities(ctx.data.provinceKey)
-    const rows = cities.slice(0, 10).map(c => ({
+    const rows = cities.slice(0, MAX_LIST_ROWS).map(c => ({
       id: `city_${c.id}`,
       title: listRowTitle(c.label),
     }))
@@ -1341,7 +1368,11 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const cityId = ctx.reply.id.replace('city_', '')
-  const cityLabel = ctx.reply.title ?? ''
+  const cityLabel = await resolveFullLabel(
+    async () => (await import('@/lib/location-nodes')).getCities(ctx.data.provinceKey),
+    cityId,
+    ctx.reply.title ?? '',
+  )
 
   try {
     const { getRegions } = await import('@/lib/location-nodes')
@@ -1359,7 +1390,7 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
       }
     }
 
-    const rows = regions.slice(0, 10).map(r => ({
+    const rows = regions.slice(0, MAX_LIST_ROWS).map(r => ({
       id: `region_${r.id}`,
       title: listRowTitle(r.label),
     }))
@@ -1388,7 +1419,7 @@ async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
       await sendExperiencePrompt(ctx.phone)
       return { nextStep: 'reg_collect_availability' }
     }
-    const rows = regions.slice(0, 10).map(r => ({
+    const rows = regions.slice(0, MAX_LIST_ROWS).map(r => ({
       id: `region_${r.id}`,
       title: listRowTitle(r.label),
     }))
@@ -1425,7 +1456,11 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const regionId = ctx.reply.id.replace('region_', '')
-  const regionLabel = ctx.reply.title ?? ''
+  const regionLabel = await resolveFullLabel(
+    async () => (await import('@/lib/location-nodes')).getRegions(ctx.data.cityId ?? ''),
+    regionId,
+    ctx.reply.title ?? '',
+  )
 
   // Drill down to suburb selection within this region (numbered text list).
   // Every active region is matchable; there is no status to evaluate here.
