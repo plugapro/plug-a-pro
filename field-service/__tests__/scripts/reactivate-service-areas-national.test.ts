@@ -9,7 +9,13 @@ import {
   executeReactivation,
   parseArgs,
   formatPlan,
+  DEACTIVATE_AUDIT_ACTION,
+  planDeactivation,
+  loadDeactivationInputs,
+  executeDeactivation,
+  formatDeactivationPlan,
   type InactiveAreaRow,
+  type PausedNodeAreaRow,
   type ProviderRow,
 } from '../../scripts/reactivate-service-areas-national'
 
@@ -146,8 +152,37 @@ describe('parseArgs', () => {
       excludeProviderIds: ['c'],
       commit: true,
       adminEmail: 'o@x.za',
+      deactivateInactiveNodes: false,
     })
-    expect(parseArgs([])).toEqual({ providerIds: null, excludeProviderIds: null, commit: false, adminEmail: null })
+    expect(parseArgs([])).toEqual({
+      providerIds: null,
+      excludeProviderIds: null,
+      commit: false,
+      adminEmail: null,
+      deactivateInactiveNodes: false,
+    })
+  })
+
+  it('parses --deactivate-inactive-nodes as a separate mode, with the shared flags', () => {
+    expect(
+      parseArgs(['--deactivate-inactive-nodes', '--providers', 'a', '--exclude-providers', 'b', '--commit', '--admin-email', 'o@x.za']),
+    ).toEqual({
+      providerIds: ['a'],
+      excludeProviderIds: ['b'],
+      commit: true,
+      adminEmail: 'o@x.za',
+      deactivateInactiveNodes: true,
+    })
+    expect(parseArgs(['--deactivate-inactive-nodes']).deactivateInactiveNodes).toBe(true)
+    expect(parseArgs(['--deactivate-inactive-nodes']).commit).toBe(false)
+  })
+
+  it('fails closed on a repeated or valued --deactivate-inactive-nodes', () => {
+    expect(() => parseArgs(['--deactivate-inactive-nodes', '--deactivate-inactive-nodes'])).toThrow(
+      'Duplicate argument: --deactivate-inactive-nodes',
+    )
+    expect(() => parseArgs(['--deactivate-inactive-nodes=true'])).toThrow()
+    expect(() => parseArgs(['--deactivate-inactive-node'])).toThrow('Unknown argument: --deactivate-inactive-node')
   })
 
   it('fails closed on --flag=value forms', () => {
@@ -467,5 +502,151 @@ describe('formatPlan', () => {
     const output = formatPlan(planReactivation(rows, providers), false)
     expect(output).toContain('prov-1')
     expect(output).not.toContain('Thabo Plumbing')
+  })
+})
+
+// ── --deactivate-inactive-nodes mode (the pause lever) ──────────────────────
+
+function pausedRow(overrides: Partial<PausedNodeAreaRow> = {}): PausedNodeAreaRow {
+  return { id: 'tsa-p1', providerId: 'prov-1', locationNodeId: 'node-paused', ...overrides }
+}
+
+describe('planDeactivation', () => {
+  it('groups active rows on paused nodes per provider and totals by node', () => {
+    const plan = planDeactivation([
+      pausedRow(),
+      pausedRow({ id: 'tsa-p2', locationNodeId: 'node-paused-2' }),
+      pausedRow({ id: 'tsa-p3', providerId: 'prov-2' }),
+    ])
+    expect(plan.providers).toEqual([
+      { providerId: 'prov-1', deactivate: [{ id: 'tsa-p1', locationNodeId: 'node-paused' }, { id: 'tsa-p2', locationNodeId: 'node-paused-2' }] },
+      { providerId: 'prov-2', deactivate: [{ id: 'tsa-p3', locationNodeId: 'node-paused' }] },
+    ])
+    expect(plan.totalRows).toBe(3)
+    expect(plan.totalsByNode).toEqual({ 'node-paused': 2, 'node-paused-2': 1 })
+  })
+
+  it('returns an empty plan for no rows', () => {
+    expect(planDeactivation([])).toEqual({ providers: [], totalRows: 0, totalsByNode: {} })
+  })
+})
+
+describe('loadDeactivationInputs', () => {
+  const SELECT = { id: true, providerId: true, locationNodeId: true }
+
+  it('selects ACTIVE rows whose location node is inactive', async () => {
+    const client = { technicianServiceArea: { findMany: vi.fn().mockResolvedValue([pausedRow()]) } }
+    const rows = await loadDeactivationInputs(client as never, { providerIds: null, excludeProviderIds: null })
+    expect(client.technicianServiceArea.findMany).toHaveBeenCalledWith({
+      where: { active: true, locationNode: { is: { active: false } } },
+      select: SELECT,
+    })
+    expect(rows).toEqual([pausedRow()])
+  })
+
+  it('honours --providers and --exclude-providers', async () => {
+    const client = { technicianServiceArea: { findMany: vi.fn().mockResolvedValue([]) } }
+    await loadDeactivationInputs(client as never, { providerIds: ['a', 'b'], excludeProviderIds: ['b'] })
+    expect(client.technicianServiceArea.findMany).toHaveBeenCalledWith({
+      where: { active: true, locationNode: { is: { active: false } }, providerId: { in: ['a', 'b'], notIn: ['b'] } },
+      select: SELECT,
+    })
+  })
+})
+
+describe('executeDeactivation', () => {
+  function makeExecClient(count = 1) {
+    const tx = {
+      technicianServiceArea: { updateMany: vi.fn().mockResolvedValue({ count }) },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+      adminAuditEvent: { create: vi.fn().mockResolvedValue({}) },
+    }
+    const client = {
+      $transaction: vi.fn().mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    }
+    return { client, tx }
+  }
+  const admin = { id: 'admin-1', userId: 'auth-user-1', role: 'OWNER' }
+  const plan = planDeactivation([pausedRow()])
+
+  it('dry-run (default) writes nothing and rebuilds nothing', async () => {
+    const { client, tx } = makeExecClient()
+    const rebuildPool = vi.fn()
+    const result = await executeDeactivation({ plan, commit: false, admin: null, client: client as never, rebuildPool })
+    expect(client.$transaction).not.toHaveBeenCalled()
+    expect(tx.technicianServiceArea.updateMany).not.toHaveBeenCalled()
+    expect(rebuildPool).not.toHaveBeenCalled()
+    expect(result).toEqual({ committedProviders: 0, committedRows: 0 })
+  })
+
+  it('refuses to commit without an admin actor', async () => {
+    const { client } = makeExecClient()
+    await expect(
+      executeDeactivation({ plan, commit: true, admin: null, client: client as never, rebuildPool: vi.fn() }),
+    ).rejects.toThrow('--admin-email is required with --commit')
+  })
+
+  it('--commit deactivates only still-active planned rows, writes the audit pair and rebuilds the pool', async () => {
+    const { client, tx } = makeExecClient()
+    const rebuildPool = vi.fn().mockResolvedValue(undefined)
+    const result = await executeDeactivation({ plan, commit: true, admin, client: client as never, rebuildPool })
+
+    expect(DEACTIVATE_AUDIT_ACTION).toBe('provider.service_areas.deactivate_inactive_nodes')
+    expect(tx.technicianServiceArea.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['tsa-p1'] }, active: true },
+      data: { active: false },
+    })
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorId: 'auth-user-1',
+        actorRole: 'OWNER',
+        action: DEACTIVATE_AUDIT_ACTION,
+        entityType: 'Provider',
+        entityId: 'prov-1',
+        before: { activeRowIds: ['tsa-p1'] },
+        after: { inactiveRowIds: ['tsa-p1'], locationNodeIds: ['node-paused'] },
+      }),
+    })
+    expect(tx.adminAuditEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        adminId: 'admin-1',
+        action: DEACTIVATE_AUDIT_ACTION,
+        entityType: 'Provider',
+        entityId: 'prov-1',
+        metadata: { script: 'reactivate-service-areas-national', mode: 'deactivate-inactive-nodes', reason: 'location node paused' },
+      }),
+    })
+    expect(rebuildPool).toHaveBeenCalledWith('prov-1')
+    expect(result).toEqual({ committedProviders: 1, committedRows: 1 })
+  })
+
+  it('tallies committed rows from the updateMany count', async () => {
+    const { client } = makeExecClient(0)
+    const result = await executeDeactivation({
+      plan,
+      commit: true,
+      admin,
+      client: client as never,
+      rebuildPool: vi.fn().mockResolvedValue(undefined),
+    })
+    expect(result).toEqual({ committedProviders: 1, committedRows: 0 })
+  })
+})
+
+describe('formatDeactivationPlan', () => {
+  it('prints ids only, the dry-run footer, and the totals', () => {
+    const output = formatDeactivationPlan(planDeactivation([pausedRow()]), false)
+    expect(output).toContain('mode=DRY-RUN')
+    expect(output).toContain('prov-1')
+    expect(output).toContain('tsa-p1')
+    expect(output).toContain('node-paused')
+    expect(output).toContain('rows would deactivate: 1')
+    expect(output).toContain('(dry-run; pass --deactivate-inactive-nodes --commit --admin-email <email> to apply)')
+  })
+
+  it('uses future tense in commit mode and omits the dry-run footer', () => {
+    const output = formatDeactivationPlan(planDeactivation([pausedRow()]), true)
+    expect(output).toContain('rows will deactivate: 1')
+    expect(output).not.toContain('(dry-run;')
   })
 })

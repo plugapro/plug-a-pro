@@ -20,12 +20,19 @@
  * (The profile editor only flips TechnicianServiceArea.active, so no column
  * on the provider distinguishes a removal from a fence-inactive row.)
  *
- * Default is DRY-RUN. Nothing is written without --commit, and --commit needs
- * --admin-email so the AuditLog + AdminAuditEvent pair has a real actor.
+ * Pause lever (--deactivate-inactive-nodes): a separate mode for when an
+ * admin pauses an area by deactivating its LocationNode in /admin/locations.
+ * It selects ACTIVE rows whose LocationNode is now inactive and deactivates
+ * them, then rebuilds each affected provider's candidate-pool rows. The
+ * default mode never touches active rows, so pausing needs this flag.
+ *
+ * Default is DRY-RUN in both modes. Nothing is written without --commit, and
+ * --commit needs --admin-email so the AuditLog + AdminAuditEvent pair has a
+ * real actor. Output prints ids only, never provider names or phones.
  *
  * Flags:
- *   --providers a,b,c          restrict to these provider ids (also how to
- *                              resync after an admin pauses a region's node)
+ *   --deactivate-inactive-nodes  pause mode (see above) instead of reactivation
+ *   --providers a,b,c          restrict to these provider ids
  *   --exclude-providers d,e    leave these providers out (review-flagged ones)
  *   --commit                   apply (one transaction per provider, then
  *                              rebuild that provider's candidate-pool rows)
@@ -38,6 +45,10 @@
  *   pnpm exec tsx --env-file=.env.local scripts/reactivate-service-areas-national.ts
  *   pnpm exec tsx --env-file=.env.local scripts/reactivate-service-areas-national.ts \
  *     --exclude-providers <ids flagged for review> --commit --admin-email owner@plugapro.co.za
+ *   pnpm exec tsx --env-file=.env.local scripts/reactivate-service-areas-national.ts \
+ *     --deactivate-inactive-nodes                                  # dry-run the pause
+ *   pnpm exec tsx --env-file=.env.local scripts/reactivate-service-areas-national.ts \
+ *     --deactivate-inactive-nodes --commit --admin-email owner@plugapro.co.za
  */
 import type { Prisma } from '@prisma/client'
 import { db } from '../lib/db'
@@ -45,9 +56,12 @@ import { AUDIT_ENTITY } from '../lib/audit-entities'
 import { rebuildCandidatePoolForProvider } from '../lib/matching/candidate-pool'
 
 export const REACTIVATE_AUDIT_ACTION = 'provider.service_areas.reactivate_national'
+export const DEACTIVATE_AUDIT_ACTION = 'provider.service_areas.deactivate_inactive_nodes'
 export const PRE_ROLLOUT_MATCHING_REGION_KEYS: readonly string[] = ['jhb_west']
 export const REVIEW_TOUCH_THRESHOLD_MS = 60_000
 const AUDIT_REASON = 'national rollout (spec 2026-10-03)'
+const DEACTIVATE_AUDIT_REASON = 'location node paused'
+const DEACTIVATE_MODE = 'deactivate-inactive-nodes'
 const SCRIPT_NAME = 'reactivate-service-areas-national'
 
 export type InactiveAreaRow = {
@@ -179,19 +193,61 @@ export function planReactivation(rows: InactiveAreaRow[], providers: ProviderRow
   }
 }
 
+function providerScopeFilter(scope: Scope) {
+  return scope.providerIds || scope.excludeProviderIds
+    ? {
+        providerId: {
+          ...(scope.providerIds ? { in: scope.providerIds } : {}),
+          ...(scope.excludeProviderIds ? { notIn: scope.excludeProviderIds } : {}),
+        },
+      }
+    : {}
+}
+
+/** The AuditLog + AdminAuditEvent pair crud-action.ts writes for every admin
+ *  mutation; both modes write it inside the same transaction as the update. */
+async function writeAuditPair(
+  tx: ExecuteTx,
+  input: {
+    admin: AdminActor
+    action: string
+    reason: string
+    providerId: string
+    before: Prisma.InputJsonValue
+    after: Prisma.InputJsonValue
+    metadata: Prisma.InputJsonValue
+  },
+) {
+  await tx.auditLog.create({
+    data: {
+      actorId: input.admin.userId,
+      actorRole: input.admin.role,
+      action: input.action,
+      entityType: AUDIT_ENTITY.PROVIDER,
+      entityId: input.providerId,
+      before: input.before,
+      after: input.after,
+      reason: input.reason,
+    },
+  })
+  await tx.adminAuditEvent.create({
+    data: {
+      adminId: input.admin.id,
+      action: input.action,
+      entityType: AUDIT_ENTITY.PROVIDER,
+      entityId: input.providerId,
+      before: input.before,
+      after: input.after,
+      metadata: input.metadata,
+    },
+  })
+}
+
 export async function loadReactivationInputs(
   client: LoadClient,
   scope: Scope,
 ): Promise<{ rows: InactiveAreaRow[]; providers: ProviderRow[] }> {
-  const providerFilter =
-    scope.providerIds || scope.excludeProviderIds
-      ? {
-          providerId: {
-            ...(scope.providerIds ? { in: scope.providerIds } : {}),
-            ...(scope.excludeProviderIds ? { notIn: scope.excludeProviderIds } : {}),
-          },
-        }
-      : {}
+  const providerFilter = providerScopeFilter(scope)
 
   const rows = (await client.technicianServiceArea.findMany({
     where: { active: false, locationNodeId: { not: null }, ...providerFilter },
@@ -261,29 +317,14 @@ export async function executeReactivation(input: {
         data: { active: true },
       })
       updated = result.count
-      // Same pair crud-action.ts writes for every admin mutation.
-      await tx.auditLog.create({
-        data: {
-          actorId: admin.userId,
-          actorRole: admin.role,
-          action: REACTIVATE_AUDIT_ACTION,
-          entityType: AUDIT_ENTITY.PROVIDER,
-          entityId: p.providerId,
-          before,
-          after,
-          reason: AUDIT_REASON,
-        },
-      })
-      await tx.adminAuditEvent.create({
-        data: {
-          adminId: admin.id,
-          action: REACTIVATE_AUDIT_ACTION,
-          entityType: AUDIT_ENTITY.PROVIDER,
-          entityId: p.providerId,
-          before,
-          after,
-          metadata,
-        },
+      await writeAuditPair(tx, {
+        admin,
+        action: REACTIVATE_AUDIT_ACTION,
+        reason: AUDIT_REASON,
+        providerId: p.providerId,
+        before,
+        after,
+        metadata,
       })
     })
     await input.rebuildPool(p.providerId)
@@ -325,18 +366,122 @@ export function formatPlan(plan: ReactivationPlan, commit: boolean): string {
   return lines.join('\n')
 }
 
+// ── --deactivate-inactive-nodes (pause lever) ────────────────────────────────
+
+export type PausedNodeAreaRow = { id: string; providerId: string; locationNodeId: string }
+
+export type DeactivationPlan = {
+  providers: Array<{ providerId: string; deactivate: Array<{ id: string; locationNodeId: string }> }>
+  totalRows: number
+  totalsByNode: Record<string, number>
+}
+
+export function planDeactivation(rows: PausedNodeAreaRow[]): DeactivationPlan {
+  const byProvider = new Map<string, Array<{ id: string; locationNodeId: string }>>()
+  const totalsByNode: Record<string, number> = {}
+  for (const r of rows) {
+    const list = byProvider.get(r.providerId) ?? []
+    list.push({ id: r.id, locationNodeId: r.locationNodeId })
+    byProvider.set(r.providerId, list)
+    totalsByNode[r.locationNodeId] = (totalsByNode[r.locationNodeId] ?? 0) + 1
+  }
+  return {
+    providers: [...byProvider].map(([providerId, deactivate]) => ({ providerId, deactivate })),
+    totalRows: rows.length,
+    totalsByNode,
+  }
+}
+
+export async function loadDeactivationInputs(
+  client: Pick<LoadClient, 'technicianServiceArea'>,
+  scope: Scope,
+): Promise<PausedNodeAreaRow[]> {
+  return (await client.technicianServiceArea.findMany({
+    where: { active: true, locationNode: { is: { active: false } }, ...providerScopeFilter(scope) },
+    select: { id: true, providerId: true, locationNodeId: true },
+  })) as PausedNodeAreaRow[]
+}
+
+export async function executeDeactivation(input: {
+  plan: DeactivationPlan
+  commit: boolean
+  admin: AdminActor | null
+  client: ExecuteClient
+  rebuildPool: (providerId: string) => Promise<void>
+}): Promise<{ committedProviders: number; committedRows: number }> {
+  if (!input.commit) return { committedProviders: 0, committedRows: 0 }
+  if (!input.admin) throw new Error('--admin-email is required with --commit')
+  const admin = input.admin
+
+  let committedProviders = 0
+  let committedRows = 0
+  for (const p of input.plan.providers) {
+    if (p.deactivate.length === 0) continue
+    const rowIds = p.deactivate.map((r) => r.id)
+    const locationNodeIds = [...new Set(p.deactivate.map((r) => r.locationNodeId))]
+    let updated = 0
+    await input.client.$transaction(async (tx) => {
+      const result = await tx.technicianServiceArea.updateMany({
+        where: { id: { in: rowIds }, active: true },
+        data: { active: false },
+      })
+      updated = result.count
+      await writeAuditPair(tx, {
+        admin,
+        action: DEACTIVATE_AUDIT_ACTION,
+        reason: DEACTIVATE_AUDIT_REASON,
+        providerId: p.providerId,
+        before: { activeRowIds: rowIds },
+        after: { inactiveRowIds: rowIds, locationNodeIds },
+        metadata: { script: SCRIPT_NAME, mode: DEACTIVATE_MODE, reason: DEACTIVATE_AUDIT_REASON },
+      })
+    })
+    await input.rebuildPool(p.providerId)
+    committedProviders += 1
+    committedRows += updated
+  }
+  return { committedProviders, committedRows }
+}
+
+/** Ids only: provider id, row id, node id. Never labels, names or phones. */
+export function formatDeactivationPlan(plan: DeactivationPlan, commit: boolean): string {
+  const verb = commit ? 'will deactivate' : 'would deactivate'
+  const lines: string[] = []
+  lines.push(`--- ${SCRIPT_NAME} (${DEACTIVATE_MODE}) --- mode=${commit ? 'COMMIT' : 'DRY-RUN'}`)
+  for (const p of plan.providers) {
+    lines.push(`\n${p.providerId}  ${verb}=${p.deactivate.length}`)
+    for (const r of p.deactivate) lines.push(`    - ${r.id}  (node ${r.locationNodeId})`)
+  }
+  lines.push('')
+  lines.push('totals by paused node:')
+  for (const [nodeId, n] of Object.entries(plan.totalsByNode).sort((a, b) => b[1] - a[1])) {
+    lines.push(`  ${nodeId.padEnd(28)} ${n}`)
+  }
+  lines.push(`rows ${verb}: ${plan.totalRows}`)
+  lines.push(`providers affected: ${plan.providers.length}`)
+  if (!commit) {
+    lines.push('\n(dry-run; pass --deactivate-inactive-nodes --commit --admin-email <email> to apply)')
+  }
+  return lines.join('\n')
+}
+
 const LIST_FLAGS = ['--providers', '--exclude-providers'] as const
 const EMAIL_FLAG = '--admin-email'
 const COMMIT_FLAG = '--commit'
+const DEACTIVATE_FLAG = '--deactivate-inactive-nodes'
+const BOOLEAN_FLAGS: readonly string[] = [COMMIT_FLAG, DEACTIVATE_FLAG]
+
+export type ParsedArgs = { commit: boolean; adminEmail: string | null; deactivateInactiveNodes: boolean } & Scope
 
 /** Fails closed: any unrecognised token, `--flag=value` form, repeated flag or
  *  missing value throws, so a typo can never silently widen the run's scope. */
-export function parseArgs(argv: string[]): { commit: boolean; adminEmail: string | null } & Scope {
-  const result: { commit: boolean; adminEmail: string | null } & Scope = {
+export function parseArgs(argv: string[]): ParsedArgs {
+  const result: ParsedArgs = {
     providerIds: null,
     excludeProviderIds: null,
     commit: false,
     adminEmail: null,
+    deactivateInactiveNodes: false,
   }
   const seen = new Set<string>()
   for (let i = 0; i < argv.length; i++) {
@@ -345,13 +490,17 @@ export function parseArgs(argv: string[]): { commit: boolean; adminEmail: string
       throw new Error(`Unsupported argument form ${token}: pass the value as a separate argument`)
     }
     const isList = (LIST_FLAGS as readonly string[]).includes(token)
-    if (token !== COMMIT_FLAG && token !== EMAIL_FLAG && !isList) {
+    if (!BOOLEAN_FLAGS.includes(token) && token !== EMAIL_FLAG && !isList) {
       throw new Error(`Unknown argument: ${token}`)
     }
     if (seen.has(token)) throw new Error(`Duplicate argument: ${token}`)
     seen.add(token)
     if (token === COMMIT_FLAG) {
       result.commit = true
+      continue
+    }
+    if (token === DEACTIVATE_FLAG) {
+      result.deactivateInactiveNodes = true
       continue
     }
     const value = argv[i + 1]
@@ -384,10 +533,26 @@ async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (args.commit && !args.adminEmail) throw new Error('--admin-email is required with --commit')
   const admin = args.commit && args.adminEmail ? await resolveAdmin(args.adminEmail) : null
-  const { rows, providers } = await loadReactivationInputs(db as unknown as LoadClient, {
-    providerIds: args.providerIds,
-    excludeProviderIds: args.excludeProviderIds,
-  })
+  const scope: Scope = { providerIds: args.providerIds, excludeProviderIds: args.excludeProviderIds }
+
+  if (args.deactivateInactiveNodes) {
+    const pausedRows = await loadDeactivationInputs(db as unknown as LoadClient, scope)
+    const deactivationPlan = planDeactivation(pausedRows)
+    console.log(formatDeactivationPlan(deactivationPlan, args.commit))
+    const result = await executeDeactivation({
+      plan: deactivationPlan,
+      commit: args.commit,
+      admin,
+      client: db as unknown as ExecuteClient,
+      rebuildPool: rebuildCandidatePoolForProvider,
+    })
+    if (args.commit) {
+      console.log(`\ncommitted providers=${result.committedProviders} rows=${result.committedRows}; candidate pool rebuilt per provider`)
+    }
+    return
+  }
+
+  const { rows, providers } = await loadReactivationInputs(db as unknown as LoadClient, scope)
   const plan = planReactivation(rows, providers)
   console.log(formatPlan(plan, args.commit))
   const result = await executeReactivation({

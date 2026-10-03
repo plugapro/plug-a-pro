@@ -131,8 +131,9 @@ export async function upsertStructuredServiceAreas(
     // National liveness (spec 2026-10-03): a location is live iff its LocationNode
     // is active, and the query above already filters active nodes. Every row is
     // therefore written active. Pausing an area = deactivating its node in
-    // /admin/locations + re-running scripts/reactivate-service-areas-national.ts
-    // for the affected providers.
+    // /admin/locations + running scripts/reactivate-service-areas-national.ts
+    // --deactivate-inactive-nodes (dry-run first, then --commit --admin-email),
+    // which deactivates the active rows on that node and rebuilds the pool.
     const label = normaliseLocationDisplayName(node.label)
 
     await client.technicianServiceArea.upsert({
