@@ -590,6 +590,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'eng',
     defaultValue: false,
   },
+  // ─── Provider lead pricing ───────────────────────────────────────────────────
+  'provider.leads.free': {
+    description:
+      'When ON, providers accept leads free: no credit check, no wallet debit; LeadUnlock rows are written with creditsCharged=0 and creditTypeBreakdown {free:true}. Copy hides credit pricing/top-up prompts and low/zero-balance nags are suppressed. OFF = paid leads. Requires migration 20261003120000_lead_unlocks_allow_zero_credit_free_leads before flipping ON.',
+    owner: 'prod',
+    defaultValue: false,
+  },
   // ─── Pay@ payment reconciliation ─────────────────────────────────────────────
   'payments.payat.readback_verification': {
     description:
