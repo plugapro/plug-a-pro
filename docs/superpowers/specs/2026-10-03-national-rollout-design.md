@@ -27,7 +27,7 @@ joins them. "National registration only" would be a no-op for them.
 | Thin suburb data outside Gauteng | **Region-wide fallback included.** A provider whose suburb is not listed covers the whole region via a `REGION`-type service-area row |
 | 44 suburbs without a postcode | **Backfill** via the existing Nominatim reverse-geocode helper; keep the postcode-backed filter |
 | National suburb dataset import | Out of scope (follow-up) |
-| Existing inactive service-area rows | **Resync script**, dry-run first; a row re-activates only if its label is still in the provider's own `serviceAreas[]`. Commit run needs owner approval (production write) |
+| Existing inactive service-area rows | **Resync script**, dry-run first. Inactive rows in the pre-rollout matching region (`jhb_west`) are skipped — the fence never wrote those inactive, so they can only be deliberate removals; every other inactive row with an active node is re-activated. Commit run needs owner approval (production write) |
 | Customers in empty regions | Existing location-aware "no providers yet → notify me" capture; flip `customer.home.notify_interest` ON at rollout |
 | West Rand pilot allowlist (`launch.west_rand_pilot.*`, `lib/launch/west-rand-pilot.ts`) | Untouched, stays OFF |
 | Branching | Fresh worktree off `origin/main` (the previous working branch was 91 commits behind and lacked PR #168) |
@@ -199,9 +199,11 @@ be written" rejection; `ServiceAreaPicker` already returns REGION results from
   neutral (`Provinces` / `Cities` / `Areas`); the `AREA_NOT_LISTED_ROW` stays as
   the last row.
 - All "currently only available in Gauteng / Johannesburg / JHB West" copy
-  (five sites) becomes one neutral template: "We don't have *&lt;place&gt;*
-  listed yet. Reply *notify me* and we'll tell you the moment we cover it." —
-  still writes the waitlist row.
+  (five sites) becomes one neutral template: "📍 We don't have *&lt;place&gt;*
+  listed yet. We've saved your details and will WhatsApp you the moment we
+  cover it - no action needed." — the waitlist row is written before the
+  message, so the copy confirms the capture rather than asking for a reply
+  nothing would handle.
 - The pre-create re-check keeps its anti-spoofing purpose only: the resolved
   node must exist and be active; otherwise waitlist. The city-label and
   region-key conditions are removed. The legacy typed-city path accepts any
@@ -215,7 +217,7 @@ be written" rejection; `ServiceAreaPicker` already returns REGION results from
 
 | Where | Now | Becomes |
 |---|---|---|
-| `marketing/app/(marketing)/service-policy/page.tsx` | "currently serves Johannesburg West / Roodepoort … outside this area … waitlist" | "Plug A Pro operates across South Africa. Availability depends on verified providers near you; where we have none yet, you can ask to be notified the moment one joins." (link to `/areas/johannesburg` stays) |
+| `marketing/app/(marketing)/service-policy/page.tsx` | "currently serves Johannesburg West / Roodepoort … outside this area … waitlist" | "Plug A Pro operates across South Africa. Availability depends on independent providers near you; where we have none yet, you can ask to be notified the moment one joins." ("independent", not "verified": `verified provider` and `vetted` are banned public-claim terms in `marketing/content/marketing/banned-copy.ts`) (link to `/areas/johannesburg` stays) |
 | Registration client, signup confirmation, signup service-areas section | "We're live in the West Rand first…" / "Leads go live in the West Rand first…" | Removed (no replacement sentence needed) |
 | WhatsApp registration | "Onboarding across Johannesburg", "Coming soon - register now", "operating in Gauteng only", "Leads go live in JHB West first" | Removed; province rows carry no description |
 | WhatsApp request flow | five Gauteng/JHB/JHB-West-only messages | one neutral "not listed yet" template (H) |
@@ -250,17 +252,30 @@ suburbs are invisible and several regions offer nothing to pick.
 
 New script `field-service/scripts/reactivate-service-areas-national.ts`:
 
-- Selects `technician_service_areas` rows with `active = false`, a non-null
-  `locationNodeId` whose node is `active = true`, and whose normalised `label`
-  appears in the owning provider's normalised `Provider.serviceAreas[]`.
-  Rows failing the label test were removed deliberately (profile editor or
-  admin) and are left alone.
-- Default is **dry-run**: per-provider counts, totals by `regionKey`, and the
-  list of providers that would gain their first active row. `--commit` applies
-  `active = true` in one transaction per provider and writes one
-  `AuditLog`/`AdminAuditEvent` pair per provider via the existing audit
-  helpers. `--providers a,b,c` restricts scope (also the documented way to
-  resync after an admin pauses a region).
+- Candidates are `technician_service_areas` rows with `active = false` and a
+  non-null `locationNodeId` whose node is `active = true`.
+- Rows whose `regionKey` is in `PRE_ROLLOUT_MATCHING_REGION_KEYS = ['jhb_west']`
+  are **skipped**: the fence never wrote `jhb_west` rows inactive, so an
+  inactive one can only be a deliberate removal (provider profile editor or
+  admin). Every other candidate was written inactive by the fence and is
+  re-activated.
+- Why not a label test: `Provider.serviceAreas[]` is not maintained by the
+  profile editor (it only flips `TechnicianServiceArea.active`), so "label still
+  in the provider's list" would both re-activate removed areas and skip added
+  ones. Residual risk of the region rule: an out-of-fence area a provider
+  removed via the profile editor is re-activated; they can remove it again in
+  the profile editor. Such rows were lead-less under the fence, so pruning them
+  was rare.
+- Default is **dry-run**: per provider, the rows to activate (label,
+  `regionKey`, `areaType`), the rows skipped as pre-rollout-region removals, a
+  **review** marker on any candidate whose `updatedAt` is more than 60 s after
+  its `createdAt` (touched after creation — informational, autosync also bumps
+  it), totals by `regionKey`, and the list of providers that would gain their
+  first active row. `--commit` applies `active = true` in one transaction per
+  provider and writes one `AuditLog`/`AdminAuditEvent` pair per provider via
+  the existing audit helpers. `--providers a,b,c` restricts scope (also the
+  documented way to resync after an admin pauses a region);
+  `--exclude-providers a,b,c` drops providers the owner flagged in the dry-run.
 - After commit: rebuild the matching candidate pool using the existing rebuild
   entry point in `lib/matching/candidate-pool.ts`.
 
@@ -313,8 +328,11 @@ No schema change. Additive only.
   active providers for the category routes to `notify_me`; "My area isn't
   listed" still writes the waitlist.
 - **Scripts:** `reactivate-service-areas-national.test.ts` — dry-run writes
-  nothing; a row whose label is absent from `serviceAreas[]` stays inactive; a
-  row whose node is inactive stays inactive; `--commit` flips the rest.
+  nothing; a `jhb_west` inactive row is skipped; a row whose node is inactive
+  is skipped; a `jhb_north` inactive row is activated; `--providers` restricts
+  and `--exclude-providers` excludes; the review marker appears only when
+  `updatedAt > createdAt + 60 s`; `--commit` flips the rest and writes one
+  audit pair per provider.
   `backfill-suburb-postcodes.test.ts` — skips slugs that already have a
   postcode, appends resolved ones, lists unresolved ones.
 - **Copy:** `marketing/__tests__` service-policy snapshot updated; a grep test
