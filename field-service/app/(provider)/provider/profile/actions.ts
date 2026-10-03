@@ -113,6 +113,25 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
         // Service area picker submits structured node IDs; deactivate removed nodes and upsert current ones.
         const locationNodeIds = formData.getAll('locationNodeIds') as string[]
 
+        // Resolve and validate the submitted nodes BEFORE any service-area write.
+        // SUBURB and REGION nodes are valid service areas ("cover the whole
+        // region" is a REGION row); anything else throws before any write.
+        let rows: ReturnType<typeof buildTechnicianServiceAreaRows> = []
+        if (locationNodeIds.length > 0) {
+          const nodes = await tx.locationNode.findMany({
+            where: { id: { in: locationNodeIds }, active: true },
+            select: { id: true, slug: true, label: true, nodeType: true, provinceKey: true, cityKey: true, regionKey: true },
+          })
+
+          // A non-empty post that resolves to nothing (all inactive or
+          // nonexistent) must not silently deactivate every existing area.
+          if (nodes.length === 0) {
+            throw new Error('Invalid service area selection: none of the submitted locations are active')
+          }
+
+          rows = buildTechnicianServiceAreaRows(provider.id, nodes)
+        }
+
         await tx.technicianServiceArea.updateMany({
           where: {
             providerId: provider.id,
@@ -123,15 +142,6 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
         })
 
         if (locationNodeIds.length > 0) {
-          const nodes = await tx.locationNode.findMany({
-            where: { id: { in: locationNodeIds }, active: true },
-            select: { id: true, slug: true, label: true, nodeType: true, provinceKey: true, cityKey: true, regionKey: true },
-          })
-
-          // SUBURB and REGION nodes are valid service areas ("cover the whole
-          // region" is a REGION row). Anything else throws before any write.
-          const rows = buildTechnicianServiceAreaRows(provider.id, nodes)
-
           const existingAreas = await tx.technicianServiceArea.findMany({
             where: {
               providerId: provider.id,
