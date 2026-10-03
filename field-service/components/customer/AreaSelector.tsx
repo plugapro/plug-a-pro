@@ -5,11 +5,6 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { MapPin, ChevronDown, X, Search } from 'lucide-react'
 import { formatLocationSlugLabel } from '@/lib/location-format'
-import {
-  isNotYetActive,
-  sortAreaResultsLiveFirst,
-  type AreaServiceStatus,
-} from '@/lib/area-service-status'
 
 const STORAGE_KEY = 'pap-area'
 
@@ -17,11 +12,9 @@ type AreaOption = { slug: string; label: string }
 
 // Search results carry region context so duplicate suburb names are
 // distinguishable (there are two "Northcliff" nodes — one in jhb_west, one in
-// jhb_north; picking the wrong one dead-ends the booking) and so not-yet-active
-// areas are visibly secondary instead of identical twins of serviceable ones.
+// jhb_north); the region line under the label tells them apart.
 type AreaSearchResult = AreaOption & {
   regionKey?: string | null
-  serviceStatus?: AreaServiceStatus
 }
 
 interface AreaSelectorProps {
@@ -82,14 +75,11 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
       .then(r => r.json())
       .then((data: AreaSearchResult[]) =>
         setResults(
-          sortAreaResultsLiveFirst(
-            data.map(n => ({
-              slug: n.slug,
-              label: n.label,
-              regionKey: n.regionKey ?? null,
-              serviceStatus: n.serviceStatus,
-            })),
-          ),
+          data.map(n => ({
+            slug: n.slug,
+            label: n.label,
+            regionKey: n.regionKey ?? null,
+          })),
         ),
       )
       .catch(() => {})
@@ -212,7 +202,6 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
               ) : (
                 results.map(r => {
                   const regionLabel = r.regionKey ? formatLocationSlugLabel(r.regionKey) : ''
-                  const notYetActive = isNotYetActive(r.serviceStatus)
                   return (
                     <button
                       key={r.slug}
@@ -221,10 +210,7 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
                       className="w-full text-left flex items-center gap-3 px-3 py-3.5 rounded-[14px] transition-colors hover:bg-[var(--card-alt)]"
                       style={{ color: 'var(--ink)' }}
                     >
-                      <MapPin
-                        size={15}
-                        style={{ color: notYetActive ? 'var(--ink-mute)' : 'var(--brand-purple)', flexShrink: 0 }}
-                      />
+                      <MapPin size={15} style={{ color: 'var(--brand-purple)', flexShrink: 0 }} />
                       <span className="flex-1 min-w-0">
                         <span className="block text-[14px] font-medium truncate">{r.label}</span>
                         {regionLabel && (
@@ -233,11 +219,6 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
                           </span>
                         )}
                       </span>
-                      {notYetActive && (
-                        <span className="text-[11px] font-semibold shrink-0" style={{ color: 'var(--ink-mute)' }}>
-                          Not yet active
-                        </span>
-                      )}
                     </button>
                   )
                 })

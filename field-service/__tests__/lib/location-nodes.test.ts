@@ -125,6 +125,7 @@ describe('getRegions', () => {
       label: 'Atlantic Seaboard',
       suburbCount: 12,
     })
+    expect(result[0]).not.toHaveProperty('serviceStatus')
   })
 
   it('returns [] when city node not found', async () => {
@@ -196,7 +197,6 @@ describe('getSuburbs', () => {
         provinceKey: 'gauteng',
         cityKey: 'johannesburg',
         regionKey: 'jhb_north',
-        serviceStatus: 'onboarding',
         lat: -26.1,
         lng: 28.0,
       },
@@ -278,6 +278,7 @@ describe('searchNodes', () => {
     const result = await searchNodes('ruim')
 
     expect(result[0].label).toBe('Ruimsig')
+    expect(result[0]).not.toHaveProperty('serviceStatus')
     expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
