@@ -28,6 +28,7 @@ import {
   countActiveProvidersFor,
   resolveAreaScopeByNodeId,
 } from '@/lib/customer-serviceability'
+import { addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 import { apiError } from '@/lib/api-response'
 import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
 import { buildProviderKycVisibilityWhere, KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
@@ -331,6 +332,26 @@ export async function POST(req: NextRequest) {
         categoryTag: canonicalCategory,
       })
       if (activeCount <= 0) {
+        // Capture the demand so ops can recruit and notify later, exactly as
+        // the WhatsApp path does. Best-effort: a waitlist failure must never
+        // change the 422 the customer sees.
+        try {
+          await addToServiceAreaWaitlist({
+            phone: session.phone,
+            name: sessionCustomer?.name ?? null,
+            category: canonicalCategory,
+            suburb: resolvedAddress.suburb,
+            city: resolvedAddress.city,
+            province: resolvedAddress.province,
+            source: channel === 'vodapay' ? 'vodapay' : 'pwa',
+          })
+        } catch (err) {
+          console.error('[customer-bookings] waitlist capture failed', {
+            locationNodeId: resolvedAddress.locationNodeId,
+            category: canonicalCategory,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
         return NextResponse.json(
           {
             error: 'CATEGORY_UNAVAILABLE_IN_AREA',

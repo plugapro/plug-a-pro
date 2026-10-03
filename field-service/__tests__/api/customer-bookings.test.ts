@@ -13,6 +13,7 @@ const {
   mockIsEnabled,
   mockCountActiveProvidersFor,
   mockResolveAreaScopeByNodeId,
+  mockAddToServiceAreaWaitlist,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockCreateJobRequest: vi.fn(),
@@ -25,6 +26,7 @@ const {
   mockIsEnabled: vi.fn(),
   mockCountActiveProvidersFor: vi.fn(),
   mockResolveAreaScopeByNodeId: vi.fn(),
+  mockAddToServiceAreaWaitlist: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
@@ -55,6 +57,7 @@ vi.mock('@/lib/client-pwa-submission-notifications', () => ({
 }))
 vi.mock('@/lib/storage', () => ({ uploadJobRequestPhoto: mockUploadJobRequestPhoto }))
 vi.mock('@/lib/flags', () => ({ isEnabled: mockIsEnabled }))
+vi.mock('@/lib/service-area-guard', () => ({ addToServiceAreaWaitlist: mockAddToServiceAreaWaitlist }))
 vi.mock('@/lib/customer-serviceability', () => ({
   checkPilotGate: vi.fn().mockResolvedValue({ ok: true }),
   countActiveProvidersFor: mockCountActiveProvidersFor,
@@ -96,6 +99,7 @@ describe('POST /api/customer/bookings', () => {
       node: { id: 'node-1', slug: 'gauteng__johannesburg__jhb_north__sandton', label: 'Sandton', nodeType: 'SUBURB', provinceKey: 'gauteng', cityKey: 'johannesburg', regionKey: 'jhb_north' },
     })
     mockCountActiveProvidersFor.mockResolvedValue(3)
+    mockAddToServiceAreaWaitlist.mockResolvedValue(undefined)
   })
 
   it('creates a job request with optional customer photos attached to the request', async () => {
@@ -521,6 +525,83 @@ describe('POST /api/customer/bookings', () => {
       categoryTag: 'plumbing',
     })
     expect(mockCreateJobRequest).not.toHaveBeenCalled()
+  })
+
+  it('captures the customer on the service-area waitlist when the zero-provider 422 fires', async () => {
+    mockGetSession.mockResolvedValue({ id: 'customer-user-1', role: 'customer', phone: '+27000000001' })
+    mockResolveCustomerForSession.mockResolvedValue({ id: 'cust-1', userId: 'customer-user-1', name: 'Test Customer' })
+    mockCountActiveProvidersFor.mockResolvedValue(0)
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(422)
+    expect(mockAddToServiceAreaWaitlist).toHaveBeenCalledTimes(1)
+    expect(mockAddToServiceAreaWaitlist).toHaveBeenCalledWith({
+      phone: '+27000000001',
+      name: 'Test Customer',
+      category: 'plumbing',
+      suburb: 'Sandton',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+      source: 'pwa',
+    })
+    expect(mockCreateJobRequest).not.toHaveBeenCalled()
+  })
+
+  it('still returns the zero-provider 422 unchanged when the waitlist write fails', async () => {
+    mockGetSession.mockResolvedValue({ id: 'customer-user-1', role: 'customer', phone: '+27000000002' })
+    mockCountActiveProvidersFor.mockResolvedValue(0)
+    mockAddToServiceAreaWaitlist.mockRejectedValue(new Error('db down'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual({
+      error: 'CATEGORY_UNAVAILABLE_IN_AREA',
+      message: 'We do not have this service active in your selected area yet.',
+      category: 'plumbing',
+      areaLabel: 'Sandton',
+    })
+    expect(mockAddToServiceAreaWaitlist).toHaveBeenCalledTimes(1)
+    expect(consoleError).toHaveBeenCalled()
+    expect(mockCreateJobRequest).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('does not touch the waitlist when the area has providers', async () => {
+    mockCountActiveProvidersFor.mockResolvedValue(1)
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    await POST(new NextRequest('http://localhost/api/customer/bookings', { method: 'POST', body: formData }))
+
+    expect(mockAddToServiceAreaWaitlist).not.toHaveBeenCalled()
   })
 
   it('creates the request when at least one provider serves the area with serviceability_v2 OFF', async () => {
