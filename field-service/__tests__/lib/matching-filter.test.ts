@@ -817,3 +817,106 @@ describe('filterEligibleProviders - KYC grace clause derives from lib/matching/k
     expect(notIn).toEqual([...KYC_GRACE_INELIGIBLE_STATUSES])
   })
 })
+
+// ── Coverage tiers: REGION_FALLBACK needs a REGION row ────────────────────────
+
+function makeStructuredJobRequest() {
+  const base = makeJobRequest()
+  return {
+    ...base,
+    address: {
+      ...base.address,
+      lat: null,
+      lng: null,
+      locationNodeId: 'node-sandton',
+      regionKey: 'jhb_north',
+      provinceKey: 'gauteng',
+    },
+  }
+}
+
+const SUBURB_ROW_OTHER_SUBURB_SAME_REGION = {
+  providerId: 'p1',
+  label: 'Rosebank',
+  city: 'Johannesburg',
+  active: true,
+  areaType: 'SUBURB',
+  lat: null,
+  lng: null,
+  radiusKm: null,
+  locationNodeId: 'node-rosebank',
+  regionKey: 'jhb_north',
+}
+
+const REGION_ROW_SAME_REGION = {
+  providerId: 'p1',
+  label: 'JHB North / Sandton',
+  city: 'Johannesburg',
+  active: true,
+  areaType: 'REGION',
+  lat: null,
+  lng: null,
+  radiusKm: null,
+  locationNodeId: 'region-jhb-north',
+  regionKey: 'jhb_north',
+}
+
+const SUBURB_ROW_EXACT = {
+  providerId: 'p1',
+  label: 'Sandton',
+  city: 'Johannesburg',
+  active: true,
+  areaType: 'SUBURB',
+  lat: null,
+  lng: null,
+  radiusKm: null,
+  locationNodeId: 'node-sandton',
+  regionKey: 'jhb_north',
+}
+
+describe('filterEligibleProviders - REGION_FALLBACK requires a REGION-type row', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupDefaultBatchMocks()
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([]) // timedOutRows
+      .mockResolvedValueOnce([]) // declinedLeadRows
+      .mockResolvedValueOnce([]) // dailyJobRows
+  })
+
+  it('a SUBURB row in the same region but a different suburb does NOT cover the address', async () => {
+    mockDb.technicianServiceArea.findMany.mockResolvedValue([SUBURB_ROW_OTHER_SUBURB_SAME_REGION])
+
+    const { eligible, filteredOut } = await filterEligibleProviders([makeCandidate()], makeStructuredJobRequest())
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes).toContain('OUTSIDE_SERVICE_AREA')
+  })
+
+  it('a REGION row for the same region covers the address at tier REGION_FALLBACK', async () => {
+    mockDb.technicianServiceArea.findMany.mockResolvedValue([REGION_ROW_SAME_REGION])
+
+    const { eligible } = await filterEligibleProviders([makeCandidate()], makeStructuredJobRequest())
+
+    expect(eligible).toHaveLength(1)
+    expect(eligible[0].coverageTier).toBe('REGION_FALLBACK')
+  })
+
+  it('an exact SUBURB row wins over a REGION row (tier SUBURB_EXACT)', async () => {
+    mockDb.technicianServiceArea.findMany.mockResolvedValue([REGION_ROW_SAME_REGION, SUBURB_ROW_EXACT])
+
+    const { eligible } = await filterEligibleProviders([makeCandidate()], makeStructuredJobRequest())
+
+    expect(eligible).toHaveLength(1)
+    expect(eligible[0].coverageTier).toBe('SUBURB_EXACT')
+  })
+
+  it('an inactive REGION row for the same region does NOT cover the address', async () => {
+    mockDb.technicianServiceArea.findMany.mockResolvedValue([{ ...REGION_ROW_SAME_REGION, active: false }])
+
+    const { eligible, filteredOut } = await filterEligibleProviders([makeCandidate()], makeStructuredJobRequest())
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes).toContain('OUTSIDE_SERVICE_AREA')
+  })
+})
