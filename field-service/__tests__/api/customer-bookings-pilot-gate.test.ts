@@ -5,8 +5,6 @@ const {
   mockGetSession,
   mockCreateJobRequest,
   mockResolveStructuredAddressCapture,
-  mockIsInActiveServiceArea,
-  mockIsActiveRegion,
   mockAddToServiceAreaWaitlist,
   mockNotifyCustomerPwaRequestSubmitted,
   mockUploadJobRequestPhoto,
@@ -21,8 +19,6 @@ const {
   mockGetSession: vi.fn(),
   mockCreateJobRequest: vi.fn(),
   mockResolveStructuredAddressCapture: vi.fn(),
-  mockIsInActiveServiceArea: vi.fn(),
-  mockIsActiveRegion: vi.fn(),
   mockAddToServiceAreaWaitlist: vi.fn(),
   mockNotifyCustomerPwaRequestSubmitted: vi.fn(),
   mockUploadJobRequestPhoto: vi.fn(),
@@ -55,8 +51,6 @@ vi.mock('@/lib/structured-address', () => ({
   resolveStructuredAddressCapture: mockResolveStructuredAddressCapture,
 }))
 vi.mock('@/lib/service-area-guard', () => ({
-  isInActiveServiceArea: mockIsInActiveServiceArea,
-  isActiveRegion: mockIsActiveRegion,
   addToServiceAreaWaitlist: mockAddToServiceAreaWaitlist,
 }))
 vi.mock('@/lib/client-pwa-submission-notifications', () => ({
@@ -111,8 +105,6 @@ describe('POST /api/customer/bookings — west-rand pilot gate', () => {
       postalCode: '2170',
       locationNodeId: 'node-1',
     })
-    mockIsInActiveServiceArea.mockReturnValue(true)
-    mockIsActiveRegion.mockReturnValue(true)
     mockCreateJobRequest.mockResolvedValue({
       jobRequestId: 'jr-1',
       customerId: 'cust-1',

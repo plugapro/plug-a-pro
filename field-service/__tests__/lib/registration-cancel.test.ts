@@ -68,11 +68,7 @@ vi.mock('@/lib/service-categories', () => ({
   resolveServiceCategoryTag: vi.fn((s: string) => (s === 'Plumbing' ? 'plumbing' : null)),
 }))
 vi.mock('@/lib/service-area-guard', () => ({
-  ACTIVE_PILOT_CITY_LABEL: 'Johannesburg',
-  ACTIVE_PILOT_REGION_LABEL: 'JHB North',
-  describeCityServiceStatus: vi.fn().mockReturnValue(''),
-  describeRegionServiceStatus: vi.fn().mockReturnValue(''),
-  getRegionServiceStatus: vi.fn().mockReturnValue({ available: true }),
+  addToServiceAreaWaitlist: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/lib/whatsapp-media', () => ({
   downloadAndStoreWhatsAppMedia: vi.fn(),
