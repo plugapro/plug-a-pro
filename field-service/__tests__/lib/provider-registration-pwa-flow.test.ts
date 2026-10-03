@@ -281,6 +281,16 @@ describe('provider registration PWA flow', () => {
       lastCompletedStep: 4,
     })
 
+    expect(client.locationNode.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: { in: ['region-jhb-central'] },
+        active: true,
+        OR: [
+          { nodeType: 'SUBURB', postalCode: { not: null } },
+          { nodeType: 'REGION' },
+        ],
+      }),
+    }))
     expect(client.providerApplicationDraft.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         serviceAreas: ['JHB Central'],
@@ -310,6 +320,42 @@ describe('provider registration PWA flow', () => {
     expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
   })
 
+  it('rejects a REGION node whose parent city is not the submitted city', async () => {
+    const client = createDraftClient()
+    client.locationNode.findMany.mockResolvedValue([regionRow()])
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['region-jhb-central'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-ekurhuleni',
+      regionId: 'region-jhb-central',
+      lastCompletedStep: 4,
+    })).rejects.toMatchObject({ code: 'INVALID_LOCATION_HIERARCHY' })
+
+    expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects a REGION node whose grandparent province is not the submitted province', async () => {
+    const client = createDraftClient()
+    client.locationNode.findMany.mockResolvedValue([regionRow()])
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['region-jhb-central'],
+      provinceId: 'province-western-cape',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      lastCompletedStep: 4,
+    })).rejects.toMatchObject({ code: 'INVALID_LOCATION_HIERARCHY' })
+
+    expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
+  })
+
   it('still rejects a suburb without a postcode', async () => {
     const client = createDraftClient()
     client.locationNode.findMany.mockResolvedValue(
@@ -330,32 +376,45 @@ describe('provider registration PWA flow', () => {
     expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
   })
 
-  it('rejects CITY and PROVINCE nodes even when the lookup returns them', async () => {
+  it.each([
+    ['CITY', {
+      id: 'city-johannesburg',
+      nodeType: 'CITY',
+      slug: 'gauteng__johannesburg',
+      label: 'Johannesburg',
+      postalCode: null,
+      provinceKey: 'gauteng',
+      cityKey: 'johannesburg',
+      regionKey: null,
+      parent: { id: 'province-gauteng', nodeType: 'PROVINCE', label: 'Gauteng' },
+    }],
+    ['PROVINCE', {
+      id: 'province-gauteng',
+      nodeType: 'PROVINCE',
+      slug: 'gauteng',
+      label: 'Gauteng',
+      postalCode: null,
+      provinceKey: 'gauteng',
+      cityKey: null,
+      regionKey: null,
+      parent: null,
+    }],
+  ])('rejects a %s node even when the lookup returns it', async (_type, node) => {
     const client = createDraftClient()
-    client.locationNode.findMany.mockResolvedValue([
-      {
-        id: 'city-johannesburg',
-        nodeType: 'CITY',
-        slug: 'gauteng__johannesburg',
-        label: 'Johannesburg',
-        postalCode: null,
-        provinceKey: 'gauteng',
-        cityKey: 'johannesburg',
-        regionKey: null,
-        parent: { id: 'province-gauteng', nodeType: 'PROVINCE', label: 'Gauteng' },
-      },
-    ])
+    client.locationNode.findMany.mockResolvedValue([node])
 
     await expect(saveProviderRegistrationDraft(client, {
       phone: '082 303 5070',
       name: 'Thabo Nkosi',
       skills: ['plumbing'],
-      locationNodeIds: ['city-johannesburg'],
+      locationNodeIds: [node.id],
       provinceId: 'province-gauteng',
       cityId: 'city-johannesburg',
       regionId: 'region-jhb-central',
       lastCompletedStep: 4,
     })).rejects.toMatchObject({ code: 'INVALID_LOCATION_HIERARCHY' })
+
+    expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
   })
 
   it('uses the suburb-or-region copy when a node id is unknown', async () => {
