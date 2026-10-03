@@ -6,9 +6,9 @@
 //
 // This helper resolves the LocationNode ids for a ProviderApplication at
 // approval time so they can be passed through to syncProviderRecord /
-// upsertStructuredServiceAreas (which applies the matching-region gate:
-// nodes outside the active matching regions get INACTIVE rows — approval must
-// never widen the matching fence).
+// upsertStructuredServiceAreas. Since the national rollout (spec 2026-10-03)
+// every active node produces an ACTIVE row — liveness is LocationNode.active,
+// there is no matching-region gate.
 //
 // Resolution order:
 //   1. Registration draft — the PWA / WhatsApp / web-resume flows persist the

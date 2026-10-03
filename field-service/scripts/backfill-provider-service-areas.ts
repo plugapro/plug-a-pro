@@ -6,9 +6,9 @@
  * application's service areas to LocationNodes (registration draft node ids
  * first, then unambiguous label matching — see
  * lib/provider-application-service-areas.ts) and creates the MISSING
- * TechnicianServiceArea rows via upsertStructuredServiceAreas, which applies
- * the matching-region gate: rows outside the active matching regions are
- * created INACTIVE. Existing TSA rows are never modified — additive only.
+ * TechnicianServiceArea rows via upsertStructuredServiceAreas. Rows are
+ * ACTIVE for every active LocationNode (national liveness, spec 2026-10-03).
+ * Existing TSA rows are never modified — additive only.
  *
  * Idempotent: node ids that already have a TSA row are skipped.
  *
@@ -102,9 +102,8 @@ async function main() {
     }
 
     if (args.execute) {
-      // upsertStructuredServiceAreas applies the region gate: rows outside the
-      // active matching regions are created with active=false. Only MISSING
-      // node ids are passed, so no existing row is updated.
+      // upsertStructuredServiceAreas writes active rows for every active node.
+      // Only MISSING node ids are passed, so no existing row is updated.
       await upsertStructuredServiceAreas(db, providerId, missingIds)
       created += missingIds.length
       console.log(`✓ provider=${providerId} (${app.name}) — created ${missingIds.length} TSA row(s) (source=${resolution.source})`)

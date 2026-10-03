@@ -20,7 +20,6 @@
  *     --commit
  */
 import { db } from '../lib/db'
-import { getRegionServiceStatus, getRegionKeyFromSlug } from '../lib/service-area-guard'
 
 type Args = {
   commit: boolean
@@ -188,11 +187,10 @@ async function main() {
       }
 
       if (args.commit) {
-        const regionKey = node.regionKey ?? getRegionKeyFromSlug(node.slug)
-        const active = getRegionServiceStatus({ regionKey, slug: node.slug }) === 'active'
+        // National liveness (spec 2026-10-03): every active node → active row.
         await db.technicianServiceArea.upsert({
           where: { providerId_locationNodeId: { providerId, locationNodeId: node.id } },
-          update: { active, label: node.label, regionKey: node.regionKey, provinceKey: node.provinceKey, cityKey: node.cityKey },
+          update: { active: true, label: node.label, regionKey: node.regionKey, provinceKey: node.provinceKey, cityKey: node.cityKey },
           create: {
             providerId,
             areaType: 'SUBURB',
@@ -201,7 +199,7 @@ async function main() {
             regionKey: node.regionKey,
             provinceKey: node.provinceKey,
             cityKey: node.cityKey,
-            active,
+            active: true,
           },
         })
       }
