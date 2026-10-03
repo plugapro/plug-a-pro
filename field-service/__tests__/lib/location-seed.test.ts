@@ -106,6 +106,29 @@ describe('South African location seed dataset', () => {
     expect(prisma.__rows.size).toBe(countAfterFirst)
   })
 
+  it('never sets active in an update payload, so a re-seed keeps admin-paused nodes paused', async () => {
+    const prisma = createMemoryPrisma()
+    await seedLocationNodes(prisma)
+    const upserts: Array<{ create: Record<string, unknown>; update: Record<string, unknown> }> = []
+    const realUpsert = prisma.locationNode.upsert
+    prisma.locationNode.upsert = async (args: any) => {
+      upserts.push(args)
+      return realUpsert(args)
+    }
+    // Admin pauses a region and a suburb, then the seed runs again (rollout step 2).
+    const pausedSlugs = ['gauteng__johannesburg__jhb_west', 'gauteng__johannesburg__jhb_west__roodepoort']
+    for (const slug of pausedSlugs) prisma.__rows.set(slug, { ...prisma.__rows.get(slug), active: false })
+
+    await seedLocationNodes(prisma)
+
+    expect(upserts.length).toBeGreaterThan(0)
+    for (const call of upserts) {
+      expect(call.update).not.toHaveProperty('active')
+      expect(call.create).toHaveProperty('active', true)
+    }
+    for (const slug of pausedSlugs) expect(prisma.__rows.get(slug).active).toBe(false)
+  })
+
   it('blocks production destructive reset flags', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('ALLOW_LOCATION_RESET', 'true')

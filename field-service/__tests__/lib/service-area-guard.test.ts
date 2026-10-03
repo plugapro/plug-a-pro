@@ -1,89 +1,110 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/lib/db', () => ({
+  db: {
+    serviceAreaWaitlist: {
+      findFirst: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn().mockResolvedValue({}),
+    },
+  },
+}))
+
+import { db } from '@/lib/db'
 import {
-  isOnboardingActiveRegion,
-  isMatchingActiveRegion,
-  isActiveRegion,
-  getRegionServiceStatus,
-  describeRegionServiceStatus,
-  serviceStatusForRegionKey,
-  ONBOARDING_ACTIVE_REGION_KEYS,
-  MATCHING_ACTIVE_REGION_KEYS,
+  normalizeLocationKey,
+  getRegionKeyFromSlug,
+  addToServiceAreaWaitlist,
 } from '@/lib/service-area-guard'
 
-const COJ_REGIONS = ['jhb_north', 'jhb_east', 'jhb_south', 'jhb_cbd', 'jhb_west']
+const waitlist = db.serviceAreaWaitlist as unknown as {
+  findFirst: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+  create: ReturnType<typeof vi.fn>
+}
 
-describe('service-area-guard gate split', () => {
-  it('onboarding set contains all five CoJ regions', () => {
-    for (const key of COJ_REGIONS) expect(isOnboardingActiveRegion(key)).toBe(true)
-    expect(ONBOARDING_ACTIVE_REGION_KEYS.size).toBe(5)
+describe('normalizeLocationKey', () => {
+  it('lower-cases, trims and joins whitespace/hyphens with underscores', () => {
+    expect(normalizeLocationKey('  JHB West ')).toBe('jhb_west')
+    expect(normalizeLocationKey('Cape-Town  CBD')).toBe('cape_town_cbd')
   })
 
-  it('matching set contains only jhb_west', () => {
-    expect(isMatchingActiveRegion('jhb_west')).toBe(true)
-    for (const key of ['jhb_north', 'jhb_east', 'jhb_south', 'jhb_cbd']) {
-      expect(isMatchingActiveRegion(key)).toBe(false)
-    }
-    expect(MATCHING_ACTIVE_REGION_KEYS.size).toBe(1)
-  })
-
-  it('isActiveRegion keeps legacy (matching) behaviour', () => {
-    expect(isActiveRegion('jhb_west')).toBe(true)
-    expect(isActiveRegion('jhb_north')).toBe(false)
-  })
-
-  it('getRegionServiceStatus defaults to the matching gate', () => {
-    expect(getRegionServiceStatus({ regionKey: 'jhb_north' })).toBe('coming_soon')
-    expect(getRegionServiceStatus({ regionKey: 'jhb_west' })).toBe('active')
-  })
-
-  it('getRegionServiceStatus honours the onboarding gate', () => {
-    expect(getRegionServiceStatus({ regionKey: 'jhb_north' }, 'onboarding')).toBe('active')
-    expect(getRegionServiceStatus({ regionKey: 'jhb_south' }, 'onboarding')).toBe('active')
-  })
-
-  it('describeRegionServiceStatus copy differs by gate', () => {
-    expect(describeRegionServiceStatus({ regionKey: 'jhb_north' }, 'onboarding')).toContain('Open for registration')
-    expect(describeRegionServiceStatus({ regionKey: 'jhb_west' }, 'matching')).toContain('Active pilot')
-    expect(describeRegionServiceStatus({ regionKey: 'jhb_north' }, 'matching')).toContain('Coming soon')
-  })
-
-  it('slug-input path resolves correctly for matching and onboarding gates', () => {
-    // Production calls pass both regionKey and slug; slug alone must also resolve.
-    // Region slugs end with the regionKey segment: gauteng__johannesburg__<regionKey>
-    expect(getRegionServiceStatus({ slug: 'gauteng__johannesburg__jhb_west' }, 'matching')).toBe('active')
-    expect(getRegionServiceStatus({ slug: 'gauteng__johannesburg__jhb_north' }, 'onboarding')).toBe('active')
-  })
-
-  it('isOnboardingActiveRegion returns false for out-of-scope regions', () => {
-    expect(isOnboardingActiveRegion('western_cape')).toBe(false)
+  it('returns an empty string for null, undefined and blank input', () => {
+    expect(normalizeLocationKey(null)).toBe('')
+    expect(normalizeLocationKey(undefined)).toBe('')
+    expect(normalizeLocationKey('   ')).toBe('')
   })
 })
 
-describe('serviceStatusForRegionKey', () => {
-  it('returns live for jhb_west (matching-active region)', () => {
-    expect(serviceStatusForRegionKey('jhb_west')).toBe('live')
+describe('getRegionKeyFromSlug', () => {
+  it('returns the last double-underscore segment of a node slug, normalised', () => {
+    expect(getRegionKeyFromSlug('gauteng__johannesburg__jhb_west')).toBe('jhb_west')
+    expect(getRegionKeyFromSlug('western_cape__cape_town__Cape_Town_CBD')).toBe('cape_town_cbd')
   })
 
-  it('returns onboarding for each non-matching CoJ region', () => {
-    for (const key of ['jhb_north', 'jhb_east', 'jhb_south', 'jhb_cbd']) {
-      expect(serviceStatusForRegionKey(key)).toBe('onboarding')
-    }
+  it('returns an empty string for null/undefined', () => {
+    expect(getRegionKeyFromSlug(null)).toBe('')
+    expect(getRegionKeyFromSlug(undefined)).toBe('')
+  })
+})
+
+describe('addToServiceAreaWaitlist', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    waitlist.findFirst.mockResolvedValue(null)
   })
 
-  it('returns coming_soon for regions outside the active sets', () => {
-    expect(serviceStatusForRegionKey('durban_central')).toBe('coming_soon')
+  it('creates a normalised row when the phone+city pair is new', async () => {
+    await addToServiceAreaWaitlist({
+      phone: '+27820000001',
+      name: 'Thandi',
+      category: 'painting',
+      suburb: 'sea point',
+      city: 'cape town',
+      province: 'western cape',
+      source: 'whatsapp',
+    })
+
+    expect(waitlist.findFirst).toHaveBeenCalledWith({
+      where: { phone: '+27820000001', city: { equals: 'Cape Town', mode: 'insensitive' } },
+      select: { id: true },
+    })
+    expect(waitlist.update).not.toHaveBeenCalled()
+    expect(waitlist.create).toHaveBeenCalledWith({
+      data: {
+        phone: '+27820000001',
+        name: 'Thandi',
+        category: 'painting',
+        suburb: 'Sea Point',
+        city: 'Cape Town',
+        province: 'Western Cape',
+        source: 'whatsapp',
+      },
+    })
   })
 
-  it('returns coming_soon for empty string', () => {
-    expect(serviceStatusForRegionKey('')).toBe('coming_soon')
+  it('updates the existing row (idempotent on phone+city; lookup is case-insensitive)', async () => {
+    waitlist.findFirst.mockResolvedValue({ id: 'wl_1' })
+
+    await addToServiceAreaWaitlist({
+      phone: '+27820000001',
+      category: 'garden',
+      city: 'cape town',
+      source: 'pwa',
+    })
+
+    expect(waitlist.create).not.toHaveBeenCalled()
+    expect(waitlist.update).toHaveBeenCalledWith({
+      where: { id: 'wl_1' },
+      data: { city: 'Cape Town', category: 'garden' },
+    })
   })
 
-  it('returns coming_soon for null', () => {
-    expect(serviceStatusForRegionKey(null)).toBe('coming_soon')
-  })
+  it('stores null for optional fields that are omitted', async () => {
+    await addToServiceAreaWaitlist({ phone: '+27820000002', city: 'Kimberley', source: 'vodapay' })
 
-  it('normalises case (uppercase input)', () => {
-    expect(serviceStatusForRegionKey('JHB_WEST')).toBe('live')
-    expect(serviceStatusForRegionKey('JHB_NORTH')).toBe('onboarding')
+    expect(waitlist.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: null, category: null, suburb: null, province: null, source: 'vodapay' }),
+    })
   })
 })

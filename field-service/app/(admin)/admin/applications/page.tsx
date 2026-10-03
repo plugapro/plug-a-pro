@@ -286,8 +286,8 @@ async function approveApplication(formData: FormData) {
   // TechnicianServiceArea rows the matching filter depends on. Without this,
   // approval flips verified/active but the provider silently never matches
   // (zero active TSA rows → OUTSIDE_SERVICE_AREA on every structured request).
-  // Region gating is preserved inside upsertStructuredServiceAreas: nodes
-  // outside the active matching regions produce INACTIVE rows.
+  // Every active LocationNode produces an ACTIVE row (national liveness,
+  // spec 2026-10-03); there is no region gate inside upsertStructuredServiceAreas.
   const areaResolution = await resolveApplicationLocationNodeIds(db, {
     applicationId: app.id,
     serviceAreas: app.serviceAreas,
@@ -394,8 +394,8 @@ async function approveApplication(formData: FormData) {
         verified: true,
         isTestUser: app.isTestUser,
         cohortName: app.cohortName,
-        // PJ-01: provision matchability at approval time. The region gate in
-        // upsertStructuredServiceAreas keeps non-matching-region rows inactive.
+        // PJ-01: provision matchability at approval time. Rows are active for
+        // every active LocationNode (national liveness).
         locationNodeIds: areaResolution.locationNodeIds,
       })
 

@@ -954,9 +954,8 @@ export async function autoApproveProviderApplications(
 
     // Phase B: non-branching side effects — error-tolerant + retryable.
     // PJ-01: resolve the application's structured service areas so enrichment
-    // creates the TechnicianServiceArea rows matching depends on. The region
-    // gate inside upsertStructuredServiceAreas keeps non-matching-region rows
-    // inactive, so this never widens the matching fence. Enrichment is now
+    // creates the TechnicianServiceArea rows matching depends on. Rows are
+    // active for every active LocationNode (national liveness). Enrichment is now
     // awaited (was fire-and-forget) so the readiness check below observes the
     // rows it creates; errors are still swallowed so approval never fails here.
     const areaResolution = await resolveApplicationLocationNodeIds(client, {

@@ -241,10 +241,19 @@ function providerCoversAddress(
 
   // Tier 2 - structured path
   if (address.locationNodeId != null) {
+    // Tier 2a - SUBURB_EXACT: provider has a row with matching locationNodeId
     if (activeAreas.some((a) => a.locationNodeId === address.locationNodeId)) {
       return { covers: true, tier: 'SUBURB_EXACT' }
     }
-    if (address.regionKey != null && activeAreas.some((a) => a.regionKey === address.regionKey)) {
+    // Tier 2b - REGION_FALLBACK: provider has an actual REGION coverage row for
+    // the same region. A SUBURB row that merely carries a denormalised regionKey
+    // must NOT confer region-wide coverage — otherwise a provider who configured a
+    // single suburb would receive leads across the whole region. Mirrors
+    // lib/matching/service.ts Tier 2b and lib/matching-engine.ts.
+    if (
+      address.regionKey != null &&
+      activeAreas.some((a) => a.areaType === 'REGION' && a.regionKey === address.regionKey)
+    ) {
       return { covers: true, tier: 'REGION_FALLBACK' }
     }
     return { covers: false, tier: 'NO_MATCH' }

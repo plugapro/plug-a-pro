@@ -265,7 +265,6 @@ export interface ConversationData {
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider
   selectedRegionLabels?: string[]    // display labels for selected regions
-  selectedRegionStatus?: 'active' | 'coming_soon'
   selectedSuburbLabels?: string[]    // display labels for selected suburbs (drill-down)
   regionId?: string                  // region node ID being drilled into for suburb selection
   regionLabel?: string               // region display label during suburb drill-down

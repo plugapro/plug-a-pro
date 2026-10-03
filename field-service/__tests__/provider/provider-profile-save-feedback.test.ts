@@ -234,4 +234,148 @@ describe('provider profile save feedback action', () => {
       error: 'That email is already in use. Use a different email and try again.',
     })
   })
+
+  it('saves a whole-region (REGION node) service area instead of rejecting it', async () => {
+    const { requireProvider } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    const { syncProviderSkills } = await import('../../lib/provider-skills')
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
+    ;(syncProviderSkills as any).mockResolvedValue(undefined)
+    tx.locationNode.findMany.mockResolvedValue([
+      {
+        id: 'region-1',
+        slug: 'western_cape__cape_town__cape_town_cbd',
+        label: 'Cape Town CBD & Atlantic Seaboard',
+        nodeType: 'REGION',
+        provinceKey: 'western_cape',
+        cityKey: 'cape_town',
+        regionKey: 'cape_town_cbd',
+      },
+    ])
+    tx.technicianServiceArea.findMany.mockResolvedValue([])
+
+    const formData = new FormData()
+    formData.set('name', 'Lovemore Dube')
+    formData.append('skillTags', 'plumbing')
+    formData.set('serviceAreasPickerRendered', '1')
+    formData.append('locationNodeIds', 'region-1')
+
+    const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
+    const result = await updateProviderProfileFromFormAction(formData)
+
+    expect(result).toEqual({ ok: true, message: 'Profile updated' })
+    expect(tx.technicianServiceArea.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          providerId: 'provider-1',
+          locationNodeId: 'region-1',
+          areaType: 'REGION',
+          regionKey: 'cape_town_cbd',
+          suburbKey: null,
+          active: true,
+        }),
+      ],
+      skipDuplicates: true,
+    })
+  })
+
+  it('still refuses CITY nodes submitted through the picker', async () => {
+    const { requireProvider } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    const { syncProviderSkills } = await import('../../lib/provider-skills')
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
+    ;(syncProviderSkills as any).mockResolvedValue(undefined)
+    tx.locationNode.findMany.mockResolvedValue([
+      {
+        id: 'city-1',
+        slug: 'western_cape__cape_town',
+        label: 'Cape Town',
+        nodeType: 'CITY',
+        provinceKey: 'western_cape',
+        cityKey: 'cape_town',
+        regionKey: null,
+      },
+    ])
+
+    const formData = new FormData()
+    formData.set('name', 'Lovemore Dube')
+    formData.append('skillTags', 'plumbing')
+    formData.set('serviceAreasPickerRendered', '1')
+    formData.append('locationNodeIds', 'city-1')
+
+    const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
+    const result = await updateProviderProfileFromFormAction(formData)
+
+    expect(result).toEqual({ ok: false, error: 'Could not save your changes. Please try again.' })
+    expect(tx.technicianServiceArea.createMany).not.toHaveBeenCalled()
+    // The mock transaction has no rollback, so this proves validation runs
+    // before the deactivating updateMany rather than relying on rollback.
+    expect(tx.technicianServiceArea.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('fails the save, with no service-area writes, when no posted node id resolves to an active node', async () => {
+    const { requireProvider } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    const { syncProviderSkills } = await import('../../lib/provider-skills')
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
+    ;(syncProviderSkills as any).mockResolvedValue(undefined)
+    tx.locationNode.findMany.mockResolvedValue([])
+
+    const formData = new FormData()
+    formData.set('name', 'Lovemore Dube')
+    formData.append('skillTags', 'plumbing')
+    formData.set('serviceAreasPickerRendered', '1')
+    formData.append('locationNodeIds', 'inactive-or-missing-1')
+
+    const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
+    const result = await updateProviderProfileFromFormAction(formData)
+
+    expect(result).toEqual({ ok: false, error: 'Could not save your changes. Please try again.' })
+    expect(tx.technicianServiceArea.updateMany).not.toHaveBeenCalled()
+    expect(tx.technicianServiceArea.createMany).not.toHaveBeenCalled()
+  })
+
+  it('only resolves active location nodes for the posted ids', async () => {
+    const { requireProvider } = await import('../../lib/auth')
+    const { db } = await import('../../lib/db')
+    const { syncProviderSkills } = await import('../../lib/provider-skills')
+    ;(requireProvider as any).mockResolvedValue({ id: 'user-1', role: 'provider', phone: null })
+    ;(db.provider.findFirst as any).mockResolvedValue({ id: 'provider-1', active: true, status: 'ACTIVE' })
+    ;(syncProviderSkills as any).mockResolvedValue(undefined)
+    tx.locationNode.findMany.mockResolvedValue([
+      {
+        id: 'sub-1',
+        slug: 'western_cape__cape_town__cape_town_cbd__sea_point',
+        label: 'Sea Point',
+        nodeType: 'SUBURB',
+        provinceKey: 'western_cape',
+        cityKey: 'cape_town',
+        regionKey: 'cape_town_cbd',
+      },
+    ])
+
+    const formData = new FormData()
+    formData.set('name', 'Lovemore Dube')
+    formData.append('skillTags', 'plumbing')
+    formData.set('serviceAreasPickerRendered', '1')
+    formData.append('locationNodeIds', 'sub-1')
+    formData.append('locationNodeIds', 'stale-1')
+
+    const { updateProviderProfileFromFormAction } = await import('../../app/(provider)/provider/profile/actions')
+    const result = await updateProviderProfileFromFormAction(formData)
+
+    expect(result).toEqual({ ok: true, message: 'Profile updated' })
+    expect(tx.locationNode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['sub-1', 'stale-1'] }, active: true }),
+      }),
+    )
+    expect(tx.technicianServiceArea.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ locationNodeId: 'sub-1', areaType: 'SUBURB' })],
+      skipDuplicates: true,
+    })
+  })
 })

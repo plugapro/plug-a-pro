@@ -279,7 +279,7 @@ function requireStructuredServiceAreas(lastCompletedStep: number | null | undefi
 
 function locationHierarchyError(): ProviderRegistrationValidationError {
   return new ProviderRegistrationValidationError(
-    'Choose a valid province, city, region and suburb combination.',
+    'Choose a valid province, city and region combination.',
     'INVALID_LOCATION_HIERARCHY',
   )
 }
@@ -316,9 +316,11 @@ async function resolveCanonicalServiceAreas(
   const nodes = await client.locationNode.findMany({
     where: {
       id: { in: locationNodeIds },
-      nodeType: 'SUBURB',
       active: true,
-      postalCode: { not: null },
+      OR: [
+        { nodeType: 'SUBURB', postalCode: { not: null } },
+        { nodeType: 'REGION' },
+      ],
     },
     select: {
       id: true,
@@ -356,7 +358,7 @@ async function resolveCanonicalServiceAreas(
   const nodesById = new Map(nodes.map((node) => [node.id, node]))
   if (nodesById.size !== locationNodeIds.length) {
     throw new ProviderRegistrationValidationError(
-      'Select a valid suburb from the list.',
+      'Select a valid suburb or region from the list.',
       'INVALID_LOCATION_NODE',
     )
   }
@@ -364,12 +366,29 @@ async function resolveCanonicalServiceAreas(
   const serviceAreas: string[] = []
   for (const locationNodeId of locationNodeIds) {
     const node = nodesById.get(locationNodeId)
-    const region = node?.parent
+    if (!node) throw locationHierarchyError()
+
+    if (node.nodeType === 'REGION') {
+      // Whole-region coverage: the node itself is the selected region; its
+      // parents must be the submitted city and province.
+      const city = node.parent
+      const province = city?.parent
+      if (!city || city.nodeType !== 'CITY' || !province || province.nodeType !== 'PROVINCE') {
+        throw locationHierarchyError()
+      }
+      if (input.regionId && node.id !== input.regionId) throw locationHierarchyError()
+      if (input.cityId && city.id !== input.cityId) throw locationHierarchyError()
+      if (input.provinceId && province.id !== input.provinceId) throw locationHierarchyError()
+
+      serviceAreas.push(normaliseLocationDisplayName(node.label))
+      continue
+    }
+
+    const region = node.parent
     const city = region?.parent
     const province = city?.parent
 
     if (
-      !node ||
       node.nodeType !== 'SUBURB' ||
       !node.postalCode ||
       !region ||

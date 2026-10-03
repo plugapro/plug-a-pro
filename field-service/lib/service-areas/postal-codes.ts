@@ -215,4 +215,46 @@ export const SUBURB_POSTAL_CODES: Record<string, string> = {
   "western_cape__cape_town__cape_town_south__rondebosch": "7700",
   "western_cape__cape_town__cape_town_south__tokai": "7945",
   "western_cape__cape_town__cape_town_south__wynberg": "7800",
+  "eastern_cape__east_london__buffalo_city__beacon_bay": "5241", // manual
+  "eastern_cape__east_london__buffalo_city__east_london": "5201", // manual
+  "eastern_cape__east_london__buffalo_city__mdantsane": "5219",
+  "eastern_cape__east_london__buffalo_city__vincent": "5247", // manual
+  "eastern_cape__gqeberha__gqeberha_metro__gqeberha": "6001", // manual
+  "eastern_cape__gqeberha__gqeberha_metro__newton_park": "6045", // manual
+  "eastern_cape__gqeberha__gqeberha_metro__port_elizabeth": "6001", // manual
+  "eastern_cape__gqeberha__gqeberha_metro__summerstrand": "6001",
+  "eastern_cape__gqeberha__gqeberha_metro__uitenhage": "6229",
+  "eastern_cape__gqeberha__gqeberha_metro__walmer": "6070", // manual
+  "free_state__bloemfontein__bloemfontein_mangaung__bloemfontein": "9301", // manual
+  "free_state__bloemfontein__bloemfontein_mangaung__fichardt_park": "9301", // manual
+  "free_state__bloemfontein__bloemfontein_mangaung__langenhoven_park": "9301", // manual
+  "free_state__bloemfontein__bloemfontein_mangaung__mangaung": "9323", // manual
+  "free_state__bloemfontein__bloemfontein_mangaung__universitas": "9301", // manual
+  "gauteng__east_rand__east_rand__heidelberg": "1441", // manual
+  "gauteng__pretoria__pretoria_north__ga_rankuwa": "0208", // manual
+  "limpopo__polokwane__polokwane__bendor": "0699", // manual
+  "limpopo__polokwane__polokwane__flora_park": "0699", // manual
+  "limpopo__polokwane__polokwane__pietersburg": "0699", // manual
+  "limpopo__polokwane__polokwane__polokwane": "0699", // manual
+  "limpopo__polokwane__polokwane__seshego": "0741", // manual
+  "mpumalanga__emalahleni__emalahleni__emalahleni": "1034", // manual
+  "mpumalanga__emalahleni__emalahleni__highveld_park": "1034", // manual
+  "mpumalanga__emalahleni__emalahleni__reyno_ridge": "1049", // manual
+  "mpumalanga__emalahleni__emalahleni__witbank": "1034", // manual
+  "mpumalanga__mbombela__mbombela__mbombela": "1201", // manual
+  "mpumalanga__mbombela__mbombela__nelspruit": "1201", // manual
+  "mpumalanga__mbombela__mbombela__white_river": "1240",
+  "north_west__mahikeng__mahikeng__mafikeng": "2745",
+  "north_west__mahikeng__mahikeng__mahikeng": "2745",
+  "north_west__mahikeng__mahikeng__mmabatho": "2790", // manual
+  "north_west__rustenburg__rustenburg__cashan": "0299", // manual
+  "north_west__rustenburg__rustenburg__rustenburg": "0299", // manual
+  "north_west__rustenburg__rustenburg__safari_gardens": "0299",
+  "north_west__rustenburg__rustenburg__tlhabane": "0299", // manual
+  "northern_cape__kimberley__kimberley__galeshewe": "8345", // manual
+  "northern_cape__kimberley__kimberley__hadison_park": "8301", // manual
+  "northern_cape__kimberley__kimberley__kimberley": "8301",
+  "northern_cape__kimberley__kimberley__new_park": "8301",
+  "gauteng__east_rand__east_rand__dunnottar": "1496", // manual
+  "mpumalanga__mbombela__mbombela__rocky_drift": "1240", // manual
 }

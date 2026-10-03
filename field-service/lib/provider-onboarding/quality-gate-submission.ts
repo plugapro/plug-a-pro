@@ -383,7 +383,6 @@ interface Qgv2WhatsappSubmitPayload {
     verificationDocAttachmentId: string | null
     verificationSelfieAttachmentId: string | null
     locationNodeIds: string[]
-    selectedRegionStatus: string | null
   }
 }
 

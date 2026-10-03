@@ -88,10 +88,6 @@ vi.mock('@/lib/location-nodes', () => ({
 }))
 
 vi.mock('@/lib/service-area-guard', () => ({
-  isInActiveServiceArea: vi.fn(),
-  isActiveProvince: vi.fn(),
-  isActiveCity: vi.fn(),
-  isActiveRegion: vi.fn(),
   addToServiceAreaWaitlist: vi.fn(),
 }))
 

@@ -12,7 +12,6 @@
 
 import { useState, useRef, useEffect } from 'react'
 import type { SuburbOption } from '@/lib/location-nodes'
-import { isNotYetActive, sortAreaResultsLiveFirst } from '@/lib/area-service-status'
 
 export type Selection = {
   province: string
@@ -43,7 +42,6 @@ function optionFromSelection(selection: Selection): SuburbOption {
     regionKey: '',
     lat: null,
     lng: null,
-    serviceStatus: 'coming_soon' as const,
   }
 }
 
@@ -97,9 +95,7 @@ export function SuburbPicker({ provinceKey, onSelect, initialSelection = null }:
       const res = await fetch(`/api/locations/search?${params}`)
       if (!res.ok) throw new Error('Search failed')
       const data: SuburbOption[] = await res.json()
-      // Serviceable suburbs first: duplicate names exist across regions and
-      // the unserviceable twin otherwise ranks identically (two "Northcliff"s).
-      setResults(sortAreaResultsLiveFirst(data))
+      setResults(data)
       setOpen(data.length > 0)
     } catch {
       setError('Could not load suburbs. Please try again.')
@@ -181,11 +177,6 @@ export function SuburbPicker({ provinceKey, onSelect, initialSelection = null }:
                 <span className="ml-1 text-muted-foreground text-xs">
                   {[suburb.regionLabel, suburb.cityLabel].filter(Boolean).join(', ')}
                 </span>
-                {isNotYetActive(suburb.serviceStatus) && (
-                  <span className="ml-1 text-muted-foreground text-xs font-semibold">
-                    · Not yet active
-                  </span>
-                )}
               </button>
             </li>
           ))}

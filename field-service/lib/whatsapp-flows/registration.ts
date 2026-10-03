@@ -52,15 +52,7 @@ import {
   PROVIDER_CERT_DOCUMENT_LABEL,
   PROVIDER_WORK_PHOTO_LABEL,
 } from '../provider-attachment-labels'
-import {
-  ACTIVE_PILOT_CITY_LABEL,
-  ACTIVE_PILOT_REGION_LABEL,
-  ONBOARDING_PILOT_REGION_LABEL,
-  describeCityServiceStatus,
-  describeRegionServiceStatus,
-  getRegionServiceStatus,
-  type ServiceAreaStatus,
-} from '../service-area-guard'
+import { listRowTitle } from './list-row-title'
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
 import { submitProviderApplication, ProviderApplicationConflictError } from '../provider-applications-submit'
@@ -1213,22 +1205,75 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'reg_collect_skills_more', nextData: { skills: merged } }
 }
 
+const SUBURB_FREE_TEXT_PROMPT =
+  `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`
+
+// WhatsApp caps an interactive list at 10 rows in total. The province list has
+// no trailer or navigation rows, so every one of the 10 is available to provinces.
+const MAX_LIST_ROWS = 10
+const PROVINCE_ROW_PREFIX = 'area__'
+
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
-  const rows = [
-    { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Onboarding across ${ONBOARDING_PILOT_REGION_LABEL}` },
-    { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon - register now' },
-    { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon - register now' },
-    { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon - register now' },
-    { id: 'area_other', title: 'Other province', description: '🔜 Coming soon - register now' },
-  ]
+  // Only the location read may fall back to free text. A free-text application
+  // carries no locationNodeIds and can never be matched, so a fallback is logged,
+  // and a sendList failure propagates rather than silently degrading the provider.
+  let provinces: Awaited<ReturnType<typeof import('@/lib/location-nodes').getProvinces>>
+  try {
+    const { getProvinces } = await import('@/lib/location-nodes')
+    provinces = await getProvinces()
+  } catch (err) {
+    console.error('[registration-flow] getProvinces failed; falling back to free-text area', {
+      phone_suffix: ctx.phone.slice(-4),
+      error: safeErrorMessage(err),
+    })
+    await sendText(ctx.phone, SUBURB_FREE_TEXT_PROMPT)
+    return { nextStep: 'reg_collect_suburb_text' }
+  }
+
+  if (provinces.length === 0) {
+    console.error('[registration-flow] location tree has no provinces; falling back to free-text area', {
+      phone_suffix: ctx.phone.slice(-4),
+    })
+    await sendText(ctx.phone, SUBURB_FREE_TEXT_PROMPT)
+    return { nextStep: 'reg_collect_suburb_text' }
+  }
+
+  // South Africa has nine provinces, so the tree fits one section. An extra
+  // active PROVINCE node would make Meta reject the whole list, so cap and log.
+  if (provinces.length > MAX_LIST_ROWS) {
+    console.error('[registration-flow] province list truncated to the WhatsApp row cap', {
+      total: provinces.length,
+      shown: MAX_LIST_ROWS,
+      dropped: provinces.slice(MAX_LIST_ROWS).map((p) => p.slug),
+    })
+  }
+  const rows = provinces.slice(0, MAX_LIST_ROWS).map((p) => ({
+    id: `${PROVINCE_ROW_PREFIX}${p.slug}`,
+    title: listRowTitle(p.label),
+  }))
 
   await sendList(
     ctx.phone,
-    '📍 Which area do you mainly work in?',
-    [{ title: 'Areas', rows }],
-    { buttonLabel: 'Choose Area' }
+    '📍 Which province do you mainly work in?',
+    [{ title: 'Provinces', rows }],
+    { buttonLabel: 'Choose Province' }
   )
   return { nextStep: 'reg_collect_experience' }
+}
+
+// List row titles are capped at 24 chars, so reply.title can be truncated. Look the
+// full label up by node id in the list the provider chose from; fall back to the
+// title only when the id is absent or the lookup fails.
+async function resolveFullLabel(
+  load: () => Promise<Array<{ id: string; label: string }>>,
+  id: string,
+  fallbackTitle: string,
+): Promise<string> {
+  try {
+    return (await load()).find((n) => n.id === id)?.label ?? fallbackTitle
+  } catch {
+    return fallbackTitle
+  }
 }
 
 async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
@@ -1240,66 +1285,31 @@ async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
   return promptArea(ctx)
 }
 
-// ─── Province key map ─────────────────────────────────────────────────────────
-
-const PROVINCE_KEY_MAP: Record<string, string> = {
-  'area_gauteng':       'gauteng',
-  'area_western_cape':  'western_cape',
-  'area_kwazulu_natal': 'kwazulu_natal',
-  'area_eastern_cape':  'eastern_cape',
-  'area_other':         'gauteng', // fallback to largest province
-}
-
 // ─── Experience and availability ──────────────────────────────────────────────
 
 async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
-  if (!ctx.reply.id?.startsWith('area_')) {
-    await sendList(
-      ctx.phone,
-      '📍 Please choose your area from the list.',
-      [{
-        title: 'Areas',
-        rows: [
-          { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Onboarding across ${ONBOARDING_PILOT_REGION_LABEL}` },
-          { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon - register now' },
-          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon - register now' },
-          { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon - register now' },
-          { id: 'area_other', title: 'Other province', description: '🔜 Coming soon - register now' },
-        ],
-      }],
-      { buttonLabel: 'Choose Area' }
-    )
-    return { nextStep: 'reg_collect_experience' }
+  if (!ctx.reply.id?.startsWith(PROVINCE_ROW_PREFIX)) {
+    return promptArea(ctx)
   }
 
+  // The row id carries the province node slug (e.g. area__western_cape); the
+  // slug doubles as provinceKey for getCities.
+  const provinceKey = ctx.reply.id.slice(PROVINCE_ROW_PREFIX.length)
   const areaLabel = ctx.reply.title ?? ''
-  const provinceKey = PROVINCE_KEY_MAP[ctx.reply.id ?? ''] ?? 'gauteng'
-
-  // Soft pilot notice for providers outside Gauteng - still allow full registration
-  if (ctx.reply.id !== 'area_gauteng') {
-    await sendText(
-      ctx.phone,
-      `🌍 *Heads up - Pilot Phase*\n\nPlug A Pro is currently operating in Gauteng only. We are expanding soon!\n\nYou can still complete your profile now - we will WhatsApp you the moment we go live in your area. No need to re-register later.`
-    )
-  }
 
   try {
     const { getCities } = await import('@/lib/location-nodes')
     const cities = await getCities(provinceKey)
 
     if (cities.length === 0) {
-      // No cities seeded yet - ask provider to type their suburb for finer granularity
-      await sendText(
-        ctx.phone,
-        `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
-      )
-      return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey, selectedRegionStatus: 'coming_soon' } }
+      // No cities seeded for this province - ask provider to type their suburb
+      await sendText(ctx.phone, SUBURB_FREE_TEXT_PROMPT)
+      return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey } }
     }
 
-    const rows = cities.slice(0, 10).map(c => ({
+    const rows = cities.slice(0, MAX_LIST_ROWS).map(c => ({
       id: `city_${c.id}`,
-      title: c.label,
-      description: describeCityServiceStatus({ cityKey: c.cityKey }),
+      title: listRowTitle(c.label),
     }))
 
     await sendList(
@@ -1314,16 +1324,12 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
         serviceAreas: [areaLabel],
         province: areaLabel,
         provinceKey,
-        selectedRegionStatus: ctx.reply.id === 'area_gauteng' ? undefined : 'coming_soon',
       },
     }
   } catch {
     // DB unavailable - ask provider to type their suburb
-    await sendText(
-      ctx.phone,
-      `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
-    )
-    return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey, selectedRegionStatus: 'coming_soon' } }
+    await sendText(ctx.phone, SUBURB_FREE_TEXT_PROMPT)
+    return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey } }
   }
 }
 
@@ -1352,19 +1358,21 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
   if (!ctx.reply.id?.startsWith('city_')) {
     // Re-show city list using stored provinceKey
     const { getCities } = await import('@/lib/location-nodes')
-    const cities = await getCities(ctx.data.provinceKey ?? 'gauteng')
-    const rows = cities.slice(0, 10).map(c => ({
+    const cities = await getCities(ctx.data.provinceKey)
+    const rows = cities.slice(0, MAX_LIST_ROWS).map(c => ({
       id: `city_${c.id}`,
-      title: c.label,
-      description: describeCityServiceStatus({ cityKey: c.cityKey }),
+      title: listRowTitle(c.label),
     }))
     await sendList(ctx.phone, '🏙 Please choose your city:', [{ title: 'Cities', rows }], { buttonLabel: 'Choose City' })
     return { nextStep: 'reg_collect_city' }
   }
 
   const cityId = ctx.reply.id.replace('city_', '')
-  const cityLabel = ctx.reply.title ?? ''
-  const cityIsActive = ctx.reply.title === ACTIVE_PILOT_CITY_LABEL
+  const cityLabel = await resolveFullLabel(
+    async () => (await import('@/lib/location-nodes')).getCities(ctx.data.provinceKey),
+    cityId,
+    ctx.reply.title ?? '',
+  )
 
   try {
     const { getRegions } = await import('@/lib/location-nodes')
@@ -1378,21 +1386,18 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
       )
       return {
         nextStep: 'reg_collect_suburb_text',
-        nextData: { city: cityLabel, cityId, selectedRegionStatus: 'coming_soon' },
+        nextData: { city: cityLabel, cityId },
       }
     }
 
-    const rows = regions.slice(0, 10).map(r => ({
+    const rows = regions.slice(0, MAX_LIST_ROWS).map(r => ({
       id: `region_${r.id}`,
-      title: r.label,
-      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }, 'onboarding'),
+      title: listRowTitle(r.label),
     }))
 
     await sendList(
       ctx.phone,
-      cityIsActive
-        ? `🗺 Which area of *${cityLabel}* do you mainly work in?\n\nWe're onboarding providers across all of *${ONBOARDING_PILOT_REGION_LABEL}*. Leads go live in *${ACTIVE_PILOT_REGION_LABEL}* first — pick your area and we'll notify you the moment we open leads there.`
-        : `🗺 Which area of *${cityLabel}* do you mainly work in?\n\nThis city is coming soon. You can still register now and we will notify you when leads open there.`,
+      `🗺 Which area of *${cityLabel}* do you mainly work in?`,
       [{ title: 'Areas', rows }],
       { buttonLabel: 'Choose Area' }
     )
@@ -1414,10 +1419,9 @@ async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
       await sendExperiencePrompt(ctx.phone)
       return { nextStep: 'reg_collect_availability' }
     }
-    const rows = regions.slice(0, 10).map(r => ({
+    const rows = regions.slice(0, MAX_LIST_ROWS).map(r => ({
       id: `region_${r.id}`,
-      title: r.label,
-      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }, 'onboarding'),
+      title: listRowTitle(r.label),
     }))
     await sendList(
       ctx.phone,
@@ -1452,46 +1456,23 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const regionId = ctx.reply.id.replace('region_', '')
-  const regionLabel = ctx.reply.title ?? ''
-  // onboardingStatus: drives mid-flow interstitial ("Coming soon area" warning).
-  // CoJ regions are onboarding-active so providers see them as registerable and
-  // the discouraging interstitial is suppressed for all five CoJ regions.
-  let onboardingStatus: ServiceAreaStatus = 'coming_soon'
-  // matchingStatus: drives the submitted-confirmation caveat — "leads aren't live
-  // in your area yet". This is a MATCHING-gate truth and must stay narrow so
-  // jhb_north/east/south/cbd providers still receive the honest expectation-setting
-  // caveat even though they can register freely.
-  let matchingStatus: ServiceAreaStatus = 'coming_soon'
-
+  // The region must belong to the chosen city. A forged or stale reply id
+  // (another city's region, or a non-region node) re-shows this city's list
+  // instead of drilling into a region the provider never chose.
+  let region: { id: string; label: string } | undefined
   try {
     const { getRegions } = await import('@/lib/location-nodes')
-    const regions = await getRegions(ctx.data.cityId ?? '')
-    const selectedRegion = regions.find((region) => region.id === regionId)
-    onboardingStatus = getRegionServiceStatus({
-      regionKey: selectedRegion?.regionKey,
-      slug: selectedRegion?.slug,
-    }, 'onboarding')
-    matchingStatus = getRegionServiceStatus({
-      regionKey: selectedRegion?.regionKey,
-      slug: selectedRegion?.slug,
-    }, 'matching')
+    region = (await getRegions(ctx.data.cityId ?? '')).find((r) => r.id === regionId)
   } catch {
-    onboardingStatus = 'coming_soon'
-    matchingStatus = 'coming_soon'
+    region = undefined
   }
-
-  if (onboardingStatus !== 'active') {
-    await sendText(
-      ctx.phone,
-      `🔜 *Coming soon area*\n\nThanks. *${regionLabel}* is not live for leads yet, but your profile is saved and will be activated the moment we go live there. We'll notify you here.`
-    )
+  if (!region) {
+    return showRegionList(ctx)
   }
 
   // Drill down to suburb selection within this region (numbered text list).
-  // Pass matchingStatus so the submit handler's isComingSoonRegion check reflects
-  // whether the provider will actually receive leads (matching gate), not just
-  // whether they are registerable (onboarding gate).
-  return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, matchingStatus)
+  // Every active region is matchable; there is no status to evaluate here.
+  return showSuburbNumberedPrompt(ctx.phone, regionId, region.label, [], [], 0)
 }
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
@@ -1511,7 +1492,6 @@ async function showSuburbNumberedPrompt(
   selectedLabels: string[],
   selectedIds: string[],
   pageOffset: number,
-  regionStatus: ServiceAreaStatus = 'coming_soon',
 ): Promise<FlowResult> {
   try {
     const { getSuburbs } = await import('@/lib/location-nodes')
@@ -1525,7 +1505,6 @@ async function showSuburbNumberedPrompt(
         nextData: {
           locationNodeIds: [regionId],
           selectedRegionLabels: [regionLabel],
-          selectedRegionStatus: regionStatus,
         },
       }
     }
@@ -1544,14 +1523,13 @@ async function showSuburbNumberedPrompt(
         suburbOptions: suburbs.map(s => ({ id: s.id, label: s.label })),
         locationNodeIds: selectedIds,
         selectedSuburbLabels: selectedLabels,
-        selectedRegionStatus: regionStatus,
       },
     }
   } catch {
     await sendExperiencePrompt(phone)
     return {
       nextStep: 'reg_collect_availability',
-      nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel], selectedRegionStatus: regionStatus },
+      nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel] },
     }
   }
 }
@@ -1563,13 +1541,12 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   const suburbPage = (ctx.data.suburbPage as number) ?? 0
   const existingIds: string[] = (ctx.data.locationNodeIds as string[]) ?? []
   const existingLabels: string[] = (ctx.data.selectedSuburbLabels as string[]) ?? []
-  const selectedRegionStatus = (ctx.data.selectedRegionStatus as ServiceAreaStatus | undefined) ?? 'coming_soon'
 
   // ── Button replies (from confirmation screen) ──────────────────────────────
 
   if (ctx.reply.id === 'suburb_confirm') {
     if (existingIds.length === 0) {
-      await showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, selectedRegionStatus)
+      await showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
       return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
     }
     await sendExperiencePrompt(ctx.phone)
@@ -1579,19 +1556,18 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
         locationNodeIds: existingIds,
         selectedRegionLabels: [regionLabel],
         selectedSuburbLabels: existingLabels,
-        selectedRegionStatus,
       },
     }
   }
 
   // "add more" - show numbered list keeping current selections
   if (ctx.reply.id === 'suburb_add_more') {
-    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, 0, selectedRegionStatus)
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, 0)
   }
 
   // "change" - clear all and restart
   if (ctx.reply.id === 'suburb_change') {
-    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, selectedRegionStatus)
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
   }
 
   // ── Text reply ─────────────────────────────────────────────────────────────
@@ -1602,7 +1578,7 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   if (rawLower === 'done') {
     if (existingIds.length === 0) {
       await sendText(ctx.phone, '📍 Please choose at least one suburb first.')
-      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, selectedRegionStatus)
+      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
     }
     await sendExperiencePrompt(ctx.phone)
     return {
@@ -1611,7 +1587,6 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
         locationNodeIds: existingIds,
         selectedRegionLabels: [regionLabel],
         selectedSuburbLabels: existingLabels,
-        selectedRegionStatus,
       },
     }
   }
@@ -1625,19 +1600,16 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
       )
       return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
     }
-    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, nextOffset, selectedRegionStatus)
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, nextOffset)
   }
 
   if (rawLower === 'all') {
-    // TODO: If a business limit on max suburbs per provider is introduced, enforce it here.
-    const allIds = suburbOptions.map(s => s.id)
-    const allLabels = suburbOptions.map(s => s.label)
-    const preview = allLabels.length > 8
-      ? `${allLabels.slice(0, 8).join(', ')} + ${allLabels.length - 8} more`
-      : allLabels.join(', ')
+    // Whole-region coverage: one REGION-type service-area row instead of N suburb
+    // rows. regionLabel is the full label resolved by id in handleCollectRegion and
+    // travels via selectedRegionLabels to the submit path.
     await sendButtons(
       ctx.phone,
-      `✅ *All ${allLabels.length} suburbs in ${regionLabel} selected!*\n\n${preview}\n\nContinue?`,
+      `✅ *Whole ${regionLabel} selected!*\n\nYou'll be matched to jobs anywhere in ${regionLabel}, including suburbs not on the list.\n\nContinue?`,
       [
         { id: 'suburb_confirm', title: '✅ Continue' },
         { id: 'suburb_change', title: '✏️ Change' },
@@ -1647,12 +1619,18 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
       nextStep: 'reg_collect_suburb_select',
       nextData: {
         regionId, regionLabel, suburbPage, suburbOptions,
-        locationNodeIds: allIds,
-        selectedSuburbLabels: allLabels,
-        selectedRegionStatus,
+        locationNodeIds: [regionId],
+        selectedSuburbLabels: [],
+        selectedRegionLabels: [regionLabel],
       },
     }
   }
+
+  // Whole-region and individual suburbs are mutually exclusive per region: typing
+  // suburb numbers after "all" replaces the region-wide choice.
+  const wholeRegionSelected = existingIds.includes(regionId)
+  const baseIds: string[] = wholeRegionSelected ? [] : existingIds
+  const baseLabels: string[] = wholeRegionSelected ? [] : existingLabels
 
   // ── Parse number input ─────────────────────────────────────────────────────
   // Numbers are 1-based and global (refer to suburbOptions index, not the current page).
@@ -1661,7 +1639,7 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
 
   if (indices.length === 0) {
     if (!raw) {
-      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, suburbPage, selectedRegionStatus)
+      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, suburbPage)
     }
     await sendText(ctx.phone, '📍 Please reply with suburb numbers from the list, e.g. *1,3,5*')
     return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
@@ -1676,7 +1654,7 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
     const suburb = suburbOptions[n - 1]
     if (!suburb) {
       invalidNums.push(n)
-    } else if (!existingIds.includes(suburb.id)) {
+    } else if (!baseIds.includes(suburb.id)) {
       newIds.push(suburb.id)
       newLabels.push(suburb.label)
     }
@@ -1684,16 +1662,18 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   }
 
   // Every number was invalid and nothing was already selected
-  if (newIds.length === 0 && existingIds.length === 0 && invalidNums.length > 0) {
+  if (newIds.length === 0 && baseIds.length === 0 && invalidNums.length > 0) {
     await sendText(
       ctx.phone,
       `❌ None of those numbers match suburbs on the list (${invalidNums.join(', ')}).\n\nPlease try again, e.g. *1,3,5*`
     )
-    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], suburbPage, selectedRegionStatus)
+    // Keep a whole-region choice made earlier; baseIds is empty here, so for
+    // suburb selections existingIds is empty too and nothing else changes.
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, suburbPage)
   }
 
-  const mergedIds = [...existingIds, ...newIds]
-  const mergedLabels = [...existingLabels, ...newLabels]
+  const mergedIds = [...baseIds, ...newIds]
+  const mergedLabels = [...baseLabels, ...newLabels]
 
   let confirmBody = `✅ *Selected suburbs:* ${mergedLabels.join(', ')}`
   if (invalidNums.length > 0) {
@@ -1717,7 +1697,6 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
       regionId, regionLabel, suburbPage, suburbOptions,
       locationNodeIds: mergedIds,
       selectedSuburbLabels: mergedLabels,
-      selectedRegionStatus,
     },
   }
 }
@@ -2716,7 +2695,6 @@ function buildQgv2SubmitPayload(ctx: FlowContext) {
       verificationDocAttachmentId: ctx.data.verificationDocAttachmentId ?? null,
       verificationSelfieAttachmentId: ctx.data.verificationSelfieAttachmentId ?? null,
       locationNodeIds: submitData.locationNodeIds,
-      selectedRegionStatus: ctx.data.selectedRegionStatus ?? null,
     },
   }
 }
@@ -3406,14 +3384,12 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       }
     }
 
-    const isComingSoonRegion = ctx.data.selectedRegionStatus === 'coming_soon'
     try {
       await sendButtons(
         ctx.phone,
         buildProviderApplicationSubmittedMessage({
           providerName: ctx.data.name,
           applicationRef: submitResult.ref,
-          isComingSoonRegion,
         }),
         [
           { id: 'provider_application_status', title: WHATSAPP_COPY.checkStatusButton },
@@ -3794,7 +3770,7 @@ function buildSuburbPromptText(
   ]
   if (selectedLabels.length > 0) instructions.push(`Reply *done* to continue with your current selection.`)
   if (hasMore) instructions.push(`Reply *more* to see the next batch of suburbs.`)
-  instructions.push(`Reply *all* to cover the whole ${regionLabel} area.`)
+  instructions.push(`Reply *all* if your suburb isn't listed or you cover the whole ${regionLabel} area.`)
 
   return (
     `📍 *Which suburbs in ${regionLabel} do you work in?*${selectedSummary}\n` +

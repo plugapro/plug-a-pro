@@ -112,3 +112,97 @@ describe('loadCandidatePool', () => {
     }))
   })
 })
+
+describe('buildSuburbLevelConditions', () => {
+  it('includes a REGION-row branch when the address regionKey is known', async () => {
+    const { buildSuburbLevelConditions } = await import('@/lib/matching/candidate-pool')
+    const conditions = buildSuburbLevelConditions({
+      suburb: 'Roodepoort',
+      city: 'Johannesburg',
+      lat: null,
+      lng: null,
+      locationNodeId: 'node-suburb-1',
+      provinceKey: 'gauteng',
+      regionKey: 'jhb_west',
+    })
+
+    expect(conditions).toContainEqual({
+      technicianServiceAreas: {
+        some: { active: true, areaType: 'REGION', regionKey: 'jhb_west' },
+      },
+    })
+  })
+
+  it('omits the REGION-row branch when no regionKey is known', async () => {
+    const { buildSuburbLevelConditions } = await import('@/lib/matching/candidate-pool')
+    const conditions = buildSuburbLevelConditions({
+      suburb: 'Roodepoort',
+      city: null,
+      lat: null,
+      lng: null,
+      locationNodeId: 'node-suburb-1',
+      provinceKey: 'gauteng',
+    })
+
+    expect(JSON.stringify(conditions)).not.toContain('REGION')
+  })
+})
+
+describe('loadCandidatePool pool query', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('ranks covering providers before applying the LIMIT', async () => {
+    mockDb.$queryRaw.mockResolvedValue([{ id: 'provider-1' }])
+
+    const { loadCandidatePool } = await import('@/lib/matching/candidate-pool')
+    await loadCandidatePool({
+      category: 'plumbing',
+      address: {
+        suburb: 'Roodepoort',
+        city: 'Johannesburg',
+        lat: null,
+        lng: null,
+        locationNodeId: 'node-suburb-1',
+        provinceKey: 'gauteng',
+        regionKey: 'jhb_west',
+      },
+      limit: 30,
+      usePool: true,
+    })
+
+    expect(mockDb.$queryRaw).toHaveBeenCalledTimes(1)
+    const [strings, ...values] = mockDb.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]]
+    const sql = strings.join('?').replace(/\s+/g, ' ')
+
+    // DISTINCT ON stays in an inner query; the outer query ranks then limits.
+    expect(sql).toMatch(/SELECT DISTINCT ON \(p\.id\)/)
+    expect(sql).toMatch(/EXISTS \( SELECT 1 FROM technician_service_areas/)
+    expect(sql).toContain(`"areaType" = 'REGION'`)
+    const outerOrder = sql.lastIndexOf('ORDER BY')
+    const limitAt = sql.lastIndexOf('LIMIT')
+    expect(outerOrder).toBeGreaterThan(sql.indexOf('DISTINCT ON'))
+    expect(sql.slice(outerOrder, limitAt)).toMatch(/"coverageRank" ASC, ranked\."scoreBase" DESC, ranked\.id/)
+    // The LIMIT is applied once, after ranking (outer query only).
+    expect(sql.match(/LIMIT/g)).toHaveLength(1)
+    expect(limitAt).toBeGreaterThan(outerOrder)
+    expect(values).toContain('node-suburb-1')
+    expect(values).toContain('jhb_west')
+    expect(values.at(-1)).toBe(30)
+  })
+
+  it('does not leak the coverage rank onto returned entries', async () => {
+    mockDb.$queryRaw.mockResolvedValue([{ id: 'provider-1', coverageRank: 0, scoreBase: 0.7 }])
+
+    const { loadCandidatePool } = await import('@/lib/matching/candidate-pool')
+    const result = await loadCandidatePool({
+      category: 'plumbing',
+      address: { suburb: null, city: null, lat: null, lng: null, locationNodeId: 'node-suburb-1', provinceKey: 'gauteng' },
+      usePool: true,
+    })
+
+    expect(result[0]).not.toHaveProperty('coverageRank')
+    expect(result[0]).toMatchObject({ id: 'provider-1', fromPool: true })
+  })
+})

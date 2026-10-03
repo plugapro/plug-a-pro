@@ -195,22 +195,13 @@ describe('application submitted confirmation', () => {
     expect(msg).not.toMatch(/mokoena/i) // only first name
   })
 
-  it('includes coming-soon region note when region is not live', () => {
+  it('never includes a coming-soon region note (every active region is live)', () => {
     const msg = buildProviderApplicationSubmittedMessage({
       providerName: 'Sipho',
       applicationRef: 'ZZZZ9999',
-      isComingSoonRegion: true,
     })
-    expect(msg).toMatch(/not live yet|coming soon/i)
-  })
-
-  it('does not include coming-soon note for active regions', () => {
-    const msg = buildProviderApplicationSubmittedMessage({
-      providerName: 'Sipho',
-      applicationRef: 'ZZZZ9999',
-      isComingSoonRegion: false,
-    })
-    expect(msg).not.toMatch(/not live yet/i)
+    expect(msg).not.toMatch(/not live yet|coming soon/i)
+    expect(msg).not.toMatch(/activated the moment/i)
   })
 
   it('does not contain raw URLs', () => {

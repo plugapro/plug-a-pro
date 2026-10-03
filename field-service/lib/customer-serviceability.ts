@@ -9,15 +9,14 @@
 //   AND isTestUser = false
 //   AND (suspendedUntil IS NULL OR suspendedUntil < now)
 //
-// Skill → provider matching mirrors /providers route:
-//   provider has either an APPROVED ProviderCategory for the slug,
-//   or (legacy) Provider.skills contains the slug.
+// Skill → provider matching mirrors matching (candidate-pool + CATEGORY_NOT_APPROVED
+// in lib/matching/filter.ts): Provider.skills contains the slug, and no
+// ProviderCategory row for that slug has a status other than APPROVED
+// (no row is permissive). See buildCategoryProviderWhere.
 //
-// Area → provider matching uses the structured TechnicianServiceArea FK first
-// (locationNodeId match for SUBURB-scope nodes; provinceKey for broader scopes)
-// and the legacy free-text Provider.serviceAreas slug match as a fallback. The
-// /providers route currently only honours the legacy match — this module is
-// purposely additive: structured + legacy together never reduce coverage.
+// Area → provider matching mirrors matching coverage (providerCoversAddress in
+// lib/matching/filter.ts), so a count of zero means matching would find no one.
+// Only structured TechnicianServiceArea rows count; see buildAreaProviderWhere.
 //
 // All public functions are pure reads. No writes, no side effects.
 
@@ -102,67 +101,75 @@ export async function resolveAreaScopeByNodeId(nodeId: string | null | undefined
 // Predicate that matches providers serving the given area. Combined with the
 // "active provider" predicate via Prisma AND in the count/list queries below.
 //
-// Strategy (additive, matches /providers route widening):
-//   - if node is SUBURB: match TechnicianServiceArea.locationNodeId = node.id
-//                        OR legacy Provider.serviceAreas contains node.label
-//                        OR (denormalised) TechnicianServiceArea matches the
-//                           regionKey / cityKey / provinceKey upward chain so
-//                           a suburb-coverage selection still surfaces providers
-//                           who only listed the region/city
-//   - if node is REGION/CITY/PROVINCE: match via the appropriate *Key column
-//     on TechnicianServiceArea + legacy Provider.serviceAreas free-text.
+// SUBURB scope mirrors matching coverage (providerCoversAddress in
+// lib/matching/filter.ts), so a count of zero means matching would find no one.
+// Matching only falls back to legacy strings when the address has no
+// locationNodeId, and every AreaScope comes from a resolved LocationNode, so
+// legacy Provider.serviceAreas strings never count here. A provider counts when
+// they have an active TechnicianServiceArea row that is:
+//   (a) the exact node (locationNodeId)                    -> SUBURB_EXACT
+//   (b) a REGION row for the node's regionKey              -> REGION_FALLBACK
+//       (a SUBURB/CITY row that merely carries the same denormalised regionKey
+//       does NOT confer region-wide coverage in matching, so it must not count)
+//   (c) a RADIUS row with the node's provinceKey           -> conservative
+//       stand-in for the RADIUS haversine tier, which cannot be expressed in a
+//       Prisma where. It over-counts when the radius does not reach the
+//       address, and under-counts RADIUS rows that lack provinceKey or whose
+//       radius crosses a province border. Nothing writes RADIUS rows today, so
+//       this is no regression.
+//
+// REGION / CITY / PROVINCE scope (the home AreaSelector resolves any node
+// type): "is anyone serving somewhere inside this area?" Descendant coverage
+// counts, so match any active row (any areaType) carrying the node's own
+// level key, plus the exact node row.
 export function buildAreaProviderWhere(area: AreaScope): Prisma.ProviderWhereInput {
   const { node } = area
-  const orConditions: Prisma.ProviderWhereInput[] = []
+  const orConditions: Prisma.ProviderWhereInput[] = [
+    { technicianServiceAreas: { some: { active: true, locationNodeId: node.id } } },
+  ]
 
-  // Always honour the structured FK if we have one.
-  orConditions.push({
-    technicianServiceAreas: { some: { active: true, locationNodeId: node.id } },
-  })
-
-  // Denormalised key match — covers the case where a provider listed a parent
-  // (e.g. they cover the whole region) and the customer picked a child suburb.
-  if (node.regionKey) {
-    orConditions.push({
-      technicianServiceAreas: { some: { active: true, regionKey: node.regionKey } },
-    })
-  }
-  if (node.cityKey) {
-    orConditions.push({
-      technicianServiceAreas: { some: { active: true, cityKey: node.cityKey } },
-    })
-  }
-  if (node.provinceKey) {
-    orConditions.push({
-      technicianServiceAreas: { some: { active: true, provinceKey: node.provinceKey } },
-    })
+  if (node.nodeType === 'SUBURB') {
+    if (node.regionKey) {
+      orConditions.push({
+        technicianServiceAreas: {
+          some: { active: true, areaType: 'REGION', regionKey: node.regionKey },
+        },
+      })
+    }
+    if (node.provinceKey) {
+      orConditions.push({
+        technicianServiceAreas: {
+          some: { active: true, areaType: 'RADIUS', provinceKey: node.provinceKey },
+        },
+      })
+    }
+    return { OR: orConditions }
   }
 
-  // Legacy free-text — keep parity with /providers route's existing filter.
-  orConditions.push({ serviceAreas: { has: node.label } })
-  orConditions.push({ serviceAreas: { has: node.slug } })
+  if (node.nodeType === 'REGION' && node.regionKey) {
+    orConditions.push({ technicianServiceAreas: { some: { active: true, regionKey: node.regionKey } } })
+  } else if (node.nodeType === 'CITY' && node.cityKey) {
+    orConditions.push({ technicianServiceAreas: { some: { active: true, cityKey: node.cityKey } } })
+  } else if (node.nodeType === 'PROVINCE' && node.provinceKey) {
+    orConditions.push({ technicianServiceAreas: { some: { active: true, provinceKey: node.provinceKey } } })
+  }
 
   return { OR: orConditions }
 }
 
-// Predicate that matches providers offering the given category slug.
-// Mirrors the /providers route logic: prefer ProviderCategory (APPROVED) and
-// fall back to legacy Provider.skills for providers without ProviderCategory rows.
+// Predicate that matches every provider matching would accept for a category.
+// Mirrors matching exactly: the candidate pool requires `skills: { has: tag }`
+// (lib/matching/candidate-pool.ts), and the CATEGORY_NOT_APPROVED filter
+// (lib/matching/filter.ts, `categoryApproved`) excludes a provider only when a
+// ProviderCategory row for THAT slug exists with a status other than APPROVED.
+// No row for the slug (including rows for other slugs only) is permissive.
+// This count gates WhatsApp intake (empty-area guard), so it must not undercount.
 export function buildCategoryProviderWhere(categoryTag: string): Prisma.ProviderWhereInput {
   return {
-    OR: [
-      {
-        providerCategories: {
-          some: { categorySlug: categoryTag, approvalStatus: 'APPROVED' },
-        },
-      },
-      {
-        AND: [
-          { providerCategories: { none: {} } },
-          { skills: { has: categoryTag } },
-        ],
-      },
-    ],
+    skills: { has: categoryTag },
+    providerCategories: {
+      none: { categorySlug: categoryTag, approvalStatus: { not: 'APPROVED' } },
+    },
   }
 }
 

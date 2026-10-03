@@ -4,7 +4,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { CityOption, NodeSearchResult, RegionOption, SuburbOption } from '@/lib/location-nodes'
-import type { RegionServiceLiveStatus } from '@/lib/service-area-guard'
 
 type Props = {
   initialCities: CityOption[]
@@ -12,26 +11,9 @@ type Props = {
   selectedLabels: Record<string, string>
 }
 
-function statusSuffix(status: RegionServiceLiveStatus): string {
-  if (status === 'live') return ' — live for leads'
-  if (status === 'onboarding') return ' — open to register'
-  return ' — not live yet'
-}
-
-function statusHint(status: RegionServiceLiveStatus, nodeType: 'SUBURB' | 'REGION'): string {
-  if (status === 'live') return nodeType === 'SUBURB' ? 'Suburb' : 'Region'
-  if (status === 'onboarding') return 'open to register'
-  return 'not live yet'
-}
-
-const NOT_LIVE_NOTICE =
-  'Leads go live in the West Rand first. Other areas can register now — your profile will be activated the moment we go live in your area.'
-
 export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabels }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(selectedNodeIds))
   const [idToLabel, setIdToLabel] = useState<Record<string, string>>(selectedLabels)
-  // Initial selected IDs have unknown status — treat as NOT live (safe default per brief)
-  const [idToStatus, setIdToStatus] = useState<Record<string, RegionServiceLiveStatus>>({})
 
   // ── Cascade state ──────────────────────────────────────────────────────────
   const [regions, setRegions] = useState<RegionOption[]>([])
@@ -138,11 +120,10 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
 
   // ── Selection helpers ──────────────────────────────────────────────────────
 
-  function handleToggle(id: string, label: string, status: RegionServiceLiveStatus, checked: boolean) {
+  function handleToggle(id: string, label: string, checked: boolean) {
     if (checked) {
       setSelectedIds(prev => { const next = new Set(prev); next.add(id); return next })
       setIdToLabel(prev => ({ ...prev, [id]: label }))
-      setIdToStatus(prev => ({ ...prev, [id]: status }))
     } else {
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next })
     }
@@ -153,10 +134,6 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
   }
 
   const selectedArray = Array.from(selectedIds)
-
-  // Show the notice when any selected ID is not live.
-  // Initial IDs without a known status default to NOT live (safe default).
-  const anyNotLive = selectedArray.some(id => (idToStatus[id] ?? 'coming_soon') !== 'live')
 
   return (
     <div className="space-y-4">
@@ -198,12 +175,12 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
                 <input
                   type="checkbox"
                   checked={selectedIds.has(result.id)}
-                  onChange={e => handleToggle(result.id, result.label, result.serviceStatus, e.target.checked)}
+                  onChange={e => handleToggle(result.id, result.label, e.target.checked)}
                   className="h-4 w-4 rounded border-input accent-primary"
                 />
                 <span className="text-sm">{result.label}</span>
                 <span className="text-xs text-muted-foreground ml-auto">
-                  {statusHint(result.serviceStatus, result.nodeType === 'SUBURB' ? 'SUBURB' : 'REGION')}
+                  {result.nodeType === 'SUBURB' ? 'Suburb' : 'Region'}
                 </span>
               </label>
             ))}
@@ -251,7 +228,7 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
             </option>
             {regions.map(region => (
               <option key={region.id} value={region.id}>
-                {region.label}{region.suburbCount ? ` (${region.suburbCount})` : ''}{statusSuffix(region.serviceStatus)}
+                {region.label}{region.suburbCount ? ` (${region.suburbCount})` : ''}
               </option>
             ))}
           </select>
@@ -279,7 +256,7 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
                   <input
                     type="checkbox"
                     checked={selectedIds.has(suburb.id)}
-                    onChange={e => handleToggle(suburb.id, suburb.label, suburb.serviceStatus, e.target.checked)}
+                    onChange={e => handleToggle(suburb.id, suburb.label, e.target.checked)}
                     className="h-4 w-4 rounded border-input accent-primary"
                   />
                   <span className="text-sm">{suburb.label}</span>
@@ -288,13 +265,6 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
             </div>
           )}
         </div>
-      )}
-
-      {/* ── Not-live notice ───────────────────────────────────────────────── */}
-      {anyNotLive && (
-        <p className="text-xs text-muted-foreground">
-          {NOT_LIVE_NOTICE}
-        </p>
       )}
 
       {/* ── Selected suburbs display ──────────────────────────────────────── */}

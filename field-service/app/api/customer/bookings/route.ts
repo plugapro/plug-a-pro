@@ -20,7 +20,6 @@ import {
   resolveStructuredAddressCapture,
 } from '@/lib/structured-address'
 import { isEnabled } from '@/lib/flags'
-import { isInActiveServiceArea, isActiveRegion, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 import { uploadJobRequestPhoto } from '@/lib/storage'
 import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-notifications'
 import { canonicalizeServiceCategoryValue } from '@/lib/service-category-canonicalization'
@@ -29,6 +28,7 @@ import {
   countActiveProvidersFor,
   resolveAreaScopeByNodeId,
 } from '@/lib/customer-serviceability'
+import { addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 import { apiError } from '@/lib/api-response'
 import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
 import { buildProviderKycVisibilityWhere, KYC_GRACE_FLAG } from '@/lib/matching/kyc-grace'
@@ -254,44 +254,11 @@ export async function POST(req: NextRequest) {
       locationNodeId,
     })
 
-    // Service area gate - capture out-of-area contacts on the waitlist
-    if (!isInActiveServiceArea(resolvedAddress.city)) {
-      await addToServiceAreaWaitlist({
-        phone: session.phone!,
-        city: resolvedAddress.city,
-        province: resolvedAddress.province,
-        suburb: resolvedAddress.suburb,
-        category: canonicalCategory,
-        source: channel === 'vodapay' ? 'vodapay' : 'pwa',
-      }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
-
-      return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
-    }
-
-    // Resolve the area scope once; used by both the serviceability_v2 guard and
-    // the West Rand pilot gate below. Cheap indexed lookup; null when the
-    // locationNodeId doesn't resolve.
+    // National rollout (spec 2026-10-03): there is no geographic fence here any
+    // more. Any suburb in the location tree is accepted; the pilot gate below is
+    // flag-gated (OFF) and the zero-provider guard further down still rejects an
+    // area/category pair nobody serves.
     const areaScope = await resolveAreaScopeByNodeId(resolvedAddress.locationNodeId).catch(() => null)
-
-    // Server-side region gate (finding 95726512): the city-label check above
-    // passes every Johannesburg suburb, but the active service area is restricted
-    // to specific regionKeys (e.g. jhb_west). Re-derive the region from the
-    // RESOLVED node and enforce isActiveRegion() so out-of-area JHB suburbs are
-    // waitlisted instead of creating a job request. This runs independently of the
-    // pilot flag so it cannot be bypassed by submitting a stale/crafted node id.
-    const resolvedRegionKey = areaScope?.node.regionKey ?? ''
-    if (!isActiveRegion(resolvedRegionKey)) {
-      await addToServiceAreaWaitlist({
-        phone: session.phone!,
-        city: resolvedAddress.city,
-        province: resolvedAddress.province,
-        suburb: resolvedAddress.suburb,
-        category: canonicalCategory,
-        source: channel === 'vodapay' ? 'vodapay' : 'pwa',
-      }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
-
-      return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
-    }
 
     // West Rand pilot gate (launch.west_rand_pilot.enabled):
     // Layered defence on top of the legacy serviceability check below — when the
@@ -326,9 +293,8 @@ export async function POST(req: NextRequest) {
     // Serviceability v2 backend guard (customer.home.serviceability_v2):
     // Reject unsupported (area, category) tuples here so a client bypassing the
     // home-page constrained input still cannot create a request for a service
-    // we cannot fulfil. The PILOT_SKILL_TAGS check covers regulated categories;
-    // the provider-count check covers cases where the category is allowed
-    // platform-wide but has zero active providers serving the customer's area.
+    // we cannot fulfil. The PILOT_SKILL_TAGS check covers regulated categories
+    // and stays behind the flag together with the home UI.
     const serviceabilityV2Enabled = await isEnabled('customer.home.serviceability_v2', {
       userId: session.id,
     })
@@ -353,11 +319,39 @@ export async function POST(req: NextRequest) {
           { status: 422 },
         )
       }
+    }
+
+    // Zero-provider guard — NOT flag-gated (national rollout, spec 2026-10-03):
+    // with the geographic fence gone this is the only thing standing between a
+    // customer and a request that matching would expire on the spot. When the
+    // node did not resolve (db error swallowed above) we cannot count, so we
+    // fail open exactly as the pre-rollout flag-OFF path did.
+    if (areaScope) {
       const activeCount = await countActiveProvidersFor({
         area: areaScope,
         categoryTag: canonicalCategory,
       })
       if (activeCount <= 0) {
+        // Capture the demand so ops can recruit and notify later, exactly as
+        // the WhatsApp path does. Best-effort: a waitlist failure must never
+        // change the 422 the customer sees.
+        try {
+          await addToServiceAreaWaitlist({
+            phone: session.phone,
+            name: sessionCustomer?.name ?? null,
+            category: canonicalCategory,
+            suburb: resolvedAddress.suburb,
+            city: resolvedAddress.city,
+            province: resolvedAddress.province,
+            source: channel === 'vodapay' ? 'vodapay' : 'pwa',
+          })
+        } catch (err) {
+          console.error('[customer-bookings] waitlist capture failed', {
+            locationNodeId: resolvedAddress.locationNodeId,
+            category: canonicalCategory,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
         return NextResponse.json(
           {
             error: 'CATEGORY_UNAVAILABLE_IN_AREA',

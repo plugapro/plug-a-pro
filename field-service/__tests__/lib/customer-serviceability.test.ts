@@ -18,6 +18,8 @@ const { mockDb } = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 
 import {
+  buildAreaProviderWhere,
+  buildCategoryProviderWhere,
   countActiveProvidersFor,
   isAreaCategoryServiceable,
   listServiceableCategoriesForArea,
@@ -99,6 +101,136 @@ describe('countActiveProvidersFor', () => {
   it('returns 0 when no providers match', async () => {
     mockDb.provider.findMany.mockResolvedValueOnce([])
     expect(await countActiveProvidersFor({ area: { node: BROMHOF }, categoryTag: 'carpentry' })).toBe(0)
+  })
+})
+
+describe('buildAreaProviderWhere (mirrors matching coverage)', () => {
+  // Reference: providerCoversAddress in lib/matching/filter.ts. A zero count
+  // must mean matching would find no one, so the predicate may only accept the
+  // coverage shapes matching accepts (or a conservative superset of RADIUS).
+  const serviceAreaBranches = (node: Parameters<typeof buildAreaProviderWhere>[0]['node']) => {
+    const where = buildAreaProviderWhere({ node })
+    const or = where.OR as Array<{ technicianServiceAreas?: { some: Record<string, unknown> } }>
+    return or.map((branch) => branch.technicianServiceAreas?.some)
+  }
+
+  it('accepts exactly the node row, the REGION row for its region, and RADIUS rows in its province', () => {
+    expect(buildAreaProviderWhere({ node: BROMHOF })).toEqual({
+      OR: [
+        { technicianServiceAreas: { some: { active: true, locationNodeId: BROMHOF.id } } },
+        { technicianServiceAreas: { some: { active: true, areaType: 'REGION', regionKey: 'jhb_north' } } },
+        { technicianServiceAreas: { some: { active: true, areaType: 'RADIUS', provinceKey: 'gauteng' } } },
+      ],
+    })
+  })
+
+  it('does not count a SUBURB-only row that merely shares the region (no regionKey branch without areaType REGION)', () => {
+    const regionBranches = serviceAreaBranches(BROMHOF).filter((b) => b && 'regionKey' in b)
+    expect(regionBranches).toHaveLength(1)
+    expect(regionBranches[0]).toMatchObject({ areaType: 'REGION' })
+  })
+
+  it('has no cityKey branch, no provinceKey branch without RADIUS, and no legacy string branches', () => {
+    const branches = serviceAreaBranches(BROMHOF)
+    expect(branches.some((b) => b && 'cityKey' in b)).toBe(false)
+    const provinceBranches = branches.filter((b) => b && 'provinceKey' in b)
+    expect(provinceBranches.length).toBeGreaterThan(0)
+    expect(provinceBranches.every((b) => b?.areaType === 'RADIUS')).toBe(true)
+    expect(JSON.stringify(buildAreaProviderWhere({ node: BROMHOF }))).not.toContain('serviceAreas":{"has"')
+    expect((buildAreaProviderWhere({ node: BROMHOF }).OR as Array<Record<string, unknown>>).every(
+      (b) => 'technicianServiceAreas' in b,
+    )).toBe(true)
+  })
+
+  it('yields only the exact-node branch when the node has no regionKey and no provinceKey', () => {
+    const bare = { ...BROMHOF, regionKey: null, provinceKey: null }
+    expect(buildAreaProviderWhere({ node: bare })).toEqual({
+      OR: [{ technicianServiceAreas: { some: { active: true, locationNodeId: BROMHOF.id } } }],
+    })
+  })
+
+  it('adds the REGION branch only when regionKey is set and the RADIUS branch only when provinceKey is set', () => {
+    const noRegion = serviceAreaBranches({ ...BROMHOF, regionKey: null })
+    expect(noRegion.some((b) => b?.areaType === 'REGION')).toBe(false)
+    expect(noRegion.some((b) => b?.areaType === 'RADIUS')).toBe(true)
+    const noProvince = serviceAreaBranches({ ...BROMHOF, provinceKey: null })
+    expect(noProvince.some((b) => b?.areaType === 'RADIUS')).toBe(false)
+    expect(noProvince.some((b) => b?.areaType === 'REGION')).toBe(true)
+  })
+
+  describe('non-SUBURB scopes (home AreaSelector can pick REGION / CITY / PROVINCE)', () => {
+    const REGION_NODE = { ...BROMHOF, id: 'node_jhb_north', slug: 'gauteng__johannesburg__jhb_north', label: 'JHB North', nodeType: 'REGION' as const }
+    const CITY_NODE = { ...BROMHOF, id: 'node_jhb', slug: 'gauteng__johannesburg', label: 'Johannesburg', nodeType: 'CITY' as const, regionKey: null }
+    const PROVINCE_NODE = { ...BROMHOF, id: 'node_gp', slug: 'gauteng', label: 'Gauteng', nodeType: 'PROVINCE' as const, regionKey: null, cityKey: null }
+
+    it('REGION node: exact node + any-areaType regionKey row, nothing at city/province level', () => {
+      expect(buildAreaProviderWhere({ node: REGION_NODE })).toEqual({
+        OR: [
+          { technicianServiceAreas: { some: { active: true, locationNodeId: REGION_NODE.id } } },
+          { technicianServiceAreas: { some: { active: true, regionKey: 'jhb_north' } } },
+        ],
+      })
+    })
+
+    it('CITY node: exact node + any-areaType cityKey row, nothing at region/province level', () => {
+      expect(buildAreaProviderWhere({ node: CITY_NODE })).toEqual({
+        OR: [
+          { technicianServiceAreas: { some: { active: true, locationNodeId: CITY_NODE.id } } },
+          { technicianServiceAreas: { some: { active: true, cityKey: 'johannesburg' } } },
+        ],
+      })
+    })
+
+    it('PROVINCE node: exact node + any-areaType provinceKey row, no legacy strings', () => {
+      const where = buildAreaProviderWhere({ node: PROVINCE_NODE })
+      expect(where).toEqual({
+        OR: [
+          { technicianServiceAreas: { some: { active: true, locationNodeId: PROVINCE_NODE.id } } },
+          { technicianServiceAreas: { some: { active: true, provinceKey: 'gauteng' } } },
+        ],
+      })
+      expect(JSON.stringify(where)).not.toContain('"serviceAreas"')
+    })
+  })
+})
+
+describe('buildCategoryProviderWhere (mirrors matching category eligibility)', () => {
+  // Matching (lib/matching/candidate-pool.ts) requires skills.has(tag); the
+  // CATEGORY_NOT_APPROVED filter (lib/matching/filter.ts) then excludes a provider only
+  // when a ProviderCategory row for THAT slug exists with a non-APPROVED status. No
+  // row is permissive. The count that gates WhatsApp intake must match exactly.
+  it('requires the skill tag and excludes only an explicit non-APPROVED row for that slug', () => {
+    expect(buildCategoryProviderWhere('plumbing')).toEqual({
+      skills: { has: 'plumbing' },
+      providerCategories: {
+        none: { categorySlug: 'plumbing', approvalStatus: { not: 'APPROVED' } },
+      },
+    })
+  })
+
+  it('does not require any ProviderCategory row, so rows for OTHER slugs never exclude a provider', () => {
+    const where = buildCategoryProviderWhere('plumbing')
+    // The old shape demanded `providerCategories: { none: {} }` (no rows at all) for the
+    // skills fallback, which wrongly dropped providers that only had rows for other slugs.
+    expect(JSON.stringify(where)).not.toContain('"none":{}')
+    expect(where.providerCategories).toEqual({
+      none: { categorySlug: 'plumbing', approvalStatus: { not: 'APPROVED' } },
+    })
+  })
+
+  it('has no APPROVED-row-without-skills branch (matching needs skills.has either way)', () => {
+    const where = buildCategoryProviderWhere('plumbing')
+    expect(where.OR).toBeUndefined()
+    expect(where.AND).toBeUndefined()
+    expect(JSON.stringify(where)).not.toContain('"some"')
+    expect(where.skills).toEqual({ has: 'plumbing' })
+  })
+
+  it('is applied to the provider count query for the requested category', async () => {
+    mockDb.provider.findMany.mockResolvedValueOnce([{ id: 'p1' }])
+    await countActiveProvidersFor({ area: { node: BROMHOF }, categoryTag: 'handyman' })
+    const where = mockDb.provider.findMany.mock.calls[0][0].where
+    expect(where.AND).toContainEqual(buildCategoryProviderWhere('handyman'))
   })
 })
 

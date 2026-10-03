@@ -123,6 +123,9 @@ export async function seedLocationNodes(prisma: PrismaClient): Promise<LocationS
   )
 
   await prisma.$transaction(async (tx) => {
+    // `active` is set on create only. The update payloads deliberately omit it,
+    // so re-running the seed never re-enables a node an admin paused in
+    // /admin/locations (national liveness = LocationNode.active).
     const upsertNode = async (slug: string, create: Parameters<typeof prisma.locationNode.upsert>[0]['create'], update: Parameters<typeof prisma.locationNode.upsert>[0]['update']) => {
       const node = await tx.locationNode.upsert({ where: { slug }, create, update })
       if (existingSlugs.has(slug)) summary.updated++
@@ -157,7 +160,6 @@ export async function seedLocationNodes(prisma: PrismaClient): Promise<LocationS
         lat: null,
         lng: null,
         radiusKm: null,
-        active: true,
       }) as { id: string }
     }
 
@@ -189,7 +191,6 @@ export async function seedLocationNodes(prisma: PrismaClient): Promise<LocationS
           lat: null,
           lng: null,
           radiusKm: null,
-          active: true,
         }) as { id: string }
       }
     }
@@ -225,7 +226,6 @@ export async function seedLocationNodes(prisma: PrismaClient): Promise<LocationS
           lat: region.center.lat,
           lng: region.center.lng,
           radiusKm: region.radiusKm,
-          active: true,
         }) as { id: string }
 
         for (const [suburbLabel, coord] of Object.entries(region.suburbs)) {
@@ -256,7 +256,6 @@ export async function seedLocationNodes(prisma: PrismaClient): Promise<LocationS
             lat: coord.lat,
             lng: coord.lng,
             radiusKm: null,
-            active: true,
           })
         }
       }

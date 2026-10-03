@@ -67,7 +67,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_areas':
       await sendButtons(
         ctx.phone,
-        `📍 *Areas We Serve*\n\nWe're launching in Johannesburg and Pretoria, with more cities coming soon.\n\nTell us your suburb when booking and we'll check if we have providers near you. If we're not in your area yet, we'll add you to the waitlist and let you know when we arrive. 🚀`,
+        `📍 *Areas We Serve*\n\nPlug A Pro operates across South Africa. Availability depends on independent providers near you.\n\nTell us your suburb when booking and we'll check who's available. If we have nobody near you yet, we'll offer to notify you the moment a provider joins. 🚀`,
         [
           { id: 'book', title: '🔧 Book Now' },
           { id: 'back_to_help', title: '← Back to Help' },

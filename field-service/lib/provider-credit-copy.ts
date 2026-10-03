@@ -279,14 +279,10 @@ export function buildProviderOnboardingIntroMessage() {
 export function buildProviderApplicationSubmittedMessage(params: {
   providerName?: string | null
   applicationRef: string
-  isComingSoonRegion?: boolean
   termsUrl?: string
 }) {
   void params.termsUrl // retained for callers; URL travels via the CTA follow-up, not the body
   const name = params.providerName?.trim().split(/\s+/)[0] || 'there'
-  const regionLine = params.isComingSoonRegion
-    ? '\n\nThis area is not live yet. Your profile is saved and will be activated the moment Plug A Pro goes live in your region — we will update you here.'
-    : ''
 
   return [
     '✅ *Application submitted!*',
@@ -296,7 +292,6 @@ export function buildProviderApplicationSubmittedMessage(params: {
     `Ref: *${params.applicationRef}*`,
     '',
     'We will review your details and update you here. Approval is not automatic.',
-    regionLine.trim(),
     '',
     'If approved, your provider profile will be activated and you will receive starter credits for customer-selected jobs you accept.',
     '',

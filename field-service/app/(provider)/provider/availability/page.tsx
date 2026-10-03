@@ -250,7 +250,7 @@ export default async function ProviderAvailabilityPage() {
                     className={area.active ? 'font-medium' : ''}
                     style={{ color: area.active ? 'var(--tone-success-fg)' : 'var(--ink-mute)' }}
                   >
-                    {area.active ? 'Active pilot' : 'Coming soon'}
+                    {area.active ? 'Active' : 'Paused'}
                   </span>
                 </div>
               ))
