@@ -178,6 +178,40 @@ describe('provider credit reconciliation report', () => {
     ]))
   })
 
+  it('does not flag a free-leads unlock (creditsCharged 0, no debit) as missing a debit', async () => {
+    state.provider = provider({
+      leadUnlocks: [
+        { id: 'unlock-1', creditsCharged: 1 },
+        { id: 'unlock-2', creditsCharged: 1 },
+        { id: 'unlock-free', creditsCharged: 0 },
+      ],
+    })
+
+    const report = await buildProviderCreditReconciliationReport('provider-1')
+
+    expect(report.ok).toBe(true)
+    expect(report.issues).toEqual([])
+    expect(report.counts).toMatchObject({ leadUnlocks: 3, issues: 0 })
+  })
+
+  it('still flags a paid unlock without a debit next to a free unlock', async () => {
+    state.provider = provider({
+      leadUnlocks: [
+        { id: 'unlock-1', creditsCharged: 1 },
+        { id: 'unlock-2', creditsCharged: 1 },
+        { id: 'unlock-free', creditsCharged: 0 },
+        { id: 'unlock-paid-orphan', creditsCharged: 1 },
+      ],
+    })
+
+    const report = await buildProviderCreditReconciliationReport('provider-1')
+
+    expect(report.ok).toBe(false)
+    expect(report.issues).toEqual([
+      expect.objectContaining({ code: 'LEAD_UNLOCK_WITHOUT_DEBIT', referenceId: 'unlock-paid-orphan' }),
+    ])
+  })
+
   it('detects test ledger entries that would leak into live reporting', async () => {
     state.provider = provider({
       isTestUser: true,
