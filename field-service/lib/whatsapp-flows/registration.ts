@@ -1456,15 +1456,23 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const regionId = ctx.reply.id.replace('region_', '')
-  const regionLabel = await resolveFullLabel(
-    async () => (await import('@/lib/location-nodes')).getRegions(ctx.data.cityId ?? ''),
-    regionId,
-    ctx.reply.title ?? '',
-  )
+  // The region must belong to the chosen city. A forged or stale reply id
+  // (another city's region, or a non-region node) re-shows this city's list
+  // instead of drilling into a region the provider never chose.
+  let region: { id: string; label: string } | undefined
+  try {
+    const { getRegions } = await import('@/lib/location-nodes')
+    region = (await getRegions(ctx.data.cityId ?? '')).find((r) => r.id === regionId)
+  } catch {
+    region = undefined
+  }
+  if (!region) {
+    return showRegionList(ctx)
+  }
 
   // Drill down to suburb selection within this region (numbered text list).
   // Every active region is matchable; there is no status to evaluate here.
-  return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
+  return showSuburbNumberedPrompt(ctx.phone, regionId, region.label, [], [], 0)
 }
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {

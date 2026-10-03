@@ -81,6 +81,43 @@ describe('upsertStructuredServiceAreas — national liveness contract', () => {
     )
   })
 
+  it.each(['CITY', 'PROVINCE'])('skips a %s node (no dead REGION row) and warns with ids only', async (nodeType) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { client, upsert } = makeClient([
+      {
+        id: 'node-big',
+        nodeType,
+        slug: nodeType === 'CITY' ? 'gauteng__johannesburg' : 'gauteng',
+        label: nodeType === 'CITY' ? 'Johannesburg' : 'Gauteng',
+        regionKey: null,
+        provinceKey: 'gauteng',
+        cityKey: nodeType === 'CITY' ? 'johannesburg' : null,
+      },
+      {
+        id: 'node-1',
+        nodeType: 'SUBURB',
+        slug: 'gauteng__johannesburg__jhb_north__sandton',
+        label: 'Sandton',
+        regionKey: 'jhb_north',
+        provinceKey: 'gauteng',
+        cityKey: 'johannesburg',
+      },
+    ])
+    await upsertStructuredServiceAreas(client as never, 'prov-1', ['node-big', 'node-1'])
+    expect(upsert).toHaveBeenCalledTimes(1)
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { providerId_locationNodeId: { providerId: 'prov-1', locationNodeId: 'node-1' } } }),
+    )
+    expect(warn).toHaveBeenCalledTimes(1)
+    const logged = JSON.stringify(warn.mock.calls[0])
+    expect(logged).toContain('prov-1')
+    expect(logged).toContain('node-big')
+    expect(logged).toContain(nodeType)
+    expect(logged).not.toContain('Johannesburg')
+    expect(logged).not.toContain('Gauteng')
+    warn.mockRestore()
+  })
+
   it('writes nothing for an empty node list', async () => {
     const { client, upsert } = makeClient([])
     await upsertStructuredServiceAreas(client as never, 'prov-1', [])

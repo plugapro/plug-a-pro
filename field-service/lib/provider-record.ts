@@ -123,6 +123,17 @@ export async function upsertStructuredServiceAreas(
   })
 
   for (const node of nodes) {
+    // Only SUBURB and REGION nodes are service areas. A CITY or PROVINCE id
+    // (forged or stale input) would otherwise become a REGION row with a null
+    // regionKey that no request can ever match, so it is skipped.
+    if (node.nodeType !== 'SUBURB' && node.nodeType !== 'REGION') {
+      console.warn('[provider-record] skipped non-service-area location node', {
+        providerId,
+        locationNodeId: node.id,
+        nodeType: node.nodeType,
+      })
+      continue
+    }
     // SUBURB nodes get a suburbKey (last segment of slug); REGION nodes do not.
     const isSuburb = node.nodeType === 'SUBURB'
     const areaType = isSuburb ? 'SUBURB' : 'REGION'

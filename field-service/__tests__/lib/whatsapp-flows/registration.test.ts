@@ -1396,6 +1396,31 @@ describe('registration flow - numbered bulk skill selection', () => {
     expect((wa.sendText as any).mock.calls.at(-1)[1]).toContain(full)
   })
 
+  it('re-shows the region list when the region id does not belong to the chosen city', async () => {
+    const cityRegions = [
+      { id: 'rgn_west', label: 'JHB West / Roodepoort', regionKey: 'jhb_west', slug: 'gauteng__johannesburg__jhb_west' },
+      { id: 'rgn_north', label: 'Johannesburg North', regionKey: 'jhb_north', slug: 'gauteng__johannesburg__jhb_north' },
+    ]
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(cityRegions) // ownership check
+      .mockResolvedValueOnce(cityRegions) // re-shown list
+
+    const result = await handleRegistrationFlow({
+      phone,
+      step: 'reg_collect_region' as any,
+      data: { cityId: 'city_jhb' } as any,
+      flow: 'registration' as const,
+      reply: { type: 'list_reply' as any, id: 'region_rgn_other_city', title: 'Other City Region' },
+    })
+
+    expect(locationNodes.getRegions).toHaveBeenCalledWith('city_jhb')
+    expect(locationNodes.getSuburbs).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('reg_collect_region')
+    expect(result.nextData?.locationNodeIds).toBeUndefined()
+    const rows = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+    expect(rows.map((r) => r.id)).toEqual(['region_rgn_west', 'region_rgn_north'])
+  })
+
   it('lists regions with no status descriptions and no "leads go live first" copy', async () => {
     ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
       { id: 'rgn_west', label: 'JHB West / Roodepoort', regionKey: 'jhb_west', slug: 'gauteng__johannesburg__jhb_west' },
@@ -1716,6 +1741,9 @@ describe('registration flow - numbered bulk suburb selection', () => {
   })
 
   it('shows a numbered text list (not interactive list) after region is selected', async () => {
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'jnb_north', label: 'Johannesburg North', regionKey: 'jhb_north', slug: 'gauteng__johannesburg__jhb_north' },
+    ])
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_region', 'region_jnb_north', undefined, {
         cityId: 'city_jhb',
@@ -1903,16 +1931,22 @@ describe('registration flow - numbered bulk suburb selection', () => {
   })
 
   it('the numbered prompt tells providers to reply "all" when their suburb is not listed', async () => {
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'rgn_test', label: 'Sandton', regionKey: 'jhb_north', slug: 'gauteng__johannesburg__jhb_north' },
+    ])
     await handleRegistrationFlow(
       makeCtx('reg_collect_region', 'region_rgn_test', undefined, { cityId: 'city_jhb' })
     )
 
     const body: string = (wa.sendText as any).mock.calls.at(-1)[1]
-    expect(body).toContain("Reply *all* if your suburb isn't listed or you cover the whole region_rgn_test area.")
+    expect(body).toContain("Reply *all* if your suburb isn't listed or you cover the whole Sandton area.")
   })
 
   it('a region with no listed suburbs stores the REGION node id and skips to experience', async () => {
     ;(locationNodes.getSuburbs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([])
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'rgn_empty', label: 'Kimberley', regionKey: 'kimberley', slug: 'northern_cape__kimberley__kimberley' },
+    ])
 
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_region', 'region_rgn_empty', undefined, { cityId: 'city_kim' })
@@ -1926,7 +1960,7 @@ describe('registration flow - numbered bulk suburb selection', () => {
     )
     expect(result.nextStep).toBe('reg_collect_availability')
     expect(result.nextData?.locationNodeIds).toEqual(['rgn_empty'])
-    expect(result.nextData?.selectedRegionLabels).toEqual(['region_rgn_empty'])
+    expect(result.nextData?.selectedRegionLabels).toEqual(['Kimberley'])
   })
 
   it('"99" only - sends "None of those numbers" error and re-shows list', async () => {
