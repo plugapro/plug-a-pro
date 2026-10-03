@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
-import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { buildTechnicianServiceAreaRows } from '@/lib/provider-service-area-rows'
 import { syncProviderSkills } from '@/lib/provider-skills'
 import { reconcileProviderCategoriesForSkills } from '@/lib/provider-categories'
 import { PILOT_SKILL_TAGS } from '@/lib/service-categories'
@@ -128,14 +128,9 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
             select: { id: true, slug: true, label: true, nodeType: true, provinceKey: true, cityKey: true, regionKey: true },
           })
 
-          // Reject any node that is not a SUBURB — REGION nodes must not be written
-          // directly to technicianServiceArea as they bypass granular area matching.
-          const nonSuburbNodes = nodes.filter((node) => node.nodeType !== 'SUBURB')
-          if (nonSuburbNodes.length > 0) {
-            throw new Error(
-              `Invalid service area selection: only SUBURB nodes are permitted. Rejected node types: ${nonSuburbNodes.map((n) => `${n.id}(${n.nodeType})`).join(', ')}`,
-            )
-          }
+          // SUBURB and REGION nodes are valid service areas ("cover the whole
+          // region" is a REGION row). Anything else throws before any write.
+          const rows = buildTechnicianServiceAreaRows(provider.id, nodes)
 
           const existingAreas = await tx.technicianServiceArea.findMany({
             where: {
@@ -146,14 +141,14 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
           })
 
           const existingNodeIds = new Set(existingAreas.map((area) => area.locationNodeId).filter(Boolean))
-          const toCreate = nodes.filter((node) => !existingNodeIds.has(node.id))
-          const toUpdate = nodes.filter((node) => existingNodeIds.has(node.id))
+          const toCreate = rows.filter((row) => !existingNodeIds.has(row.locationNodeId))
+          const toUpdate = rows.filter((row) => existingNodeIds.has(row.locationNodeId))
 
           if (toUpdate.length > 0) {
             await tx.technicianServiceArea.updateMany({
               where: {
                 providerId: provider.id,
-                locationNodeId: { in: toUpdate.map((node) => node.id) },
+                locationNodeId: { in: toUpdate.map((row) => row.locationNodeId) },
               },
               data: { active: true },
             })
@@ -161,17 +156,7 @@ export async function updateProviderProfileFromFormAction(formData: FormData): P
 
           if (toCreate.length > 0) {
             await tx.technicianServiceArea.createMany({
-              data: toCreate.map((node) => ({
-                providerId: provider.id,
-                locationNodeId: node.id,
-                areaType: 'SUBURB' as const,
-                label: normaliseLocationDisplayName(node.label),
-                provinceKey: node.provinceKey,
-                cityKey: node.cityKey,
-                regionKey: node.regionKey,
-                suburbKey: node.slug.split('__').at(-1) ?? node.slug,
-                active: true,
-              })),
+              data: toCreate,
               skipDuplicates: true,
             })
           }
