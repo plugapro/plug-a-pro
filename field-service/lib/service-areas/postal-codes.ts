@@ -220,7 +220,7 @@ export const SUBURB_POSTAL_CODES: Record<string, string> = {
   "eastern_cape__east_london__buffalo_city__mdantsane": "5219",
   "eastern_cape__east_london__buffalo_city__vincent": "5217",
   "eastern_cape__gqeberha__gqeberha_metro__gqeberha": "6033",
-  "eastern_cape__gqeberha__gqeberha_metro__newton_park": "7162",
+  "eastern_cape__gqeberha__gqeberha_metro__newton_park": "6045", // manual
   "eastern_cape__gqeberha__gqeberha_metro__port_elizabeth": "6033",
   "eastern_cape__gqeberha__gqeberha_metro__summerstrand": "6001",
   "eastern_cape__gqeberha__gqeberha_metro__uitenhage": "6229",
@@ -230,7 +230,7 @@ export const SUBURB_POSTAL_CODES: Record<string, string> = {
   "free_state__bloemfontein__bloemfontein_mangaung__langenhoven_park": "9330",
   "free_state__bloemfontein__bloemfontein_mangaung__mangaung": "9310",
   "free_state__bloemfontein__bloemfontein_mangaung__universitas": "9330",
-  "gauteng__east_rand__east_rand__heidelberg": "6800",
+  "gauteng__east_rand__east_rand__heidelberg": "1441", // manual
   "gauteng__pretoria__pretoria_north__ga_rankuwa": "0201",
   "limpopo__polokwane__polokwane__bendor": "0787",
   "limpopo__polokwane__polokwane__flora_park": "0700",
@@ -247,8 +247,8 @@ export const SUBURB_POSTAL_CODES: Record<string, string> = {
   "north_west__mahikeng__mahikeng__mafikeng": "2745",
   "north_west__mahikeng__mahikeng__mahikeng": "2745",
   "north_west__mahikeng__mahikeng__mmabatho": "2745",
-  "north_west__rustenburg__rustenburg__cashan": "2999",
-  "north_west__rustenburg__rustenburg__rustenburg": "2999",
+  "north_west__rustenburg__rustenburg__cashan": "0299", // manual
+  "north_west__rustenburg__rustenburg__rustenburg": "0299", // manual
   "north_west__rustenburg__rustenburg__safari_gardens": "0299",
   "north_west__rustenburg__rustenburg__tlhabane": "0300",
   "northern_cape__kimberley__kimberley__galeshewe": "8346",
