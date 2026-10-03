@@ -17,11 +17,7 @@ import { db } from '../db'
 import { resolveCategoryRequirements } from '../category-config'
 import { createJobRequest } from '../job-requests/create-job-request'
 import { downloadAndStoreWhatsAppMedia, MediaCapReachedError } from '../whatsapp-media'
-import {
-  isInActiveServiceArea,
-  isActiveRegion,
-  addToServiceAreaWaitlist,
-} from '../service-area-guard'
+import { addToServiceAreaWaitlist } from '../service-area-guard'
 import {
   getProvinces,
   getCities,
@@ -264,6 +260,17 @@ function buildPagedRows<T extends { id: string; label: string }>(
 // ─── List-render helpers ──────────────────────────────────────────────────────
 
 const AREA_NOT_LISTED_ROW = { id: 'area_not_listed', title: '🔔 My area isn\'t listed' }
+
+// National rollout: one neutral "not listed yet" message for every level of the
+// area picker. Every caller has already written the waitlist row, so the copy
+// confirms the capture instead of asking the customer to do anything else.
+// Wording is the spec's locked WhatsApp copy (§I), verbatim.
+function notListedYetMessage(place: string): string {
+  return (
+    `📍 We don't have *${place}* listed yet. ` +
+    `We've saved your details and will WhatsApp you the moment we cover it - no action needed.`
+  )
+}
 
 async function renderProvinceList(phone: string): Promise<void> {
   const provinces = await getProvinces()
@@ -818,15 +825,10 @@ async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
       phone: ctx.phone,
       name: ctx.data.customerName ?? null,
       category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
-      city: 'Outside Gauteng',
+      city: 'Province not listed',
       source: 'whatsapp',
     }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
-    await sendText(
-      ctx.phone,
-      `Thanks for your interest! 🙏🏽\n\n` +
-      `Plug A Pro is currently only available in *Gauteng*, but we're expanding fast.\n\n` +
-      `We've noted your details and will send you a WhatsApp the moment we go live in your area. No action needed from you! 🚀`,
-    )
+    await sendText(ctx.phone, notListedYetMessage('your province'))
     return { nextStep: 'done' }
   }
 
@@ -873,12 +875,7 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
       province: provinceLabel,
       source: 'whatsapp',
     }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
-    await sendText(
-      ctx.phone,
-      `Thanks for your interest! 🙏🏽\n\n` +
-      `We're currently only serving *Johannesburg* in ${provinceLabel}, but we're expanding soon.\n\n` +
-      `We've saved your details and will send you a WhatsApp the moment we activate your city. No action needed! 🚀`,
-    )
+    await sendText(ctx.phone, notListedYetMessage(`your city in ${provinceLabel}`))
     return { nextStep: 'done' }
   }
 
@@ -900,28 +897,6 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
       await renderCityList(ctx.phone, provinceKey, provinceLabel, ctx.data.addrPage ?? 0)
       return { nextStep: 'addr_select_city' }
     }
-
-    // ── Service area gate ────────────────────────────────────────────────────
-    if (!isInActiveServiceArea(selected.label)) {
-      await addToServiceAreaWaitlist({
-        phone: ctx.phone,
-        name: ctx.data.customerName ?? null,
-        category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
-        city: selected.label,
-        province: provinceLabel,
-        source: 'whatsapp',
-      }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
-
-      await sendText(
-        ctx.phone,
-        `Thank you for reaching out! 🙏🏽\n\n` +
-        `We're not in *${selected.label}* just yet, but we're expanding fast.\n\n` +
-        `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
-        `No action needed from you. 🚀`,
-      )
-      return { nextStep: 'done' }
-    }
-    // ────────────────────────────────────────────────────────────────────────
 
     const ok = await renderRegionList(ctx.phone, selected.id, selected.label, 0)
     if (!ok) {
@@ -955,12 +930,7 @@ async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
       province: ctx.data.addrProvinceLabel ?? null,
       source: 'whatsapp',
     }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
-    await sendText(
-      ctx.phone,
-      `Thanks for your interest! 🙏🏽\n\n` +
-      `We're currently only serving *JHB West* (Roodepoort, Florida, Little Falls and surrounding areas) in ${cityLabel}.\n\n` +
-      `We're expanding to more ${cityLabel} areas soon - we've saved your details and will notify you via WhatsApp when your area goes live! 🚀`,
-    )
+    await sendText(ctx.phone, notListedYetMessage(`your area in ${cityLabel}`))
     return { nextStep: 'done' }
   }
 
@@ -981,29 +951,6 @@ async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
       await sendText(ctx.phone, '❗ Please *choose from the list* above.')
       await renderRegionList(ctx.phone, cityId, cityLabel, ctx.data.addrPage ?? 0)
       return { nextStep: 'addr_select_region' }
-    }
-
-    // Server-side service-area gate (finding 95726512): renderRegionList only
-    // *displays* active regions, but the inbound list-row id is untrusted. Enforce
-    // isActiveRegion() on the resolved region so a crafted/stale rgn__ id for an
-    // out-of-area region cannot proceed to suburb selection. Waitlist instead.
-    if (!isActiveRegion(selected.regionKey)) {
-      await addToServiceAreaWaitlist({
-        phone: ctx.phone,
-        name: ctx.data.customerName ?? null,
-        category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
-        suburb: selected.label,
-        city: cityLabel,
-        province: ctx.data.addrProvinceLabel ?? null,
-        source: 'whatsapp',
-      }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
-      await sendText(
-        ctx.phone,
-        `Thanks for your interest! 🙏🏽\n\n` +
-        `We're not active in *${selected.label}* just yet, but we're expanding fast.\n\n` +
-        `We've saved your details and will send you a WhatsApp the moment Plug A Pro goes live in your area. 🚀`,
-      )
-      return { nextStep: 'done' }
     }
 
     const ok = await renderSuburbList(ctx.phone, selected.id, selected.label, 0)
@@ -1689,15 +1636,11 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         throw err
       }
 
-      // Final service-area re-check (finding 3cc92366): re-derive the region from
-      // the RESOLVED suburb node and confirm it is still active before creating the
-      // request. Defends against a spoofed/stale node id slipping past the earlier
-      // per-step gates. Out-of-area submissions are waitlisted, not created.
+      // Anti-spoofing re-check (finding 3cc92366, kept under the national
+      // rollout): the node id in conversation data is untrusted. It must still
+      // resolve to an ACTIVE location node; otherwise waitlist, never create.
       const submitAreaScope = await resolveAreaScopeByNodeId(resolvedAddr.locationNodeId).catch(() => null)
-      if (
-        !isInActiveServiceArea(resolvedAddr.city) ||
-        !isActiveRegion(submitAreaScope?.node.regionKey ?? '')
-      ) {
+      if (!submitAreaScope) {
         await addToServiceAreaWaitlist({
           phone: ctx.phone,
           name: ctx.data.customerName ?? null,
@@ -1707,12 +1650,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
           province: resolvedAddr.province,
           source: 'whatsapp',
         }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
-        await sendText(
-          ctx.phone,
-          `Thanks for your interest! 🙏🏽\n\n` +
-          `We're not active in *${resolvedAddr.suburb}* just yet, but we're expanding fast.\n\n` +
-          `We've saved your details and will send you a WhatsApp the moment Plug A Pro goes live in your area. 🚀`,
-        )
+        await sendText(ctx.phone, notListedYetMessage(resolvedAddr.suburb))
         return { nextStep: 'done' }
       }
 
@@ -1947,30 +1885,8 @@ async function handleLegacyCollectSuburb(ctx: FlowContext): Promise<FlowResult> 
 }
 
 async function handleLegacyConfirmAddress(ctx: FlowContext): Promise<FlowResult> {
-  // Service area check for old conversations that typed their city
-  const city = ctx.reply.text?.trim() ?? ctx.data.addressCity ?? ''
-
-  if (city && !isInActiveServiceArea(city)) {
-    await addToServiceAreaWaitlist({
-      phone: ctx.phone,
-      name: ctx.data.customerName ?? null,
-      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
-      suburb: ctx.data.addressSuburb ?? null,
-      city,
-      source: 'whatsapp',
-    }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
-
-    await sendText(
-      ctx.phone,
-      `Thank you for reaching out! 🙏🏽\n\n` +
-      `We're not in *${city}* just yet, but we're expanding fast.\n\n` +
-      `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
-      `No action needed from you. 🚀`,
-    )
-    return { nextStep: 'done' }
-  }
-
-  // City was valid or unknown - redirect to new structured flow
+  // National rollout: no typed-city gate. Every in-flight legacy conversation is
+  // redirected to the structured picker, which accepts any suburb in the tree.
   await sendText(
     ctx.phone,
     "We've updated our address selection. Let's re-enter your address using our new area picker.",

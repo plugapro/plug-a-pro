@@ -1,7 +1,7 @@
 // ─── WhatsApp customer job-request flow - structured address tests ─────────────
 // Covers:
 //  1. Province selection: list-based, rejects typed text
-//  2. City selection: filtered by province, out-of-area waitlists immediately
+//  2. City selection: filtered by province, every city is selectable (national rollout)
 //  3. Region selection: filtered by city
 //  4. Suburb selection: filtered by region, derives postalCode + locationNodeId
 //  5. Submission: uses resolveStructuredAddressCapture, passes all fields to createJobRequest
@@ -103,10 +103,6 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 }))
 
 vi.mock('@/lib/service-area-guard', () => ({
-  isInActiveServiceArea: vi.fn(),
-  isActiveProvince: vi.fn().mockReturnValue(true),
-  isActiveCity: vi.fn().mockReturnValue(true),
-  isActiveRegion: vi.fn().mockReturnValue(true),
   addToServiceAreaWaitlist: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -212,8 +208,6 @@ describe('WhatsApp job-request flow - structured address', () => {
     ;(locationNodes.getSuburbs as any).mockResolvedValue(SUBURBS_JHB_NORTH)
     ;(locationNodes.getStructuredAddressSelection as any).mockResolvedValue(SANDTON_SELECTION)
     ;(locationNodes.isSuburbChildOfRegion as any).mockResolvedValue(true)
-    ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(true)
-    ;(serviceAreaGuard.isActiveRegion as any).mockReturnValue(true)
   })
 
   // ── 1. Province selection ──────────────────────────────────────────────────
@@ -399,6 +393,20 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('province'), expect.objectContaining({ total: 10 }))
       errSpy.mockRestore()
     })
+
+    it('"My area isn\'t listed" at the province step writes a waitlist row and sends the neutral copy', async () => {
+      const result = await handleJobRequestFlow(
+        makeCtx('addr_select_province', 'area_not_listed', undefined, { customerName: 'Sipho', selectedCategory: 'Painting' })
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
+        expect.objectContaining({ phone: PHONE, city: 'Province not listed', category: 'Painting', source: 'whatsapp' })
+      )
+      const text = (wa.sendText as any).mock.calls.at(-1)[1] as string
+      expect(text).toContain("We don't have *your province* listed yet")
+      expect(text).not.toMatch(/Gauteng/)
+    })
   })
 
   // ── 2. City selection filtered by province ────────────────────────────────
@@ -420,9 +428,11 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(wa.sendList).toHaveBeenCalledWith(PHONE, expect.stringContaining('Gauteng'), expect.any(Array), expect.any(Object))
     })
 
-    it('waitlists and returns done for an out-of-area city', async () => {
-      ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(false)
+    it('advances to the region list for a Western Cape city (no geographic gate)', async () => {
       ;(locationNodes.getCities as any).mockResolvedValue(CITIES_WC)
+      ;(locationNodes.getRegions as any).mockResolvedValue([
+        { id: 'rgn_cpt_cbd', slug: 'western_cape__cape_town__cape_town_cbd', label: 'Cape Town CBD & Atlantic Seaboard', provinceKey: 'western_cape', cityKey: 'cape_town', regionKey: 'cape_town_cbd', lat: null, lng: null, radiusKm: null },
+      ])
 
       const result = await handleJobRequestFlow(
         makeCtx('addr_select_city', 'city__city_cpt', undefined, {
@@ -434,11 +444,30 @@ describe('WhatsApp job-request flow - structured address', () => {
         })
       )
 
+      expect(result.nextStep).toBe('addr_select_region')
+      expect(result.nextData).toMatchObject({ addrCityId: 'city_cpt', addrCityLabel: 'Cape Town', addrPage: 0 })
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).not.toHaveBeenCalled()
+      expect(locationNodes.getRegions).toHaveBeenCalledWith('city_cpt')
+    })
+
+    it('"My area isn\'t listed" at the city step writes a waitlist row and sends the neutral copy', async () => {
+      const result = await handleJobRequestFlow(
+        makeCtx('addr_select_city', 'area_not_listed', undefined, {
+          addrProvinceKey: 'western_cape',
+          addrProvinceLabel: 'Western Cape',
+          addrPage: 0,
+          customerName: 'Sipho',
+          selectedCategory: 'Plumbing',
+        })
+      )
+
       expect(result.nextStep).toBe('done')
       expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
-        expect.objectContaining({ phone: PHONE, city: 'Cape Town', province: 'Western Cape' })
+        expect.objectContaining({ phone: PHONE, city: 'Western Cape - other', province: 'Western Cape', category: 'Plumbing', source: 'whatsapp' })
       )
-      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Cape Town'))
+      const text = (wa.sendText as any).mock.calls.at(-1)[1] as string
+      expect(text).toContain("We don't have *your city in Western Cape* listed yet")
+      expect(text).not.toMatch(/Gauteng|Johannesburg|JHB West/)
     })
 
     it('shows region list for an active city', async () => {
@@ -548,16 +577,18 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(wa.sendList).toHaveBeenCalledWith(PHONE, expect.stringContaining('Johannesburg'), expect.any(Array), expect.any(Object))
     })
 
-    it('waitlists and does not advance when the selected region is inactive (finding 95726512)', async () => {
-      // Untrusted rgn__ id for an out-of-area region must be gated server-side
-      // even though renderRegionList only displays active regions.
-      ;(serviceAreaGuard.isActiveRegion as any).mockReturnValue(false)
-
-      const result = await handleJobRequestFlow(makeCtx('addr_select_region', 'rgn__rgn_north', undefined, baseData))
+    it('"My area isn\'t listed" at the region step writes a waitlist row and sends the neutral copy', async () => {
+      const result = await handleJobRequestFlow(
+        makeCtx('addr_select_region', 'area_not_listed', undefined, { ...baseData, addrProvinceLabel: 'Gauteng', selectedCategory: 'Tiling' })
+      )
 
       expect(result.nextStep).toBe('done')
-      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalled()
-      expect(locationNodes.getSuburbs).not.toHaveBeenCalled()
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
+        expect.objectContaining({ phone: PHONE, city: 'Johannesburg', province: 'Gauteng', category: 'Tiling', source: 'whatsapp' })
+      )
+      const text = (wa.sendText as any).mock.calls.at(-1)[1] as string
+      expect(text).toContain("We don't have *your area in Johannesburg* listed yet")
+      expect(text).not.toMatch(/JHB West|Roodepoort/)
     })
 
     it('transitions to addr_select_suburb on valid region selection', async () => {
@@ -860,6 +891,51 @@ describe('WhatsApp job-request flow - structured address', () => {
         expect.stringContaining('Request submitted'),
         expect.anything(),
       )
+    })
+
+    it('submits a Durban address to createJobRequest (any province, national rollout)', async () => {
+      const { resolveAreaScopeByNodeId } = await import('@/lib/customer-serviceability')
+      ;(resolveAreaScopeByNodeId as any).mockResolvedValueOnce({
+        node: { id: 'sub_umhlanga', slug: 'kwazulu_natal__durban__durban_north__umhlanga', label: 'Umhlanga', nodeType: 'SUBURB', provinceKey: 'kwazulu_natal', cityKey: 'durban', regionKey: 'durban_north' },
+      })
+      ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue({
+        ...resolvedAddr,
+        suburb: 'Umhlanga',
+        region: 'Durban North',
+        city: 'Durban',
+        province: 'KwaZulu-Natal',
+        postalCode: '4319',
+        locationNodeId: 'sub_umhlanga',
+      })
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, { ...structuredData, addrLocationNodeId: 'sub_umhlanga' })
+      )
+
+      expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ suburb: 'Umhlanga', city: 'Durban', province: 'KwaZulu-Natal', locationNodeId: 'sub_umhlanga' }),
+      )
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).not.toHaveBeenCalled()
+      // A successful submit also ends in 'done', so assert on the copy instead:
+      // the not-listed message must not have been sent.
+      const sent = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
+      expect(sent.some((t: string) => t.includes('listed yet'))).toBe(false)
+      expect(result.nextStep).toBe('done')
+    })
+
+    it('waitlists instead of creating when the resolved node is missing or inactive (spoofed id)', async () => {
+      const { resolveAreaScopeByNodeId } = await import('@/lib/customer-serviceability')
+      ;(resolveAreaScopeByNodeId as any).mockResolvedValueOnce(null)
+
+      const result = await handleJobRequestFlow(makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData))
+
+      expect(result.nextStep).toBe('done')
+      expect(createJobRequestModule.createJobRequest).not.toHaveBeenCalled()
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
+        expect.objectContaining({ phone: PHONE, suburb: 'Sandton', city: 'Johannesburg', province: 'Gauteng', source: 'whatsapp' })
+      )
+      const text = (wa.sendText as any).mock.calls.at(-1)[1] as string
+      expect(text).toContain("We don't have *Sandton* listed yet")
     })
   })
 
@@ -1348,28 +1424,15 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(wa.sendList).toHaveBeenCalled()
     })
 
-    it('confirm_address for out-of-area city still waitlists via legacy handler', async () => {
-      ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(false)
-
+    it('confirm_address always redirects to the structured picker, never waitlists (national rollout)', async () => {
       const result = await handleJobRequestFlow(
-        makeCtx('confirm_address', undefined, 'Cape Town', {
-          customerName: 'Sipho',
-          addressSuburb: 'Sea Point',
-        })
-      )
-
-      expect(result.nextStep).toBe('done')
-      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalled()
-    })
-
-    it('confirm_address for active city redirects to addr_select_province', async () => {
-      ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(true)
-
-      const result = await handleJobRequestFlow(
-        makeCtx('confirm_address', undefined, 'Johannesburg', { addressSuburb: 'Sandton' })
+        makeCtx('confirm_address', undefined, 'Cape Town', { customerName: 'Sipho', addressSuburb: 'Sea Point' })
       )
 
       expect(result.nextStep).toBe('addr_select_province')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).not.toHaveBeenCalled()
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('updated'))
+      expect(wa.sendList).toHaveBeenCalled()
     })
   })
 
