@@ -380,6 +380,25 @@ describe('WhatsApp job-request flow - structured address', () => {
       // WhatsApp hard cap: 10 rows per list message.
       expect(sections[0].rows.length).toBeLessThanOrEqual(10)
     })
+
+    it('caps the province list at 9 rows plus the not-listed row when a 10th province exists, and logs the drop', async () => {
+      const TEN_PROVINCES = Array.from({ length: 10 }, (_, i) => ({
+        id: `prov_${i + 1}`,
+        slug: `province_${i + 1}`,
+        label: `Province ${i + 1}`,
+      }))
+      ;(locationNodes.getProvinces as any).mockResolvedValue(TEN_PROVINCES)
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await handleJobRequestFlow(makeCtx('addr_select_province', undefined, 'hello'))
+
+      const rows = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+      expect(rows).toHaveLength(10)
+      expect(rows.at(-1)?.id).toBe('area_not_listed')
+      expect(rows.filter((r) => r.id.startsWith('prov__'))).toHaveLength(9)
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('province'), expect.objectContaining({ total: 10 }))
+      errSpy.mockRestore()
+    })
   })
 
   // ── 2. City selection filtered by province ────────────────────────────────
@@ -470,6 +489,25 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(cityIds(page1)).toHaveLength(5)
       expect(page1.map((r) => r.id)).toContain('city_prev')
       expect(new Set([...cityIds(page0), ...cityIds(page1)]).size).toBe(12)
+    })
+
+    it('renders exactly 9 cities unpaged with the not-listed trailer (10 rows)', async () => {
+      const NINE_CITIES = Array.from({ length: 9 }, (_, i) => ({
+        id: `city_${i + 1}`,
+        slug: `gauteng__city_${i + 1}`,
+        label: `City ${i + 1}`,
+        provinceKey: 'gauteng',
+        cityKey: `city_${i + 1}`,
+      }))
+      ;(locationNodes.getCities as any).mockResolvedValue(NINE_CITIES)
+
+      await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__gauteng'))
+      const rows = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+
+      expect(rows).toHaveLength(10)
+      expect(rows.at(-1)?.id).toBe('area_not_listed')
+      expect(rows.map((r) => r.id)).not.toContain('city_next')
+      expect(rows.filter((r) => r.id.startsWith('city__'))).toHaveLength(9)
     })
 
     it('pages a province with exactly 10 cities so the not-listed row still fits (national rollout)', async () => {

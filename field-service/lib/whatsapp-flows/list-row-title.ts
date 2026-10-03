@@ -6,19 +6,28 @@
 // Shared by the customer request flow (job-request.ts) and the provider
 // registration flow (registration.ts).
 
-const ELLIPSIS = '…' // one UTF-16 code unit
+const ELLIPSIS = '…' // one code point
 const DANGLING_CONNECTOR = /\s*[\/&\-–—,:;]+$/
 
+// Works on code points, not UTF-16 units, so a hard cut never splits a
+// surrogate pair (emoji in an admin-entered label).
 export function listRowTitle(label: string, max = 24): string {
-  if (label.length <= max) return label
+  const chars = [...label]
+  if (chars.length <= max) return label
+  // No room for a word plus the ellipsis: hard cut, never longer than max.
+  if (max < 2) return chars.slice(0, Math.max(0, max)).join('')
 
-  const budget = Math.max(1, max - ELLIPSIS.length)
-  const head = label.slice(0, budget)
+  const budget = max - 1
+  const head = chars.slice(0, budget)
+
+  // A word that ends exactly at the budget is kept whole; otherwise cut at the
+  // last space inside the budget.
+  const wordEndsAtBudget = /\s/.test(chars[budget])
   const lastSpace = head.lastIndexOf(' ')
+  let kept = (wordEndsAtBudget || lastSpace <= 0 ? head : head.slice(0, lastSpace)).join('')
 
-  let kept = lastSpace > 0 ? head.slice(0, lastSpace) : head
   kept = kept.replace(DANGLING_CONNECTOR, '').trimEnd()
-  if (kept.length === 0) kept = head.trimEnd()
+  if (kept.length === 0) kept = head.join('').trimEnd()
 
   return `${kept}${ELLIPSIS}`
 }

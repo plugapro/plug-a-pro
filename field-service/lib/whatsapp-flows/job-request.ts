@@ -77,7 +77,9 @@ const STREET_ADDRESS_SEND_TIMEOUT_MS = Number(process.env.WHATSAPP_STREET_ADDRES
 const ADDR_STEP_TTL_MS = Math.max(Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000, 30 * 60 * 1000)
 
 // WhatsApp list cap is 10 rows total per message.
-// When paging is needed we use 8 item rows + up to 2 nav rows.
+// Paged lists without a trailer use 8 item rows + up to 2 nav rows (PAGE_SIZE).
+// Lists with a trailer row (the "My area isn't listed" row) reserve it through
+// buildPagedRows(..., reserveRows): 7 item rows + up to 2 nav rows + 1 trailer.
 const PAGE_SIZE = 8
 // Meta hard-caps a list message at 10 rows across all sections.
 const MAX_LIST_ROWS = 10
@@ -275,8 +277,18 @@ async function renderProvinceList(phone: string): Promise<void> {
     return
   }
   // National rollout: every active province is selectable. 9 provinces + the
-  // not-listed row = 10 rows, which is the WhatsApp per-message list cap.
-  const rows: ListRow[] = provinces.map((p) => ({ id: `prov__${p.slug}`, title: listRowTitle(p.label) }))
+  // not-listed row = 10 rows, which is the WhatsApp per-message list cap. The
+  // province list is unpaged, so a 10th active PROVINCE node (the admin can
+  // create one) would make Meta reject the list and strand every customer at
+  // this step. Cap the item rows so the trailer always fits.
+  const maxProvinceRows = MAX_LIST_ROWS - 1
+  if (provinces.length > maxProvinceRows) {
+    console.error('[job-request-flow] too many active provinces for one WhatsApp list; truncating', {
+      total: provinces.length,
+      shown: maxProvinceRows,
+    })
+  }
+  const rows: ListRow[] = provinces.slice(0, maxProvinceRows).map((p) => ({ id: `prov__${p.slug}`, title: listRowTitle(p.label) }))
   await sendList(
     phone,
     '🏙 *Select your province:*',

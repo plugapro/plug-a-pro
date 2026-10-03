@@ -54,4 +54,25 @@ describe('listRowTitle', () => {
     expect(listRowTitle('Cape Town CBD & Atlantic Seaboard', 20)).toBe('Cape Town CBD…')
     expect(listRowTitle('Durban North', 20)).toBe('Durban North')
   })
+
+  it('keeps a word that ends exactly at the last slot before the ellipsis', () => {
+    // "Abcdefghij Klmnopqrstuv" is 23 chars (max - 1) and is followed by a space.
+    const out = listRowTitle('Abcdefghij Klmnopqrstuv Wxyz')
+    expect(out).toBe('Abcdefghij Klmnopqrstuv…')
+    expect(out).toHaveLength(24)
+  })
+
+  it('never splits a surrogate pair on a hard cut', () => {
+    const out = listRowTitle('Abcdefghijklmnopqrstuv🔔🔔🔔')
+    expect([...out].length).toBeLessThanOrEqual(24)
+    // No lone surrogate anywhere in the result.
+    expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
+    expect(out.endsWith('…')).toBe(true)
+  })
+
+  it('never exceeds a tiny max', () => {
+    expect([...listRowTitle('Johannesburg', 1)].length).toBeLessThanOrEqual(1)
+    expect([...listRowTitle('Johannesburg', 0)].length).toBeLessThanOrEqual(0)
+    expect([...listRowTitle('Johannesburg', 2)].length).toBeLessThanOrEqual(2)
+  })
 })
