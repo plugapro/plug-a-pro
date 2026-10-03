@@ -156,24 +156,19 @@ export function buildAreaProviderWhere(area: AreaScope): Prisma.ProviderWhereInp
   return { OR: orConditions }
 }
 
-// Predicate that matches providers offering the given category slug.
-// Mirrors the /providers route logic: prefer ProviderCategory (APPROVED) and
-// fall back to legacy Provider.skills for providers without ProviderCategory rows.
+// Predicate that matches every provider matching would accept for a category.
+// Mirrors matching exactly: the candidate pool requires `skills: { has: tag }`
+// (lib/matching/candidate-pool.ts), and the CATEGORY_NOT_APPROVED filter
+// (lib/matching/filter.ts, `categoryApproved`) excludes a provider only when a
+// ProviderCategory row for THAT slug exists with a status other than APPROVED.
+// No row for the slug (including rows for other slugs only) is permissive.
+// This count gates WhatsApp intake (empty-area guard), so it must not undercount.
 export function buildCategoryProviderWhere(categoryTag: string): Prisma.ProviderWhereInput {
   return {
-    OR: [
-      {
-        providerCategories: {
-          some: { categorySlug: categoryTag, approvalStatus: 'APPROVED' },
-        },
-      },
-      {
-        AND: [
-          { providerCategories: { none: {} } },
-          { skills: { has: categoryTag } },
-        ],
-      },
-    ],
+    skills: { has: categoryTag },
+    providerCategories: {
+      none: { categorySlug: categoryTag, approvalStatus: { not: 'APPROVED' } },
+    },
   }
 }
 

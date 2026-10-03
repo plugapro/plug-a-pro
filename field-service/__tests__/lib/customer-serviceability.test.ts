@@ -19,6 +19,7 @@ vi.mock('@/lib/db', () => ({ db: mockDb }))
 
 import {
   buildAreaProviderWhere,
+  buildCategoryProviderWhere,
   countActiveProvidersFor,
   isAreaCategoryServiceable,
   listServiceableCategoriesForArea,
@@ -190,6 +191,46 @@ describe('buildAreaProviderWhere (mirrors matching coverage)', () => {
       })
       expect(JSON.stringify(where)).not.toContain('"serviceAreas"')
     })
+  })
+})
+
+describe('buildCategoryProviderWhere (mirrors matching category eligibility)', () => {
+  // Matching (lib/matching/candidate-pool.ts) requires skills.has(tag); the
+  // CATEGORY_NOT_APPROVED filter (lib/matching/filter.ts) then excludes a provider only
+  // when a ProviderCategory row for THAT slug exists with a non-APPROVED status. No
+  // row is permissive. The count that gates WhatsApp intake must match exactly.
+  it('requires the skill tag and excludes only an explicit non-APPROVED row for that slug', () => {
+    expect(buildCategoryProviderWhere('plumbing')).toEqual({
+      skills: { has: 'plumbing' },
+      providerCategories: {
+        none: { categorySlug: 'plumbing', approvalStatus: { not: 'APPROVED' } },
+      },
+    })
+  })
+
+  it('does not require any ProviderCategory row, so rows for OTHER slugs never exclude a provider', () => {
+    const where = buildCategoryProviderWhere('plumbing')
+    // The old shape demanded `providerCategories: { none: {} }` (no rows at all) for the
+    // skills fallback, which wrongly dropped providers that only had rows for other slugs.
+    expect(JSON.stringify(where)).not.toContain('"none":{}')
+    expect(where.providerCategories).toEqual({
+      none: { categorySlug: 'plumbing', approvalStatus: { not: 'APPROVED' } },
+    })
+  })
+
+  it('has no APPROVED-row-without-skills branch (matching needs skills.has either way)', () => {
+    const where = buildCategoryProviderWhere('plumbing')
+    expect(where.OR).toBeUndefined()
+    expect(where.AND).toBeUndefined()
+    expect(JSON.stringify(where)).not.toContain('"some"')
+    expect(where.skills).toEqual({ has: 'plumbing' })
+  })
+
+  it('is applied to the provider count query for the requested category', async () => {
+    mockDb.provider.findMany.mockResolvedValueOnce([{ id: 'p1' }])
+    await countActiveProvidersFor({ area: { node: BROMHOF }, categoryTag: 'handyman' })
+    const where = mockDb.provider.findMany.mock.calls[0][0].where
+    expect(where.AND).toContainEqual(buildCategoryProviderWhere('handyman'))
   })
 })
 
