@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-03-national-rollout-design.md`
 
-> **DRAFT — assembled 2026-10-03 while three plan-writing forks were still finishing.** Before execution, re-assemble from the updated parts (see memory note `project_national_rollout_20261003`) or apply these pending edits by hand: Task 4 must use the `PRE_ROLLOUT_MATCHING_REGION_KEYS = ['jhb_west']` skip rule (not the `Provider.serviceAreas[]` label test) plus `--exclude-providers`, the 60 s review marker, and the idempotency / REGION-row tests; Task 14 must add `lib/whatsapp-flows/list-row-title.ts#listRowTitle(label, max = 24)` and the ≤10-row paging rule; Task 13 must un-gate the zero-provider rejection from `customer.home.serviceability_v2`; Task 16 must fail open for an uncanonicalisable category label; Task 17 must consume `listRowTitle`. The Review Focus section below already describes each of these.
+> **DRAFT — assembled 2026-10-03.** Parts A, B and D are final. Part C's review-focus edits were still being written when the session stopped; before execution, re-assemble from the updated `plan-part-C.md` or apply by hand: Task 14 adds `lib/whatsapp-flows/list-row-title.ts#listRowTitle(label, max = 24)` (Task 17 already consumes it) and the ≤10-row paging rule; Task 13 un-gates the zero-provider rejection from `customer.home.serviceability_v2`; Task 16 fails open for an uncanonicalisable category label. The Review Focus section below describes each.
 
 ## Global Constraints
 
@@ -643,7 +643,7 @@ Claude-Session: https://claude.ai/code/session_01NpHGuToaFrZY3BNZELgdGG"
   - `formatPlan(plan: ReactivationPlan, commit: boolean): string`
   - CLI: `pnpm exec tsx --env-file=.env.local scripts/reactivate-service-areas-national.ts [--providers a,b,c] [--exclude-providers d,e] [--commit --admin-email <email>]`; audit action string `provider.service_areas.reactivate_national`.
 
-**Selection rule (replaces the spec's label test — Part B found `app/(provider)/provider/profile/actions.ts` never updates `Provider.serviceAreas[]`, so labels cannot tell removed rows from fence-inactive ones):**
+**Selection rule (replaces the spec's label test — Part B found that the profile editor in `app/(provider)/provider/profile/actions.ts` only flips `TechnicianServiceArea.active`, so a row's label cannot tell a deliberate removal from a fence-inactive row):**
 1. Candidate = `technician_service_areas` row with `active = false`, `locationNodeId` not null, whose `LocationNode.active = true`.
 2. Skip every candidate whose `regionKey` is in `PRE_ROLLOUT_MATCHING_REGION_KEYS` (`jhb_west`): the fence never wrote `jhb_west` rows inactive, so such a row is a deliberate removal.
 3. Re-activate every other candidate (written inactive by the fence in `lib/provider-record.ts`).
@@ -954,6 +954,113 @@ describe('executeReactivation', () => {
     expect(result).toEqual({ committedProviders: 0, committedRows: 0 })
   })
 })
+
+describe('idempotency and REGION rows (review focus)', () => {
+  type TableRow = InactiveAreaRow & { active: boolean }
+
+  /** In-memory stand-in for the delegates the script touches, so a real
+   *  load → plan → execute → load cycle runs without a database. */
+  function makeInMemoryClient(seed: TableRow[]) {
+    const table: TableRow[] = seed.map((r) => ({ ...r }))
+    const auditLog: unknown[] = []
+    const adminAuditEvent: unknown[] = []
+    const tx = {
+      technicianServiceArea: {
+        updateMany: vi.fn(async (args: { where: { id: { in: string[] } }; data: { active: boolean } }) => {
+          let count = 0
+          for (const r of table) {
+            if (args.where.id.in.includes(r.id)) {
+              r.active = args.data.active
+              count += 1
+            }
+          }
+          return { count }
+        }),
+      },
+      auditLog: {
+        create: vi.fn(async (args: unknown) => {
+          auditLog.push(args)
+          return {}
+        }),
+      },
+      adminAuditEvent: {
+        create: vi.fn(async (args: unknown) => {
+          adminAuditEvent.push(args)
+          return {}
+        }),
+      },
+    }
+    const client = {
+      technicianServiceArea: {
+        findMany: vi.fn(async (args: { where: { active: boolean } }) => table.filter((r) => r.active === args.where.active)),
+      },
+      provider: {
+        findMany: vi.fn(async () => [{ id: 'prov-1', name: 'Thabo Plumbing', status: 'ACTIVE' }]),
+      },
+      $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<void>) => fn(tx)),
+    }
+    return { client, table, auditLog, adminAuditEvent }
+  }
+
+  const admin = { id: 'admin-1', userId: 'auth-user-1', role: 'OWNER' }
+  const scope = { providerIds: null, excludeProviderIds: null }
+
+  it('a second run after --commit selects zero candidates and writes no audit rows (idempotent)', async () => {
+    const store = makeInMemoryClient([{ ...row(), active: false }])
+    const rebuildPool = vi.fn().mockResolvedValue(undefined)
+
+    const first = await loadReactivationInputs(store.client as never, scope)
+    const plan1 = planReactivation(first.rows, first.providers)
+    const r1 = await executeReactivation({ plan: plan1, commit: true, admin, client: store.client as never, rebuildPool })
+    expect(r1).toEqual({ committedProviders: 1, committedRows: 1 })
+    expect(store.table[0].active).toBe(true)
+    expect(store.auditLog).toHaveLength(1)
+    expect(store.adminAuditEvent).toHaveLength(1)
+
+    const second = await loadReactivationInputs(store.client as never, scope)
+    expect(second.rows).toEqual([])
+    const plan2 = planReactivation(second.rows, second.providers)
+    expect(plan2.providers).toEqual([])
+    expect(plan2.totalRows).toBe(0)
+    const r2 = await executeReactivation({ plan: plan2, commit: true, admin, client: store.client as never, rebuildPool })
+    expect(r2).toEqual({ committedProviders: 0, committedRows: 0 })
+    expect(store.auditLog).toHaveLength(1)
+    expect(store.adminAuditEvent).toHaveLength(1)
+    expect(rebuildPool).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-activates an inactive REGION-type row (whole-region fallback) exactly like a SUBURB row', async () => {
+    const regionRow: TableRow = {
+      ...row({
+        id: 'tsa-region',
+        label: 'Cape Town CBD',
+        regionKey: 'cape_town_cbd',
+        areaType: 'REGION',
+        locationNode: { id: 'node-ct-cbd', active: true },
+      }),
+      active: false,
+    }
+    const store = makeInMemoryClient([regionRow])
+    const { rows, providers } = await loadReactivationInputs(store.client as never, scope)
+    const plan = planReactivation(rows, providers)
+    expect(plan.providers[0].activate).toEqual([
+      { id: 'tsa-region', label: 'Cape Town CBD', regionKey: 'cape_town_cbd', areaType: 'REGION', review: false },
+    ])
+    expect(plan.providers[0].skipped).toEqual([])
+    expect(plan.totalsByRegion).toEqual({ cape_town_cbd: 1 })
+
+    const result = await executeReactivation({
+      plan,
+      commit: true,
+      admin,
+      client: store.client as never,
+      rebuildPool: vi.fn().mockResolvedValue(undefined),
+    })
+    expect(result).toEqual({ committedProviders: 1, committedRows: 1 })
+    expect(store.table[0].active).toBe(true)
+    expect(store.auditLog).toHaveLength(1)
+  })
+})
 ```
 
 - [ ] **Step 2: Run the test file to verify it fails**
@@ -985,8 +1092,8 @@ Create `field-service/scripts/reactivate-service-areas-national.ts`:
  *
  * Residual risk: an out-of-fence area a provider removed via the profile editor
  * is re-activated; they can remove it again in the profile editor.
- * (Provider.serviceAreas[] cannot be used to detect removals — the profile
- * editor never updates it.)
+ * (The profile editor only flips TechnicianServiceArea.active, so no column
+ * on the provider distinguishes a removal from a fence-inactive row.)
  *
  * Default is DRY-RUN. Nothing is written without --commit, and --commit needs
  * --admin-email so the AuditLog + AdminAuditEvent pair has a real actor.
@@ -1348,7 +1455,7 @@ if (require.main === module) {
 - [ ] **Step 4: Run the tests and typecheck**
 
 Run: `pnpm vitest run __tests__/scripts/reactivate-service-areas-national.test.ts && pnpm typecheck`
-Expected: 18 tests PASS; typecheck clean. (`ExecuteTx`/`LoadClient` take `unknown` args by design so the mock clients type-check; the real `db` is cast once in `main()`.)
+Expected: 20 tests PASS; typecheck clean. (`ExecuteTx`/`LoadClient` take `unknown` args by design so the mock clients type-check; the real `db` is cast once in `main()`.)
 
 - [ ] **Step 5: Dry-run against the local database to see the output format**
 
