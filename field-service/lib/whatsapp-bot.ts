@@ -50,6 +50,7 @@ import { createTraceId } from './support-diagnostics'
 import { createTestCohortContext } from './internal-test-cohort'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import { FLAG_KEYS, isEnabled } from './flags'
+import { FREE_LEADS_COPY_LINE, isFreeLeadsEnabled } from './free-leads'
 import { phoneLookupVariants, resolveWhatsAppUserContext, type WhatsAppIdentity } from './whatsapp-identity'
 import { normaliseLocationDisplayName } from './location-format'
 import { parseProviderOpportunityArrivalText } from './provider-opportunity-whatsapp'
@@ -142,15 +143,19 @@ async function sendAcceptedLeadFallbackConfirmation(params: {
     })
   }
 
+  const freeLeads = await isFreeLeadsEnabled()
+  const creditSection = freeLeads
+    ? `${FREE_LEADS_COPY_LINE}\n\n`
+    : `You used 1 credit to accept this customer-selected job.\n\n` +
+      `💳 ${buildLeadAcceptedCreditLine({
+        creditsUsed: LEAD_UNLOCK_COST_CREDITS,
+        remainingCredits: balance.totalCreditBalance,
+        starterCredits: balance.promoCreditBalance,
+        paidCredits: balance.paidCreditBalance,
+      })}\n\n`
   const body =
     `✅ *Lead accepted*\n\n` +
-    `You used 1 credit to accept this customer-selected job.\n\n` +
-    `💳 ${buildLeadAcceptedCreditLine({
-      creditsUsed: LEAD_UNLOCK_COST_CREDITS,
-      remainingCredits: balance.totalCreditBalance,
-      starterCredits: balance.promoCreditBalance,
-      paidCredits: balance.paidCreditBalance,
-    })}\n\n` +
+    creditSection +
     `Full customer details are now unlocked.\n\n` +
     `Reply *menu* to view your active jobs.\n\n` +
     `_Ref: ${params.traceId}_`
@@ -2862,7 +2867,10 @@ export async function notifyProviderNewJob(params: {
   }
 
   const area = normaliseLocationDisplayName(params.area)
-  let creditLine = `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.`
+  const freeLeads = await isFreeLeadsEnabled()
+  let creditLine = freeLeads
+    ? `Showing interest is free. ${FREE_LEADS_COPY_LINE}`
+    : `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.`
   let safePreview: Awaited<ReturnType<typeof import('./provider-opportunity-responses').getSafeProviderOpportunityPreview>> | null = null
   let providerIdForPreview: string | null = null
   try {
@@ -2872,9 +2880,11 @@ export async function notifyProviderNewJob(params: {
     })
     if (lead?.providerId) {
       providerIdForPreview = lead.providerId
-      const { getProviderWalletBalanceReadOnly } = await import('./provider-wallet')
-      const balance = await getProviderWalletBalanceReadOnly(lead.providerId)
-      creditLine = `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.\nAvailable credits: ${creditCountLabel(balance.totalCreditBalance)} (${providerCreditBreakdownLabel(balance)}).`
+      if (!freeLeads) {
+        const { getProviderWalletBalanceReadOnly } = await import('./provider-wallet')
+        const balance = await getProviderWalletBalanceReadOnly(lead.providerId)
+        creditLine = `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.\nAvailable credits: ${creditCountLabel(balance.totalCreditBalance)} (${providerCreditBreakdownLabel(balance)}).`
+      }
       const { getSafeProviderOpportunityPreview } = await import('./provider-opportunity-responses')
       safePreview = await getSafeProviderOpportunityPreview(params.leadId, lead.providerId)
     }
@@ -4004,6 +4014,9 @@ async function handleProviderLocationShare(
   await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
 }
 
+// Unreachable in free leads mode (provider.leads.free): neither accept path
+// can return INSUFFICIENT_CREDITS when the flag is ON, so this top-up prompt
+// is only ever sent for paid leads.
 async function sendLeadInsufficientCreditsMessage(
   phone: string,
   leadId: string,
@@ -4507,15 +4520,21 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       return
     }
     if (!result.notificationSent) {
+      // requiredCredits 0 means this accept went through free leads mode.
+      const freeAccept = result.creditCheck.requiredCredits === 0
       if (result.creditApplied || result.alreadyUnlocked) {
         await sendText(
           phone,
-          '✅ Job accepted\n\nYour credit has been applied and the job is confirmed. The customer details are now available in your job view.',
+          freeAccept
+            ? `✅ Job accepted\n\n${FREE_LEADS_COPY_LINE}\n\nThe job is confirmed. The customer details are now available in your job view.`
+            : '✅ Job accepted\n\nYour credit has been applied and the job is confirmed. The customer details are now available in your job view.',
         )
       } else {
         await sendText(
           phone,
-          `${result.creditCheck.providerMessage}\n\nReply *credits* to view your balance.`,
+          freeAccept
+            ? result.creditCheck.providerMessage
+            : `${result.creditCheck.providerMessage}\n\nReply *credits* to view your balance.`,
         )
       }
     }

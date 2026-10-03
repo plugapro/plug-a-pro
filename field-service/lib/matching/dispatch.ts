@@ -10,6 +10,7 @@ import { getProviderLeadAccessUrl } from '@/lib/provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '@/lib/provider-wallet'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { notifyProviderZeroBalanceLeadAvailable } from '@/lib/provider-wallet-notifications'
+import { isFreeLeadsEnabled } from '@/lib/free-leads'
 import {
   buildProviderLeadActionsMessage,
   buildProviderLeadPreviewMessage,
@@ -122,12 +123,14 @@ export async function dispatchMatchLead(params: {
           timeZone: 'Africa/Johannesburg',
         })}`
       : 'Flexible'
-  const [balance, previewAttachmentsCount] = await Promise.all([
+  const [balance, previewAttachmentsCount, freeLeads] = await Promise.all([
     getProviderWalletBalanceReadOnly(provider.id),
     // Count only attachments flagged as safe for preview - protected docs stay hidden.
     db.attachment.count({
       where: { jobRequestId: jobRequest.id, safeForPreview: true },
     }).catch(() => null as number | null),
+    // Free leads mode (provider.leads.free): read once for this message build.
+    isFreeLeadsEnabled(),
   ])
   const body = buildProviderLeadPreviewMessage({
     category,
@@ -142,8 +145,9 @@ export async function dispatchMatchLead(params: {
     matchingPreference: jobRequest.providerPreference ?? jobRequest.budgetPreference,
     photosCount: previewAttachmentsCount,
     responseWindowMinutes: MATCHING_CONFIG.offerTtlMinutes,
+    free: freeLeads,
   })
-  const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
+  const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance, free: freeLeads })
   const recipientIsTest = await resolveProviderRecipientIsTest(provider)
   const msgMeta = {
     jobRequestId: jobRequest.id,
@@ -159,19 +163,22 @@ export async function dispatchMatchLead(params: {
     providerId: provider.id,
   })
 
-  notifyProviderZeroBalanceLeadAvailable({
-    providerId: provider.id,
-    leadId: lead.id,
-    jobRequestId: jobRequest.id,
-    holdId: hold.id,
-  }).catch((error: unknown) => {
-    console.error('[dispatch] zero-balance lead WhatsApp notification failed', {
-      jobRequestId: jobRequest.id,
-      leadId: lead.id,
+  // No zero-balance top-up nag in free leads mode: a 0 balance cannot block.
+  if (!freeLeads) {
+    notifyProviderZeroBalanceLeadAvailable({
       providerId: provider.id,
-      error,
+      leadId: lead.id,
+      jobRequestId: jobRequest.id,
+      holdId: hold.id,
+    }).catch((error: unknown) => {
+      console.error('[dispatch] zero-balance lead WhatsApp notification failed', {
+        jobRequestId: jobRequest.id,
+        leadId: lead.id,
+        providerId: provider.id,
+        error,
+      })
     })
-  })
+  }
 
   const providerLeadTemplateName =
     jobRequest.assignmentMode === 'AUTO_ASSIGN'

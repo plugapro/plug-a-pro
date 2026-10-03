@@ -1,5 +1,6 @@
 import { preferenceLabel } from './client-request-data'
 import { PROVIDER_CREDIT_PRICE_ZAR } from './provider-wallet'
+import { FREE_LEADS_COPY_LINE } from './free-leads'
 
 export const PROVIDER_TERMS_PATH = '/provider/terms/credits'
 export const PROVIDER_APPLY_BUTTON_TITLE = 'Yes, Apply Now'
@@ -18,6 +19,12 @@ type CreditBalanceBreakdown = {
   totalCreditBalance: number
   promoCreditBalance?: number
   paidCreditBalance?: number
+}
+
+// Free leads mode (flag provider.leads.free). Callers read the flag once per
+// message build and pass the boolean down; the builders stay synchronous.
+type FreeLeadsCopyOption = {
+  free?: boolean
 }
 
 type PublicUrlOptions = {
@@ -227,9 +234,22 @@ export function providerCreditBreakdownLabel(balance: CreditBalanceBreakdown) {
 
 export function buildProviderCreditSummaryMessage(
   balance: CreditBalanceBreakdown,
+  options: FreeLeadsCopyOption = {},
 ) {
   const starterCredits = balance.promoCreditBalance ?? 0
   const purchasedCredits = balance.paidCreditBalance ?? 0
+
+  if (options.free) {
+    // The provider asked for their balance, so it is still shown (it is kept
+    // untouched for later), but pricing and spend rules are replaced.
+    return [
+      '*Your credits*',
+      '',
+      FREE_LEADS_COPY_LINE,
+      'Accepting customer-selected jobs does not use credits right now.',
+      `Your balance is unchanged: ${creditCountLabel(balance.totalCreditBalance)}.`,
+    ].join('\n')
+  }
 
   return [
     '*Your credits*',
@@ -248,7 +268,26 @@ export function buildProviderCreditSummaryMessage(
 // Body intentionally contains no raw URL. Caller must pair this with a
 // sendCtaUrl follow-up that exposes `getProviderTermsUrl()` behind the
 // "View credits rules" CTA - see callers in lib/whatsapp-flows/registration.ts.
-export function buildProviderOnboardingIntroMessage() {
+export function buildProviderOnboardingIntroMessage(options: FreeLeadsCopyOption = {}) {
+  if (options.free) {
+    return [
+      '👷🏽 *Join Plug A Pro as a Service Provider*',
+      '',
+      'Get matched with customer job leads in your area.',
+      '',
+      "*Here's how it works:*",
+      '• You apply with your name, skills, work areas and availability.',
+      '• We review your application using the information you provide.',
+      '• If approved, your provider profile is activated.',
+      `• ${FREE_LEADS_COPY_LINE}`,
+      '• Full customer and job details unlock after selected-job acceptance.',
+      '',
+      'Before applying, please review our provider credits terms and rules. Tap *View credits rules* below to read them.',
+      '',
+      'Ready to apply?',
+    ].join('\n')
+  }
+
   return [
     '👷🏽 *Join Plug A Pro as a Service Provider*',
     '',
@@ -326,6 +365,7 @@ export function buildProviderLeadPreviewMessage(params: {
   // legacy budgetPreference field. Rendered via preferenceLabel() - never as a raw enum value.
   matchingPreference?: string | null
   photosCount?: number | null
+  free?: boolean
 }) {
   const titleLine = params.title ? [`*${params.title}*`, ''] : []
   const descriptionLine = params.description ? ['', params.description] : []
@@ -357,8 +397,15 @@ export function buildProviderLeadPreviewMessage(params: {
     '',
     'The customer is comparing suitable providers. Previewing and responding is free.',
     '',
-    `${PROVIDER_CREDITS_PRICE_LINE} You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only if the customer selects you and you accept the selected job. Full customer contact and exact address stay locked until then.`,
-    `Available credits: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
+    ...(params.free
+      ? [
+          FREE_LEADS_COPY_LINE,
+          'Full customer contact and exact address stay locked until the customer selects you and you accept the selected job.',
+        ]
+      : [
+          `${PROVIDER_CREDITS_PRICE_LINE} You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only if the customer selects you and you accept the selected job. Full customer contact and exact address stay locked until then.`,
+          `Available credits: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
+        ]),
     '',
     `You have *${params.responseWindowMinutes ?? 10} minutes* to respond (by *${params.deadlineTime}*).`,
   ].join('\n')
@@ -368,7 +415,18 @@ export function buildProviderLeadActionsMessage(params: {
   category: string
   area: string
   balance: CreditBalanceBreakdown
+  free?: boolean
 }) {
+  if (params.free) {
+    return [
+      `Quick response for *${params.category}* in *${params.area}*.`,
+      '',
+      'Showing interest is free while the customer compares providers.',
+      FREE_LEADS_COPY_LINE,
+      'Full customer details unlock only after selected-job acceptance succeeds.',
+    ].join('\n')
+  }
+
   return [
     `Quick response for *${params.category}* in *${params.area}*.`,
     '',
@@ -384,7 +442,10 @@ export function buildLeadAcceptedCreditLine(params: {
   remainingCredits: number
   paidCredits?: number
   starterCredits?: number
+  free?: boolean
 }) {
+  if (params.free) return FREE_LEADS_COPY_LINE
+
   const creditsUsed = params.creditsUsed ?? PROVIDER_ACCEPTED_LEAD_CREDIT_COST
   const breakdown = params.paidCredits != null || params.starterCredits != null
     ? ` (${providerCreditBreakdownLabel({

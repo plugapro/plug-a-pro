@@ -8,6 +8,7 @@ import { orchestrateMatch } from './matching/orchestrator'
 import { sendText } from './whatsapp'
 import { sendButtons, sendCtaUrl } from './whatsapp-interactive'
 import { ctaLabelFor } from './whatsapp-copy'
+import { FREE_LEADS_COPY_LINE, isFreeLeadsEnabled } from './free-leads'
 
 /**
  * Returns the provider's current wallet balance by reading the snapshot fields
@@ -168,7 +169,7 @@ function formatProviderLeadNotificationTiming(params: {
   return 'Preferred time: flexible'
 }
 
-function buildProviderSelectedNotificationBody(params: {
+export function buildProviderSelectedNotificationBody(params: {
   category: string
   suburb: string | null
   urgency: string | null
@@ -179,8 +180,16 @@ function buildProviderSelectedNotificationBody(params: {
   attachmentCount: number
   remainingCreditLabel: string
   balanceLabel: string
+  // Free leads mode (provider.leads.free): replace the credit cost/balance
+  // lines with the free line.
+  free?: boolean
 }) {
   const area = params.suburb ? ` in ${params.suburb}` : ''
+  const creditSection = params.free
+    ? `${FREE_LEADS_COPY_LINE}\n\n`
+    : `Accepting this job uses 1 credit.\n\n` +
+      `Available balance: ${params.balanceLabel}\n` +
+      `After acceptance: ${params.remainingCreditLabel}\n\n`
   return (
     `✅ Customer selected you\n\n` +
     `The customer selected you for this ${params.category} job${area}.\n\n` +
@@ -191,9 +200,7 @@ function buildProviderSelectedNotificationBody(params: {
       requestedWindowEnd: params.requestedWindowEnd,
     })}\n` +
     `Photos: ${params.attachmentCount}\n\n` +
-    `Accepting this job uses 1 credit.\n\n` +
-    `Available balance: ${params.balanceLabel}\n` +
-    `After acceptance: ${params.remainingCreditLabel}\n\n` +
+    creditSection +
     `Reply:\n*1* Accept\n*2* Decline`
   )
 }
@@ -1537,9 +1544,10 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
         },
       }).catch(() => undefined)
 
-    const [balance, leadUrl] = await Promise.all([
+    const [balance, leadUrl, freeLeads] = await Promise.all([
       getProviderWalletBalanceFromLedger(lead.providerId),
       getProviderLeadAccessUrlByLeadId(lead.id),
+      isFreeLeadsEnabled(),
     ])
     const remainingCredits = Math.max(0, balance.totalCreditBalance - 1)
     const area = lead.jobRequest.address?.suburb ?? lead.jobRequest.address?.city ?? null
@@ -1554,6 +1562,7 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
       attachmentCount: lead.jobRequest._count.attachments,
       balanceLabel: formatCredits(balance.totalCreditBalance),
       remainingCreditLabel: formatCredits(remainingCredits),
+      free: freeLeads,
     })
 
     let notificationMessageId: string | null = null

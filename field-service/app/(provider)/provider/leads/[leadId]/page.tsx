@@ -29,6 +29,7 @@ import {
 import type { LeadUnlockDisputeReason } from '@prisma/client'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
+import { FREE_LEADS_COPY_LINE, isFreeLeadsEnabled } from '@/lib/free-leads'
 
 export const metadata = buildMetadata({ title: 'Lead Details', noIndex: true })
 
@@ -210,7 +211,10 @@ export default async function LeadDetailPage({
     !unlockDispute,
   )
   const totalCreditBalance = lead.wallet.totalCredits
-  const hasEnoughCredits = totalCreditBalance >= lead.unlockCostCredits
+  // Free leads mode (provider.leads.free): no credit requirement; credit
+  // price, balance-after and top-up copy is hidden.
+  const freeLeads = await isFreeLeadsEnabled()
+  const hasEnoughCredits = freeLeads || totalCreditBalance >= lead.unlockCostCredits
   const acceptedRemainingBalance =
     resolvedSearchParams.remainingBalance != null && Number.isFinite(Number(resolvedSearchParams.remainingBalance))
       ? Number(resolvedSearchParams.remainingBalance)
@@ -308,7 +312,13 @@ export default async function LeadDetailPage({
           </AlertCallout>
         )}
 
-        {resolvedSearchParams.accepted && (
+        {resolvedSearchParams.accepted && freeLeads && (
+          <AlertCallout tone="success" title="Job accepted">
+            {FREE_LEADS_COPY_LINE} Customer contact and request details are now available below.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.accepted && !freeLeads && (
           <AlertCallout tone="success" title="Job accepted">
             You used {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
             Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
@@ -316,7 +326,7 @@ export default async function LeadDetailPage({
           </AlertCallout>
         )}
 
-        {resolvedSearchParams.acceptError === 'credits' && (
+        {resolvedSearchParams.acceptError === 'credits' && !freeLeads && (
           <AlertCallout
             tone="warning"
             action={
@@ -399,14 +409,21 @@ export default async function LeadDetailPage({
               Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
             </p>
             <p style={{ color: 'var(--ink-mute)' }}>
-              Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
+              {freeLeads ? FREE_LEADS_COPY_LINE : (
+                <>Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.</>
+              )}
             </p>
           </div>
         )}
 
         {confirmingAccept && (
           <AlertCallout tone="info" title="Confirm lead acceptance">
-            {hasEnoughCredits ? (
+            {freeLeads ? (
+              <>
+                <p>{FREE_LEADS_COPY_LINE}</p>
+                <p className="mt-1">Full customer details are released once you accept and the request is locked.</p>
+              </>
+            ) : hasEnoughCredits ? (
               <>
                 <p>
                   Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
@@ -520,11 +537,22 @@ export default async function LeadDetailPage({
           </div>
           {!isUnlocked && (
             <div className="px-4 py-3 space-y-1 text-sm">
-              <p className="font-semibold" style={{ color: 'var(--ink)' }}>Accept cost: {lead.unlockCostCredits} Plug A Pro provider credit</p>
-              <p style={{ color: 'var(--ink-mute)' }}>
-                Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}). Customer contact details, exact address, unit, complex and access notes are hidden until acceptance.
-                Credits use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider credits terms and rules</Link>.
-              </p>
+              {freeLeads ? (
+                <>
+                  <p className="font-semibold" style={{ color: 'var(--ink)' }}>{FREE_LEADS_COPY_LINE}</p>
+                  <p style={{ color: 'var(--ink-mute)' }}>
+                    Customer contact details, exact address, unit, complex and access notes are hidden until acceptance.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold" style={{ color: 'var(--ink)' }}>Accept cost: {lead.unlockCostCredits} Plug A Pro provider credit</p>
+                  <p style={{ color: 'var(--ink-mute)' }}>
+                    Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}). Customer contact details, exact address, unit, complex and access notes are hidden until acceptance.
+                    Credits use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider credits terms and rules</Link>.
+                  </p>
+                </>
+              )}
             </div>
           )}
           {isUnlocked && unlockedDetails && (
@@ -660,7 +688,9 @@ export default async function LeadDetailPage({
                 </Link>
               </Button>
               <p className="text-center text-xs" style={{ color: 'var(--ink-mute)' }}>
-                Credits balance: {totalCreditBalance} Plug A Pro provider credits · Required: {lead.unlockCostCredits}
+                {freeLeads ? FREE_LEADS_COPY_LINE : (
+                  <>Credits balance: {totalCreditBalance} Plug A Pro provider credits · Required: {lead.unlockCostCredits}</>
+                )}
               </p>
             </>
           ) : (

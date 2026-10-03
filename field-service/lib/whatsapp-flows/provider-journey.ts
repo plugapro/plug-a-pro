@@ -28,6 +28,7 @@ import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
 import { phoneLookupVariants } from '../whatsapp-identity'
 import { handleWhatsAppIdentityVerificationFlow } from './identity-verification'
+import { isFreeLeadsEnabled } from '../free-leads'
 import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
 
@@ -186,8 +187,11 @@ async function providerCreditBalanceLine(providerId: string) {
 }
 
 async function providerCreditSummary(providerId: string) {
-  const balance = await getProviderWalletBalanceReadOnly(providerId)
-  return buildProviderCreditSummaryMessage(balance)
+  const [balance, free] = await Promise.all([
+    getProviderWalletBalanceReadOnly(providerId),
+    isFreeLeadsEnabled(),
+  ])
+  return buildProviderCreditSummaryMessage(balance, { free })
 }
 
 async function issueIdentityVerificationLinkForWhatsApp(

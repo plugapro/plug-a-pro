@@ -498,6 +498,8 @@ describe('provider lead access tokens', () => {
         id: true,
         providerId: true,
         unlockedAt: true,
+        // free leads mode: read to tell a creditsCharged 0 unlock apart
+        creditsCharged: true,
       },
     })
     expect(mockDb.lead.findUnique).toHaveBeenCalledTimes(2)
