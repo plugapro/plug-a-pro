@@ -11,9 +11,6 @@ const {
   mockGetSession,
   mockCreateJobRequest,
   mockResolveStructuredAddressCapture,
-  mockIsInActiveServiceArea,
-  mockIsActiveRegion,
-  mockAddToServiceAreaWaitlist,
   mockNotifyCustomerPwaRequestSubmitted,
   mockUploadJobRequestPhoto,
   mockProviderFindFirst,
@@ -24,9 +21,6 @@ const {
   mockGetSession: vi.fn(),
   mockCreateJobRequest: vi.fn(),
   mockResolveStructuredAddressCapture: vi.fn(),
-  mockIsInActiveServiceArea: vi.fn(),
-  mockIsActiveRegion: vi.fn(),
-  mockAddToServiceAreaWaitlist: vi.fn(),
   mockNotifyCustomerPwaRequestSubmitted: vi.fn(),
   mockUploadJobRequestPhoto: vi.fn(),
   mockProviderFindFirst: vi.fn(),
@@ -54,11 +48,6 @@ vi.mock('@/lib/structured-address', () => ({
   InvalidStructuredAddressError: class InvalidStructuredAddressError extends Error {},
   resolveStructuredAddressCapture: mockResolveStructuredAddressCapture,
 }))
-vi.mock('@/lib/service-area-guard', () => ({
-  isInActiveServiceArea: mockIsInActiveServiceArea,
-  isActiveRegion: mockIsActiveRegion,
-  addToServiceAreaWaitlist: mockAddToServiceAreaWaitlist,
-}))
 vi.mock('@/lib/client-pwa-submission-notifications', () => ({
   notifyCustomerPwaRequestSubmitted: mockNotifyCustomerPwaRequestSubmitted,
 }))
@@ -82,8 +71,6 @@ describe('POST /api/customer/bookings — preferred-provider KYC defense-in-dept
       postalCode: '2196',
       locationNodeId: 'node-1',
     })
-    mockIsInActiveServiceArea.mockReturnValue(true)
-    mockIsActiveRegion.mockReturnValue(true)
     mockCreateJobRequest.mockResolvedValue({
       jobRequestId: 'jr-1',
       customerId: 'cust-1',
