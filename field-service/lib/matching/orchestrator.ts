@@ -168,6 +168,7 @@ export async function orchestrateMatch(
           lng: matchingJobRequest.address.lng,
           locationNodeId: matchingJobRequest.address.locationNodeId,
           provinceKey: matchingJobRequest.address.provinceKey,
+          regionKey: matchingJobRequest.address.regionKey,
         }
       : null
 

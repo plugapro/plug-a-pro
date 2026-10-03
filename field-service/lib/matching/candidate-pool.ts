@@ -46,6 +46,9 @@ type LoadCandidatePoolParams = {
     lng: number | null
     locationNodeId?: string | null
     provinceKey?: string | null
+    // Region of the address node (SUBURB nodes carry it). Used to reach
+    // providers holding a whole-region (areaType REGION) coverage row.
+    regionKey?: string | null
   }
   isTestRequest?: boolean
   limit?: number
@@ -81,9 +84,16 @@ async function loadFromPool(params: {
   const { categorySlug, address, limit, isTestRequest } = params
   const staleThreshold = new Date(Date.now() - POOL_STALE_MINUTES * 60_000)
 
-  // Try suburb-level node first, then province-level fallback
+  // Pool rows match on the address node OR anywhere in the province. After
+  // national activation a province holds far more providers than `limit`, so
+  // the shortlist is ranked by coverage BEFORE the LIMIT: providers with an
+  // active service-area row for the address node itself, or a whole-region
+  // (areaType REGION) row for the address's region, come first (rank 0);
+  // province-only matches fill the remainder (rank 1). DISTINCT ON stays in
+  // the inner query, so the outer ORDER BY is free to rank.
   const locationNodeId = address.locationNodeId ?? null
   const provinceKey = address.provinceKey ?? null
+  const regionKey = address.regionKey ?? null
 
   const rows = await db.$queryRaw<Array<{
     id: string; name: string; phone: string; skills: string[]; serviceAreas: string[]
@@ -91,36 +101,55 @@ async function loadFromPool(params: {
     active: boolean; verified: boolean; kycStatus: string | null; availableNow: boolean; isTestUser: boolean; cohortName: string | null
     lastKnownLat: number | null; lastKnownLng: number | null
     isOnline: boolean | null; liveLocationLat: number | null; liveLocationLng: number | null
-    lastHeartbeatAt: Date | null; scoreBase: number
+    lastHeartbeatAt: Date | null; scoreBase: number; coverageRank?: number
   }>>`
-    SELECT DISTINCT ON (p.id)
-      p.id, p.name, p.phone, p.skills, p."serviceAreas",
-      p."maxTravelMinutes", p."reliabilityScore", p."averageRating",
-      p.active, p.verified, p."kycStatus", p."availableNow", p."isTestUser", p."cohortName",
-      p."lastKnownLat", p."lastKnownLng",
-      pls."isOnline", pls."lastLocationLat" AS "liveLocationLat",
-      pls."lastLocationLng" AS "liveLocationLng", pls."lastHeartbeatAt",
-      cp."scoreBase"
-    FROM candidate_pool cp
-    JOIN providers p ON p.id = cp."providerId"
-    LEFT JOIN provider_live_status pls ON pls."providerId" = p.id
-    WHERE
-      cp."categorySlug" = ${categorySlug}
-      AND cp."lastRefreshed" > ${staleThreshold}
-      AND p.active = true
-      AND p."isTestUser" = ${isTestRequest}
-      AND p.verified = true
-      AND p.status = 'ACTIVE'
-      AND (
-        (${locationNodeId}::text IS NOT NULL AND cp."locationNodeId" = ${locationNodeId})
-        OR
-        (${provinceKey}::text IS NOT NULL AND cp."provinceKey" = ${provinceKey})
-      )
-    ORDER BY p.id, cp."scoreBase" DESC
+    SELECT ranked.*,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM technician_service_areas tsa
+        WHERE tsa."providerId" = ranked.id
+          AND tsa.active = true
+          AND (
+            (${locationNodeId}::text IS NOT NULL AND tsa."locationNodeId" = ${locationNodeId})
+            OR (
+              tsa."areaType" = 'REGION'
+              AND tsa."regionKey" = COALESCE(
+                ${regionKey}::text,
+                (SELECT ln."regionKey" FROM location_nodes ln WHERE ln.id = ${locationNodeId})
+              )
+            )
+          )
+      ) THEN 0 ELSE 1 END AS "coverageRank"
+    FROM (
+      SELECT DISTINCT ON (p.id)
+        p.id, p.name, p.phone, p.skills, p."serviceAreas",
+        p."maxTravelMinutes", p."reliabilityScore", p."averageRating",
+        p.active, p.verified, p."kycStatus", p."availableNow", p."isTestUser", p."cohortName",
+        p."lastKnownLat", p."lastKnownLng",
+        pls."isOnline", pls."lastLocationLat" AS "liveLocationLat",
+        pls."lastLocationLng" AS "liveLocationLng", pls."lastHeartbeatAt",
+        cp."scoreBase"
+      FROM candidate_pool cp
+      JOIN providers p ON p.id = cp."providerId"
+      LEFT JOIN provider_live_status pls ON pls."providerId" = p.id
+      WHERE
+        cp."categorySlug" = ${categorySlug}
+        AND cp."lastRefreshed" > ${staleThreshold}
+        AND p.active = true
+        AND p."isTestUser" = ${isTestRequest}
+        AND p.verified = true
+        AND p.status = 'ACTIVE'
+        AND (
+          (${locationNodeId}::text IS NOT NULL AND cp."locationNodeId" = ${locationNodeId})
+          OR
+          (${provinceKey}::text IS NOT NULL AND cp."provinceKey" = ${provinceKey})
+        )
+      ORDER BY p.id, cp."scoreBase" DESC
+    ) ranked
+    ORDER BY "coverageRank" ASC, ranked."scoreBase" DESC, ranked.id
     LIMIT ${limit}
   `
 
-  return rows.map((r) => ({ ...r, fromPool: true }))
+  return rows.map(({ coverageRank: _coverageRank, ...r }) => ({ ...r, fromPool: true }))
 }
 
 async function loadFromDirectScan(params: {
@@ -245,6 +274,17 @@ export function buildSuburbLevelConditions(
     conditions.push({
       technicianServiceAreas: {
         some: { active: true, locationNodeId: address.locationNodeId },
+      },
+    })
+  }
+  // Whole-region coverage: a provider with an active REGION row for the
+  // address's region covers every suburb in it (filter.ts REGION_FALLBACK).
+  // Without this branch such providers were only reachable through the
+  // unordered, limit-capped province fallback.
+  if (address.regionKey) {
+    conditions.push({
+      technicianServiceAreas: {
+        some: { active: true, areaType: 'REGION', regionKey: address.regionKey },
       },
     })
   }
