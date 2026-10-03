@@ -15,15 +15,13 @@ export default function ServicePolicyPage() {
       <div className="prose prose-zinc dark:prose-invert max-w-none">
         <h2>Where we operate</h2>
         <p>
-          Plug A Pro currently serves <strong>Johannesburg West / Roodepoort</strong>.
-          If your address is outside this area, we add you to our waitlist and
-          notify you when we launch near you. See{" "}
+          Plug A Pro operates across South Africa. Availability depends on independent providers near you; where we have none yet, you can ask to be notified the moment one joins. See{" "}
           <Link href="/areas/johannesburg">service areas</Link>.
         </p>
 
         <h2>Requesting a service</h2>
         <p>
-          You describe the job and your address; we match you with a vetted
+          You describe the job and your address; we match you with an independent
           provider. Matching normally completes within business hours the same
           day. If no provider is available we tell you rather than leave you
           waiting.
