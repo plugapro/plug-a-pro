@@ -344,6 +344,42 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(result.nextStep).toBe('addr_select_province')
       expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
     })
+
+    it('lists every province from getProvinces in one "Provinces" section with the not-listed row last (national rollout)', async () => {
+      const NINE_PROVINCES = [
+        { id: 'prov_ec', slug: 'eastern_cape', label: 'Eastern Cape' },
+        { id: 'prov_fs', slug: 'free_state', label: 'Free State' },
+        { id: 'prov_gp', slug: 'gauteng', label: 'Gauteng' },
+        { id: 'prov_kzn', slug: 'kwazulu_natal', label: 'KwaZulu-Natal' },
+        { id: 'prov_lp', slug: 'limpopo', label: 'Limpopo' },
+        { id: 'prov_mp', slug: 'mpumalanga', label: 'Mpumalanga' },
+        { id: 'prov_nw', slug: 'north_west', label: 'North West' },
+        { id: 'prov_nc', slug: 'northern_cape', label: 'Northern Cape' },
+        { id: 'prov_wc', slug: 'western_cape', label: 'Western Cape' },
+      ]
+      ;(locationNodes.getProvinces as any).mockResolvedValue(NINE_PROVINCES)
+
+      // Typed text on this step resends the province list.
+      await handleJobRequestFlow(makeCtx('addr_select_province', undefined, 'hello'))
+
+      const sections = (wa.sendList as any).mock.calls.at(-1)[2]
+      expect(sections).toHaveLength(1)
+      expect(sections[0].title).toBe('Provinces')
+      expect(sections[0].rows.map((r: { id: string }) => r.id)).toEqual([
+        'prov__eastern_cape',
+        'prov__free_state',
+        'prov__gauteng',
+        'prov__kwazulu_natal',
+        'prov__limpopo',
+        'prov__mpumalanga',
+        'prov__north_west',
+        'prov__northern_cape',
+        'prov__western_cape',
+        'area_not_listed',
+      ])
+      // WhatsApp hard cap: 10 rows per list message.
+      expect(sections[0].rows.length).toBeLessThanOrEqual(10)
+    })
   })
 
   // ── 2. City selection filtered by province ────────────────────────────────
@@ -393,6 +429,66 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(result.nextData).toMatchObject({ addrCityId: 'city_jhb', addrCityLabel: 'Johannesburg', addrPage: 0 })
       expect(locationNodes.getRegions).toHaveBeenCalledWith('city_jhb')
     })
+
+    it('lists every city of the province in one "Cities" section with the not-listed row last (national rollout)', async () => {
+      ;(locationNodes.getCities as any).mockResolvedValue(CITIES_WC)
+
+      await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__western_cape'))
+
+      const sections = (wa.sendList as any).mock.calls.at(-1)[2]
+      expect(sections).toHaveLength(1)
+      expect(sections[0].title).toBe('Cities')
+      expect(sections[0].rows.map((r: { id: string }) => r.id)).toEqual(['city__city_cpt', 'area_not_listed'])
+    })
+
+    it('keeps every paged city list within the 10-row WhatsApp cap with the not-listed row on every page (national rollout)', async () => {
+      const TWELVE_CITIES = Array.from({ length: 12 }, (_, i) => ({
+        id: `city_${i + 1}`,
+        slug: `gauteng__city_${i + 1}`,
+        label: `City ${i + 1}`,
+        provinceKey: 'gauteng',
+        cityKey: `city_${i + 1}`,
+      }))
+      ;(locationNodes.getCities as any).mockResolvedValue(TWELVE_CITIES)
+
+      // Page 0 is rendered by the province selection.
+      await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__gauteng'))
+      const page0 = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+
+      // Page 1 is rendered by tapping Next on the city step.
+      await handleJobRequestFlow(makeCtx('addr_select_city', 'city_next', undefined, baseData))
+      const page1 = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+
+      for (const rows of [page0, page1]) {
+        expect(rows.length).toBeLessThanOrEqual(10)
+        expect(rows.at(-1)?.id).toBe('area_not_listed')
+      }
+      // The not-listed row is part of the budget: 7 item slots per page, not 8.
+      const cityIds = (rows: Array<{ id: string }>) => rows.map((r) => r.id).filter((id) => id.startsWith('city__'))
+      expect(cityIds(page0)).toHaveLength(7)
+      expect(page0.map((r) => r.id)).toContain('city_next')
+      expect(cityIds(page1)).toHaveLength(5)
+      expect(page1.map((r) => r.id)).toContain('city_prev')
+      expect(new Set([...cityIds(page0), ...cityIds(page1)]).size).toBe(12)
+    })
+
+    it('pages a province with exactly 10 cities so the not-listed row still fits (national rollout)', async () => {
+      const TEN_CITIES = Array.from({ length: 10 }, (_, i) => ({
+        id: `city_${i + 1}`,
+        slug: `gauteng__city_${i + 1}`,
+        label: `City ${i + 1}`,
+        provinceKey: 'gauteng',
+        cityKey: `city_${i + 1}`,
+      }))
+      ;(locationNodes.getCities as any).mockResolvedValue(TEN_CITIES)
+
+      await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__gauteng'))
+      const page0 = (wa.sendList as any).mock.calls.at(-1)[2][0].rows as Array<{ id: string }>
+
+      expect(page0.length).toBeLessThanOrEqual(10)
+      expect(page0.at(-1)?.id).toBe('area_not_listed')
+      expect(page0.map((r) => r.id)).toContain('city_next')
+    })
   })
 
   // ── 3. Region selection filtered by city ─────────────────────────────────
@@ -431,6 +527,17 @@ describe('WhatsApp job-request flow - structured address', () => {
 
       expect(result.nextStep).toBe('addr_select_suburb')
       expect(result.nextData).toMatchObject({ addrRegionId: 'rgn_north', addrRegionLabel: 'JHB North', addrPage: 0 })
+    })
+
+    it('lists every region of the city in one "Areas" section with the not-listed row last (national rollout)', async () => {
+      await handleJobRequestFlow(
+        makeCtx('addr_select_city', 'city__city_jhb', undefined, { addrProvinceKey: 'gauteng', addrProvinceLabel: 'Gauteng', addrPage: 0 }),
+      )
+
+      const sections = (wa.sendList as any).mock.calls.at(-1)[2]
+      expect(sections).toHaveLength(1)
+      expect(sections[0].title).toBe('Areas')
+      expect(sections[0].rows.map((r: { id: string }) => r.id)).toEqual(['rgn__rgn_north', 'rgn__rgn_south', 'area_not_listed'])
     })
   })
 

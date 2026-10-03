@@ -19,8 +19,6 @@ import { createJobRequest } from '../job-requests/create-job-request'
 import { downloadAndStoreWhatsAppMedia, MediaCapReachedError } from '../whatsapp-media'
 import {
   isInActiveServiceArea,
-  isActiveProvince,
-  isActiveCity,
   isActiveRegion,
   addToServiceAreaWaitlist,
 } from '../service-area-guard'
@@ -37,6 +35,7 @@ import {
   InvalidStructuredAddressError,
 } from '../structured-address'
 import { resolveAreaScopeByNodeId } from '../customer-serviceability'
+import { listRowTitle } from './list-row-title'
 import {
   deduplicateWhatsAppSavedAddresses,
   phoneLookupVariants,
@@ -80,6 +79,8 @@ const ADDR_STEP_TTL_MS = Math.max(Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS
 // WhatsApp list cap is 10 rows total per message.
 // When paging is needed we use 8 item rows + up to 2 nav rows.
 const PAGE_SIZE = 8
+// Meta hard-caps a list message at 10 rows across all sections.
+const MAX_LIST_ROWS = 10
 function firstName(name?: string | null) {
   return name?.trim().split(/\s+/)[0] || 'there'
 }
@@ -219,30 +220,37 @@ async function savedAddressToConversationData(address: WhatsAppSavedAddress) {
 
 /**
  * Slices an item list for one WhatsApp list page and appends navigation rows.
- * When items.length <= 10 no paging is applied.
+ * `reserveRows` is the number of trailer rows the caller appends after these
+ * (e.g. the "My area isn't listed" row). It is taken out of the 10-row budget so
+ * the rendered section never exceeds the Meta cap: the unpaged threshold becomes
+ * MAX_LIST_ROWS - reserveRows and the page size PAGE_SIZE - reserveRows (7 item
+ * slots + up to 2 nav rows + 1 trailer = 10).
  */
 function buildPagedRows<T extends { id: string; label: string }>(
   items: T[],
   page: number,
   idPrefix: string,
+  reserveRows = 0,
 ): { rows: ListRow[]; totalPages: number } {
-  if (items.length <= 10) {
+  const unpagedCap = MAX_LIST_ROWS - reserveRows
+  if (items.length <= unpagedCap) {
     return {
-      rows: items.map((item) => ({ id: `${idPrefix}__${item.id}`, title: item.label.slice(0, 24) })),
+      rows: items.map((item) => ({ id: `${idPrefix}__${item.id}`, title: listRowTitle(item.label) })),
       totalPages: 1,
     }
   }
 
-  const totalPages = Math.ceil(items.length / PAGE_SIZE)
+  const pageSize = PAGE_SIZE - reserveRows
+  const totalPages = Math.ceil(items.length / pageSize)
   const clampedPage = Math.max(0, Math.min(page, totalPages - 1))
-  const start = clampedPage * PAGE_SIZE
-  const pageItems = items.slice(start, start + PAGE_SIZE)
-  const hasNext = start + PAGE_SIZE < items.length
+  const start = clampedPage * pageSize
+  const pageItems = items.slice(start, start + pageSize)
+  const hasNext = start + pageSize < items.length
   const hasPrev = clampedPage > 0
 
   const rows: ListRow[] = pageItems.map((item) => ({
     id: `${idPrefix}__${item.id}`,
-    title: item.label.slice(0, 24),
+    title: listRowTitle(item.label),
   }))
 
   if (hasPrev) rows.push({ id: `${idPrefix}_prev`, title: '← Previous' })
@@ -257,8 +265,7 @@ const AREA_NOT_LISTED_ROW = { id: 'area_not_listed', title: '🔔 My area isn\'t
 
 async function renderProvinceList(phone: string): Promise<void> {
   const provinces = await getProvinces()
-  const active = provinces.filter((p) => isActiveProvince(p.slug))
-  if (active.length === 0) {
+  if (provinces.length === 0) {
     // Location nodes not yet seeded - sending an empty list section fails at the Meta API level.
     // Surface the "area not listed" path so the user is captured on the waitlist.
     await sendText(
@@ -267,11 +274,13 @@ async function renderProvinceList(phone: string): Promise<void> {
     )
     return
   }
-  const rows = active.map((p) => ({ id: `prov__${p.slug}`, title: p.label.slice(0, 24) }))
+  // National rollout: every active province is selectable. 9 provinces + the
+  // not-listed row = 10 rows, which is the WhatsApp per-message list cap.
+  const rows: ListRow[] = provinces.map((p) => ({ id: `prov__${p.slug}`, title: listRowTitle(p.label) }))
   await sendList(
     phone,
     '🏙 *Select your province:*',
-    [{ title: 'Available now', rows }, { title: 'Coming soon', rows: [AREA_NOT_LISTED_ROW] }],
+    [{ title: 'Provinces', rows: [...rows, AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose Province' },
   )
 }
@@ -283,14 +292,13 @@ async function renderCityList(
   page: number,
 ): Promise<boolean> {
   const cities = await getCities(provinceKey)
-  const active = cities.filter((c) => isActiveCity(c.cityKey))
-  if (active.length === 0) return false
-  const { rows, totalPages } = buildPagedRows(active, page, 'city')
+  if (cities.length === 0) return false
+  const { rows, totalPages } = buildPagedRows(cities, page, 'city', 1)
   const pageNote = totalPages > 1 ? ` (${page + 1}/${totalPages})` : ''
   await sendList(
     phone,
     `📍 *Select your city* in ${provinceLabel}${pageNote}:`,
-    [{ title: 'Available now', rows }, { title: 'Coming soon', rows: [AREA_NOT_LISTED_ROW] }],
+    [{ title: 'Cities', rows: [...rows, AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose City' },
   )
   return true
@@ -303,14 +311,13 @@ async function renderRegionList(
   page: number,
 ): Promise<boolean> {
   const regions = await getRegions(cityId)
-  const active = regions.filter((r) => isActiveRegion(r.regionKey))
-  if (active.length === 0) return false
-  const { rows, totalPages } = buildPagedRows(active, page, 'rgn')
+  if (regions.length === 0) return false
+  const { rows, totalPages } = buildPagedRows(regions, page, 'rgn', 1)
   const pageNote = totalPages > 1 ? ` (${page + 1}/${totalPages})` : ''
   await sendList(
     phone,
     `🗺 *Select your area* in ${cityLabel}${pageNote}:`,
-    [{ title: 'Available now', rows }, { title: 'Coming soon', rows: [AREA_NOT_LISTED_ROW] }],
+    [{ title: 'Areas', rows: [...rows, AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose Area' },
   )
   return true
