@@ -763,16 +763,18 @@ async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
   }
 
   // Every active row receives leads; inactive rows are areas the provider or
-  // an admin removed, so they are not shown.
-  const structuredAreas = provider.technicianServiceAreas
-    .filter((area) => area.active)
-    .map((area) => area.label)
-  const legacyAreas = provider.serviceAreas
-  const areas = structuredAreas.length ? structuredAreas : legacyAreas
+  // an admin removed, so they are not shown. Legacy registration labels are
+  // only a fallback for providers with no structured rows at all.
+  const structuredRows = provider.technicianServiceAreas
+  const activeAreas = structuredRows.filter((area) => area.active).map((area) => area.label)
+  const areas = structuredRows.length ? activeAreas : provider.serviceAreas
+  const emptyLine = structuredRows.length
+    ? 'You have no active service areas right now. Update them in your profile to start receiving leads.'
+    : 'No service areas saved yet.'
 
   await sendButtons(
     ctx.phone,
-    `📍 *Service Areas*\n\n${areas.length ? areas.join('\n') : 'No service areas saved yet.'}`,
+    `📍 *Service Areas*\n\n${areas.length ? areas.join('\n') : emptyLine}`,
     [
       { id: 'provider_profile', title: 'Profile' },
       { id: 'back_home', title: 'Main Menu' },

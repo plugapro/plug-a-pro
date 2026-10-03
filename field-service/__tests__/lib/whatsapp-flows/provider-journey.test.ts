@@ -202,14 +202,35 @@ describe('handleProviderJourneyFlow', () => {
     it('shows the empty-state line when the provider has no areas at all', async () => {
       ;(db.provider.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
         serviceAreas: [],
-        technicianServiceAreas: [{ label: 'Removed Area', active: false }],
+        technicianServiceAreas: [],
       })
 
       await handleProviderJourneyFlow(mockCtx('pj_service_areas'))
 
       const body: string = (wa.sendButtons as any).mock.calls[0][1]
       expect(body).toContain('No service areas saved yet.')
+    })
+
+    it('says there are no active areas when rows exist but all are inactive, ignoring legacy labels', async () => {
+      ;(db.provider.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        serviceAreas: ['Rondebosch', 'Claremont'],
+        technicianServiceAreas: [
+          { label: 'Removed Area', active: false },
+          { label: 'Paused Area', active: false },
+        ],
+      })
+
+      await handleProviderJourneyFlow(mockCtx('pj_service_areas'))
+
+      const body: string = (wa.sendButtons as any).mock.calls[0][1]
+      expect(body).toContain(
+        'You have no active service areas right now. Update them in your profile to start receiving leads.',
+      )
+      expect(body).not.toContain('Rondebosch')
+      expect(body).not.toContain('Claremont')
       expect(body).not.toContain('Removed Area')
+      expect(body).not.toContain('Paused Area')
+      expect(body).not.toContain('No service areas saved yet.')
     })
   })
 
