@@ -13,6 +13,9 @@
  * order; new ones are appended sorted by slug). Results that are not
  * exactly 4 digits are reported as unresolved and must be added by hand with a
  * trailing `// manual` comment (SA Post Office postcode lookup).
+ * A 4-digit shape is not enough: check every Nominatim result against the
+ * Post Office STREET code (not the PO box code) before committing, because
+ * OSM postcode tags are often box codes or neighbouring-suburb codes.
  *
  * Usage:
  *   pnpm exec tsx scripts/backfill-suburb-postcodes.ts            # geocode + rewrite file

@@ -31,6 +31,12 @@ describe('listSuburbsMissingPostcodes', () => {
     // Multi-word labels use the seed slug rule (lowercase, non-alphanumerics → "_")
     expect(missing.map((m) => m.slug)).toContain('mpumalanga__mbombela__mbombela__white_river')
   })
+
+  it('leaves no taxonomy suburb without a postcode in the live map', () => {
+    // A new taxonomy suburb without a postcode is hidden from every picker;
+    // fail CI until it is backfilled.
+    expect(listSuburbsMissingPostcodes()).toEqual([])
+  })
 })
 
 describe('resolvePostcodes', () => {
