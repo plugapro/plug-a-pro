@@ -30,7 +30,8 @@ import {
   resolveStructuredAddressCapture,
   InvalidStructuredAddressError,
 } from '../structured-address'
-import { resolveAreaScopeByNodeId } from '../customer-serviceability'
+import { countActiveProvidersFor, resolveAreaScopeByNodeId } from '../customer-serviceability'
+import { canonicalizeServiceCategoryValue } from '../service-category-canonicalization'
 import { listRowTitle } from './list-row-title'
 import {
   deduplicateWhatsAppSavedAddresses,
@@ -1657,6 +1658,45 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         return { nextStep: 'done' }
       }
 
+      // Empty-area guard (national rollout, spec §H): never create a request that
+      // matching would expire on the spot. Zero active providers for this category
+      // in the resolved area → offer the notify-me capture instead. Fails OPEN on a
+      // lookup error so a serviceability outage can never block intake.
+      // canonicalizeServiceCategoryValue passes an UNMAPPED label through as
+      // canonical=raw with source 'pass-through'. Counting providers for such a
+      // label would always return 0 and send a served area to notify-me, so the
+      // guard only runs for a label that resolves to a real category tag.
+      const canonicalCategory = canonicalizeServiceCategoryValue(category)
+      const categoryTag = canonicalCategory.source === 'pass-through' ? null : canonicalCategory.canonical
+      const activeProviderCount = categoryTag
+        ? await countActiveProvidersFor({
+            area: submitAreaScope,
+            categoryTag,
+          }).catch((err) => {
+            console.error('[job-request-flow] active provider count failed; failing open', { err })
+            return Number.POSITIVE_INFINITY
+          })
+        : Number.POSITIVE_INFINITY
+      if (activeProviderCount <= 0) {
+        await sendButtons(
+          ctx.phone,
+          `😔 We don't have any *${ctx.data.selectedCategory ?? category}* providers in *${resolvedAddr.suburb}* yet.\n\n` +
+          `We're onboarding providers across South Africa. Want us to tell you the moment one is available near you?`,
+          [
+            { id: 'notify_me', title: '🔔 Notify me' },
+            { id: 'back_home', title: '🏠 Main menu' },
+          ],
+        )
+        return {
+          nextStep: 'notify_me',
+          nextData: {
+            addrSuburbLabel: resolvedAddr.suburb,
+            addrCityLabel: resolvedAddr.city,
+            addrProvinceLabel: resolvedAddr.province,
+          },
+        }
+      }
+
       result = await createJobRequest({
         phone: ctx.phone,
         customerName,
@@ -1925,6 +1965,18 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
       )
       return { nextStep: 'welcome' }
     }
+
+    // Record the demand so ops and the expansion report see where customers
+    // asked for a category we cannot serve yet.
+    await addToServiceAreaWaitlist({
+      phone: ctx.phone,
+      name: ctx.data.customerName ?? null,
+      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+      suburb: ctx.data.addrSuburbLabel ?? null,
+      city: ctx.data.addrCityLabel ?? 'Unknown',
+      province: ctx.data.addrProvinceLabel ?? null,
+      source: 'whatsapp',
+    }).catch((err) => console.error('[notify_me] waitlist upsert failed:', err))
 
     const fallbackName = normalizeCustomerName(ctx.data.customerName)
     await db.customer.upsert({
