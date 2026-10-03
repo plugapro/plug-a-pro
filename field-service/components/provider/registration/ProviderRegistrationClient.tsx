@@ -24,6 +24,13 @@ import {
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { WhatsAppLink } from '@/components/shared/WhatsAppLink'
 import { EvidenceUploader } from '@/components/provider/registration/EvidenceUploader'
+import {
+  applySuburbToggle,
+  applyWholeRegion,
+  hasAnyServiceArea,
+  isWholeRegionSelected,
+  removeServiceArea,
+} from '@/components/provider/registration/service-area-selection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { OtpInput } from '@/components/ui/otp-input'
@@ -571,22 +578,24 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   }
 
   function toggleSuburb(suburb: SuburbOption) {
-    setForm((current) => {
-      const existingIndex = current.locationNodeIds.indexOf(suburb.id)
-      if (existingIndex >= 0) {
-        return {
-          ...current,
-          locationNodeIds: current.locationNodeIds.filter((id) => id !== suburb.id),
-          serviceAreas: current.serviceAreas.filter((_, index) => index !== existingIndex),
-        }
-      }
+    setForm((current) => ({
+      ...current,
+      ...applySuburbToggle(current, suburb, current.selectedRegionId),
+    }))
+    setError('')
+  }
 
-      return {
-        ...current,
-        locationNodeIds: [...current.locationNodeIds, suburb.id],
-        serviceAreas: [...current.serviceAreas, suburb.label],
-      }
+  function selectWholeRegion() {
+    setForm((current) => {
+      const region = regions.find((r) => r.id === current.selectedRegionId)
+      if (!region) return current
+      return { ...current, ...applyWholeRegion(current, region) }
     })
+    setError('')
+  }
+
+  function removeArea(nodeId: string) {
+    setForm((current) => ({ ...current, ...removeServiceArea(current, nodeId) }))
     setError('')
   }
 
@@ -645,8 +654,8 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
       setError('Choose your main service.')
       return false
     }
-    if (currentStep === 'area' && form.locationNodeIds.length === 0) {
-      setError('Select at least one suburb from the list.')
+    if (currentStep === 'area' && !hasAnyServiceArea(form)) {
+      setError('Select at least one suburb from the list, or cover the whole region.')
       return false
     }
     if (currentStep === 'availability' && (form.availabilityDays.length === 0 || !form.callOutFee.trim())) {
@@ -823,7 +832,7 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
   }
 
   async function saveAndExit() {
-    const completedStep = step === 'area' && form.locationNodeIds.length === 0
+    const completedStep = step === 'area' && !hasAnyServiceArea(form)
       ? 3
       : Math.max(1, stepNumber(step))
     const saved = await saveDraft(completedStep)
@@ -1272,20 +1281,46 @@ export function ProviderRegistrationClient({ initialStep, initialApplicationStat
                       })}
                     </div>
                   )}
+                  {form.selectedRegionId && !locationLoading.suburbs && (() => {
+                    const region = regions.find((r) => r.id === form.selectedRegionId)
+                    if (!region) return null
+                    const wholeRegion = isWholeRegionSelected(form, region.id)
+                    return (
+                      <button
+                        type="button"
+                        onClick={selectWholeRegion}
+                        aria-pressed={wholeRegion}
+                        className={[
+                          'mt-2 flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
+                          wholeRegion
+                            ? 'brand-gradient-soft text-[var(--brand-purple)] shadow-[inset_0_0_0_1.5px_var(--tone-brand-border)]'
+                            : 'bg-background text-[var(--ink)] shadow-[inset_0_0_0_1px_var(--border)] hover:bg-[var(--card-alt)]',
+                        ].join(' ')}
+                      >
+                        <span>
+                          <span className="block font-semibold">My suburb isn&apos;t listed — cover the whole {region.label}</span>
+                          <span className="block text-[11px] text-[var(--ink-mute)]">
+                            You will receive leads from anywhere in this region.
+                          </span>
+                        </span>
+                        {wholeRegion && <Check size={17} aria-hidden />}
+                      </button>
+                    )
+                  })()}
                 </div>
               </div>
               {form.serviceAreas.length > 0 && (
                 <div>
-                  <p className="mb-2 text-[13px] font-semibold text-[var(--ink)]">Selected suburbs</p>
+                  <p className="mb-2 text-[13px] font-semibold text-[var(--ink)]">Selected areas</p>
                   <div className="flex flex-wrap gap-2">
                     {form.serviceAreas.map((area, index) => {
-                      const suburbId = form.locationNodeIds[index]
-                      const suburb = suburbs.find((item) => item.id === suburbId)
+                      const nodeId = form.locationNodeIds[index]
                       return (
                         <button
-                          key={`${suburbId}-${area}`}
+                          key={`${nodeId}-${area}`}
                           type="button"
-                          onClick={() => suburb && toggleSuburb(suburb)}
+                          onClick={() => removeArea(nodeId)}
+                          aria-label={`Remove ${area}`}
                           className="rounded-full brand-gradient-soft px-3 py-1.5 text-[12px] font-semibold text-[var(--brand-purple)] shadow-[inset_0_0_0_1px_var(--tone-brand-border)]"
                         >
                           {area}
