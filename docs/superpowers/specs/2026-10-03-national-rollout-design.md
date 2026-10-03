@@ -25,7 +25,7 @@ joins them. "National registration only" would be a no-op for them.
 | Scope | **Full national** — registration, matching and customer requests open everywhere a node exists |
 | Mechanism | **Data-driven liveness.** Delete the region/province/city sets; live = `LocationNode.active`. No new feature flag (switching back would need a data recompute anyway; the West Rand pilot flag remains the customer-side emergency brake) |
 | Thin suburb data outside Gauteng | **Region-wide fallback included.** A provider whose suburb is not listed covers the whole region via a `REGION`-type service-area row |
-| 44 suburbs without a postcode | **Backfill** via the existing Nominatim reverse-geocode helper; keep the postcode-backed filter |
+| 42 taxonomy suburbs without a postcode | **Backfill** via the existing Nominatim reverse-geocode helper; keep the postcode-backed filter |
 | National suburb dataset import | Out of scope (follow-up) |
 | Existing inactive service-area rows | **Resync script**, dry-run first. Inactive rows in the pre-rollout matching region (`jhb_west`) are skipped — the fence never wrote those inactive, so they can only be deliberate removals; every other inactive row with an active node is re-activated. Commit run needs owner approval (production write) |
 | Customers in empty regions | Existing location-aware "no providers yet → notify me" capture; flip `customer.home.notify_interest` ON at rollout |
@@ -231,8 +231,12 @@ Marketing JSON-LD already says `areaServed: ZA`; the three SEO landing areas
 
 ### Postcode backfill (blocks registration in six provinces today)
 
-44 SUBURB nodes have `postalCode = NULL` (Eastern Cape 10, Mpumalanga 8, North
-West 7, Free State 5, Gauteng 5, Limpopo 5, Northern Cape 4). `getSuburbs`,
+44 SUBURB nodes in production have `postalCode = NULL` (Eastern Cape 10,
+Mpumalanga 8, North West 7, Free State 5, Gauteng 5, Limpopo 5, Northern Cape
+4). 42 of them are in the taxonomy; the other two
+(`gauteng__johannesburg__jhb_west__strubensvalley` and
+`gauteng__pretoria__pretoria_north__ga-rankuwa`) are stale nodes the seed no
+longer produces and are left as they are. `getSuburbs`,
 PWA validation and customer capture all filter `postalCode IS NOT NULL`, so these
 suburbs are invisible and several regions offer nothing to pick.
 
@@ -243,7 +247,7 @@ suburbs are invisible and several regions offer nothing to pick.
   resolved `slug → postcode` pairs to `lib/service-areas/postal-codes.ts`
   (generated file; keep its header). Print unresolved slugs.
 - Unresolved slugs are looked up by hand (SA Post Office postcode lookup) and
-  added with a `// manual` comment. The PR is not complete while any of the 44
+  added with a `// manual` comment. The PR is not complete while any of the 42
   is missing.
 - Production: run `pnpm tsx scripts/seed-locations.ts` (upsert-only, 25 %-drop
   guard, production reset forbidden) after deploy. Owner approves the run.
