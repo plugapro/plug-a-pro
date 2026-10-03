@@ -568,7 +568,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                         variant={area.active ? 'default' : 'outline'}
                         className="rounded-full text-xs"
                       >
-                        {area.label} - {area.active ? 'Active pilot' : 'Coming soon'}
+                        {area.label} - {area.active ? 'Active' : 'Paused'}
                       </Badge>
                     ))}
                   </div>
