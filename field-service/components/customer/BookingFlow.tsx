@@ -107,7 +107,7 @@ interface Address {
   postalCode: string
 }
 
-type Step = 'address' | 'description' | 'confirm' | 'submitted' | 'waitlisted'
+type Step = 'address' | 'description' | 'confirm' | 'submitted'
 type MatchingMode = 'quick_match' | 'review_first'
 
 type Urgency = 'asap' | 'this_week' | 'flexible'
@@ -199,7 +199,6 @@ export function BookingFlow({
   const [selectedMatchingMode, setSelectedMatchingMode] = useState<MatchingMode | null>(null)
   const [hasProviderResponses, setHasProviderResponses] = useState(false)
   const [matchingModeSubmitting, setMatchingModeSubmitting] = useState(false)
-  const [waitlistedCity, setWaitlistedCity] = useState<string | null>(null)
   // Inline OTP (customer.booking.inline_otp): the FormData built by the submit
   // that hit 401/403 is parked here so onVerified can re-POST it unchanged.
   const [otpDialogOpen, setOtpDialogOpen] = useState(false)
@@ -709,10 +708,8 @@ export function BookingFlow({
 
     const data = await res.json()
 
-    if (data.waitlisted) {
-      setWaitlistedCity(data.city ?? address.city)
-      setStep('waitlisted')
-      return
+    if (!data.jobRequestId) {
+      throw new Error('We could not create your request. Please try again.')
     }
 
     setJobRequestId(data.jobRequestId)
@@ -791,7 +788,6 @@ export function BookingFlow({
     description: 'Job details',
     confirm: 'Review',
     submitted: 'Request received',
-    waitlisted: 'Area not covered',
   }
 
   return (
@@ -801,35 +797,31 @@ export function BookingFlow({
       {step !== 'submitted' && (
         <div className="px-[18px] pt-[54px] pb-4">
           <div className="flex items-center gap-3 mb-3">
-            {step !== 'waitlisted' && (
-              <button
-                type="button"
-                onClick={() => {
-                  // Clear any banner so a message from a later step does not
-                  // linger on the step we navigate back to.
-                  setError(null)
-                  if (step === 'description') setStep('address')
-                  else if (step === 'confirm') setStep('description')
-                  else if (step === 'address') window.history.back()
-                }}
-                className="w-[38px] h-[38px] rounded-[12px] flex items-center justify-center shrink-0"
-                style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}
-              >
-                <ChevronLeft size={18} />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                // Clear any banner so a message from a later step does not
+                // linger on the step we navigate back to.
+                setError(null)
+                if (step === 'description') setStep('address')
+                else if (step === 'confirm') setStep('description')
+                else if (step === 'address') window.history.back()
+              }}
+              className="w-[38px] h-[38px] rounded-[12px] flex items-center justify-center shrink-0"
+              style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}
+            >
+              <ChevronLeft size={18} />
+            </button>
             <div className="flex-1">
-              {step !== 'waitlisted' && (
-                <div className="text-[11px] font-bold tracking-[0.06em] uppercase" style={{ color: 'var(--brand-purple)' }}>
-                  {category.name} · Step {Math.max(stepIndex + 1, 1)} of 3
-                </div>
-              )}
+              <div className="text-[11px] font-bold tracking-[0.06em] uppercase" style={{ color: 'var(--brand-purple)' }}>
+                {category.name} · Step {Math.max(stepIndex + 1, 1)} of 3
+              </div>
               <div className="text-[19px] font-bold tracking-[-0.025em] mt-0.5" style={{ color: 'var(--ink)' }}>
                 {STEP_LABELS[step] ?? ''}
               </div>
             </div>
           </div>
-          {step !== 'waitlisted' && stepIndex < 3 && (
+          {stepIndex < 3 && (
             <div
               className="flex gap-1"
               role="progressbar"
@@ -1392,29 +1384,6 @@ export function BookingFlow({
             <Button onClick={handleConfirm} loading={loading} loadingLabel="Submitting..." className="flex-1" size="lg">
               Submit request
             </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Waitlisted ─────────────────────────────────────────────────────────── */}
-      {step === 'waitlisted' && (
-        <div className="px-[18px]">
-          <div className="rounded-[20px] p-6 text-center"
-               style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
-            <div className="w-[64px] h-[64px] rounded-[20px] flex items-center justify-center mx-auto mb-4"
-                 style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))', color: 'var(--brand-purple)' }}>
-              <MapPin size={28} />
-            </div>
-            <h2 className="text-[17px] font-bold mb-2" style={{ color: 'var(--ink)' }}>Not in your area yet</h2>
-            <p className="text-[13px] mb-3" style={{ color: 'var(--ink-mute)' }}>
-              We&apos;re not in <strong>{waitlistedCity}</strong> just yet, but we&apos;re growing fast.
-            </p>
-            <p className="text-[13px] mb-3" style={{ color: 'var(--ink-mute)' }}>
-              We&apos;ve saved your contact and will reach out the moment Plug A Pro goes live in your area. No action needed.
-            </p>
-            <p className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>
-              Currently serving: <strong>Johannesburg</strong>
-            </p>
           </div>
         </div>
       )}
