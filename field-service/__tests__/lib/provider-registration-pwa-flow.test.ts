@@ -49,6 +49,29 @@ function structuredSuburbRows(ids = ['sub_maboneng']) {
   }))
 }
 
+function regionRow(overrides: { id?: string; label?: string } = {}) {
+  return {
+    id: overrides.id ?? 'region-jhb-central',
+    nodeType: 'REGION',
+    slug: 'gauteng__johannesburg__jhb_central',
+    label: overrides.label ?? 'JHB Central',
+    postalCode: null,
+    provinceKey: 'gauteng',
+    cityKey: 'johannesburg',
+    regionKey: 'jhb_central',
+    parent: {
+      id: 'city-johannesburg',
+      nodeType: 'CITY',
+      label: 'Johannesburg',
+      parent: {
+        id: 'province-gauteng',
+        nodeType: 'PROVINCE',
+        label: 'Gauteng',
+      },
+    },
+  }
+}
+
 function createDraftClient() {
   return {
     locationNode: {
@@ -240,6 +263,118 @@ describe('provider registration PWA flow', () => {
       regionId: 'region-roodepoort',
       lastCompletedStep: 4,
     })).rejects.toBeInstanceOf(ProviderRegistrationValidationError)
+  })
+
+  it('accepts a whole-region selection and derives the region label', async () => {
+    const client = createDraftClient()
+    client.locationNode.findMany.mockResolvedValue([regionRow()])
+
+    await saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      serviceAreas: ['typed label that must be replaced'],
+      locationNodeIds: ['region-jhb-central'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      lastCompletedStep: 4,
+    })
+
+    expect(client.providerApplicationDraft.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        serviceAreas: ['JHB Central'],
+        locationNodeIds: ['region-jhb-central'],
+      }),
+    }))
+  })
+
+  it('rejects a REGION node that is not the submitted region', async () => {
+    const client = createDraftClient()
+    client.locationNode.findMany.mockResolvedValue([regionRow()])
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['region-jhb-central'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-roodepoort',
+      lastCompletedStep: 4,
+    })).rejects.toMatchObject({
+      code: 'INVALID_LOCATION_HIERARCHY',
+      message: 'Choose a valid province, city and region combination.',
+    })
+
+    expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
+  })
+
+  it('still rejects a suburb without a postcode', async () => {
+    const client = createDraftClient()
+    client.locationNode.findMany.mockResolvedValue(
+      structuredSuburbRows().map((row) => ({ ...row, postalCode: null })),
+    )
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['sub_maboneng'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      lastCompletedStep: 4,
+    })).rejects.toBeInstanceOf(ProviderRegistrationValidationError)
+
+    expect(client.providerApplicationDraft.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects CITY and PROVINCE nodes even when the lookup returns them', async () => {
+    const client = createDraftClient()
+    client.locationNode.findMany.mockResolvedValue([
+      {
+        id: 'city-johannesburg',
+        nodeType: 'CITY',
+        slug: 'gauteng__johannesburg',
+        label: 'Johannesburg',
+        postalCode: null,
+        provinceKey: 'gauteng',
+        cityKey: 'johannesburg',
+        regionKey: null,
+        parent: { id: 'province-gauteng', nodeType: 'PROVINCE', label: 'Gauteng' },
+      },
+    ])
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['city-johannesburg'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      lastCompletedStep: 4,
+    })).rejects.toMatchObject({ code: 'INVALID_LOCATION_HIERARCHY' })
+  })
+
+  it('uses the suburb-or-region copy when a node id is unknown', async () => {
+    const client = createDraftClient()
+    client.locationNode.findMany.mockResolvedValue([])
+
+    await expect(saveProviderRegistrationDraft(client, {
+      phone: '082 303 5070',
+      name: 'Thabo Nkosi',
+      skills: ['plumbing'],
+      locationNodeIds: ['ghost-node'],
+      provinceId: 'province-gauteng',
+      cityId: 'city-johannesburg',
+      regionId: 'region-jhb-central',
+      lastCompletedStep: 4,
+    })).rejects.toMatchObject({
+      code: 'INVALID_LOCATION_NODE',
+      message: 'Select a valid suburb or region from the list.',
+    })
   })
 
   it('requires the selected parent hierarchy with submitted suburb node ids', async () => {
