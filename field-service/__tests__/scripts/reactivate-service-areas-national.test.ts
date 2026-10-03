@@ -32,7 +32,7 @@ function row(overrides: Partial<InactiveAreaRow> = {}): InactiveAreaRow {
 }
 
 function provider(overrides: Partial<ProviderRow> = {}): ProviderRow {
-  return { id: 'prov-1', name: 'Thabo Plumbing', status: 'ACTIVE', activeAreaCount: 0, ...overrides }
+  return { id: 'prov-1', status: 'ACTIVE', activeAreaCount: 0, ...overrides }
 }
 
 const plus = (ms: number) => new Date(T0.getTime() + ms)
@@ -42,6 +42,8 @@ describe('constants and predicates', () => {
     expect(PRE_ROLLOUT_MATCHING_REGION_KEYS).toEqual(['jhb_west'])
     expect(isPreRolloutMatchingRegion('jhb_west')).toBe(true)
     expect(isPreRolloutMatchingRegion('JHB_WEST')).toBe(true)
+    expect(isPreRolloutMatchingRegion('jhb-west')).toBe(true)
+    expect(isPreRolloutMatchingRegion(' JHB West ')).toBe(true)
     expect(isPreRolloutMatchingRegion('jhb_north')).toBe(false)
     expect(isPreRolloutMatchingRegion(null)).toBe(false)
   })
@@ -122,7 +124,7 @@ describe('planReactivation', () => {
         row({ id: 'b', providerId: 'prov-2', label: 'Benoni', regionKey: 'east_rand' }),
         row({ id: 'c', providerId: 'prov-2', label: 'East Rand / Ekurhuleni', regionKey: 'east_rand', areaType: 'REGION' }),
       ],
-      [provider(), provider({ id: 'prov-2', name: 'Sipho Tiling' })],
+      [provider(), provider({ id: 'prov-2' })],
     )
     expect(plan.providers.map((p) => p.providerId)).toEqual(['prov-1', 'prov-2'])
     expect(plan.providers[1].activate.map((r) => r.areaType)).toEqual(['SUBURB', 'REGION'])
@@ -146,6 +148,24 @@ describe('parseArgs', () => {
       adminEmail: 'o@x.za',
     })
     expect(parseArgs([])).toEqual({ providerIds: null, excludeProviderIds: null, commit: false, adminEmail: null })
+  })
+
+  it('fails closed on --flag=value forms', () => {
+    expect(() => parseArgs(['--providers=a,b', '--commit'])).toThrow()
+  })
+
+  it('fails closed on an unknown flag (singular --exclude-provider)', () => {
+    expect(() => parseArgs(['--exclude-provider', 'd,e'])).toThrow('Unknown argument: --exclude-provider')
+  })
+
+  it('fails closed when a list flag value is missing (next token is a flag)', () => {
+    expect(() => parseArgs(['--exclude-providers', '--commit', '--admin-email', 'o@x'])).toThrow(
+      '--exclude-providers requires a value',
+    )
+  })
+
+  it('fails closed when --admin-email has no value', () => {
+    expect(() => parseArgs(['--commit', '--admin-email'])).toThrow('--admin-email requires a value')
   })
 })
 
@@ -183,7 +203,7 @@ describe('loadReactivationInputs', () => {
       select: SELECT,
     })
     expect(rows).toHaveLength(1)
-    expect(providers).toEqual([{ id: 'prov-1', name: 'Thabo Plumbing', status: 'ACTIVE', activeAreaCount: 2 }])
+    expect(providers).toEqual([{ id: 'prov-1', status: 'ACTIVE', activeAreaCount: 2 }])
   })
 
   it('--providers restricts the candidate query', async () => {
@@ -253,7 +273,7 @@ describe('executeReactivation', () => {
 
     expect(client.$transaction).toHaveBeenCalledTimes(1)
     expect(tx.technicianServiceArea.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ['tsa-1'] } },
+      where: { id: { in: ['tsa-1'] }, active: false },
       data: { active: true },
     })
     expect(tx.auditLog.create).toHaveBeenCalledTimes(1)
@@ -287,6 +307,19 @@ describe('executeReactivation', () => {
     expect(result).toEqual({ committedProviders: 1, committedRows: 1 })
   })
 
+  it('tallies committed rows from the updateMany count, not the planned row count', async () => {
+    const { client, tx } = makeExecClient()
+    tx.technicianServiceArea.updateMany.mockResolvedValueOnce({ count: 0 })
+    const result = await executeReactivation({
+      plan,
+      commit: true,
+      admin,
+      client: client as never,
+      rebuildPool: vi.fn().mockResolvedValue(undefined),
+    })
+    expect(result).toEqual({ committedProviders: 1, committedRows: 0 })
+  })
+
   it('skips providers with nothing to activate (e.g. only jhb_west removals)', async () => {
     const { client } = makeExecClient()
     const emptyPlan = planReactivation([row({ regionKey: 'jhb_west' })], [provider()])
@@ -309,10 +342,10 @@ describe('idempotency and REGION rows (review focus)', () => {
     const adminAuditEvent: unknown[] = []
     const tx = {
       technicianServiceArea: {
-        updateMany: vi.fn(async (args: { where: { id: { in: string[] } }; data: { active: boolean } }) => {
+        updateMany: vi.fn(async (args: { where: { id: { in: string[] }; active: boolean }; data: { active: boolean } }) => {
           let count = 0
           for (const r of table) {
-            if (args.where.id.in.includes(r.id)) {
+            if (args.where.id.in.includes(r.id) && r.active === args.where.active) {
               r.active = args.data.active
               count += 1
             }
@@ -412,5 +445,27 @@ describe('formatPlan', () => {
     expect(output).toContain(
       '(dry-run; pass --commit --admin-email <email> to apply; use --exclude-providers <ids> to drop review-flagged providers)',
     )
+  })
+
+  it('uses future tense in commit mode and omits the dry-run footer', () => {
+    const output = formatPlan(planReactivation([row()], [provider()]), true)
+    expect(output).toContain('rows will activate: 1')
+    expect(output).not.toContain('activated')
+    expect(output).not.toContain('(dry-run;')
+  })
+
+  it('prints provider ids only, never the provider name loaded from the database', async () => {
+    const client = {
+      technicianServiceArea: {
+        findMany: vi.fn().mockResolvedValueOnce([row()]).mockResolvedValueOnce([]),
+      },
+      provider: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'prov-1', name: 'Thabo Plumbing', status: 'ACTIVE' }]),
+      },
+    }
+    const { rows, providers } = await loadReactivationInputs(client as never, { providerIds: null, excludeProviderIds: null })
+    const output = formatPlan(planReactivation(rows, providers), false)
+    expect(output).toContain('prov-1')
+    expect(output).not.toContain('Thabo Plumbing')
   })
 })

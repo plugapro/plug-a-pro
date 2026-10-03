@@ -61,7 +61,7 @@ export type InactiveAreaRow = {
   locationNode: { id: string; active: boolean } | null
 }
 
-export type ProviderRow = { id: string; name: string; status: string; activeAreaCount: number }
+export type ProviderRow = { id: string; status: string; activeAreaCount: number }
 
 export type PlannedRow = { id: string; label: string; regionKey: string | null; areaType: string; review: boolean }
 export type SkippedRow = {
@@ -73,7 +73,6 @@ export type SkippedRow = {
 
 export type ProviderPlan = {
   providerId: string
-  name: string
   status: string
   activate: PlannedRow[]
   skipped: SkippedRow[]
@@ -98,7 +97,7 @@ type LoadClient = {
 }
 
 type ExecuteTx = {
-  technicianServiceArea: { updateMany: (args: unknown) => Promise<unknown> }
+  technicianServiceArea: { updateMany: (args: unknown) => Promise<{ count: number }> }
   auditLog: { create: (args: unknown) => Promise<unknown> }
   adminAuditEvent: { create: (args: unknown) => Promise<unknown> }
 }
@@ -107,9 +106,14 @@ type ExecuteClient = {
   $transaction: (fn: (tx: ExecuteTx) => Promise<void>) => Promise<void>
 }
 
+/** Same normalisation the old fence applied (lib/service-area-guard.ts). */
+function normaliseRegionKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
 export function isPreRolloutMatchingRegion(regionKey: string | null): boolean {
   if (!regionKey) return false
-  return PRE_ROLLOUT_MATCHING_REGION_KEYS.includes(regionKey.trim().toLowerCase())
+  return PRE_ROLLOUT_MATCHING_REGION_KEYS.includes(normaliseRegionKey(regionKey))
 }
 
 export function needsReview(
@@ -138,7 +142,6 @@ export function planReactivation(rows: InactiveAreaRow[], providers: ProviderRow
 
     const plan: ProviderPlan = {
       providerId,
-      name: prov.name,
       status: prov.status,
       activate: [],
       skipped: [],
@@ -216,12 +219,12 @@ export async function loadReactivationInputs(
 
   const providers = (await client.provider.findMany({
     where: { id: { in: ids } },
-    select: { id: true, name: true, status: true },
-  })) as Array<{ id: string; name: string; status: string }>
+    select: { id: true, status: true },
+  })) as Array<{ id: string; status: string }>
 
   return {
     rows,
-    providers: providers.map((p) => ({ ...p, activeAreaCount: activeCount.get(p.id) ?? 0 })),
+    providers: providers.map((p) => ({ id: p.id, status: p.status, activeAreaCount: activeCount.get(p.id) ?? 0 })),
   }
 }
 
@@ -251,11 +254,13 @@ export async function executeReactivation(input: {
       reviewFlaggedRowIds: p.activate.filter((r) => r.review).map((r) => r.id),
     } as Prisma.InputJsonValue
 
+    let updated = 0
     await input.client.$transaction(async (tx) => {
-      await tx.technicianServiceArea.updateMany({
-        where: { id: { in: rowIds } },
+      const result = await tx.technicianServiceArea.updateMany({
+        where: { id: { in: rowIds }, active: false },
         data: { active: true },
       })
+      updated = result.count
       // Same pair crud-action.ts writes for every admin mutation.
       await tx.auditLog.create({
         data: {
@@ -283,18 +288,18 @@ export async function executeReactivation(input: {
     })
     await input.rebuildPool(p.providerId)
     committedProviders += 1
-    committedRows += rowIds.length
+    committedRows += updated
   }
   return { committedProviders, committedRows }
 }
 
 export function formatPlan(plan: ReactivationPlan, commit: boolean): string {
-  const verb = commit ? 'activated' : 'would activate'
+  const verb = commit ? 'will activate' : 'would activate'
   const lines: string[] = []
   lines.push(`--- ${SCRIPT_NAME} --- mode=${commit ? 'COMMIT' : 'DRY-RUN'}`)
   for (const p of plan.providers) {
     lines.push(
-      `\n${p.providerId}  ${p.name}  status=${p.status}  ${verb}=${p.activate.length}  skipped=${p.skipped.length}` +
+      `\n${p.providerId}  status=${p.status}  ${verb}=${p.activate.length}  skipped=${p.skipped.length}` +
         (p.gainsFirstActiveRow ? '  ★ first active row' : '') +
         (p.needsReview ? '  ⚠ REVIEW (rows touched after creation)' : ''),
     )
@@ -320,21 +325,50 @@ export function formatPlan(plan: ReactivationPlan, commit: boolean): string {
   return lines.join('\n')
 }
 
-function listArg(argv: string[], flag: string): string[] | null {
-  const idx = argv.indexOf(flag)
-  if (idx < 0 || !argv[idx + 1]) return null
-  const values = argv[idx + 1].split(',').map((s) => s.trim()).filter(Boolean)
-  return values.length > 0 ? values : null
-}
+const LIST_FLAGS = ['--providers', '--exclude-providers'] as const
+const EMAIL_FLAG = '--admin-email'
+const COMMIT_FLAG = '--commit'
 
+/** Fails closed: any unrecognised token, `--flag=value` form, repeated flag or
+ *  missing value throws, so a typo can never silently widen the run's scope. */
 export function parseArgs(argv: string[]): { commit: boolean; adminEmail: string | null } & Scope {
-  const emailIdx = argv.indexOf('--admin-email')
-  return {
-    providerIds: listArg(argv, '--providers'),
-    excludeProviderIds: listArg(argv, '--exclude-providers'),
-    commit: argv.includes('--commit'),
-    adminEmail: emailIdx >= 0 && argv[emailIdx + 1] ? argv[emailIdx + 1] : null,
+  const result: { commit: boolean; adminEmail: string | null } & Scope = {
+    providerIds: null,
+    excludeProviderIds: null,
+    commit: false,
+    adminEmail: null,
   }
+  const seen = new Set<string>()
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]
+    if (token.startsWith('--') && token.includes('=')) {
+      throw new Error(`Unsupported argument form ${token}: pass the value as a separate argument`)
+    }
+    const isList = (LIST_FLAGS as readonly string[]).includes(token)
+    if (token !== COMMIT_FLAG && token !== EMAIL_FLAG && !isList) {
+      throw new Error(`Unknown argument: ${token}`)
+    }
+    if (seen.has(token)) throw new Error(`Duplicate argument: ${token}`)
+    seen.add(token)
+    if (token === COMMIT_FLAG) {
+      result.commit = true
+      continue
+    }
+    const value = argv[i + 1]
+    if (value === undefined || value.startsWith('--') || value.trim() === '') {
+      throw new Error(`${token} requires a value`)
+    }
+    i += 1
+    if (token === EMAIL_FLAG) {
+      result.adminEmail = value.trim()
+      continue
+    }
+    const values = value.split(',').map((v) => v.trim()).filter(Boolean)
+    if (values.length === 0) throw new Error(`${token} requires at least one provider id`)
+    if (token === '--providers') result.providerIds = values
+    else result.excludeProviderIds = values
+  }
+  return result
 }
 
 async function resolveAdmin(email: string): Promise<AdminActor> {
@@ -348,6 +382,7 @@ async function resolveAdmin(email: string): Promise<AdminActor> {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  if (args.commit && !args.adminEmail) throw new Error('--admin-email is required with --commit')
   const admin = args.commit && args.adminEmail ? await resolveAdmin(args.adminEmail) : null
   const { rows, providers } = await loadReactivationInputs(db as unknown as LoadClient, {
     providerIds: args.providerIds,
