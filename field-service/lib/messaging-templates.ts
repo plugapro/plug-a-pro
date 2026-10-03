@@ -606,6 +606,21 @@ export const TEMPLATES = {
       'Lead accepted and unlocked: {{1}}. 1 credit used. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}. Thanks.',
   },
 
+  // Free leads mode (flag provider.leads.free) twin of lead_unlock_provider:
+  // identical params, no "1 credit used" line. NOT yet registered/approved at
+  // Meta - notifyLeadUnlocked keeps sending lead_unlock_provider until it is
+  // (see lib/provider-wallet-notifications.ts#notifyLeadUnlocked).
+  lead_unlock_provider_free: {
+    name: 'lead_unlock_provider_free',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a provider after a free (free leads mode) unlock releases customer lead details',
+    // {{1}} category, {{2}} customer name, {{3}} customer phone, {{4}} address,
+    // {{5}} preferred time, {{6}} details
+    example:
+      'Lead accepted and unlocked: {{1}}. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}. Thanks.',
+  },
+
   lead_unlock_customer_intro: {
     name: 'lead_unlock_customer_intro',
     language: 'en_ZA',
