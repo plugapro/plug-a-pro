@@ -276,10 +276,11 @@ async function renderProvinceList(phone: string): Promise<void> {
   const provinces = await getProvinces()
   if (provinces.length === 0) {
     // Location nodes not yet seeded - sending an empty list section fails at the Meta API level.
-    // Surface the "area not listed" path so the user is captured on the waitlist.
+    // No list is rendered, so there is no "My area isn't listed" row to tap and the
+    // flow handles no typed reply here; never instruct one.
     await sendText(
       phone,
-      `📍 We're expanding our coverage soon! We don't have selectable provinces set up yet.\n\nReply *area not listed* and we'll add you to the waitlist to be notified when we launch in your area.`,
+      `📍 We're expanding our coverage soon! We don't have selectable provinces set up yet. Please try again shortly.`,
     )
     return
   }
@@ -1639,7 +1640,9 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       // Anti-spoofing re-check (finding 3cc92366, kept under the national
       // rollout): the node id in conversation data is untrusted. It must still
       // resolve to an ACTIVE location node; otherwise waitlist, never create.
-      const submitAreaScope = await resolveAreaScopeByNodeId(resolvedAddr.locationNodeId).catch(() => null)
+      // A lookup ERROR is not "not listed": it propagates to the outer catch
+      // (retry copy) instead of writing a false waitlist row.
+      const submitAreaScope = await resolveAreaScopeByNodeId(resolvedAddr.locationNodeId)
       if (!submitAreaScope) {
         await addToServiceAreaWaitlist({
           phone: ctx.phone,

@@ -400,12 +400,26 @@ describe('WhatsApp job-request flow - structured address', () => {
       )
 
       expect(result.nextStep).toBe('done')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledTimes(1)
       expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
         expect.objectContaining({ phone: PHONE, city: 'Province not listed', category: 'Painting', source: 'whatsapp' })
       )
       const text = (wa.sendText as any).mock.calls.at(-1)[1] as string
-      expect(text).toContain("We don't have *your province* listed yet")
+      expect(text).toBe(
+        "📍 We don't have *your province* listed yet. We've saved your details and will WhatsApp you the moment we cover it - no action needed."
+      )
       expect(text).not.toMatch(/Gauteng/)
+    })
+
+    it('empty province list tells the customer nothing they cannot act on (no typed "area not listed" instruction)', async () => {
+      ;(locationNodes.getProvinces as any).mockResolvedValue([])
+
+      await handleJobRequestFlow(makeCtx('addr_select_province', undefined, 'hello'))
+
+      const text = (wa.sendText as any).mock.calls.at(-1)[1] as string
+      expect(text).not.toMatch(/reply/i)
+      expect(text).not.toMatch(/area not listed/i)
+      expect(wa.sendList).not.toHaveBeenCalled()
     })
   })
 
@@ -462,6 +476,7 @@ describe('WhatsApp job-request flow - structured address', () => {
       )
 
       expect(result.nextStep).toBe('done')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledTimes(1)
       expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
         expect.objectContaining({ phone: PHONE, city: 'Western Cape - other', province: 'Western Cape', category: 'Plumbing', source: 'whatsapp' })
       )
@@ -583,6 +598,7 @@ describe('WhatsApp job-request flow - structured address', () => {
       )
 
       expect(result.nextStep).toBe('done')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledTimes(1)
       expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
         expect.objectContaining({ phone: PHONE, city: 'Johannesburg', province: 'Gauteng', category: 'Tiling', source: 'whatsapp' })
       )
@@ -923,7 +939,10 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(result.nextStep).toBe('done')
     })
 
-    it('waitlists instead of creating when the resolved node is missing or inactive (spoofed id)', async () => {
+    // Defence-in-depth against a race (node deactivated between capture and
+    // submit). Production rejects spoofed or inactive ids earlier, at the
+    // structured-address capture step, so this branch is not the primary guard.
+    it('waitlists instead of creating when the node resolves to null at submit time (deactivated mid-flow)', async () => {
       const { resolveAreaScopeByNodeId } = await import('@/lib/customer-serviceability')
       ;(resolveAreaScopeByNodeId as any).mockResolvedValueOnce(null)
 
@@ -934,8 +953,24 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
         expect.objectContaining({ phone: PHONE, suburb: 'Sandton', city: 'Johannesburg', province: 'Gauteng', source: 'whatsapp' })
       )
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledTimes(1)
       const text = (wa.sendText as any).mock.calls.at(-1)[1] as string
       expect(text).toContain("We don't have *Sandton* listed yet")
+    })
+
+    it('a DB error while resolving the node is not a "not listed" event: no waitlist row, no listed-yet text, request not created', async () => {
+      const { resolveAreaScopeByNodeId } = await import('@/lib/customer-serviceability')
+      ;(resolveAreaScopeByNodeId as any).mockRejectedValueOnce(new Error('connection reset'))
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const result = await handleJobRequestFlow(makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData))
+
+      expect(result.nextStep).toBe('confirm_job_request')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).not.toHaveBeenCalled()
+      expect(createJobRequestModule.createJobRequest).not.toHaveBeenCalled()
+      const sent = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
+      expect(sent.some((t: string) => t.includes('listed yet'))).toBe(false)
+      errSpy.mockRestore()
     })
   })
 
