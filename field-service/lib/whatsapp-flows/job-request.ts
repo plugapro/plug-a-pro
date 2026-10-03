@@ -1678,15 +1678,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
           })
         : Number.POSITIVE_INFINITY
       if (activeProviderCount <= 0) {
-        await sendButtons(
-          ctx.phone,
-          `😔 We don't have any *${ctx.data.selectedCategory ?? category}* providers in *${resolvedAddr.suburb}* yet.\n\n` +
-          `We're onboarding providers across South Africa. Want us to tell you the moment one is available near you?`,
-          [
-            { id: 'notify_me', title: '🔔 Notify me' },
-            { id: 'back_home', title: '🏠 Main menu' },
-          ],
-        )
+        await sendNotifyMePrompt(ctx.phone, ctx.data.selectedCategory ?? category, resolvedAddr.suburb)
         return {
           nextStep: 'notify_me',
           nextData: {
@@ -1940,13 +1932,30 @@ async function handleLegacyConfirmAddress(ctx: FlowContext): Promise<FlowResult>
 
 // ─── Notify Me (no providers in area) ─────────────────────────────────────────
 
+// Single source of the empty-area prompt copy: sent by the submit-time guard and
+// re-sent by handleNotifyMe when the customer replies with anything but a tap.
+async function sendNotifyMePrompt(phone: string, categoryLabel: string, suburbLabel: string): Promise<void> {
+  await sendButtons(
+    phone,
+    `😔 We don't have any *${categoryLabel}* providers in *${suburbLabel}* yet.\n\n` +
+    `We're onboarding providers across South Africa. Want us to tell you the moment one is available near you?`,
+    [
+      { id: 'notify_me', title: '🔔 Notify me' },
+      { id: 'back_home', title: '🏠 Main menu' },
+    ],
+  )
+}
+
 async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'back_home') {
     await showMainMenu(ctx.phone)
     return { nextStep: 'welcome' }
   }
 
-  if (ctx.reply.id === 'notify_me' || ctx.step === 'notify_me') {
+  // Opt in ONLY on an explicit tap. Free text, media, or an empty reply (the
+  // resume-prompt "Continue" re-dispatches with none) must not write demand rows
+  // or create a Customer; they re-show the buttons instead (handled below).
+  if (ctx.reply.id === 'notify_me') {
     // Never auto-create a Customer record for a provider's phone. A provider who
     // lands in the customer "notify me" path must not be converted into a customer
     // (that would mark them multi-role and surface them as "Customer" elsewhere).
@@ -1996,7 +2005,19 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  return { nextStep: 'notify_me' }
+  await sendNotifyMePrompt(
+    ctx.phone,
+    ctx.data.selectedCategory ?? ctx.data.category ?? 'this service',
+    ctx.data.addrSuburbLabel ?? 'your area',
+  )
+  return {
+    nextStep: 'notify_me',
+    nextData: {
+      addrSuburbLabel: ctx.data.addrSuburbLabel,
+      addrCityLabel: ctx.data.addrCityLabel,
+      addrProvinceLabel: ctx.data.addrProvinceLabel,
+    },
+  }
 }
 
 // ─── Exported helpers ─────────────────────────────────────────────────────────

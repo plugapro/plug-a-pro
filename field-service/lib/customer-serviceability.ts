@@ -9,9 +9,10 @@
 //   AND isTestUser = false
 //   AND (suspendedUntil IS NULL OR suspendedUntil < now)
 //
-// Skill → provider matching mirrors /providers route:
-//   provider has either an APPROVED ProviderCategory for the slug,
-//   or (legacy) Provider.skills contains the slug.
+// Skill → provider matching mirrors matching (candidate-pool + CATEGORY_NOT_APPROVED
+// in lib/matching/filter.ts): Provider.skills contains the slug, and no
+// ProviderCategory row for that slug has a status other than APPROVED
+// (no row is permissive). See buildCategoryProviderWhere.
 //
 // Area → provider matching mirrors matching coverage (providerCoversAddress in
 // lib/matching/filter.ts), so a count of zero means matching would find no one.

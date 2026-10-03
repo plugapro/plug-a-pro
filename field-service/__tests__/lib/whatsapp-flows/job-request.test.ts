@@ -1576,6 +1576,31 @@ describe('WhatsApp job-request flow - structured address', () => {
       expect(result.nextStep).toBe('done')
     })
 
+    it.each([
+      ['free text "no thanks"', undefined, 'no thanks'],
+      ['an undefined/empty reply (e.g. resume-prompt Continue)', undefined, undefined],
+    ])('%s does not opt in: no waitlist row, no customer upsert, buttons re-sent, stays on notify_me', async (_label, replyId, replyText) => {
+      const result = await handleJobRequestFlow(makeCtx('notify_me', replyId, replyText, emptyAreaData))
+
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).not.toHaveBeenCalled()
+      expect(db.customer.upsert).not.toHaveBeenCalled()
+      expect(wa.sendText).not.toHaveBeenCalled()
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('*Plumbing* providers in *Umhlanga*'),
+        [
+          { id: 'notify_me', title: '🔔 Notify me' },
+          { id: 'back_home', title: '🏠 Main menu' },
+        ],
+      )
+      expect(result.nextStep).toBe('notify_me')
+      expect(result.nextData).toMatchObject({
+        addrSuburbLabel: 'Umhlanga',
+        addrCityLabel: 'Durban',
+        addrProvinceLabel: 'KwaZulu-Natal',
+      })
+    })
+
     it('back_home returns to the main menu without writing a waitlist row', async () => {
       const result = await handleJobRequestFlow(makeCtx('notify_me', 'back_home', undefined, emptyAreaData))
 
