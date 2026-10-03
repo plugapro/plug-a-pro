@@ -1808,17 +1808,81 @@ describe('registration flow - numbered bulk suburb selection', () => {
     expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('all 20 suburbs'))
   })
 
-  it('"all" selects all 20 suburbs and shows confirmation', async () => {
+  it('"all" covers the whole region: stores the REGION node id, not the suburb ids', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_suburb_select', undefined, 'all', suburbBaseData)
     )
 
     expect(wa.sendButtons).toHaveBeenCalledWith(
       phone,
-      expect.stringContaining('All 20 suburbs'),
-      expect.any(Array),
+      expect.stringContaining('Whole Sandton'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'suburb_confirm' }),
+        expect.objectContaining({ id: 'suburb_change' }),
+      ]),
     )
-    expect(result.nextData?.locationNodeIds).toHaveLength(20)
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('including suburbs not on the list')
+    expect(result.nextStep).toBe('reg_collect_suburb_select')
+    expect(result.nextData?.locationNodeIds).toEqual(['rgn_test'])
+    expect(result.nextData?.selectedSuburbLabels).toEqual([])
+    expect(result.nextData?.selectedRegionLabels).toEqual(['Sandton'])
+  })
+
+  it('suburb_confirm after "all" proceeds with only the REGION node id', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', 'suburb_confirm', undefined, {
+        ...suburbBaseData,
+        locationNodeIds: ['rgn_test'],
+        selectedSuburbLabels: [],
+        selectedRegionLabels: ['Sandton'],
+      })
+    )
+
+    expect(result.nextStep).toBe('reg_collect_availability')
+    expect(result.nextData?.locationNodeIds).toEqual(['rgn_test'])
+    expect(result.nextData?.selectedSuburbLabels).toEqual([])
+    expect(result.nextData?.selectedRegionLabels).toEqual(['Sandton'])
+  })
+
+  it('typing suburb numbers after "all" replaces the whole-region choice (mutually exclusive)', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, '2,4', {
+        ...suburbBaseData,
+        locationNodeIds: ['rgn_test'],
+        selectedSuburbLabels: [],
+      })
+    )
+
+    expect(result.nextData?.locationNodeIds).toEqual(['sub_1', 'sub_3'])
+    expect(result.nextData?.selectedSuburbLabels).toEqual(['Suburb 2', 'Suburb 4'])
+  })
+
+  it('the numbered prompt tells providers to reply "all" when their suburb is not listed', async () => {
+    await handleRegistrationFlow(
+      makeCtx('reg_collect_region', 'region_rgn_test', undefined, { cityId: 'city_jhb' })
+    )
+
+    const body: string = (wa.sendText as any).mock.calls.at(-1)[1]
+    expect(body).toContain("Reply *all* if your suburb isn't listed or you cover the whole region_rgn_test area.")
+  })
+
+  it('a region with no listed suburbs stores the REGION node id and skips to experience', async () => {
+    ;(locationNodes.getSuburbs as ReturnType<typeof vi.fn>).mockResolvedValueOnce([])
+
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_region', 'region_rgn_empty', undefined, { cityId: 'city_kim' })
+    )
+
+    expect(wa.sendList).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('experience'),
+      expect.any(Array),
+      expect.any(Object),
+    )
+    expect(result.nextStep).toBe('reg_collect_availability')
+    expect(result.nextData?.locationNodeIds).toEqual(['rgn_empty'])
+    expect(result.nextData?.selectedRegionLabels).toEqual(['region_rgn_empty'])
   })
 
   it('"99" only - sends "None of those numbers" error and re-shows list', async () => {

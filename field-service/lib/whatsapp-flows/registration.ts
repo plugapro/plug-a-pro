@@ -1596,15 +1596,12 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   }
 
   if (rawLower === 'all') {
-    // TODO: If a business limit on max suburbs per provider is introduced, enforce it here.
-    const allIds = suburbOptions.map(s => s.id)
-    const allLabels = suburbOptions.map(s => s.label)
-    const preview = allLabels.length > 8
-      ? `${allLabels.slice(0, 8).join(', ')} + ${allLabels.length - 8} more`
-      : allLabels.join(', ')
+    // Whole-region coverage: one REGION-type service-area row instead of N suburb
+    // rows. regionLabel is the full label resolved by id in handleCollectRegion and
+    // travels via selectedRegionLabels to the submit path.
     await sendButtons(
       ctx.phone,
-      `✅ *All ${allLabels.length} suburbs in ${regionLabel} selected!*\n\n${preview}\n\nContinue?`,
+      `✅ *Whole ${regionLabel} selected!*\n\nYou'll be matched to jobs anywhere in ${regionLabel}, including suburbs not on the list.\n\nContinue?`,
       [
         { id: 'suburb_confirm', title: '✅ Continue' },
         { id: 'suburb_change', title: '✏️ Change' },
@@ -1614,11 +1611,18 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
       nextStep: 'reg_collect_suburb_select',
       nextData: {
         regionId, regionLabel, suburbPage, suburbOptions,
-        locationNodeIds: allIds,
-        selectedSuburbLabels: allLabels,
+        locationNodeIds: [regionId],
+        selectedSuburbLabels: [],
+        selectedRegionLabels: [regionLabel],
       },
     }
   }
+
+  // Whole-region and individual suburbs are mutually exclusive per region: typing
+  // suburb numbers after "all" replaces the region-wide choice.
+  const wholeRegionSelected = existingIds.includes(regionId)
+  const baseIds: string[] = wholeRegionSelected ? [] : existingIds
+  const baseLabels: string[] = wholeRegionSelected ? [] : existingLabels
 
   // ── Parse number input ─────────────────────────────────────────────────────
   // Numbers are 1-based and global (refer to suburbOptions index, not the current page).
@@ -1642,7 +1646,7 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
     const suburb = suburbOptions[n - 1]
     if (!suburb) {
       invalidNums.push(n)
-    } else if (!existingIds.includes(suburb.id)) {
+    } else if (!baseIds.includes(suburb.id)) {
       newIds.push(suburb.id)
       newLabels.push(suburb.label)
     }
@@ -1650,7 +1654,7 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   }
 
   // Every number was invalid and nothing was already selected
-  if (newIds.length === 0 && existingIds.length === 0 && invalidNums.length > 0) {
+  if (newIds.length === 0 && baseIds.length === 0 && invalidNums.length > 0) {
     await sendText(
       ctx.phone,
       `❌ None of those numbers match suburbs on the list (${invalidNums.join(', ')}).\n\nPlease try again, e.g. *1,3,5*`
@@ -1658,8 +1662,8 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
     return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], suburbPage)
   }
 
-  const mergedIds = [...existingIds, ...newIds]
-  const mergedLabels = [...existingLabels, ...newLabels]
+  const mergedIds = [...baseIds, ...newIds]
+  const mergedLabels = [...baseLabels, ...newLabels]
 
   let confirmBody = `✅ *Selected suburbs:* ${mergedLabels.join(', ')}`
   if (invalidNums.length > 0) {
@@ -3759,7 +3763,7 @@ function buildSuburbPromptText(
   ]
   if (selectedLabels.length > 0) instructions.push(`Reply *done* to continue with your current selection.`)
   if (hasMore) instructions.push(`Reply *more* to see the next batch of suburbs.`)
-  instructions.push(`Reply *all* to cover the whole ${regionLabel} area.`)
+  instructions.push(`Reply *all* if your suburb isn't listed or you cover the whole ${regionLabel} area.`)
 
   return (
     `📍 *Which suburbs in ${regionLabel} do you work in?*${selectedSummary}\n` +
