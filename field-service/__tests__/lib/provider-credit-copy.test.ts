@@ -322,3 +322,73 @@ describe('provider credit copy', () => {
     expect(message).toContain('Available credits: 5 credits')
   })
 })
+
+describe('provider credit copy - free leads mode (provider.leads.free)', () => {
+  const FREE_LINE = 'Free during launch — no credits needed.'
+  const balance = { totalCreditBalance: 2, promoCreditBalance: 2, paidCreditBalance: 0 }
+  const previewParams = {
+    category: 'Plumbing',
+    area: 'Soweto',
+    preferredTime: 'Fri, 1 May, 10:00',
+    deadlineTime: '12:00',
+    balance,
+  }
+  const pricingFragments = [PROVIDER_CREDITS_PRICE_LINE, 'You spend', 'Available credits', 'top up', 'Top up', 'R50']
+
+  function expectNoPricing(message: string) {
+    for (const fragment of pricingFragments) {
+      expect(message).not.toContain(fragment)
+    }
+  }
+
+  it('lead preview: ON replaces price/spend/balance lines with the free line; OFF keeps them', () => {
+    const free = buildProviderLeadPreviewMessage({ ...previewParams, free: true })
+    expectNoPricing(free)
+    expect(free).toContain(FREE_LINE)
+    expect(free).toContain('Full customer contact and exact address stay locked')
+
+    const paid = buildProviderLeadPreviewMessage(previewParams)
+    expect(paid).toContain(PROVIDER_CREDITS_PRICE_LINE)
+    expect(paid).toContain('You spend 1 credit')
+    expect(paid).toContain('Available credits: 2 credits')
+    expect(paid).not.toContain(FREE_LINE)
+    expect(buildProviderLeadPreviewMessage({ ...previewParams, free: false })).toBe(paid)
+  })
+
+  it('lead actions: ON hides price and balance; OFF unchanged', () => {
+    const free = buildProviderLeadActionsMessage({ category: 'Plumbing', area: 'Soweto', balance, free: true })
+    expectNoPricing(free)
+    expect(free).toContain(FREE_LINE)
+
+    const paid = buildProviderLeadActionsMessage({ category: 'Plumbing', area: 'Soweto', balance })
+    expect(paid).toContain(PROVIDER_CREDITS_PRICE_LINE)
+    expect(paid).toContain('Available credits: 2 credits')
+  })
+
+  it('accepted line: ON is the free line only; OFF reports credits used and remaining', () => {
+    expect(buildLeadAcceptedCreditLine({ remainingCredits: 2, free: true })).toBe(FREE_LINE)
+    expect(buildLeadAcceptedCreditLine({ remainingCredits: 2 })).toBe('1 credit used.\nRemaining credits: 2 credits.')
+  })
+
+  it('credit summary: ON drops price and spend rules but keeps the untouched balance', () => {
+    const free = buildProviderCreditSummaryMessage(balance, { free: true })
+    expect(free).not.toContain(PROVIDER_CREDITS_PRICE_LINE)
+    expect(free).not.toContain('Credits are used only when')
+    expect(free).toContain(FREE_LINE)
+    expect(free).toContain('Your balance is unchanged: 2 credits.')
+
+    expect(buildProviderCreditSummaryMessage(balance)).toContain(PROVIDER_CREDITS_PRICE_LINE)
+  })
+
+  it('onboarding intro: ON hides price, spend and top-up bullets; OFF unchanged', () => {
+    const free = buildProviderOnboardingIntroMessage({ free: true })
+    expectNoPricing(free)
+    expect(free).not.toContain('starter credits')
+    expect(free).toContain(`• ${FREE_LINE}`)
+
+    const paid = buildProviderOnboardingIntroMessage()
+    expect(paid).toContain(PROVIDER_CREDITS_PRICE_LINE)
+    expect(paid).toContain('You can top up credits')
+    expect(buildProviderOnboardingIntroMessage({ free: false })).toBe(paid)
+  })
+})

@@ -282,6 +282,13 @@ const TEMPLATES = [
     examples: ['Plumbing', 'Zanele', '+27829876543', '12 Main Road, Sandton, Johannesburg', 'Thu 30 Apr, 10:00', 'Kitchen sink leak'],
   },
   {
+    // Free leads mode (provider.leads.free) twin of lead_unlock_provider.
+    name: 'lead_unlock_provider_free',
+    category: 'UTILITY',
+    body: 'Lead accepted and unlocked: {{1}}. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}. Thanks.',
+    examples: ['Plumbing', 'Zanele', '+27829876543', '12 Main Road, Sandton, Johannesburg', 'Thu 30 Apr, 10:00', 'Kitchen sink leak'],
+  },
+  {
     name: 'lead_unlock_customer_intro',
     category: 'MARKETING',
     body: 'Good news. We matched you with {{1}}. They may contact you shortly.',

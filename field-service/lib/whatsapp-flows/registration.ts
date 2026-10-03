@@ -68,6 +68,7 @@ import { finalizeWhatsappProviderSubmission } from '../provider-onboarding/final
 import { isEnabled } from '../flags'
 import { isQualityGateV2Enabled, evaluateEvidenceGate, evidenceShortfallMessage } from '../provider-onboarding/quality-gate'
 import { issueProviderApplicationVerificationLink } from '../identity-verification/application-link'
+import { isFreeLeadsEnabled } from '../free-leads'
 import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -570,7 +571,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    buildProviderOnboardingIntroMessage(),
+    buildProviderOnboardingIntroMessage({ free: await isFreeLeadsEnabled() }),
     [
       { id: 'reg_start', title: PROVIDER_APPLY_BUTTON_TITLE },
       { id: 'reg_cancel', title: PROVIDER_NOT_NOW_BUTTON_TITLE },

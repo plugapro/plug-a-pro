@@ -1,5 +1,6 @@
 import { type WalletLedgerEntry } from '@prisma/client'
 import { db } from './db'
+import { isFreeLeadUnlock } from './free-leads'
 
 export type ProviderCreditReconciliationIssueCode =
   | 'PROVIDER_NOT_FOUND'
@@ -264,6 +265,9 @@ export async function buildProviderCreditReconciliationReport(
     ].filter((entry) => entry.entryType === 'LEAD_UNLOCK_DEBIT')
 
     if (debitEntries.length === 0) {
+      // Free leads mode (provider.leads.free) writes creditsCharged 0 and no
+      // debit by design - nothing to reconcile.
+      if (isFreeLeadUnlock(unlock)) continue
       addIssue(issues, {
         code: 'LEAD_UNLOCK_WITHOUT_DEBIT',
         severity: 'error',

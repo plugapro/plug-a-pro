@@ -12,6 +12,7 @@ import {
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { normaliseLocationDisplayName } from './location-format'
 import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
+import { isFreeLeadUnlock } from './free-leads'
 import { testEventFields } from './internal-test-cohort'
 import { pickCustomerDisplayFirstName } from './customer-name'
 import {
@@ -501,6 +502,9 @@ export async function notifyPostMatchAcceptance(params: {
     const body =
       `✅ *Lead accepted - ${firstName(provider.name)}*\n\n` +
       `${buildLeadAcceptedCreditLine({
+        // Decided from the persisted unlock: a free unlock (creditsCharged 0)
+        // shows the free line instead of credits used / remaining.
+        free: lead.unlock ? isFreeLeadUnlock(lead.unlock) : false,
         creditsUsed: creditsCharged,
         remainingCredits: walletBalance.totalCreditBalance,
         starterCredits: walletBalance.promoCreditBalance,

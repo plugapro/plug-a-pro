@@ -7,7 +7,7 @@ import { approveLeadUnlockDispute, disputeLeadUnlockForProvider } from '../../li
 import { getOrCreateProviderWallet } from '../../lib/provider-wallet'
 import { unlockLeadForProvider } from '../../lib/lead-unlocks'
 
-const { mockDb, mockNotifications, state } = vi.hoisted(() => {
+const { mockDb, mockNotifications, mockIsFreeLeadsEnabled, state } = vi.hoisted(() => {
   const state: {
     providers: Map<string, any>
     wallets: Map<string, any>
@@ -83,10 +83,17 @@ const { mockDb, mockNotifications, state } = vi.hoisted(() => {
     notifyProviderPaymentCredited: vi.fn(),
   }
 
-  return { mockDb, mockNotifications, state }
+  const mockIsFreeLeadsEnabled = vi.fn()
+
+  return { mockDb, mockNotifications, mockIsFreeLeadsEnabled, state }
 })
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
+
+vi.mock('../../lib/free-leads', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/free-leads')>()),
+  isFreeLeadsEnabled: mockIsFreeLeadsEnabled,
+}))
 
 vi.mock('../../lib/provider-wallet-notifications', () => mockNotifications)
 
@@ -215,6 +222,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
     state.ledgerEntries = []
 
     Object.values(mockNotifications).forEach((notification) => notification.mockResolvedValue(undefined))
+    mockIsFreeLeadsEnabled.mockResolvedValue(false)
 
     mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) =>
       callback(mockDb as any)
@@ -530,5 +538,42 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       referenceType: 'lead_unlock_dispute',
     }))
     expect(mockNotifications.notifyProviderLowBalance).toHaveBeenCalled()
+  })
+
+  it('free leads mode: zero-charge unlock releases contact, leaves the wallet untouched and a dispute refund is a no-op', async () => {
+    mockIsFreeLeadsEnabled.mockResolvedValue(true)
+    await awardPromoCreditsForMilestone('provider-1', 'MOBILE_VERIFIED', {
+      referenceType: 'provider',
+      referenceId: 'provider-1',
+    })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 3 })
+    const ledgerCountBefore = state.ledgerEntries.length
+
+    const result = await unlockLeadForProvider('lead-1', 'provider-1', { confirmed: true })
+    expect(result.unlock).toMatchObject({ creditsCharged: 0, creditTypeBreakdown: { free: true } })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 3 })
+    expect(state.ledgerEntries).toHaveLength(ledgerCountBefore)
+    expect(mockNotifications.notifyLeadUnlocked).toHaveBeenCalledWith('unlock-lead-1')
+    expect(mockNotifications.notifyProviderLowBalance).not.toHaveBeenCalled()
+
+    state.leads.set('lead-1', { ...state.leads.get('lead-1'), status: 'ACCEPTED' })
+    const accepted = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
+    expect(accepted?.unlockedDetails).toMatchObject({
+      customerPhone: '+27821234567',
+      fullAddress: expect.stringContaining('12 Exact Street'),
+    })
+
+    await disputeLeadUnlockForProvider(
+      'lead-1',
+      'provider-1',
+      'INVALID_CUSTOMER_NUMBER',
+      'Number does not connect.',
+    )
+    const resolved = await approveLeadUnlockDispute('dispute-1', 'admin-1', 'Invalid number confirmed')
+    expect(resolved.ledgerEntries).toEqual([])
+    expect(resolved.wallet).toBeNull()
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 3 })
+    expect(state.ledgerEntries).toHaveLength(ledgerCountBefore)
+    expect(state.ledgerEntries).not.toContainEqual(expect.objectContaining({ entryType: 'LEAD_REFUND_CREDIT' }))
   })
 })

@@ -5,6 +5,12 @@ import {
   ProviderWalletError,
   debitCreditsForLeadUnlockInTransaction,
 } from './provider-wallet'
+import {
+  FREE_LEAD_BREAKDOWN,
+  FREE_LEADS_COPY_LINE,
+  isFreeLeadUnlock,
+  isFreeLeadsEnabled,
+} from './free-leads'
 
 const CREDIT_APPLICATION_REFERENCE_TYPE = 'selected_lead_credit_application'
 const TEST_CREDIT_APPLICATION_REFERENCE_TYPE = 'test_selected_lead_credit_application'
@@ -88,6 +94,15 @@ function creditAppliedMessage(result: {
     '',
     `${result.requiredCredits} Plug A Pro provider credit${result.requiredCredits === 1 ? '' : 's'} deducted.`,
     `Available balance: ${result.currentCreditBalance} credits.`,
+    'Customer direct contact details remain locked until the final accepted-lock step completes.',
+  ].join('\n')
+}
+
+function freeLeadAppliedMessage(alreadyApplied: boolean) {
+  return [
+    alreadyApplied ? 'This job was already accepted.' : 'Job accepted.',
+    '',
+    FREE_LEADS_COPY_LINE,
     'Customer direct contact details remain locked until the final accepted-lock step completes.',
   ].join('\n')
 }
@@ -181,6 +196,29 @@ async function buildAlreadyAppliedResult(
     findExistingApplicationTransactions(tx, params),
   ])
   const latestEntry = ledgerEntries.at(-1) ?? null
+
+  // Free unlock (creditsCharged 0): there is no debit to replay and the
+  // provider may have no wallet at all. Decided from the persisted unlock so
+  // an idempotent replay behaves the same after the flag flips.
+  if (isFreeLeadUnlock(params.leadUnlock)) {
+    const paidCreditBalance = wallet?.paidCreditBalance ?? 0
+    const promoCreditBalance = wallet?.promoCreditBalance ?? 0
+    return {
+      ok: true,
+      leadId: params.leadId,
+      providerId: params.providerId,
+      leadStatus: 'CREDIT_APPLIED',
+      requiredCredits: 0,
+      currentCreditBalance: paidCreditBalance + promoCreditBalance,
+      paidCreditBalance,
+      promoCreditBalance,
+      creditTransactionId: null,
+      leadUnlockId: params.leadUnlock.id,
+      alreadyApplied: true,
+      providerMessage: freeLeadAppliedMessage(true),
+    }
+  }
+
   if (!wallet && ledgerEntries.length === 0) {
     throw new ProviderCreditApplicationError(
       'WALLET_MISSING',
@@ -286,7 +324,8 @@ export async function applyProviderCreditForAcceptedLead(params: {
   traceId?: string
 }): Promise<ProviderCreditApplicationResult> {
   try {
-    return await db.$transaction((tx) => applyProviderCreditForAcceptedLeadInTransaction(tx, params))
+    const freeLeads = await isFreeLeadsEnabled()
+    return await db.$transaction((tx) => applyProviderCreditForAcceptedLeadInTransaction(tx, { ...params, freeLeads }))
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       try {
@@ -325,6 +364,9 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
     source?: 'whatsapp' | 'pwa' | 'api'
     idempotencyKey?: string
     traceId?: string
+    // Free leads mode (provider.leads.free). Callers that already read the
+    // flag pass it down; otherwise it is read here (fails closed to paid).
+    freeLeads?: boolean
   },
 ): Promise<ProviderCreditApplicationResult> {
   logCreditApplication({
@@ -460,6 +502,11 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
       reason: 'EXISTING_CREDIT_TRANSACTION',
     })
     return result
+  }
+
+  const freeLeads = params.freeLeads ?? (await isFreeLeadsEnabled())
+  if (freeLeads) {
+    return applyFreeLeadInTransaction(tx, { lead, params })
   }
 
   const wallet = await tx.providerWallet.findUnique({
@@ -628,6 +675,108 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
       currentCreditBalance: balance.currentCreditBalance,
       alreadyApplied: false,
     }),
+  }
+}
+
+// Free leads mode: write the LeadUnlock marker (creditsCharged 0,
+// FREE_LEAD_BREAKDOWN) without any wallet read requirement or debit, then move
+// the lead to CREDIT_APPLIED and audit it exactly like the paid path (with
+// free: true). The unique leadId constraint still guards double-taps.
+async function applyFreeLeadInTransaction(
+  tx: CreditApplicationTx,
+  input: {
+    lead: {
+      id: string
+      jobRequest: { isTestRequest: boolean; cohortName: string | null }
+      provider: { isTestUser: boolean }
+    }
+    params: {
+      leadId: string
+      providerId: string
+      source?: 'whatsapp' | 'pwa' | 'api'
+      traceId?: string
+    }
+  },
+): Promise<ProviderCreditApplicationResult> {
+  const { lead, params } = input
+  const traceId = params.traceId ?? `credit_apply_${lead.id}_${Date.now().toString(36)}`
+
+  const unlock = await tx.leadUnlock.create({
+    data: {
+      leadId: lead.id,
+      providerId: params.providerId,
+      matchId: null,
+      creditsCharged: 0,
+      creditTypeBreakdown: toJson(FREE_LEAD_BREAKDOWN),
+      isTestUnlock: lead.jobRequest.isTestRequest || lead.provider.isTestUser,
+      cohortName: lead.jobRequest.cohortName,
+      status: 'UNLOCKED',
+    },
+  })
+
+  const leadUpdated = await tx.lead.updateMany({
+    where: { id: lead.id, status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] } },
+    data: { status: 'CREDIT_APPLIED', respondedAt: new Date() },
+  })
+  if (leadUpdated.count !== 1) {
+    throw new ProviderCreditApplicationError(
+      'CONCURRENT_DEDUCTION',
+      'Lead changed while applying provider credit.',
+    )
+  }
+
+  // Wallet is read for reporting only; it may not exist and is never mutated.
+  const wallet = await tx.providerWallet.findUnique({
+    where: { providerId: params.providerId },
+    select: { paidCreditBalance: true, promoCreditBalance: true },
+  })
+  const paidCreditBalance = wallet?.paidCreditBalance ?? 0
+  const promoCreditBalance = wallet?.promoCreditBalance ?? 0
+  const currentCreditBalance = paidCreditBalance + promoCreditBalance
+
+  await tx.auditLog.create({
+    data: {
+      actorId: params.providerId,
+      actorRole: 'provider',
+      action: 'lead.provider_credit_applied',
+      entityType: 'Lead',
+      entityId: lead.id,
+      before: { status: 'PROVIDER_ACCEPTED' } as Prisma.InputJsonValue,
+      after: {
+        status: 'CREDIT_APPLIED',
+        leadUnlockId: unlock.id,
+        creditTransactionId: null,
+        requiredCredits: 0,
+        currentCreditBalance,
+        source: params.source ?? 'api',
+        free: true,
+      } as Prisma.InputJsonValue,
+    },
+  })
+
+  logCreditApplication({
+    leadId: lead.id,
+    providerId: params.providerId,
+    result: 'success',
+    source: params.source,
+    traceId,
+    creditTransactionId: null,
+    reason: 'FREE_LEADS',
+  })
+
+  return {
+    ok: true,
+    leadId: lead.id,
+    providerId: params.providerId,
+    leadStatus: 'CREDIT_APPLIED',
+    requiredCredits: 0,
+    currentCreditBalance,
+    paidCreditBalance,
+    promoCreditBalance,
+    creditTransactionId: null,
+    leadUnlockId: unlock.id,
+    alreadyApplied: false,
+    providerMessage: freeLeadAppliedMessage(false),
   }
 }
 

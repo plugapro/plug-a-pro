@@ -35,6 +35,7 @@ import { isWithinLateResponseGraceWindow } from '@/lib/matching/config'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
+import { FREE_LEADS_COPY_LINE, isFreeLeadUnlock, isFreeLeadsEnabled } from '@/lib/free-leads'
 import { getSession } from '@/lib/auth'
 import { runAfterResponse } from '@/lib/run-after-response'
 
@@ -952,9 +953,14 @@ export default async function ProviderLeadAccessPage({
     })
   }
   const providerCreditBalance = (providerWallet?.paidCreditBalance ?? 0) + (providerWallet?.promoCreditBalance ?? 0)
-  const walletMissing = !providerWallet
+  // Free leads mode (provider.leads.free): no credit requirement, so the
+  // accept CTA is always available and credit price / top-up copy is hidden.
+  const freeLeads = await isFreeLeadsEnabled()
+  // Accepted-state copy follows the persisted unlock where there is one.
+  const acceptedFree = lead.unlock ? isFreeLeadUnlock(lead.unlock) : freeLeads
+  const walletMissing = !providerWallet && !freeLeads
   const termsUrl = getProviderTermsUrl()
-  const hasEnoughCredits = providerCreditBalance >= LEAD_UNLOCK_COST_CREDITS
+  const hasEnoughCredits = freeLeads || providerCreditBalance >= LEAD_UNLOCK_COST_CREDITS
   const acceptedRemainingBalance =
     resolvedSearchParams.remainingBalance != null && Number.isFinite(Number(resolvedSearchParams.remainingBalance))
       ? Number(resolvedSearchParams.remainingBalance)
@@ -1003,7 +1009,9 @@ export default async function ProviderLeadAccessPage({
           <div className="tone-success rounded-lg border px-4 py-3 text-sm space-y-1">
             <p className="font-semibold">Job confirmed</p>
             {jr.match?.createdAt && (
-              <p>Accepted {format(jr.match.createdAt, 'HH:mm, d MMM yyyy')} · 1 credit used.</p>
+              acceptedFree
+                ? <p>Accepted {format(jr.match.createdAt, 'HH:mm, d MMM yyyy')}.</p>
+                : <p>Accepted {format(jr.match.createdAt, 'HH:mm, d MMM yyyy')} · 1 credit used.</p>
             )}
             <p>{jr.match ? 'Next step: contact the customer and confirm your arrival time below.' : 'You can now view the customer details and arrange the next step.'}</p>
           </div>
@@ -1014,6 +1022,8 @@ export default async function ProviderLeadAccessPage({
             <p className="font-medium">Job accepted.</p>
             {resolvedSearchParams.alreadyAccepted === '1' ? (
               <p className="mt-1">This job was already accepted. No extra credit was used.</p>
+            ) : acceptedFree ? (
+              <p className="mt-1">{FREE_LEADS_COPY_LINE}</p>
             ) : (
               <p className="mt-1">
                 You used {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
@@ -1097,7 +1107,7 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {resolvedSearchParams.error === 'credits' && (
+        {resolvedSearchParams.error === 'credits' && !freeLeads && (
           <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
             <p className="font-medium">You&rsquo;re out of credits.</p>
             <p className="mt-1">
@@ -1194,10 +1204,14 @@ export default async function ProviderLeadAccessPage({
             <p className="mt-1 text-muted-foreground">
               Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
             </p>
-            <p className="mt-2">
-              Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}).
-              Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
-            </p>
+            {freeLeads ? (
+              <p className="mt-2">{FREE_LEADS_COPY_LINE}</p>
+            ) : (
+              <p className="mt-2">
+                Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}).
+                Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
+              </p>
+            )}
           </div>
         )}
 
@@ -1214,7 +1228,12 @@ export default async function ProviderLeadAccessPage({
         {confirmingAccept && (
           <div className="tone-info rounded-lg border px-4 py-4 text-sm">
             <p className="font-semibold">Confirm lead acceptance</p>
-            {hasEnoughCredits ? (
+            {freeLeads ? (
+              <>
+                <p className="mt-1">{FREE_LEADS_COPY_LINE}</p>
+                <p className="mt-1">Full customer details are released once you accept and the request is locked.</p>
+              </>
+            ) : hasEnoughCredits ? (
               <>
                 <p className="mt-1">
                   Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}).
@@ -1264,7 +1283,9 @@ export default async function ProviderLeadAccessPage({
             <div className="px-4 py-3 space-y-0.5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Credit spend</p>
               <p className="font-medium">
-                {lead.unlock.creditsCharged} credit{lead.unlock.creditsCharged === 1 ? '' : 's'} used
+                {isFreeLeadUnlock(lead.unlock) ? FREE_LEADS_COPY_LINE : (
+                  <>{lead.unlock.creditsCharged} credit{lead.unlock.creditsCharged === 1 ? '' : 's'} used</>
+                )}
               </p>
               <p className="text-sm text-muted-foreground">
                 Accepted {format(lead.unlock.unlockedAt, 'HH:mm, d MMM yyyy')}
@@ -1341,7 +1362,9 @@ export default async function ProviderLeadAccessPage({
           )}
           {!hasAcceptedDetails && (
             <div className="px-4 py-3 text-sm text-muted-foreground">
-              Accept this customer-selected job for {LEAD_UNLOCK_COST_CREDITS} Plug A Pro provider credit (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}) to view customer contact details, exact address and access instructions.
+              {freeLeads ? 'Accept this customer-selected job to view customer contact details, exact address and access instructions.' : (
+                <>Accept this customer-selected job for {LEAD_UNLOCK_COST_CREDITS} Plug A Pro provider credit (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}) to view customer contact details, exact address and access instructions.</>
+              )}
             </div>
           )}
           <div className="px-4 py-3 space-y-0.5">

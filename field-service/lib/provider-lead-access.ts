@@ -5,6 +5,7 @@ import { previewNotes } from './provider-lead-detail'
 import { getProviderLeadPublicAppUrl } from './provider-credit-copy'
 import { isWithinLateResponseGraceWindow } from './matching/config'
 import { maskPhone } from './support-diagnostics'
+import { isFreeLeadUnlock } from './free-leads'
 
 const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
 const DEFAULT_LEAD_UNLOCK_COST_CREDITS = 1
@@ -95,6 +96,8 @@ const SAFE_LEAD_UNLOCK_SELECT = {
   id: true,
   providerId: true,
   unlockedAt: true,
+  // Read only to tell a free-leads unlock (creditsCharged 0) apart.
+  creditsCharged: true,
 } as const
 
 function base64url(input: Buffer | string) {
@@ -647,7 +650,9 @@ export async function resolveProviderLeadAccessToken(
     unlock: hasAcceptedUnlock && leadUnlock
       ? {
           ...leadUnlock,
-          creditsCharged: DEFAULT_LEAD_UNLOCK_COST_CREDITS,
+          // Free leads mode keeps the persisted 0 so copy can say so; paid
+          // unlocks keep the existing default.
+          creditsCharged: isFreeLeadUnlock(leadUnlock) ? 0 : DEFAULT_LEAD_UNLOCK_COST_CREDITS,
         }
       : null,
     jobRequest: {

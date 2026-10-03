@@ -8,6 +8,7 @@ import {
 import { checkProviderCanUnlockLead } from './provider-lead-eligibility'
 import { isEnabled } from './flags'
 import { KYC_GRACE_FLAG } from './matching/kyc-grace'
+import { FREE_LEAD_BREAKDOWN, isFreeLeadUnlock, isFreeLeadsEnabled } from './free-leads'
 
 export const LEAD_UNLOCK_COST_CREDITS = 1
 
@@ -81,6 +82,76 @@ function creditBreakdown(ledgerEntries: WalletLedgerEntry[]) {
 
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue
+}
+
+// Free leads mode (flag provider.leads.free): no balance gate and no wallet
+// debit. The LeadUnlock marker is still written - contact release depends on
+// it - with creditsCharged 0 and FREE_LEAD_BREAKDOWN. The unique leadId
+// constraint keeps the same double-tap protection as the paid path.
+async function createFreeLeadUnlockInTransaction(
+  tx: Prisma.TransactionClient,
+  params: {
+    lead: {
+      id: string
+      status: string
+      provider: { status: string; isTestUser: boolean }
+      jobRequest: { isTestRequest: boolean; cohortName: string | null; match: { id: string } | null }
+    }
+    providerId: string
+    traceId: string
+    source: string
+  },
+): Promise<UnlockLeadForProviderResult> {
+  const { lead, providerId } = params
+  const logBase = {
+    trace_id: params.traceId,
+    provider_id: providerId,
+    provider_status: lead.provider.status,
+    lead_id: lead.id,
+    lead_ref: lead.id.slice(-8).toUpperCase(),
+    lead_status: lead.status,
+    already_unlocked: false,
+    source: params.source,
+    free_lead: true,
+  }
+  console.info('[lead-unlocks] lead unlock attempt', {
+    ...logBase,
+    result: 'VALIDATED',
+    error_code: null,
+  })
+
+  const unlock = await tx.leadUnlock.create({
+    data: {
+      leadId: lead.id,
+      providerId,
+      matchId: lead.jobRequest.match?.id ?? null,
+      creditsCharged: 0,
+      creditTypeBreakdown: toJson(FREE_LEAD_BREAKDOWN),
+      isTestUnlock: lead.jobRequest.isTestRequest || lead.provider.isTestUser,
+      cohortName: lead.jobRequest.cohortName,
+      status: 'UNLOCKED',
+    },
+  })
+
+  if (lead.status === 'SENT') {
+    await tx.lead.update({
+      where: { id: lead.id },
+      data: { status: 'VIEWED' },
+    })
+  }
+
+  console.info('[lead-unlocks] lead unlock committed', {
+    ...logBase,
+    result: 'UNLOCKED',
+    error_code: null,
+    credit_transaction_id: null,
+  })
+
+  return {
+    unlock,
+    ledgerEntries: [],
+    alreadyUnlocked: false,
+  }
 }
 
 function assertLeadAvailable(
@@ -204,6 +275,9 @@ export async function unlockLeadForProvider(
   // provider confirmation. A bare magic-link token must not auto-spend credits.
   assertUnlockConfirmed(context)
 
+  // Read once, outside the transaction. Fails closed (paid) on error.
+  const freeLeads = await isFreeLeadsEnabled()
+
   try {
     const result = await db.$transaction(async (tx) => {
       const lead = await tx.lead.findUnique({
@@ -251,6 +325,15 @@ export async function unlockLeadForProvider(
       }
 
       assertLeadAvailable(lead)
+
+      if (freeLeads) {
+        return createFreeLeadUnlockInTransaction(tx, {
+          lead,
+          providerId,
+          traceId: context.traceId ?? `unlock_${lead.id}_${Date.now().toString(36)}`,
+          source: context.source ?? 'api',
+        })
+      }
 
       const wallet = await tx.providerWallet.findUnique({
         where: { providerId },
@@ -370,13 +453,17 @@ export async function unlockLeadForProvider(
         error,
       })
     })
-    notifyProviderLowBalance(providerId, result.ledgerEntries.at(-1)?.id ?? result.unlock.id).catch((error: unknown) => {
-      console.error('[lead-unlocks] low balance WhatsApp notification failed', {
-        providerId,
-        leadUnlockId: result.unlock.id,
-        error,
+    // Free unlocks never touch the wallet, so there is no balance change to
+    // warn about.
+    if (!isFreeLeadUnlock(result.unlock)) {
+      notifyProviderLowBalance(providerId, result.ledgerEntries.at(-1)?.id ?? result.unlock.id).catch((error: unknown) => {
+        console.error('[lead-unlocks] low balance WhatsApp notification failed', {
+          providerId,
+          leadUnlockId: result.unlock.id,
+          error,
+        })
       })
-    })
+    }
 
     return result
   } catch (error) {
@@ -458,6 +545,15 @@ export async function unlockLeadForProviderInTransaction(
   }
 
   assertLeadAvailable(lead, { allowExpiredLeadWithinGrace: context.allowExpiredLeadWithinGrace })
+
+  if (await isFreeLeadsEnabled()) {
+    return createFreeLeadUnlockInTransaction(tx, {
+      lead,
+      providerId,
+      traceId: context.traceId ?? `unlock_${lead.id}_${Date.now().toString(36)}`,
+      source: context.source ?? 'api',
+    })
+  }
 
   const isTestUnlock = lead.jobRequest.isTestRequest || lead.provider.isTestUser
   const wallet = await tx.providerWallet.findUnique({

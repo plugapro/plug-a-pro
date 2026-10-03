@@ -2150,8 +2150,12 @@ async function createOfferForAttempt(params: {
       const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
       const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
       const category = jobRequest.category
-      const balance = await getProviderWalletBalanceReadOnly(params.providerId)
-      const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
+      const { isFreeLeadsEnabled } = await import('../free-leads')
+      const [balance, freeLeads] = await Promise.all([
+        getProviderWalletBalanceReadOnly(params.providerId),
+        isFreeLeadsEnabled(),
+      ])
+      const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance, free: freeLeads })
       await sendButtons(
         provider.phone,
         actionsBody,

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDb, mockSendTemplate, state } = vi.hoisted(() => {
+const { mockDb, mockSendTemplate, mockIsFreeLeadsEnabled, state } = vi.hoisted(() => {
   const state: {
     existingMessage: any
     createdMessages: any[]
@@ -32,9 +32,15 @@ const { mockDb, mockSendTemplate, state } = vi.hoisted(() => {
   }
 
   const mockSendTemplate = vi.fn()
+  const mockIsFreeLeadsEnabled = vi.fn()
 
-  return { mockDb, mockSendTemplate, state }
+  return { mockDb, mockSendTemplate, mockIsFreeLeadsEnabled, state }
 })
+
+vi.mock('../../lib/free-leads', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/free-leads')>()),
+  isFreeLeadsEnabled: mockIsFreeLeadsEnabled,
+}))
 
 vi.mock('../../lib/db', () => ({
   db: mockDb,
@@ -110,6 +116,7 @@ describe('provider wallet notification delivery', () => {
       return message
     })
     mockSendTemplate.mockResolvedValue('wamid-1')
+    mockIsFreeLeadsEnabled.mockResolvedValue(false)
   })
 
   it('sends and records a payment credited template notification with an idempotency key', async () => {
@@ -209,6 +216,44 @@ describe('provider wallet notification delivery', () => {
       ],
     }))
     expect(state.createdMessages[0].templateName).toBe('wallet:zero_balance_lead_available')
+  })
+
+  it('suppresses low-balance notifications in free leads mode', async () => {
+    mockIsFreeLeadsEnabled.mockResolvedValue(true)
+    const { notifyProviderLowBalance } = await import('../../lib/provider-wallet-notifications')
+
+    await notifyProviderLowBalance('provider-1')
+
+    expect(mockSendTemplate).not.toHaveBeenCalled()
+    expect(mockDb.provider.findUnique).not.toHaveBeenCalled()
+    expect(state.createdMessages).toEqual([])
+  })
+
+  it('suppresses zero-balance lead notifications in free leads mode', async () => {
+    mockIsFreeLeadsEnabled.mockResolvedValue(true)
+    state.provider.wallet.paidCreditBalance = 0
+    const { notifyProviderZeroBalanceLeadAvailable } = await import('../../lib/provider-wallet-notifications')
+
+    await notifyProviderZeroBalanceLeadAvailable({
+      providerId: 'provider-1',
+      leadId: 'lead-1',
+      jobRequestId: 'job-1',
+      holdId: 'hold-1',
+    })
+
+    expect(mockSendTemplate).not.toHaveBeenCalled()
+    expect(state.createdMessages).toEqual([])
+  })
+
+  it('keeps sending the approved lead_unlock_provider template for free unlocks (free twin awaits Meta approval)', async () => {
+    mockIsFreeLeadsEnabled.mockResolvedValue(true)
+    state.leadUnlock = { ...state.leadUnlock, creditsCharged: 0, creditTypeBreakdown: { free: true } }
+    const { notifyLeadUnlocked } = await import('../../lib/provider-wallet-notifications')
+
+    await notifyLeadUnlocked('unlock-1')
+
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({ template: 'lead_unlock_provider' }))
+    expect(mockSendTemplate).not.toHaveBeenCalledWith(expect.objectContaining({ template: 'lead_unlock_provider_free' }))
   })
 
   it('sends payment intent templates with configured EFT bank details', async () => {
