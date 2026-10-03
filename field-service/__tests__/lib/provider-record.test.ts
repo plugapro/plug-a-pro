@@ -377,8 +377,8 @@ describe('syncProviderRecord - phone normalization', () => {
   })
 })
 
-describe('syncProviderRecord - pilot service-area activation', () => {
-  it('marks JHB West / Roodepoort structured coverage active', async () => {
+describe('syncProviderRecord - structured service-area activation (national)', () => {
+  it('marks jhb_west structured coverage active', async () => {
     const client = {
       provider: {
         findUnique: vi.fn().mockResolvedValue({ id: 'prov_exists' }),
@@ -481,7 +481,7 @@ describe('syncProviderRecord - pilot service-area activation', () => {
     )
   })
 
-  it('marks non-pilot structured coverage coming soon and inactive for matching', async () => {
+  it('marks jhb_north structured coverage ACTIVE too — liveness is national', async () => {
     const client = {
       provider: {
         findUnique: vi.fn().mockResolvedValue({ id: 'prov_exists' }),
@@ -524,8 +524,8 @@ describe('syncProviderRecord - pilot service-area activation', () => {
 
     expect(client.technicianServiceArea.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({ active: false, regionKey: 'jhb_north' }),
-        update: expect.objectContaining({ active: false, regionKey: 'jhb_north' }),
+        create: expect.objectContaining({ active: true, regionKey: 'jhb_north' }),
+        update: expect.objectContaining({ active: true, regionKey: 'jhb_north' }),
       }),
     )
   })

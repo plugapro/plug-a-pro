@@ -1,6 +1,6 @@
 import { normalizePhone } from './utils'
 import { syncProviderSkills } from './provider-skills'
-import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-guard'
+import { getRegionKeyFromSlug } from './service-area-guard'
 import { INTERNAL_TEST_COHORT_NAME, createTestCohortContext } from './internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 import { canonicalizeServiceCategoryValues } from './service-category-canonicalization'
@@ -123,16 +123,16 @@ export async function upsertStructuredServiceAreas(
   })
 
   for (const node of nodes) {
-    // SUBURB nodes get a suburbKey (last segment of slug); REGION nodes do not
+    // SUBURB nodes get a suburbKey (last segment of slug); REGION nodes do not.
     const isSuburb = node.nodeType === 'SUBURB'
     const areaType = isSuburb ? 'SUBURB' : 'REGION'
     const suburbKey = isSuburb ? (node.slug.split('__').at(-1) ?? node.slug) : null
     const regionKey = node.regionKey ?? (node.nodeType === 'REGION' ? getRegionKeyFromSlug(node.slug) : null)
-    // Matchability follows the MATCHING gate only: a provider in an onboarding-open
-    // but not-yet-matching region (e.g. jhb_north) is registered + vetted now, but
-    // their service area stays inactive until that region enters the matching set.
-    const isActivePilotArea =
-      getRegionServiceStatus({ regionKey, slug: node.slug }, 'matching') === 'active'
+    // National liveness (spec 2026-10-03): a location is live iff its LocationNode
+    // is active, and the query above already filters active nodes. Every row is
+    // therefore written active. Pausing an area = deactivating its node in
+    // /admin/locations + re-running scripts/reactivate-service-areas-national.ts
+    // for the affected providers.
     const label = normaliseLocationDisplayName(node.label)
 
     await client.technicianServiceArea.upsert({
@@ -151,7 +151,7 @@ export async function upsertStructuredServiceAreas(
         cityKey: node.cityKey,
         regionKey,
         suburbKey,
-        active: isActivePilotArea,
+        active: true,
       },
       update: {
         areaType,
@@ -160,7 +160,7 @@ export async function upsertStructuredServiceAreas(
         cityKey: node.cityKey,
         regionKey,
         suburbKey,
-        active: isActivePilotArea,
+        active: true,
       },
     })
   }
